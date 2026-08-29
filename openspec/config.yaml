@@ -1,0 +1,17 @@
+schema: spec-driven
+
+context: |
+  open-sdbl — Rust 2024 project for analysis and tooling around the 1C
+  query language (SDBL). The first milestone is a dependency-free lexer and
+  a small command-line interface. Public behavior is documented in English.
+
+rules:
+  specs:
+    - Describe observable behavior and verifiable scenarios.
+    - Every requirement must contain at least one scenario.
+  design:
+    - Keep the core library independent from the command-line interface.
+    - Explain every new production dependency.
+  tasks:
+    - Make every task independently verifiable.
+    - Finish with formatting, Clippy, tests, and rustdoc checks.

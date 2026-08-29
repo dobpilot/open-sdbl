@@ -1,0 +1,20 @@
+[package]
+name = "open-sdbl"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+description = "Open tooling for the 1C query language (SDBL)"
+license = "MIT"
+repository = "https://github.com/dobpilot/open-sdbl"
+keywords = ["1c", "sdbl", "lexer", "query-language"]
+categories = ["compilers", "development-tools"]
+
+[lib]
+name = "open_sdbl"
+path = "src/lib.rs"
+
+[[bin]]
+name = "open-sdbl"
+path = "src/main.rs"
+
+[dependencies]
