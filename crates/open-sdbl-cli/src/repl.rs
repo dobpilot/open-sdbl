@@ -154,12 +154,15 @@ impl ConsoleHelper {
             let (Some(kind), Some(name)) = (object.kind, object.name.as_deref()) else {
                 continue;
             };
-            push_unique(&mut candidates, name);
-            push_unique(&mut candidates, &format!("{}.{name}", kind.as_str()));
-            push_unique(
-                &mut candidates,
-                &format!("{}.{name}", russian_metadata_kind(kind)),
-            );
+            let object_names = [
+                name.to_owned(),
+                format!("{}.{name}", kind.as_str()),
+                format!("{}.{name}", russian_metadata_kind(kind)),
+            ];
+            for object_name in &object_names {
+                push_unique(&mut candidates, object_name);
+            }
+            push_virtual_table_candidates(&mut candidates, kind, &object_names);
             if let Some(table) = object.physical_table.as_deref() {
                 push_unique(&mut candidates, table);
             }
@@ -172,11 +175,7 @@ impl ConsoleHelper {
                 for alias in &field.aliases {
                     push_unique(&mut candidates, alias);
                 }
-                for object_name in [
-                    name.to_owned(),
-                    format!("{}.{name}", kind.as_str()),
-                    format!("{}.{name}", russian_metadata_kind(kind)),
-                ] {
+                for object_name in &object_names {
                     for alias in &field.aliases {
                         push_unique(&mut candidates, &format!("{object_name}.{alias}"));
                     }
@@ -335,6 +334,30 @@ fn push_unique(values: &mut Vec<String>, value: &str) {
             .any(|candidate| candidate.eq_ignore_ascii_case(value))
     {
         values.push(value.to_owned());
+    }
+}
+
+fn push_virtual_table_candidates(
+    candidates: &mut Vec<String>,
+    kind: MetadataKind,
+    object_names: &[String],
+) {
+    let suffixes: &[&str] = match kind {
+        MetadataKind::InformationRegister => &[
+            "СрезПоследних()",
+            "SliceLast()",
+            "СрезПервых()",
+            "SliceFirst()",
+        ],
+        MetadataKind::AccumulationRegister => {
+            &["Остатки()", "Balance()", "Обороты()", "Turnovers()"]
+        }
+        _ => &[],
+    };
+    for object_name in object_names {
+        for suffix in suffixes {
+            push_unique(candidates, &format!("{object_name}.{suffix}"));
+        }
     }
 }
 
@@ -1155,7 +1178,7 @@ mod tests {
     use super::{
         ConsoleHelper, PRESENTATION_POLICY_VERSION, PresentationPlanKey, completion_start,
         decode_input_line, default_presentation_template, footer_text, format_duration,
-        statement_is_complete, timing_line,
+        push_virtual_table_candidates, statement_is_complete, timing_line,
     };
 
     #[test]
@@ -1209,6 +1232,69 @@ mod tests {
         assert_eq!(objects[0].replacement, "Справочник.Договоры");
         let (_, fields) = helper.complete_values("Организация.к", "Организация.к".len());
         assert_eq!(fields[0].replacement, "Организация.Код");
+    }
+
+    #[test]
+    fn completes_virtual_tables_by_resolved_register_kind() {
+        let accumulation_names = [
+            "Остатки".to_owned(),
+            "AccumulationRegister.Остатки".to_owned(),
+            "РегистрНакопления.Остатки".to_owned(),
+        ];
+        let information_names = [
+            "Цены".to_owned(),
+            "InformationRegister.Цены".to_owned(),
+            "РегистрСведений.Цены".to_owned(),
+        ];
+        let mut candidates = Vec::new();
+        push_virtual_table_candidates(
+            &mut candidates,
+            MetadataKind::AccumulationRegister,
+            &accumulation_names,
+        );
+        push_virtual_table_candidates(
+            &mut candidates,
+            MetadataKind::InformationRegister,
+            &information_names,
+        );
+        let helper = ConsoleHelper {
+            candidates,
+            known_identifiers: HashSet::new(),
+        };
+
+        let russian = "из регистрнакопления.остатки.ос";
+        let (_, values) = helper.complete_values(russian, russian.len());
+        assert_eq!(values[0].replacement, "РегистрНакопления.Остатки.Остатки()");
+        let english = "FROM AccumulationRegister.Остатки.ba";
+        let (_, values) = helper.complete_values(english, english.len());
+        assert_eq!(
+            values[0].replacement,
+            "AccumulationRegister.Остатки.Balance()"
+        );
+        let slice = "ИЗ РегистрСведений.Цены.срезп";
+        let (_, values) = helper.complete_values(slice, slice.len());
+        assert_eq!(values.len(), 2);
+        assert!(
+            values
+                .iter()
+                .any(|value| value.replacement.ends_with("СрезПервых()"))
+        );
+        assert!(
+            values
+                .iter()
+                .any(|value| value.replacement.ends_with("СрезПоследних()"))
+        );
+    }
+
+    #[test]
+    fn does_not_attach_virtual_tables_to_catalogs() {
+        let mut candidates = Vec::new();
+        push_virtual_table_candidates(
+            &mut candidates,
+            MetadataKind::Catalog,
+            &["Справочник.Номенклатура".to_owned()],
+        );
+        assert!(candidates.is_empty());
     }
 
     #[test]
