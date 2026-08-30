@@ -55,3 +55,48 @@ or standard input and printing one tab-separated token per line.
 - **WHEN** lexical analysis fails
 - **THEN** a positional diagnostic is written to standard error and the
   process exits unsuccessfully
+
+### Requirement: Recognize COUNT bilingually
+The lexer SHALL classify `COUNT` and `КОЛИЧЕСТВО` case-insensitively as one
+aggregate keyword while preserving the original lexeme and span.
+
+#### Scenario: English and Russian aggregate names
+- **WHEN** input contains `count` or `Количество`
+- **THEN** both tokens have the COUNT keyword kind and retain their spelling
+
+### Requirement: Recognize basic aggregates bilingually
+The lexer SHALL classify `SUM`/`СУММА`, `MIN`/`МИНИМУМ`, and
+`MAX`/`МАКСИМУМ` case-insensitively as their aggregate keyword kinds while
+preserving original spelling and span.
+
+#### Scenario: Russian and English aggregate names
+- **WHEN** input contains each Russian and English aggregate spelling
+- **THEN** every token has its corresponding aggregate keyword kind
+
+### Requirement: Recognize SliceLast keywords
+The lexer SHALL classify `СрезПоследних` and `SliceLast`, case-insensitively,
+as the same SliceLast keyword while preserving the exact source lexeme and
+span.
+
+#### Scenario: Bilingual SliceLast spelling
+- **WHEN** Russian and English SliceLast spellings are tokenized
+- **THEN** both tokens have the SliceLast keyword kind and retain their original
+  text
+
+### Requirement: Recognize SliceFirst keywords
+The lexer SHALL classify `СрезПервых` and `SliceFirst`, case-insensitively,
+as the same SliceFirst keyword while preserving exact source spelling and span.
+
+#### Scenario: Bilingual SliceFirst spelling
+- **WHEN** Russian and English SliceFirst spellings are tokenized
+- **THEN** both tokens have the SliceFirst keyword kind and retain their
+  original text
+
+### Requirement: Recognize accumulation virtual-table keywords
+The lexer SHALL classify `Остатки`/`Balance` and `Обороты`/`Turnovers`
+case-insensitively as their respective keyword kinds while preserving spelling
+and span.
+
+#### Scenario: Bilingual accumulation virtual tables
+- **WHEN** Russian and English Balance and Turnovers spellings are tokenized
+- **THEN** every token has its corresponding keyword kind and original text
