@@ -29,6 +29,54 @@ fn recognizes_russian_and_english_keywords_case_insensitively() {
 }
 
 #[test]
+fn recognizes_count_bilingually() {
+    let tokens = tokenize("count Количество КОЛИЧЕСТВО COUNT").unwrap();
+    assert!(
+        tokens
+            .iter()
+            .all(|token| token.kind == TokenKind::Keyword(Keyword::Count))
+    );
+}
+
+#[test]
+fn recognizes_sum_min_and_max_bilingually() {
+    let tokens = tokenize("sum Сумма min Минимум max Максимум").unwrap();
+    assert_eq!(tokens[0].kind, TokenKind::Keyword(Keyword::Sum));
+    assert_eq!(tokens[1].kind, TokenKind::Keyword(Keyword::Sum));
+    assert_eq!(tokens[2].kind, TokenKind::Keyword(Keyword::Min));
+    assert_eq!(tokens[3].kind, TokenKind::Keyword(Keyword::Min));
+    assert_eq!(tokens[4].kind, TokenKind::Keyword(Keyword::Max));
+    assert_eq!(tokens[5].kind, TokenKind::Keyword(Keyword::Max));
+}
+
+#[test]
+fn recognizes_slice_last_bilingually() {
+    let tokens = tokenize("СрезПоследних SliceLast").unwrap();
+    assert_eq!(tokens[0].kind, TokenKind::Keyword(Keyword::SliceLast));
+    assert_eq!(tokens[0].lexeme, "СрезПоследних");
+    assert_eq!(tokens[1].kind, TokenKind::Keyword(Keyword::SliceLast));
+    assert_eq!(tokens[1].lexeme, "SliceLast");
+}
+
+#[test]
+fn recognizes_slice_first_bilingually() {
+    let tokens = tokenize("СрезПервых SliceFirst").unwrap();
+    assert_eq!(tokens[0].kind, TokenKind::Keyword(Keyword::SliceFirst));
+    assert_eq!(tokens[0].lexeme, "СрезПервых");
+    assert_eq!(tokens[1].kind, TokenKind::Keyword(Keyword::SliceFirst));
+    assert_eq!(tokens[1].lexeme, "SliceFirst");
+}
+
+#[test]
+fn recognizes_accumulation_virtual_tables_bilingually() {
+    let tokens = tokenize("Остатки Balance Обороты Turnovers").unwrap();
+    assert_eq!(tokens[0].kind, TokenKind::Keyword(Keyword::Balance));
+    assert_eq!(tokens[1].kind, TokenKind::Keyword(Keyword::Balance));
+    assert_eq!(tokens[2].kind, TokenKind::Keyword(Keyword::Turnovers));
+    assert_eq!(tokens[3].kind, TokenKind::Keyword(Keyword::Turnovers));
+}
+
+#[test]
 fn reports_the_opening_quote_of_an_unterminated_string() {
     let error = tokenize("\n  \"text").unwrap_err();
 

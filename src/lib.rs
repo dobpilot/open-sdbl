@@ -1,7 +1,14 @@
-//! Lexical analysis for the 1C query language (SDBL).
+#![warn(missing_docs, rustdoc::all)]
+
+//! Dependency-free foundations for the 1C query language and metadata.
 //!
-//! The crate intentionally implements a bounded lexical layer. It preserves
-//! original source spelling and byte spans and makes no semantic decisions.
+//! The crate generates query text and decodes caller-provided data. It does
+//! not perform process, filesystem, environment, terminal, or network I/O.
+
+/// Reading and resolving metadata stored by the 1C platform.
+pub mod metadata;
+/// Bounded query parsing and PostgreSQL generation through resolved metadata.
+pub mod query;
 
 use std::fmt;
 
@@ -87,6 +94,26 @@ pub enum Keyword {
     Else,
     /// `КОНЕЦ` or `END`.
     End,
+    /// `ПРЕДСТАВЛЕНИЕССЫЛКИ` or `REFPRESENTATION`.
+    RefPresentation,
+    /// `ПРЕДСТАВЛЕНИЕ` or `PRESENTATION`.
+    Presentation,
+    /// `КОЛИЧЕСТВО` or `COUNT`.
+    Count,
+    /// `СУММА` or `SUM`.
+    Sum,
+    /// `МИНИМУМ` or `MIN`.
+    Min,
+    /// `МАКСИМУМ` or `MAX`.
+    Max,
+    /// `СРЕЗПОСЛЕДНИХ` or `SLICELAST`.
+    SliceLast,
+    /// `СРЕЗПЕРВЫХ` or `SLICEFIRST`.
+    SliceFirst,
+    /// `ОСТАТКИ` or `BALANCE`.
+    Balance,
+    /// `ОБОРОТЫ` or `TURNOVERS`.
+    Turnovers,
 }
 
 impl Keyword {
@@ -127,6 +154,16 @@ impl Keyword {
             Self::Then => "THEN",
             Self::Else => "ELSE",
             Self::End => "END",
+            Self::RefPresentation => "REFPRESENTATION",
+            Self::Presentation => "PRESENTATION",
+            Self::Count => "COUNT",
+            Self::Sum => "SUM",
+            Self::Min => "MIN",
+            Self::Max => "MAX",
+            Self::SliceLast => "SLICELAST",
+            Self::SliceFirst => "SLICEFIRST",
+            Self::Balance => "BALANCE",
+            Self::Turnovers => "TURNOVERS",
         }
     }
 }
@@ -483,6 +520,18 @@ fn keyword(text: &str) -> Option<Keyword> {
         "ТОГДА" | "THEN" => Some(Keyword::Then),
         "ИНАЧЕ" | "ELSE" => Some(Keyword::Else),
         "КОНЕЦ" | "END" => Some(Keyword::End),
+        "ПРЕДСТАВЛЕНИЕССЫЛКИ" | "REFPRESENTATION" => {
+            Some(Keyword::RefPresentation)
+        }
+        "ПРЕДСТАВЛЕНИЕ" | "PRESENTATION" => Some(Keyword::Presentation),
+        "КОЛИЧЕСТВО" | "COUNT" => Some(Keyword::Count),
+        "СУММА" | "SUM" => Some(Keyword::Sum),
+        "МИНИМУМ" | "MIN" => Some(Keyword::Min),
+        "МАКСИМУМ" | "MAX" => Some(Keyword::Max),
+        "СРЕЗПОСЛЕДНИХ" | "SLICELAST" => Some(Keyword::SliceLast),
+        "СРЕЗПЕРВЫХ" | "SLICEFIRST" => Some(Keyword::SliceFirst),
+        "ОСТАТКИ" | "BALANCE" => Some(Keyword::Balance),
+        "ОБОРОТЫ" | "TURNOVERS" => Some(Keyword::Turnovers),
         _ => None,
     }
 }

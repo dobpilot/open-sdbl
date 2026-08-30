@@ -1,0 +1,24 @@
+[package]
+name = "open-sdbl-cli"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+description = "Command-line applications for open-sdbl"
+license = "GPL-3.0-only"
+repository = "https://github.com/dobpilot/open-sdbl"
+publish = false
+
+[[bin]]
+name = "open-sdbl"
+path = "src/main.rs"
+doc = false
+
+[dependencies]
+moka = { version = "0.12.16", features = ["future"] }
+open-sdbl = { path = "../.." }
+rustyline = { version = "18.0.1", default-features = false }
+tokio = { version = "1.53.1", features = ["io-std", "io-util", "macros", "rt-multi-thread"] }
+tokio-postgres = "0.7.18"
+
+[target.'cfg(target_os = "linux")'.dependencies]
+libc = "0.2"
