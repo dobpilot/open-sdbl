@@ -574,3 +574,108 @@ SHALL NOT offer register virtual tables for unrelated metadata kinds.
 - **WHEN** completion candidates are built for a catalog or another unrelated
   metadata kind
 - **THEN** no register virtual-table suffix is attached to that object
+
+### Requirement: Route CLI PostgreSQL connections through an optional SOCKS5 proxy
+The `open-sdbl-cli` package SHALL accept `--socks5-proxy HOST:PORT` for
+`metadata postgres`, `console postgres`, and the `repl` compatibility alias.
+When present, the CLI SHALL establish the PostgreSQL byte stream with the
+SOCKS5 CONNECT command using the no-authentication method. It SHALL send a
+non-IP PostgreSQL host to the proxy as a domain name rather than resolving it
+locally. When absent, the CLI SHALL retain its direct PostgreSQL connection
+behavior.
+
+#### Scenario: Proxied metadata connection
+- **WHEN** `metadata postgres` receives a valid SOCKS5 proxy endpoint
+- **THEN** its metadata session uses a SOCKS5 CONNECT tunnel to the requested
+  PostgreSQL host and port
+
+#### Scenario: Proxied console connection
+- **WHEN** `console postgres` or `repl postgres` receives a valid SOCKS5 proxy
+  endpoint
+- **THEN** its complete PostgreSQL session uses the negotiated SOCKS5 tunnel
+
+#### Scenario: Proxy-side database name resolution
+- **WHEN** the PostgreSQL host is a DNS name and a SOCKS5 proxy is configured
+- **THEN** the CONNECT request carries that name in SOCKS5 domain-address form
+
+#### Scenario: Direct connection compatibility
+- **WHEN** no SOCKS5 proxy option is provided
+- **THEN** the CLI connects directly with the existing PostgreSQL connection
+  and authentication options
+
+#### Scenario: Invalid proxy endpoint
+- **WHEN** the proxy value lacks a host, lacks a valid nonzero port, or contains
+  an unbracketed IPv6 address
+- **THEN** the CLI reports a usage error before attempting a connection
+
+#### Scenario: Proxy negotiation failure
+- **WHEN** the proxy cannot be reached, requires another authentication method,
+  times out, or rejects the CONNECT request
+- **THEN** the CLI reports a SOCKS5 connection error without exposing database
+  credentials
+
+### Requirement: Bound proxied PostgreSQL startup
+After a SOCKS5 proxy accepts the CONNECT request, the `open-sdbl-cli` package
+SHALL apply its connection timeout to PostgreSQL startup and authentication over
+the tunneled stream. Expiration SHALL close the incomplete stream and report
+that PostgreSQL startup through SOCKS5 timed out. This deadline SHALL NOT alter
+the existing direct connection path.
+
+#### Scenario: Silent database target after SOCKS5 CONNECT
+- **WHEN** the proxy establishes the requested tunnel but the database endpoint
+  returns no PostgreSQL startup or authentication response
+- **THEN** the CLI terminates the connection attempt after the configured
+  connection timeout with a PostgreSQL-through-SOCKS5 timeout error
+
+#### Scenario: Responsive PostgreSQL startup
+- **WHEN** PostgreSQL completes startup and authentication within the deadline
+- **THEN** the CLI starts the connection driver and continues metadata loading
+
+#### Scenario: Direct connection compatibility
+- **WHEN** no SOCKS5 proxy is configured
+- **THEN** the existing `tokio-postgres` direct connection behavior remains in
+  effect
+
+### Requirement: Build the completion catalog from indexed metadata
+The interactive console SHALL project queryable fields at most once per live
+named object during each completion-catalog rebuild, resolve reference targets
+through indexed physical-table identity, and deduplicate candidates through
+normalized membership rather than repeated full candidate scans. It SHALL
+preserve the existing commands, keywords, object spellings, field aliases,
+qualified fields, reference paths, case-insensitive uniqueness, and sorted
+completion behavior.
+
+#### Scenario: Duplicate spelling with different case
+- **WHEN** multiple metadata sources contribute candidates differing only by
+  case
+- **THEN** only the first spelling is retained, as before
+
+#### Scenario: Qualified field completion
+- **WHEN** a resolved object exposes a queryable field alias
+- **THEN** completion includes the same bare and object-qualified candidates
+
+#### Scenario: Reference path completion
+- **WHEN** a queryable reference field has a uniquely resolved target object
+- **THEN** completion includes the same source-alias and target-alias paths
+  without reprojecting the target for each reference field
+
+### Requirement: Report metadata-loading progress without contaminating output
+During PostgreSQL metadata acquisition, the CLI SHALL show a rate-limited
+progress bar with phase, completed/total Config resources, compressed bytes,
+percentage, and elapsed completion summary only when standard error is a
+terminal. Progress SHALL be written to standard error. Standard output and
+non-TTY standard error SHALL contain no progress rendering or terminal control
+sequences.
+
+#### Scenario: Interactive metadata loading
+- **WHEN** the CLI acquires metadata with standard error attached to a terminal
+- **THEN** the user sees phase changes and Config completion advance to 100%
+
+#### Scenario: Redirected metadata snapshot
+- **WHEN** `open-sdbl metadata postgres` stdout is redirected or piped
+- **THEN** stdout contains only the existing tabular snapshot records
+
+#### Scenario: Noninteractive diagnostics
+- **WHEN** standard error is not a terminal
+- **THEN** progress rendering is suppressed while ordinary errors remain
+  available on standard error

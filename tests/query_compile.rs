@@ -5,7 +5,7 @@ use open_sdbl::metadata::{
 };
 use open_sdbl::query::{
     PresentationExpression, PresentationPlan, compile_postgres_query, find_metadata_object,
-    prepare_postgres_query, queryable_fields,
+    prepare_postgres_query, queryable_field_catalog, queryable_fields,
 };
 
 #[test]
@@ -730,6 +730,25 @@ fn exposes_standard_and_custom_fields_for_description() {
             .as_str(),
         "b8bac76b-c91b-4d78-8a70-ffa39f8de694"
     );
+}
+
+#[test]
+fn queryable_field_catalog_reflects_current_mutable_snapshot_vectors() {
+    let mut snapshot = snapshot();
+    snapshot.fields[0].name = Some("RenamedAttribute".to_owned());
+    let object = &snapshot.objects[0];
+    let object_id = open_sdbl::metadata::ObjectId::from(&object.guid);
+    let expected = queryable_fields(&snapshot, object).unwrap();
+    let catalog = queryable_field_catalog(&snapshot);
+    assert_eq!(catalog.get(&object_id), Some(&expected));
+    assert!(
+        catalog[&object_id]
+            .iter()
+            .any(|field| field.name == "RenamedAttribute")
+    );
+
+    snapshot.live_tables.clear();
+    assert!(!queryable_field_catalog(&snapshot).contains_key(&object_id));
 }
 
 #[test]

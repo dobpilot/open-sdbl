@@ -293,6 +293,14 @@ pub fn resolve_metadata(
     schema: SchemaStorage,
     live_tables: Vec<LiveTable>,
 ) -> MetadataSnapshot {
+    let live_table_by_name = index_live_tables(&live_tables);
+    let schema_tables: HashSet<&str> = schema
+        .tables
+        .iter()
+        .map(|table| table.name.as_str())
+        .collect();
+    let schema_field_owners = index_schema_field_owners(&schema);
+    let live_fields = index_live_fields(&live_tables);
     let descriptor_by_guid: HashMap<&Guid, &ConfigDescriptor> = descriptors
         .iter()
         .map(|descriptor| (&descriptor.object_guid, descriptor))
@@ -306,16 +314,16 @@ pub fn resolve_metadata(
         }
         let physical_table = format!("{}{}", kind.physical_prefix(), entry.number);
         let descriptor = descriptor_by_guid.get(&entry.guid).copied();
-        let live_table = live_tables
-            .iter()
-            .find(|table| table.name.eq_ignore_ascii_case(&physical_table));
+        let live_table = live_table_by_name
+            .get(&physical_table.to_ascii_lowercase())
+            .map(|position| &live_tables[*position]);
         objects.push(MetadataObject {
             guid: entry.guid.clone(),
             kind: Some(kind),
             name: descriptor.map(|value| value.name.clone()),
             marker: descriptor.map(|value| value.marker.clone()),
             number: Some(entry.number),
-            declared: schema.table(&physical_table).is_some(),
+            declared: schema_tables.contains(physical_table.trim_start_matches('_')),
             live: live_table.is_some(),
             code_allowed_length: infer_allowed_length(live_table, "_code"),
             number_allowed_length: infer_allowed_length(live_table, "_number"),
@@ -350,29 +358,11 @@ pub fn resolve_metadata(
     {
         let logical_name = format!("Fld{}", entry.number);
         let physical_name = format!("_{logical_name}");
-        let owner_tables: Vec<String> = schema
-            .tables
-            .iter()
-            .filter(|table| {
-                table.columns.iter().any(|column| {
-                    column.name == logical_name
-                        || column
-                            .name
-                            .strip_prefix(&logical_name)
-                            .is_some_and(|suffix| suffix.starts_with('_'))
-                })
-            })
-            .map(super::SchemaTable::physical_name)
-            .collect();
-        let live = live_tables.iter().any(|table| {
-            table.columns.iter().any(|column| {
-                let column = recase_postgres_identifier(&column.name);
-                column == physical_name
-                    || column
-                        .strip_prefix(&physical_name)
-                        .is_some_and(|suffix| suffix.starts_with('_'))
-            })
-        });
+        let owner_tables = schema_field_owners
+            .get(&logical_name)
+            .cloned()
+            .unwrap_or_default();
+        let live = live_fields.contains(&logical_name);
         fields.push(MetadataField {
             guid: entry.guid.clone(),
             name: descriptor_by_guid
@@ -390,9 +380,9 @@ pub fn resolve_metadata(
         });
     }
 
-    let indexes = compare_indexes(&schema, &live_tables, &db_names);
+    let indexes = compare_indexes(&schema, &live_tables, &live_table_by_name, &db_names);
 
-    let index = build_metadata_index(&objects, &fields, &live_tables);
+    let index = build_metadata_index(&objects, &fields, &live_tables, &live_table_by_name);
 
     MetadataSnapshot {
         db_names,
@@ -406,10 +396,62 @@ pub fn resolve_metadata(
     }
 }
 
+fn index_live_tables(live_tables: &[LiveTable]) -> HashMap<String, usize> {
+    let mut by_name = HashMap::with_capacity(live_tables.len());
+    for (position, table) in live_tables.iter().enumerate() {
+        by_name
+            .entry(table.name.to_ascii_lowercase())
+            .or_insert(position);
+    }
+    by_name
+}
+
+fn index_schema_field_owners(schema: &SchemaStorage) -> HashMap<String, Vec<String>> {
+    let mut owners = HashMap::<String, Vec<String>>::new();
+    for table in &schema.tables {
+        let mut fields_in_table = HashSet::new();
+        for column in &table.columns {
+            let Some(field) = canonical_field_base(&column.name) else {
+                continue;
+            };
+            if fields_in_table.insert(field) {
+                owners
+                    .entry(field.to_owned())
+                    .or_default()
+                    .push(table.physical_name());
+            }
+        }
+    }
+    owners
+}
+
+fn index_live_fields(live_tables: &[LiveTable]) -> HashSet<String> {
+    live_tables
+        .iter()
+        .flat_map(|table| &table.columns)
+        .filter_map(|column| {
+            let canonical = recase_postgres_identifier(&column.name);
+            canonical
+                .strip_prefix('_')
+                .and_then(canonical_field_base)
+                .map(str::to_owned)
+        })
+        .collect()
+}
+
+fn canonical_field_base(identifier: &str) -> Option<&str> {
+    let base = identifier
+        .split_once('_')
+        .map_or(identifier, |(base, _)| base);
+    let number = base.strip_prefix("Fld")?;
+    (!number.is_empty() && number.bytes().all(|byte| byte.is_ascii_digit())).then_some(base)
+}
+
 fn build_metadata_index(
     objects: &[MetadataObject],
     fields: &[MetadataField],
     live_tables: &[LiveTable],
+    live_table_by_name: &HashMap<String, usize>,
 ) -> MetadataIndex {
     let mut index = MetadataIndex::default();
     let mut owners_by_table = HashMap::<String, ObjectId>::new();
@@ -428,9 +470,9 @@ fn build_metadata_index(
         }
         if let Some(table) = object.physical_table.as_deref() {
             owners_by_table.insert(normalize_name(table), id);
-            if let Some(live) = live_tables
-                .iter()
-                .find(|live| live.name.eq_ignore_ascii_case(table))
+            if let Some(live) = live_table_by_name
+                .get(&table.to_ascii_lowercase())
+                .map(|position| &live_tables[*position])
             {
                 for column in &live.columns {
                     let logical = collapse_logical_fields([column.name.as_str()])
@@ -455,16 +497,15 @@ fn build_metadata_index(
     for (position, field) in fields.iter().enumerate() {
         let id = AttributeId::from(&field.guid);
         insert_slot(&mut index.attributes_by_id, id, position);
-        let Some(name) = field.name.as_deref() else {
-            continue;
-        };
         for owner_table in &field.owner_tables {
             if let Some(owner) = owners_by_table.get(&normalize_name(owner_table)) {
-                insert_slot(
-                    &mut index.attributes_by_owner_name,
-                    (*owner, normalize_name(name)),
-                    position,
-                );
+                if let Some(name) = field.name.as_deref() {
+                    insert_slot(
+                        &mut index.attributes_by_owner_name,
+                        (*owner, normalize_name(name)),
+                        position,
+                    );
+                }
             }
         }
     }
@@ -503,14 +544,15 @@ fn infer_allowed_length(table: Option<&LiveTable>, column_name: &str) -> Option<
 fn compare_indexes(
     schema: &SchemaStorage,
     live_tables: &[LiveTable],
+    live_table_by_name: &HashMap<String, usize>,
     db_names: &DbNames,
 ) -> Vec<IndexComparison> {
     let mut comparisons = Vec::new();
     for table in &schema.tables {
         let physical_table = table.physical_name();
-        let live_table = live_tables
-            .iter()
-            .find(|live| live.name.eq_ignore_ascii_case(&physical_table));
+        let live_table = live_table_by_name
+            .get(&physical_table.to_ascii_lowercase())
+            .map(|position| &live_tables[*position]);
         for index in &table.indexes {
             let logical_key = normalize_index_key(&index.columns, db_names);
             let matching = live_table.and_then(|table| {
@@ -540,8 +582,11 @@ fn logical_keys_equal(left: &[String], right: &[String]) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::{AllowedLength, LiveTable, logical_keys_equal};
-    use crate::metadata::recase_postgres_identifier;
+    use super::{
+        AllowedLength, LiveColumn, LiveTable, index_live_fields, index_schema_field_owners,
+        logical_keys_equal,
+    };
+    use crate::metadata::{SchemaColumn, SchemaStorage, SchemaTable, recase_postgres_identifier};
 
     #[test]
     fn live_names_are_recased_only_at_the_catalog_boundary() {
@@ -576,5 +621,58 @@ mod tests {
             &["UserIdHash".to_owned(), "ObjectKey".to_owned()],
             &["useridhash".to_owned(), "objectkey".to_owned()]
         ));
+    }
+
+    #[test]
+    fn indexes_schema_field_owners_once_in_table_order() {
+        let schema = SchemaStorage {
+            tables: vec![
+                schema_table("Reference1", &["Fld12", "Fld12_TYPE", "Fld123"]),
+                schema_table("Document2", &["Fld12_RRRef"]),
+            ],
+        };
+
+        let owners = index_schema_field_owners(&schema);
+        assert_eq!(
+            owners.get("Fld12").unwrap(),
+            &["_Reference1".to_owned(), "_Document2".to_owned()]
+        );
+        assert_eq!(owners.get("Fld123").unwrap(), &["_Reference1".to_owned()]);
+    }
+
+    #[test]
+    fn indexes_exact_and_compound_live_fields_without_prefix_collisions() {
+        let live = vec![LiveTable {
+            name: "_reference1".to_owned(),
+            columns: ["_fld5", "_fld12_type", "_fld123", "_fld7oops"]
+                .into_iter()
+                .map(|name| LiveColumn {
+                    name: name.to_owned(),
+                    data_type: "bytea".to_owned(),
+                })
+                .collect(),
+            indexes: Vec::new(),
+        }];
+
+        let fields = index_live_fields(&live);
+        assert!(fields.contains("Fld5"));
+        assert!(fields.contains("Fld12"));
+        assert!(fields.contains("Fld123"));
+        assert!(!fields.contains("Fld7"));
+    }
+
+    fn schema_table(name: &str, columns: &[&str]) -> SchemaTable {
+        SchemaTable {
+            name: name.to_owned(),
+            number: 0,
+            columns: columns
+                .iter()
+                .map(|name| SchemaColumn {
+                    name: (*name).to_owned(),
+                    types: Vec::new(),
+                })
+                .collect(),
+            indexes: Vec::new(),
+        }
     }
 }

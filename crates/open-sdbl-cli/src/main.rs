@@ -2,16 +2,22 @@ use std::collections::BTreeMap;
 use std::env;
 use std::fmt;
 use std::fs;
-use std::io::{self, Read};
+use std::io::{self, IsTerminal, Read, Write};
+use std::net::IpAddr;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
+use futures_util::{Stream, StreamExt};
 use open_sdbl::metadata::{
     LiveColumn, LiveIndex, LiveTable, MetadataError, MetadataSnapshot, PostgresMetadataQueries,
     parse_config_descriptors, parse_db_names, parse_schema_storage, resolve_metadata,
 };
 use open_sdbl::{Diagnostic, tokenize};
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::net::TcpStream;
+use tokio::time::timeout;
+use tokio_postgres::types::ToSql;
 use tokio_postgres::{IsolationLevel, NoTls, Row, Transaction};
 
 mod repl;
@@ -20,8 +26,185 @@ const HELP: &str = "open-sdbl — tooling for the 1C query language\n\n\
 Usage:\n  open-sdbl lex [FILE|-]\n  open-sdbl metadata postgres --host HOST --database DB --user USER [OPTIONS]\n  open-sdbl console postgres --host HOST --database DB --user USER [OPTIONS]\n  open-sdbl --help\n\n\
 Commands:\n  lex       Print lexical tokens; reads standard input when FILE is '-' or omitted\n  metadata  Read and resolve 1C information-base metadata\n\n\
   console   Run 1C queries and inspect resolved metadata interactively\n\n\
-PostgreSQL options:\n  --port PORT   PostgreSQL port (default: 5432)\n\n\
+PostgreSQL options:\n  --port PORT                 PostgreSQL port (default: 5432)\n  --socks5-proxy HOST:PORT    Route through a SOCKS5 proxy (no authentication)\n\n\
 Authentication:\n  PGPASSWORD, PGPASSFILE, or $HOME/.pgpass\n";
+
+const CONNECTION_TIMEOUT: Duration = Duration::from_secs(10);
+const PROGRESS_REDRAW_INTERVAL: Duration = Duration::from_millis(50);
+const PROGRESS_BAR_WIDTH: usize = 24;
+const CONFIG_DECODE_BATCH_SIZE: usize = 256;
+
+struct MetadataProgress {
+    enabled: bool,
+    active: bool,
+    phase: &'static str,
+    completed_resources: u64,
+    total_resources: u64,
+    completed_bytes: u64,
+    total_bytes: u64,
+    started: Instant,
+    last_draw: Option<Instant>,
+}
+
+impl MetadataProgress {
+    fn new() -> Self {
+        Self {
+            enabled: io::stderr().is_terminal(),
+            active: false,
+            phase: "starting",
+            completed_resources: 0,
+            total_resources: 0,
+            completed_bytes: 0,
+            total_bytes: 0,
+            started: Instant::now(),
+            last_draw: None,
+        }
+    }
+
+    #[cfg(test)]
+    fn disabled() -> Self {
+        let mut progress = Self::new();
+        progress.enabled = false;
+        progress
+    }
+
+    fn phase(&mut self, phase: &'static str) {
+        self.phase = phase;
+        self.draw(true);
+    }
+
+    fn config_totals(&mut self, resources: u64, bytes: u64) {
+        self.total_resources = resources;
+        self.total_bytes = bytes;
+        self.phase("Config");
+    }
+
+    fn advance_config(&mut self, resources: usize, bytes: usize) {
+        self.completed_resources = self.completed_resources.saturating_add(resources as u64);
+        self.completed_bytes = self.completed_bytes.saturating_add(bytes as u64);
+        self.draw(false);
+    }
+
+    fn finish(mut self) {
+        if !self.enabled {
+            return;
+        }
+        self.phase = "complete";
+        self.completed_resources = self.total_resources;
+        self.completed_bytes = self.total_bytes;
+        let line = render_metadata_progress(
+            self.phase,
+            self.completed_resources,
+            self.total_resources,
+            self.completed_bytes,
+            self.total_bytes,
+            PROGRESS_BAR_WIDTH,
+        );
+        let mut stderr = io::stderr().lock();
+        let _ = writeln!(
+            stderr,
+            "\r\x1b[2K{line} in {}",
+            format_elapsed(self.started.elapsed())
+        );
+        let _ = stderr.flush();
+        self.active = false;
+    }
+
+    fn draw(&mut self, force: bool) {
+        if !self.enabled {
+            return;
+        }
+        let now = Instant::now();
+        if !force
+            && self
+                .last_draw
+                .is_some_and(|last| now.duration_since(last) < PROGRESS_REDRAW_INTERVAL)
+        {
+            return;
+        }
+        self.last_draw = Some(now);
+        self.active = true;
+        let line = render_metadata_progress(
+            self.phase,
+            self.completed_resources,
+            self.total_resources,
+            self.completed_bytes,
+            self.total_bytes,
+            PROGRESS_BAR_WIDTH,
+        );
+        let mut stderr = io::stderr().lock();
+        let _ = write!(stderr, "\r\x1b[2K{line}");
+        let _ = stderr.flush();
+    }
+}
+
+impl Drop for MetadataProgress {
+    fn drop(&mut self) {
+        if self.enabled && self.active {
+            let mut stderr = io::stderr().lock();
+            let _ = write!(stderr, "\r\x1b[2K");
+            let _ = stderr.flush();
+        }
+    }
+}
+
+fn render_metadata_progress(
+    phase: &str,
+    completed_resources: u64,
+    total_resources: u64,
+    completed_bytes: u64,
+    total_bytes: u64,
+    width: usize,
+) -> String {
+    let ratio = if total_bytes != 0 {
+        completed_bytes as f64 / total_bytes as f64
+    } else if total_resources != 0 {
+        completed_resources as f64 / total_resources as f64
+    } else {
+        0.0
+    }
+    .clamp(0.0, 1.0);
+    let filled = ((ratio * width as f64).floor() as usize).min(width);
+    let bar = format!("{}{}", "#".repeat(filled), "-".repeat(width - filled));
+    let resources = if total_resources == 0 {
+        format!("{completed_resources}/?")
+    } else {
+        format!("{completed_resources}/{total_resources}")
+    };
+    let bytes = if total_bytes == 0 {
+        format!("{}/?", format_bytes(completed_bytes))
+    } else {
+        format!(
+            "{}/{}",
+            format_bytes(completed_bytes),
+            format_bytes(total_bytes)
+        )
+    };
+    format!(
+        "metadata [{bar}] {:>5.1}% {phase} {resources} {bytes}",
+        ratio * 100.0
+    )
+}
+
+fn format_bytes(bytes: u64) -> String {
+    const KIB: u64 = 1024;
+    const MIB: u64 = 1024 * KIB;
+    if bytes >= MIB {
+        format!("{:.1} MiB", bytes as f64 / MIB as f64)
+    } else if bytes >= KIB {
+        format!("{:.1} KiB", bytes as f64 / KIB as f64)
+    } else {
+        format!("{bytes} B")
+    }
+}
+
+fn format_elapsed(elapsed: Duration) -> String {
+    if elapsed.as_secs() != 0 {
+        format!("{:.1} s", elapsed.as_secs_f64())
+    } else {
+        format!("{} ms", elapsed.as_millis())
+    }
+}
 
 #[tokio::main]
 async fn main() -> ExitCode {
@@ -129,6 +312,13 @@ fn parse_postgres_connection(
                     CliError::Usage(format!("invalid PostgreSQL port {value:?}\n\n{HELP}"))
                 })?;
             }
+            "--socks5-proxy" => {
+                connection.socks5_proxy = Some(parse_socks5_proxy(&value).map_err(|reason| {
+                    CliError::Usage(format!(
+                        "invalid SOCKS5 proxy {value:?}: {reason}\n\n{HELP}"
+                    ))
+                })?);
+            }
             _ => {
                 return Err(CliError::Usage(format!(
                     "unknown {command} option {option:?}\n\n{HELP}"
@@ -151,6 +341,7 @@ struct PostgresConnection {
     port: u16,
     database: String,
     user: String,
+    socks5_proxy: Option<Socks5Proxy>,
 }
 
 impl Default for PostgresConnection {
@@ -160,8 +351,45 @@ impl Default for PostgresConnection {
             port: 5432,
             database: String::new(),
             user: String::new(),
+            socks5_proxy: None,
         }
     }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct Socks5Proxy {
+    host: String,
+    port: u16,
+}
+
+fn parse_socks5_proxy(value: &str) -> Result<Socks5Proxy, &'static str> {
+    let (host, port) = if let Some(bracketed) = value.strip_prefix('[') {
+        let (host, port) = bracketed.split_once("]:").ok_or("expected [IPv6]:PORT")?;
+        match host.parse::<IpAddr>() {
+            Ok(IpAddr::V6(_)) => (host, port),
+            _ => return Err("brackets are only valid around an IPv6 address"),
+        }
+    } else {
+        let (host, port) = value.rsplit_once(':').ok_or("expected HOST:PORT")?;
+        if host.contains(':') {
+            return Err("IPv6 addresses must be enclosed in brackets");
+        }
+        (host, port)
+    };
+
+    if host.is_empty() || host.trim() != host {
+        return Err("host must not be empty or contain surrounding whitespace");
+    }
+    let port = port
+        .parse::<u16>()
+        .map_err(|_| "port must be an integer from 1 to 65535")?;
+    if port == 0 {
+        return Err("port must be an integer from 1 to 65535");
+    }
+    Ok(Socks5Proxy {
+        host: host.to_owned(),
+        port,
+    })
 }
 
 struct PostgresSession {
@@ -177,19 +405,22 @@ impl PostgresSession {
             .port(connection.port)
             .dbname(&connection.database)
             .user(&connection.user)
-            .connect_timeout(Duration::from_secs(10));
+            .connect_timeout(CONNECTION_TIMEOUT);
         if let Some(password) = postgres_password(connection)? {
             configuration.password(password);
         }
 
-        let (client, connection_driver) = configuration
-            .connect(NoTls)
-            .await
-            .map_err(CliError::database_connection)?;
-        Ok(Self {
-            client,
-            driver: tokio::spawn(connection_driver),
-        })
+        let (client, driver) = if let Some(proxy) = &connection.socks5_proxy {
+            let stream = connect_socks5(proxy, &connection.host, connection.port).await?;
+            connect_postgres_raw(&configuration, stream, CONNECTION_TIMEOUT).await?
+        } else {
+            let (client, connection_driver) = configuration
+                .connect(NoTls)
+                .await
+                .map_err(CliError::database_connection)?;
+            (client, tokio::spawn(connection_driver))
+        };
+        Ok(Self { client, driver })
     }
 
     async fn metadata(&mut self) -> Result<MetadataSnapshot, CliError> {
@@ -248,36 +479,307 @@ impl PostgresSession {
     }
 }
 
+async fn connect_postgres_raw(
+    configuration: &tokio_postgres::Config,
+    stream: TcpStream,
+    connect_timeout: Duration,
+) -> Result<
+    (
+        tokio_postgres::Client,
+        tokio::task::JoinHandle<Result<(), tokio_postgres::Error>>,
+    ),
+    CliError,
+> {
+    match timeout(connect_timeout, configuration.connect_raw(stream, NoTls)).await {
+        Ok(Ok((client, connection_driver))) => Ok((client, tokio::spawn(connection_driver))),
+        Ok(Err(error)) => Err(CliError::database_connection(error)),
+        Err(_) => Err(CliError::Database(format!(
+            "PostgreSQL startup through SOCKS5 timed out after {connect_timeout:?}"
+        ))),
+    }
+}
+
+async fn connect_socks5(
+    proxy: &Socks5Proxy,
+    target_host: &str,
+    target_port: u16,
+) -> Result<TcpStream, CliError> {
+    let request =
+        socks5_connect_request(target_host, target_port).map_err(CliError::socks5_connection)?;
+    let negotiation = async {
+        let mut stream = TcpStream::connect((proxy.host.as_str(), proxy.port)).await?;
+
+        stream.write_all(&[0x05, 0x01, 0x00]).await?;
+        let mut method = [0_u8; 2];
+        stream.read_exact(&mut method).await?;
+        match method {
+            [0x05, 0x00] => {}
+            [0x05, 0xff] => {
+                return Err(io::Error::new(
+                    io::ErrorKind::PermissionDenied,
+                    "proxy rejected unauthenticated SOCKS5 access",
+                ));
+            }
+            [0x05, selected] => {
+                return Err(io::Error::new(
+                    io::ErrorKind::Unsupported,
+                    format!("proxy selected unsupported authentication method 0x{selected:02x}"),
+                ));
+            }
+            [version, _] => {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    format!("proxy returned unexpected SOCKS version 0x{version:02x}"),
+                ));
+            }
+        }
+
+        stream.write_all(&request).await?;
+        let mut response = [0_u8; 4];
+        stream.read_exact(&mut response).await?;
+        if response[0] != 0x05 {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!(
+                    "proxy returned unexpected SOCKS version 0x{:02x}",
+                    response[0]
+                ),
+            ));
+        }
+        if response[2] != 0x00 {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "proxy returned a malformed SOCKS5 response",
+            ));
+        }
+        if response[1] != 0x00 {
+            return Err(io::Error::new(
+                io::ErrorKind::ConnectionRefused,
+                socks5_reply_message(response[1]),
+            ));
+        }
+
+        let bound_address_len = match response[3] {
+            0x01 => 4,
+            0x03 => {
+                let mut length = [0_u8; 1];
+                stream.read_exact(&mut length).await?;
+                usize::from(length[0])
+            }
+            0x04 => 16,
+            address_type => {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    format!("proxy returned unknown address type 0x{address_type:02x}"),
+                ));
+            }
+        };
+        let mut bound_address_and_port = vec![0_u8; bound_address_len + 2];
+        stream.read_exact(&mut bound_address_and_port).await?;
+        Ok(stream)
+    };
+
+    match timeout(CONNECTION_TIMEOUT, negotiation).await {
+        Ok(Ok(stream)) => Ok(stream),
+        Ok(Err(error)) => Err(CliError::socks5_connection(error)),
+        Err(_) => Err(CliError::socks5_connection(format!(
+            "timed out after {} seconds",
+            CONNECTION_TIMEOUT.as_secs()
+        ))),
+    }
+}
+
+fn socks5_connect_request(target_host: &str, target_port: u16) -> io::Result<Vec<u8>> {
+    let mut request = Vec::with_capacity(target_host.len() + 8);
+    request.extend_from_slice(&[0x05, 0x01, 0x00]);
+    match target_host.parse::<IpAddr>() {
+        Ok(IpAddr::V4(address)) => {
+            request.push(0x01);
+            request.extend_from_slice(&address.octets());
+        }
+        Ok(IpAddr::V6(address)) => {
+            request.push(0x04);
+            request.extend_from_slice(&address.octets());
+        }
+        Err(_) => {
+            let length = u8::try_from(target_host.len()).map_err(|_| {
+                io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    "PostgreSQL hostname is too long for SOCKS5",
+                )
+            })?;
+            request.extend_from_slice(&[0x03, length]);
+            request.extend_from_slice(target_host.as_bytes());
+        }
+    }
+    request.extend_from_slice(&target_port.to_be_bytes());
+    Ok(request)
+}
+
+fn socks5_reply_message(reply: u8) -> String {
+    let reason = match reply {
+        0x01 => "general proxy failure",
+        0x02 => "connection not allowed by proxy rules",
+        0x03 => "network unreachable",
+        0x04 => "host unreachable",
+        0x05 => "connection refused",
+        0x06 => "TTL expired",
+        0x07 => "command not supported",
+        0x08 => "address type not supported",
+        _ => "unknown proxy error",
+    };
+    format!("proxy rejected CONNECT request: {reason} (0x{reply:02x})")
+}
+
 async fn acquire_metadata(transaction: &Transaction<'_>) -> Result<MetadataSnapshot, CliError> {
+    let mut progress = MetadataProgress::new();
+    progress.phase("transaction");
     verify_transaction(transaction).await?;
 
+    progress.phase("DBNames");
     let db_names_rows = transaction
         .query(PostgresMetadataQueries::DB_NAMES, &[])
         .await?;
     let db_names_data: Vec<u8> = exactly_one_row(&db_names_rows, "DBNames")?.try_get(0)?;
-    let db_names = parse_db_names(&db_names_data)?;
+    let db_names = run_metadata_blocking("DBNames", move || {
+        parse_db_names(&db_names_data).map_err(CliError::from)
+    })
+    .await?;
 
-    let mut descriptors = Vec::new();
-    for row in transaction
-        .query(PostgresMetadataQueries::CONFIG, &[])
-        .await?
-    {
-        let file_name: String = row.try_get(0)?;
-        let data: Vec<u8> = row.try_get(1)?;
-        descriptors.extend(parse_config_descriptors(&file_name, &data)?);
-    }
+    let totals = transaction
+        .query_one(PostgresMetadataQueries::CONFIG_TOTALS, &[])
+        .await?;
+    let total_resources = unsigned_progress_total(totals.try_get(0)?, "resource count")?;
+    let total_bytes = unsigned_progress_total(totals.try_get(1)?, "compressed byte count")?;
+    progress.config_totals(total_resources, total_bytes);
 
+    let parameters = std::iter::empty::<&(dyn ToSql + Sync)>();
+    let rows = transaction
+        .query_raw(PostgresMetadataQueries::CONFIG, parameters)
+        .await?;
+    let resources = rows.map(|row| {
+        let row = row?;
+        Ok(ConfigResource {
+            file_name: row.try_get(0)?,
+            compressed: row.try_get(1)?,
+        })
+    });
+    let descriptors = decode_config_stream(
+        resources,
+        CONFIG_DECODE_BATCH_SIZE,
+        config_pipeline_depth(),
+        &mut progress,
+    )
+    .await?;
+
+    progress.phase("SchemaStorage");
     let schema_rows = transaction
         .query(PostgresMetadataQueries::SCHEMA, &[])
         .await?;
     let schema_data: Vec<u8> = exactly_one_row(&schema_rows, "SchemaStorage")?.try_get(0)?;
-    let schema = parse_schema_storage(&schema_data)?;
+    let schema = run_metadata_blocking("SchemaStorage", move || {
+        parse_schema_storage(&schema_data).map_err(CliError::from)
+    })
+    .await?;
 
+    progress.phase("catalog");
     let catalog_rows = transaction
         .query(PostgresMetadataQueries::CATALOG, &[])
         .await?;
-    let live_tables = decode_catalog_rows(catalog_rows)?;
-    Ok(resolve_metadata(db_names, descriptors, schema, live_tables))
+    let live_tables = run_metadata_blocking("PostgreSQL catalog", move || {
+        decode_catalog_rows(catalog_rows)
+    })
+    .await?;
+
+    progress.phase("resolve");
+    let snapshot = run_metadata_blocking("metadata resolution", move || {
+        Ok(resolve_metadata(db_names, descriptors, schema, live_tables))
+    })
+    .await?;
+    progress.finish();
+    Ok(snapshot)
+}
+
+struct ConfigResource {
+    file_name: String,
+    compressed: Vec<u8>,
+}
+
+struct DecodedConfigResource {
+    file_name: String,
+    descriptors: Vec<open_sdbl::metadata::ConfigDescriptor>,
+}
+
+async fn decode_config_stream<S>(
+    resources: S,
+    batch_size: usize,
+    pipeline_depth: usize,
+    progress: &mut MetadataProgress,
+) -> Result<Vec<open_sdbl::metadata::ConfigDescriptor>, CliError>
+where
+    S: Stream<Item = Result<ConfigResource, CliError>>,
+{
+    let jobs = resources
+        .chunks(batch_size.max(1))
+        .map(|batch| async move {
+            let batch = batch.into_iter().collect::<Result<Vec<_>, _>>()?;
+            tokio::task::spawn_blocking(move || {
+                let resource_count = batch.len();
+                let compressed_bytes = batch.iter().map(|resource| resource.compressed.len()).sum();
+                let mut decoded_resources = Vec::with_capacity(resource_count);
+                for resource in batch {
+                    let descriptors =
+                        parse_config_descriptors(&resource.file_name, &resource.compressed)?;
+                    decoded_resources.push(DecodedConfigResource {
+                        file_name: resource.file_name,
+                        descriptors,
+                    });
+                }
+                Ok::<_, CliError>((resource_count, compressed_bytes, decoded_resources))
+            })
+            .await
+            .map_err(|error| CliError::Data(format!("Config decoder worker failed: {error}")))?
+        })
+        .buffered(pipeline_depth.max(1));
+    tokio::pin!(jobs);
+
+    let mut decoded_resources = Vec::new();
+    while let Some(result) = jobs.next().await {
+        let (resource_count, compressed_bytes, mut batch) = result?;
+        progress.advance_config(resource_count, compressed_bytes);
+        decoded_resources.append(&mut batch);
+    }
+    decoded_resources.sort_by(|left, right| left.file_name.cmp(&right.file_name));
+    let descriptor_count = decoded_resources
+        .iter()
+        .map(|resource| resource.descriptors.len())
+        .sum();
+    let mut descriptors = Vec::with_capacity(descriptor_count);
+    for mut resource in decoded_resources {
+        descriptors.append(&mut resource.descriptors);
+    }
+    Ok(descriptors)
+}
+
+async fn run_metadata_blocking<T, F>(label: &'static str, work: F) -> Result<T, CliError>
+where
+    T: Send + 'static,
+    F: FnOnce() -> Result<T, CliError> + Send + 'static,
+{
+    tokio::task::spawn_blocking(work)
+        .await
+        .map_err(|error| CliError::Data(format!("{label} processing worker failed: {error}")))?
+}
+
+fn config_pipeline_depth() -> usize {
+    std::thread::available_parallelism().map_or(4, |parallelism| {
+        parallelism.get().saturating_mul(2).clamp(2, 16)
+    })
+}
+
+fn unsigned_progress_total(value: i64, label: &str) -> Result<u64, CliError> {
+    u64::try_from(value)
+        .map_err(|_| CliError::Data(format!("PostgreSQL returned a negative Config {label}")))
 }
 
 async fn verify_transaction(transaction: &Transaction<'_>) -> Result<(), CliError> {
@@ -568,6 +1070,10 @@ impl CliError {
     fn database_connection(error: tokio_postgres::Error) -> Self {
         Self::Database(format!("PostgreSQL connection failed: {error}"))
     }
+
+    fn socks5_connection(error: impl fmt::Display) -> Self {
+        Self::Database(format!("SOCKS5 proxy connection failed: {error}"))
+    }
 }
 
 impl fmt::Display for CliError {
@@ -598,7 +1104,211 @@ impl From<tokio_postgres::Error> for CliError {
 
 #[cfg(test)]
 mod tests {
-    use super::{PostgresConnection, parse_password_line, read_password_file};
+    use super::{
+        ConfigResource, MetadataProgress, PostgresConnection, Socks5Proxy, connect_postgres_raw,
+        connect_socks5, decode_config_stream, parse_password_line, parse_socks5_proxy,
+        read_password_file, render_metadata_progress, socks5_connect_request,
+    };
+
+    #[test]
+    fn renders_metadata_progress_with_exact_resource_and_byte_totals() {
+        assert_eq!(
+            render_metadata_progress("Config", 25, 100, 512 * 1024, 1024 * 1024, 10),
+            "metadata [#####-----]  50.0% Config 25/100 512.0 KiB/1.0 MiB"
+        );
+    }
+
+    #[tokio::test]
+    async fn streamed_config_decoding_preserves_order_and_propagates_errors() {
+        let compressed = hex(
+            "4d8d4b0ac3201400af22ae7d9018a3be650f505ae809def303857e426256c1bb37d850ba9e6166d36adb7ad529f64cc15986803d8389ce8327d741ce3460f631593455c9cb945eb7c88f732a14a9d0757e73926a4fc879955f2e965d10cfc31053536a3d467a0c68390e902918303a65608b23381390b219468fbc8f5af854ca7ce7b5fc1f1a10f423b5d60f",
+        );
+        let resources = futures_util::stream::iter([
+            Ok(ConfigResource {
+                file_name: "b8bac76b-c91b-4d78-8a70-ffa39f8de694".to_owned(),
+                compressed: compressed.clone(),
+            }),
+            Ok(ConfigResource {
+                file_name: "25c96bd3-fac4-42ef-b695-74c9af43589b".to_owned(),
+                compressed: compressed.clone(),
+            }),
+        ]);
+        let mut progress = MetadataProgress::disabled();
+        progress.config_totals(2, (compressed.len() * 2) as u64);
+        let descriptors = decode_config_stream(resources, 2, 2, &mut progress)
+            .await
+            .unwrap();
+        assert!(!descriptors.is_empty());
+        assert_eq!(
+            descriptors.first().unwrap().resource_guid.as_str(),
+            "25c96bd3-fac4-42ef-b695-74c9af43589b"
+        );
+        assert_eq!(
+            descriptors.last().unwrap().resource_guid.as_str(),
+            "b8bac76b-c91b-4d78-8a70-ffa39f8de694"
+        );
+        assert_eq!(progress.completed_resources, 2);
+        assert_eq!(progress.completed_bytes, (compressed.len() * 2) as u64);
+
+        let invalid = futures_util::stream::iter([Ok(ConfigResource {
+            file_name: "b8bac76b-c91b-4d78-8a70-ffa39f8de694".to_owned(),
+            compressed: b"not deflate".to_vec(),
+        })]);
+        let error = decode_config_stream(invalid, 2, 2, &mut MetadataProgress::disabled())
+            .await
+            .unwrap_err();
+        assert!(error.to_string().contains("DEFLATE"));
+    }
+
+    fn hex(value: &str) -> Vec<u8> {
+        value
+            .as_bytes()
+            .chunks_exact(2)
+            .map(|pair| {
+                let high = char::from(pair[0]).to_digit(16).unwrap();
+                let low = char::from(pair[1]).to_digit(16).unwrap();
+                ((high << 4) | low) as u8
+            })
+            .collect()
+    }
+
+    #[test]
+    fn parses_socks5_proxy_endpoints() {
+        assert_eq!(
+            parse_socks5_proxy("proxy.example:1080").unwrap(),
+            Socks5Proxy {
+                host: "proxy.example".to_owned(),
+                port: 1080,
+            }
+        );
+        assert_eq!(
+            parse_socks5_proxy("[2001:db8::1]:9050").unwrap(),
+            Socks5Proxy {
+                host: "2001:db8::1".to_owned(),
+                port: 9050,
+            }
+        );
+        assert!(parse_socks5_proxy("proxy.example").is_err());
+        assert!(parse_socks5_proxy("2001:db8::1:1080").is_err());
+        assert!(parse_socks5_proxy(":1080").is_err());
+        assert!(parse_socks5_proxy("proxy.example:0").is_err());
+    }
+
+    #[test]
+    fn encodes_ip_targets_in_socks5_connect_requests() {
+        assert_eq!(
+            socks5_connect_request("192.0.2.1", 5432).unwrap(),
+            vec![0x05, 0x01, 0x00, 0x01, 192, 0, 2, 1, 0x15, 0x38]
+        );
+        assert_eq!(
+            socks5_connect_request("2001:db8::1", 15432).unwrap(),
+            vec![
+                0x05, 0x01, 0x00, 0x04, 0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1,
+                0x3c, 0x48,
+            ]
+        );
+    }
+
+    #[tokio::test]
+    async fn sends_database_hostname_to_socks5_proxy() {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        use tokio::net::TcpListener;
+
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            let mut greeting = [0_u8; 3];
+            stream.read_exact(&mut greeting).await.unwrap();
+            assert_eq!(greeting, [0x05, 0x01, 0x00]);
+            stream.write_all(&[0x05, 0x00]).await.unwrap();
+
+            let mut request = [0_u8; 5];
+            stream.read_exact(&mut request).await.unwrap();
+            assert_eq!(&request[..4], &[0x05, 0x01, 0x00, 0x03]);
+            let mut host_and_port = vec![0_u8; usize::from(request[4]) + 2];
+            stream.read_exact(&mut host_and_port).await.unwrap();
+            assert_eq!(
+                &host_and_port[..host_and_port.len() - 2],
+                b"database.internal"
+            );
+            assert_eq!(
+                &host_and_port[host_and_port.len() - 2..],
+                &15432_u16.to_be_bytes()
+            );
+            stream
+                .write_all(&[0x05, 0x00, 0x00, 0x01, 127, 0, 0, 1, 0x12, 0x34])
+                .await
+                .unwrap();
+        });
+
+        let proxy = Socks5Proxy {
+            host: address.ip().to_string(),
+            port: address.port(),
+        };
+        let stream = connect_socks5(&proxy, "database.internal", 15432)
+            .await
+            .unwrap();
+        drop(stream);
+        server.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn reports_unsupported_socks5_authentication() {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        use tokio::net::TcpListener;
+
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            let mut greeting = [0_u8; 3];
+            stream.read_exact(&mut greeting).await.unwrap();
+            stream.write_all(&[0x05, 0x02]).await.unwrap();
+        });
+        let proxy = Socks5Proxy {
+            host: address.ip().to_string(),
+            port: address.port(),
+        };
+
+        let error = connect_socks5(&proxy, "database.internal", 5432)
+            .await
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("unsupported authentication method 0x02"));
+        server.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn times_out_silent_postgres_startup_through_socks5() {
+        use std::time::Duration;
+
+        use tokio::io::AsyncReadExt;
+        use tokio::net::{TcpListener, TcpStream};
+
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            let mut startup = [0_u8; 1024];
+            assert!(stream.read(&mut startup).await.unwrap() > 0);
+            assert_eq!(stream.read(&mut startup).await.unwrap(), 0);
+        });
+        let stream = TcpStream::connect(address).await.unwrap();
+        let mut configuration = tokio_postgres::Config::new();
+        configuration.user("reader").dbname("test");
+
+        let error =
+            match connect_postgres_raw(&configuration, stream, Duration::from_millis(25)).await {
+                Ok(_) => panic!("silent PostgreSQL startup unexpectedly succeeded"),
+                Err(error) => error,
+            };
+        assert_eq!(
+            error.to_string(),
+            "PostgreSQL startup through SOCKS5 timed out after 25ms"
+        );
+        server.await.unwrap();
+    }
 
     #[test]
     fn parses_password_file_escaping_and_wildcards() {
@@ -632,6 +1342,7 @@ mod tests {
             port: 5432,
             database: "test".to_owned(),
             user: "reader".to_owned(),
+            socks5_proxy: None,
         };
 
         assert_eq!(

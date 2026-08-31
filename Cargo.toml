@@ -1,5 +1,6 @@
 [workspace]
 members = ["crates/open-sdbl-cli"]
+default-members = ["crates/open-sdbl-cli"]
 resolver = "3"
 
 [package]

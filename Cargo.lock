@@ -423,6 +423,7 @@ version = "0.1.0"
 name = "open-sdbl-cli"
 version = "0.1.0"
 dependencies = [
+ "futures-util",
  "libc",
  "moka",
  "open-sdbl",

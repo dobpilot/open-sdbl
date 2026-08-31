@@ -211,3 +211,190 @@ from physical names or index layouts.
 #### Scenario: Unknown accumulation collection
 - **WHEN** no recognized collection encloses a descriptor
 - **THEN** its purpose remains unknown instead of being guessed
+
+### Requirement: Decode DEFLATE Huffman symbols with bounded lookup cost
+The metadata decoder SHALL resolve each fixed or dynamic DEFLATE Huffman symbol
+with lookup work bounded by the RFC 1951 maximum code width rather than by the
+number of entries in the Huffman tree. Lookup storage SHALL remain bounded by
+the 15-bit DEFLATE code limit. The optimization SHALL preserve decoded bytes,
+output-size limits, and rejection of empty, oversubscribed, incomplete, or
+truncated invalid streams.
+
+#### Scenario: Large compressed Config resource
+- **WHEN** a Config resource contains many symbols encoded with a populated
+  dynamic Huffman tree
+- **THEN** decoding does not scan the tree entries for every output symbol
+
+#### Scenario: Short code at physical input end
+- **WHEN** the final valid symbol needs fewer bits than the tree maximum and is
+  followed only by DEFLATE byte padding
+- **THEN** lookup consumes only the symbol's actual code length and succeeds
+
+#### Scenario: Invalid incomplete-tree prefix
+- **WHEN** input bits address an unassigned prefix in an incomplete Huffman tree
+- **THEN** decoding returns the existing invalid-Huffman-code diagnostic
+
+### Requirement: Project authoritative DBNames while parsing
+The metadata decoder SHALL validate the complete brace-serialized DBNames
+resource and collect valid `{GUID,"Alias",Number}` entries in source order
+without requiring a complete generic value tree. Memory retained during parsing
+SHALL be bounded by accepted entries, decoded input, and nesting depth rather
+than by every serialized scalar and list. The public generic value parser SHALL
+remain available and compatible.
+
+#### Scenario: Large nested DBNames map
+- **WHEN** a DBNames resource contains many nested lists and irrelevant scalar
+  values around valid entries
+- **THEN** the decoder collects the valid entries without retaining generic
+  nodes for the irrelevant values
+
+#### Scenario: Malformed irrelevant branch
+- **WHEN** any nested DBNames branch has an unterminated list or string even if
+  it could not project to an entry
+- **THEN** the complete DBNames resource is rejected with a positional
+  diagnostic
+
+#### Scenario: Entry compatibility
+- **WHEN** a nested list has exactly the GUID, quoted alias, and positive number
+  shape accepted by the existing projection
+- **THEN** the streaming projection returns the same canonical entry in the
+  same source order
+
+### Requirement: Scan brace serialization without repeated character decoding
+After validating UTF-8, the generic metadata value parser SHALL recognize ASCII
+structural delimiters and contiguous string spans without repeatedly decoding
+each character. It SHALL preserve the public owned `Value` hierarchy, Unicode
+text and whitespace, doubled-quote unescaping, byte-position diagnostics, and
+malformed-input rejection.
+
+#### Scenario: Long localized string
+- **WHEN** a quoted Config value contains long multibyte text and doubled quotes
+- **THEN** parsing returns the identical unescaped string without per-character
+  structural checks
+
+#### Scenario: Unicode whitespace
+- **WHEN** valid non-ASCII whitespace surrounds a serialized value
+- **THEN** the parser accepts it with the same semantics as ASCII whitespace
+
+#### Scenario: Malformed UTF-8 or quoting
+- **WHEN** input is byte-invalid UTF-8 or a quoted value is unterminated
+- **THEN** parsing returns the same class of positional diagnostic
+
+### Requirement: Project Config descriptors while parsing
+The metadata decoder SHALL validate each bare-GUID Config resource and project
+owner and nested descriptors without retaining a complete generic value tree.
+It SHALL preserve descriptor source order, marker, object GUID, name, synonyms,
+optional comment, and inherited field purpose. Intermediate retained state
+SHALL be bounded by decoded input, output descriptors, nesting depth, a
+four-candidate window per active list, and scalar-only lists required by a
+matching descriptor.
+
+#### Scenario: Owner and nested descriptors
+- **WHEN** one Config resource contains an owner descriptor and nested attribute
+  descriptors among unrelated complex branches
+- **THEN** streaming projection returns the same descriptors in source order
+  without retaining unrelated branches
+
+#### Scenario: Inherited collection purpose
+- **WHEN** a recognized register collection contains a nested field descriptor
+- **THEN** the field receives the same inherited dimension, resource, or
+  attribute purpose as the generic recursive projection
+
+#### Scenario: Descriptor presentation fields
+- **WHEN** a matching descriptor has localized synonym pairs and an immediately
+  following nonempty comment
+- **THEN** both fields are preserved exactly
+
+#### Scenario: Malformed Config branch
+- **WHEN** any branch of a bare-GUID Config resource is malformed
+- **THEN** parsing fails positionally even when that branch cannot match a
+  descriptor
+
+### Requirement: Resolve live metadata from precomputed membership indexes
+The metadata resolver SHALL derive SchemaStorage field ownership, live field
+presence, and live table identity with lookup structures built in bounded
+passes over their respective inputs rather than rescanning all tables and
+columns for every DBNames object or field. It SHALL preserve observable
+resolution results and source order.
+
+#### Scenario: Schema field ownership
+- **WHEN** a canonical `Fld<number>` column or one of its compound members is
+  declared by multiple SchemaStorage tables
+- **THEN** the resolved field lists each owning table once in SchemaStorage
+  source order
+
+#### Scenario: Live compound field presence
+- **WHEN** the live catalog contains an exact `_fld<number>` column or a
+  compound member separated by `_`
+- **THEN** the corresponding resolved field is live after canonical recasing
+
+#### Scenario: Similar numeric prefix
+- **WHEN** the catalog contains `_fld123` but DBNames contains only `Fld12`
+- **THEN** the resolver does not treat the longer numeric field as a match
+
+#### Scenario: Live table identity
+- **WHEN** a DBNames object has a corresponding lowercase PostgreSQL table
+- **THEN** object live-state, allowed-length inference, and standard-field
+  indexing match the prior case-insensitive resolution
+
+### Requirement: Build an indexed queryable-field catalog
+The query layer SHALL provide a snapshot-scoped catalog of queryable fields for
+the snapshot's current public object, field, schema, and live-table vectors. A
+catalog build SHALL index custom fields by normalized owner table and numeric
+DBNames field number rather than rescan all fields for every object. The
+snapshot SHALL NOT retain indexes that become stale when callers modify those
+public vectors.
+
+#### Scenario: Unique owned custom field
+- **WHEN** one owner declares `Fld<number>` and its Config descriptor has a
+  human name
+- **THEN** catalog projection obtains that name through indexed owner and
+  number identity
+
+#### Scenario: Caller-modified snapshot
+- **WHEN** a caller changes public fields, schema, or live tables after
+  resolution and then rebuilds the catalog
+- **THEN** the catalog reflects current vectors and preserves the existing
+  source-order first-match semantics
+
+### Requirement: Stream PostgreSQL Config acquisition with bounded decoding
+The PostgreSQL adapter SHALL consume bare-GUID, part-zero Config rows as an
+asynchronous stream and decode resources through a bounded set of blocking CPU
+jobs. Database row delivery and resource decoding SHALL be able to make
+progress concurrently. Completed descriptors SHALL be returned in ascending
+Config filename order and retain source order within each resource regardless
+of PostgreSQL row-delivery order. Decoder or database errors SHALL abort the
+read-only transaction. The adapter SHALL NOT materialize the complete
+compressed Config row set before decoding.
+
+#### Scenario: Network and decoder overlap
+- **WHEN** Config rows continue arriving while earlier resources are being
+  decoded
+- **THEN** the bounded pipeline polls database delivery and blocking decoder
+  jobs concurrently up to its configured in-flight limit
+
+#### Scenario: Decoder backpressure
+- **WHEN** decoding is slower than row delivery
+- **THEN** the adapter retains only the bounded in-flight compressed resources
+  and stops polling additional rows until capacity becomes available
+
+#### Scenario: Stable descriptor order
+- **WHEN** PostgreSQL delivers Config resources in an order different from
+  ascending filename order
+- **THEN** their descriptors are returned in ascending filename order while
+  retaining descriptor source order within each resource
+
+#### Scenario: CPU isolation
+- **WHEN** DBNames, Config, SchemaStorage, or final resolution performs
+  CPU-heavy work
+- **THEN** that work runs on Tokio's blocking pool rather than a runtime worker
+
+### Requirement: Query exact Config progress totals read-only
+Before streaming Config, the PostgreSQL adapter SHALL obtain exact resource and
+compressed-byte totals with a fixed SELECT-only query using the same row
+predicate as the Config stream.
+
+#### Scenario: Matching progress denominator
+- **WHEN** the Config stream contains bare-GUID part-zero resources
+- **THEN** progress totals count exactly those resources and their compressed
+  `BinaryData` bytes

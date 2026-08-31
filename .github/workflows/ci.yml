@@ -18,6 +18,8 @@ jobs:
       - run: cargo fmt --all -- --check
       - run: cargo clippy --workspace --all-targets -- -D warnings
       - run: cargo test --workspace
+      - run: cargo build --release --locked
+      - run: test -x target/release/open-sdbl
       - run: cargo doc --workspace --no-deps
         env:
           RUSTDOCFLAGS: -D warnings

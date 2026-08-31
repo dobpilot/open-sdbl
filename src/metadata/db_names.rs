@@ -1,8 +1,11 @@
+use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::str::FromStr;
 
-use super::{Guid, MetadataError, Value, inflate_raw_deflate, parse_serialized};
+#[cfg(test)]
+use super::Value;
+use super::{Guid, MetadataError, inflate_raw_deflate};
 
 /// A physical-name entry from `Params.DBNames`.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -190,9 +193,7 @@ impl DbNames {
 /// valid `{GUID,"Alias",Number}` entries are present.
 pub fn parse_db_names(compressed: &[u8]) -> Result<DbNames, MetadataError> {
     let decoded = inflate_raw_deflate(compressed)?;
-    let root = parse_serialized(&decoded)?;
-    let mut entries = Vec::new();
-    collect_entries(&root, &mut entries);
+    let entries = parse_db_name_entries(&decoded)?;
     if entries.is_empty() {
         return Err(MetadataError::new(
             "DBNames contains no valid GUID/alias/number entries",
@@ -226,6 +227,217 @@ pub fn parse_db_names(compressed: &[u8]) -> Result<DbNames, MetadataError> {
     })
 }
 
+fn parse_db_name_entries(input: &[u8]) -> Result<Vec<DbNameEntry>, MetadataError> {
+    let input = input.strip_prefix(&[0xef, 0xbb, 0xbf]).unwrap_or(input);
+    let text = std::str::from_utf8(input)
+        .map_err(|error| MetadataError::at(error.valid_up_to(), "metadata is not valid UTF-8"))?;
+    DbNamesParser::new(text).parse()
+}
+
+struct DbNamesParser<'input> {
+    input: &'input str,
+    offset: usize,
+}
+
+enum Candidate<'input> {
+    Atom(&'input str),
+    String(Cow<'input, str>),
+    Other,
+}
+
+impl<'input> Candidate<'input> {
+    fn as_str(&self) -> Option<&str> {
+        match self {
+            Self::Atom(value) => Some(value),
+            Self::String(value) => Some(value.as_ref()),
+            Self::Other => None,
+        }
+    }
+
+    fn as_string(&self) -> Option<&str> {
+        match self {
+            Self::String(value) => Some(value.as_ref()),
+            Self::Atom(_) | Self::Other => None,
+        }
+    }
+
+    fn as_u32(&self) -> Option<u32> {
+        match self {
+            Self::Atom(value) => value.parse().ok(),
+            Self::String(_) | Self::Other => None,
+        }
+    }
+}
+
+impl<'input> DbNamesParser<'input> {
+    const fn new(input: &'input str) -> Self {
+        Self { input, offset: 0 }
+    }
+
+    fn parse(mut self) -> Result<Vec<DbNameEntry>, MetadataError> {
+        self.skip_whitespace();
+        if self.offset == self.input.len() {
+            return Err(MetadataError::at(0, "empty metadata serialization"));
+        }
+        let mut entries = Vec::new();
+        self.value(&mut entries)?;
+        self.skip_whitespace();
+        if self.offset != self.input.len() {
+            return Err(MetadataError::at(
+                self.offset,
+                "unexpected trailing metadata",
+            ));
+        }
+        Ok(entries)
+    }
+
+    fn value(
+        &mut self,
+        entries: &mut Vec<DbNameEntry>,
+    ) -> Result<Candidate<'input>, MetadataError> {
+        match self.current() {
+            Some(b'{') => self.list(entries),
+            Some(b'"') => self.string().map(Candidate::String),
+            Some(b',' | b'}') => Ok(Candidate::Other),
+            Some(_) => self.atom().map(Candidate::Atom),
+            None => Err(MetadataError::at(self.offset, "unexpected end of metadata")),
+        }
+    }
+
+    fn list(&mut self, entries: &mut Vec<DbNameEntry>) -> Result<Candidate<'input>, MetadataError> {
+        self.offset += 1;
+        self.skip_whitespace();
+        let mut candidates = [None, None, None];
+        let mut value_count = 0usize;
+        let mut expecting_value = true;
+
+        loop {
+            self.skip_whitespace();
+            match self.current() {
+                None => {
+                    return Err(MetadataError::at(self.offset, "unterminated metadata list"));
+                }
+                Some(b'}') => {
+                    if expecting_value && value_count != 0 {
+                        value_count += 1;
+                    }
+                    self.offset += 1;
+                    break;
+                }
+                Some(b',') if expecting_value => {
+                    value_count += 1;
+                    self.offset += 1;
+                }
+                Some(b',') => {
+                    self.offset += 1;
+                    expecting_value = true;
+                }
+                Some(_) if expecting_value => {
+                    let candidate = self.value(entries)?;
+                    if value_count < candidates.len() {
+                        candidates[value_count] = Some(candidate);
+                    }
+                    value_count += 1;
+                    expecting_value = false;
+                }
+                Some(_) => {
+                    return Err(MetadataError::at(
+                        self.offset,
+                        "expected ',' or '}' in metadata list",
+                    ));
+                }
+            }
+        }
+
+        if value_count == 3
+            && let [Some(guid), Some(alias), Some(number)] = &candidates
+            && let (Some(guid), Some(alias), Some(number)) =
+                (guid.as_str(), alias.as_string(), number.as_u32())
+            && number > 0
+            && let Ok(guid) = Guid::from_str(guid)
+        {
+            entries.push(DbNameEntry {
+                guid,
+                alias: alias.to_owned(),
+                number,
+            });
+        }
+        Ok(Candidate::Other)
+    }
+
+    fn string(&mut self) -> Result<Cow<'input, str>, MetadataError> {
+        self.offset += 1;
+        let mut segment_start = self.offset;
+        let mut owned = None::<String>;
+        loop {
+            let Some(relative_quote) = self.input.as_bytes()[self.offset..]
+                .iter()
+                .position(|byte| *byte == b'"')
+            else {
+                return Err(MetadataError::at(
+                    self.offset,
+                    "unterminated metadata string",
+                ));
+            };
+            let quote = self.offset + relative_quote;
+            if self.input.as_bytes().get(quote + 1) == Some(&b'"') {
+                let value = owned.get_or_insert_with(|| String::with_capacity(relative_quote + 16));
+                value.push_str(&self.input[segment_start..quote]);
+                value.push('"');
+                self.offset = quote + 2;
+                segment_start = self.offset;
+                continue;
+            }
+            self.offset = quote + 1;
+            return if let Some(mut value) = owned {
+                value.push_str(&self.input[segment_start..quote]);
+                Ok(Cow::Owned(value))
+            } else {
+                Ok(Cow::Borrowed(&self.input[segment_start..quote]))
+            };
+        }
+    }
+
+    fn atom(&mut self) -> Result<&'input str, MetadataError> {
+        let start = self.offset;
+        while self
+            .current()
+            .is_some_and(|byte| !matches!(byte, b',' | b'}' | b'{'))
+        {
+            self.offset += 1;
+        }
+        let atom = self.input[start..self.offset].trim();
+        if atom.is_empty() {
+            return Err(MetadataError::at(start, "empty metadata atom"));
+        }
+        Ok(atom)
+    }
+
+    fn skip_whitespace(&mut self) {
+        loop {
+            match self.current() {
+                Some(byte) if byte.is_ascii_whitespace() => self.offset += 1,
+                Some(byte) if !byte.is_ascii() => {
+                    let character = self.input[self.offset..]
+                        .chars()
+                        .next()
+                        .expect("current byte belongs to a valid UTF-8 character");
+                    if !character.is_whitespace() {
+                        break;
+                    }
+                    self.offset += character.len_utf8();
+                }
+                Some(_) | None => break,
+            }
+        }
+    }
+
+    fn current(&self) -> Option<u8> {
+        self.input.as_bytes().get(self.offset).copied()
+    }
+}
+
+#[cfg(test)]
 fn collect_entries(value: &Value, output: &mut Vec<DbNameEntry>) {
     let Value::List(values) = value else {
         return;
@@ -249,7 +461,7 @@ fn collect_entries(value: &Value, output: &mut Vec<DbNameEntry>) {
 
 #[cfg(test)]
 mod tests {
-    use super::{MetadataKind, collect_entries, parse_db_names};
+    use super::{MetadataKind, collect_entries, parse_db_name_entries, parse_db_names};
     use crate::metadata::{Guid, normalize_index_key, parse_serialized};
     use std::str::FromStr;
 
@@ -320,6 +532,20 @@ mod tests {
     fn rejects_a_decoded_map_without_entries() {
         let compressed = hex("ab36d0a936a8ad0500");
         assert!(parse_db_names(&compressed).is_err());
+    }
+
+    #[test]
+    fn streaming_projection_matches_the_generic_tree_and_validates_all_input() {
+        let source = br#"{4,"ignored ""text""",{b56f25d2-72a9-4d80-8998-77ac3097c873,"Reference",2565},{{03bd775a-e0a1-4205-82ce-6068e73ad134,"Fld",2566}},}"#;
+        let value = parse_serialized(source).unwrap();
+        let mut generic = Vec::new();
+        collect_entries(&value, &mut generic);
+        assert_eq!(parse_db_name_entries(source).unwrap(), generic);
+
+        let malformed = br#"{1,{"unterminated}"#;
+        let error = parse_db_name_entries(malformed).unwrap_err();
+        assert_eq!(error.message(), "unterminated metadata string");
+        assert!(error.offset().is_some());
     }
 
     fn hex(input: &str) -> Vec<u8> {

@@ -57,19 +57,25 @@ pub fn recase_postgres_identifier(identifier: &str) -> String {
         ("fld", "Fld"),
         ("vt", "VT"),
     ];
-    let lower = identifier.to_ascii_lowercase();
+    let lower_storage;
+    let lower = if identifier.bytes().any(|byte| byte.is_ascii_uppercase()) {
+        lower_storage = identifier.to_ascii_lowercase();
+        lower_storage.as_str()
+    } else {
+        identifier
+    };
+    let ascii = identifier.is_ascii();
     let mut output = String::with_capacity(identifier.len());
     let mut offset = 0;
     while offset < lower.len() {
-        if let Some((token, canonical)) = TOKENS
-            .iter()
-            .find(|(token, _)| token_matches(&lower, offset, token))
-        {
+        let byte = lower.as_bytes()[offset];
+        if let Some((token, canonical)) = TOKENS.iter().find(|(token, _)| {
+            (token.as_bytes()[0] == byte || !ascii) && token_matches(lower, offset, token)
+        }) {
             output.push_str(canonical);
             offset += token.len();
             continue;
         }
-        let byte = lower.as_bytes()[offset];
         if byte == b'_'
             && let Some(next) = lower.as_bytes().get(offset + 1).copied()
             && matches!(next, b's' | b'r' | b'l' | b'n' | b't')

@@ -21,6 +21,7 @@ impl Value {
         }
     }
 
+    #[cfg(test)]
     pub(crate) fn as_str(&self) -> Option<&str> {
         match self {
             Self::String(value) | Self::Atom(value) => Some(value),
@@ -87,16 +88,16 @@ impl<'input> Parser<'input> {
 
     fn value(&mut self) -> Result<Value, MetadataError> {
         match self.current() {
-            Some('{') => self.list(),
-            Some('"') => self.string(),
-            Some(',' | '}') => Ok(Value::Null),
+            Some(b'{') => self.list(),
+            Some(b'"') => self.string(),
+            Some(b',' | b'}') => Ok(Value::Null),
             Some(_) => self.atom(),
             None => Err(MetadataError::at(self.offset, "unexpected end of metadata")),
         }
     }
 
     fn list(&mut self) -> Result<Value, MetadataError> {
-        self.advance();
+        self.offset += 1;
         self.skip_whitespace();
         let mut values = Vec::new();
         let mut expecting_value = true;
@@ -105,21 +106,21 @@ impl<'input> Parser<'input> {
             self.skip_whitespace();
             match self.current() {
                 None => return Err(MetadataError::at(self.offset, "unterminated metadata list")),
-                Some('}') => {
+                Some(b'}') => {
                     if !expecting_value || values.is_empty() {
-                        self.advance();
+                        self.offset += 1;
                         return Ok(Value::List(values));
                     }
                     values.push(Value::Null);
-                    self.advance();
+                    self.offset += 1;
                     return Ok(Value::List(values));
                 }
-                Some(',') if expecting_value => {
+                Some(b',') if expecting_value => {
                     values.push(Value::Null);
-                    self.advance();
+                    self.offset += 1;
                 }
-                Some(',') => {
-                    self.advance();
+                Some(b',') => {
+                    self.offset += 1;
                     expecting_value = true;
                 }
                 Some(_) if expecting_value => {
@@ -137,26 +138,36 @@ impl<'input> Parser<'input> {
     }
 
     fn string(&mut self) -> Result<Value, MetadataError> {
-        self.advance();
-        let mut value = String::new();
+        self.offset += 1;
+        let mut segment_start = self.offset;
+        let mut value = None::<String>;
         loop {
-            let Some(character) = self.current() else {
+            let Some(relative_quote) = self.input.as_bytes()[self.offset..]
+                .iter()
+                .position(|byte| *byte == b'"')
+            else {
                 return Err(MetadataError::at(
                     self.offset,
                     "unterminated metadata string",
                 ));
             };
-            self.advance();
-            if character != '"' {
-                value.push(character);
+            let quote = self.offset + relative_quote;
+            if self.input.as_bytes().get(quote + 1) == Some(&b'"') {
+                let decoded =
+                    value.get_or_insert_with(|| String::with_capacity(relative_quote + 16));
+                decoded.push_str(&self.input[segment_start..quote]);
+                decoded.push('"');
+                self.offset = quote + 2;
+                segment_start = self.offset;
                 continue;
             }
-            if self.current() == Some('"') {
-                self.advance();
-                value.push('"');
-                continue;
-            }
-            return Ok(Value::String(value));
+            self.offset = quote + 1;
+            return if let Some(mut decoded) = value {
+                decoded.push_str(&self.input[segment_start..quote]);
+                Ok(Value::String(decoded))
+            } else {
+                Ok(Value::String(self.input[segment_start..quote].to_owned()))
+            };
         }
     }
 
@@ -164,9 +175,9 @@ impl<'input> Parser<'input> {
         let start = self.offset;
         while self
             .current()
-            .is_some_and(|character| !matches!(character, ',' | '}' | '{'))
+            .is_some_and(|byte| !matches!(byte, b',' | b'}' | b'{'))
         {
-            self.advance();
+            self.offset += 1;
         }
         let atom = self.input[start..self.offset].trim();
         if atom.is_empty() {
@@ -176,19 +187,26 @@ impl<'input> Parser<'input> {
     }
 
     fn skip_whitespace(&mut self) {
-        while self.current().is_some_and(char::is_whitespace) {
-            self.advance();
+        loop {
+            match self.current() {
+                Some(byte) if byte.is_ascii_whitespace() => self.offset += 1,
+                Some(byte) if !byte.is_ascii() => {
+                    let character = self.input[self.offset..]
+                        .chars()
+                        .next()
+                        .expect("current byte belongs to a valid UTF-8 character");
+                    if !character.is_whitespace() {
+                        break;
+                    }
+                    self.offset += character.len_utf8();
+                }
+                Some(_) | None => break,
+            }
         }
     }
 
-    fn current(&self) -> Option<char> {
-        self.input[self.offset..].chars().next()
-    }
-
-    fn advance(&mut self) {
-        if let Some(character) = self.current() {
-            self.offset += character.len_utf8();
-        }
+    fn current(&self) -> Option<u8> {
+        self.input.as_bytes().get(self.offset).copied()
     }
 }
 
@@ -211,5 +229,15 @@ mod tests {
     fn rejects_truncated_and_trailing_values() {
         assert!(parse_serialized(b"{1,{2}").is_err());
         assert!(parse_serialized(b"{1} garbage").is_err());
+    }
+
+    #[test]
+    fn preserves_unicode_whitespace_and_long_escaped_strings() {
+        let text = "\u{2003}{\"Длинная строка без разделителей \"\"цитата\"\" и хвост\"}\u{2003}";
+        let value = parse_serialized(text.as_bytes()).unwrap();
+        assert_eq!(
+            value.as_list().unwrap()[0],
+            Value::String("Длинная строка без разделителей \"цитата\" и хвост".to_owned())
+        );
     }
 }

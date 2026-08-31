@@ -1,6 +1,6 @@
 //! Bounded compilation of 1C SELECT queries through resolved metadata.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fmt;
 
 use crate::metadata::{
@@ -262,40 +262,128 @@ pub fn queryable_fields(
         })?;
     let schema_table = snapshot.schema.table(physical_table);
 
+    Ok(project_queryable_fields(
+        physical_table,
+        table,
+        schema_table,
+        &CustomFieldNames::Scan(snapshot),
+    ))
+}
+
+/// Builds queryable fields for every currently live object in one indexed
+/// pass over the snapshot's current public vectors.
+///
+/// Objects without a live physical table are omitted. Rebuilding the catalog
+/// after changing the snapshot reflects those changes.
+#[must_use]
+pub fn queryable_field_catalog(
+    snapshot: &MetadataSnapshot,
+) -> HashMap<ObjectId, Vec<QueryableField>> {
+    let custom_names = index_custom_field_names(snapshot);
+    let mut live_tables = HashMap::with_capacity(snapshot.live_tables.len());
+    for table in &snapshot.live_tables {
+        live_tables
+            .entry(table.name.to_ascii_lowercase())
+            .or_insert(table);
+    }
+    let mut schema_tables = HashMap::with_capacity(snapshot.schema.tables.len());
+    for table in &snapshot.schema.tables {
+        schema_tables.entry(table.name.as_str()).or_insert(table);
+    }
+
+    let mut catalog = HashMap::new();
+    for object in &snapshot.objects {
+        let Some(physical_table) = object.physical_table.as_deref() else {
+            continue;
+        };
+        let Some(table) = live_tables.get(&physical_table.to_ascii_lowercase()) else {
+            continue;
+        };
+        let schema_table = schema_tables
+            .get(physical_table.strip_prefix('_').unwrap_or(physical_table))
+            .copied();
+        catalog
+            .entry(ObjectId::from(&object.guid))
+            .or_insert_with(|| {
+                project_queryable_fields(
+                    physical_table,
+                    table,
+                    schema_table,
+                    &CustomFieldNames::Indexed(&custom_names),
+                )
+            });
+    }
+    catalog
+}
+
+type CustomFieldNameIndex = HashMap<(String, u32), Option<String>>;
+
+enum CustomFieldNames<'snapshot> {
+    Scan(&'snapshot MetadataSnapshot),
+    Indexed(&'snapshot CustomFieldNameIndex),
+}
+
+fn index_custom_field_names(snapshot: &MetadataSnapshot) -> CustomFieldNameIndex {
+    let mut names = HashMap::new();
+    for field in &snapshot.fields {
+        for owner in &field.owner_tables {
+            names
+                .entry((owner.to_lowercase(), field.number))
+                .or_insert_with(|| field.name.clone());
+        }
+    }
+    names
+}
+
+fn project_queryable_fields(
+    physical_table: &str,
+    table: &LiveTable,
+    schema_table: Option<&crate::metadata::SchemaTable>,
+    custom_names: &CustomFieldNames<'_>,
+) -> Vec<QueryableField> {
+    let mut schema_columns = BTreeMap::new();
+    if let Some(table) = schema_table {
+        for column in &table.columns {
+            let canonical = logical_column_name(&column.physical_name());
+            schema_columns
+                .entry(canonical.to_lowercase())
+                .or_insert((canonical, column));
+        }
+    }
+
     let mut order = Vec::<String>::new();
     let mut groups = BTreeMap::<String, Vec<&LiveColumn>>::new();
     for column in &table.columns {
         let observed_name = logical_column_name(&column.name);
-        let schema_name = schema_table
-            .and_then(|table| {
-                table.columns.iter().find_map(|column| {
-                    let canonical = logical_column_name(&column.physical_name());
-                    names_equal(&canonical, &observed_name).then_some(canonical)
-                })
-            })
-            .unwrap_or(observed_name);
+        let schema_name = schema_columns
+            .get(&observed_name.to_lowercase())
+            .map_or(observed_name, |(canonical, _)| canonical.clone());
         if !groups.contains_key(&schema_name) {
             order.push(schema_name.clone());
         }
         groups.entry(schema_name).or_default().push(column);
     }
 
-    Ok(order
+    order
         .into_iter()
         .map(|schema_name| {
             let columns = groups.remove(&schema_name).unwrap_or_default();
-            let reference_targets = schema_table
-                .and_then(|table| {
-                    table.columns.iter().find(|column| {
-                        names_equal(&logical_column_name(&column.physical_name()), &schema_name)
-                    })
-                })
+            let reference_targets = schema_columns
+                .get(&schema_name.to_lowercase())
+                .map(|(_, column)| *column)
                 .map(reference_targets)
                 .unwrap_or_default();
             let reference_target =
                 (reference_targets.len() == 1).then(|| reference_targets[0].clone());
             let query_schema_name = query_schema_name(&schema_name);
-            let custom_name = custom_field_name(snapshot, physical_table, &schema_name);
+            let custom_name = match custom_names {
+                CustomFieldNames::Scan(snapshot) => {
+                    custom_field_name(snapshot, physical_table, &schema_name)
+                }
+                CustomFieldNames::Indexed(names) => {
+                    indexed_custom_field_name(names, physical_table, &schema_name)
+                }
+            };
             let name = custom_name.unwrap_or_else(|| query_schema_name.clone());
             let mut aliases = standard_field_aliases(&query_schema_name)
                 .iter()
@@ -326,7 +414,7 @@ pub fn queryable_fields(
                 reference_targets,
             }
         })
-        .collect())
+        .collect()
 }
 
 /// Compiles one bounded 1C SELECT query to PostgreSQL.
@@ -4435,6 +4523,18 @@ fn custom_field_name(
         })?
         .name
         .clone()
+}
+
+fn indexed_custom_field_name(
+    names: &CustomFieldNameIndex,
+    physical_table: &str,
+    schema_name: &str,
+) -> Option<String> {
+    let number = schema_name.strip_prefix("Fld")?.parse::<u32>().ok()?;
+    names
+        .get(&(physical_table.to_lowercase(), number))
+        .cloned()
+        .flatten()
 }
 
 fn query_schema_name(schema_name: &str) -> String {

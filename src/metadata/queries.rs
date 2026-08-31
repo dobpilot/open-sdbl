@@ -15,7 +15,10 @@ impl PostgresMetadataQueries {
         "SELECT binarydata FROM params WHERE filename = 'DBNames' AND partno = 0";
 
     /// Reads every part-zero resource whose file name is a bare GUID.
-    pub const CONFIG: &'static str = "SELECT filename::text, binarydata FROM config WHERE partno = 0 AND filename::text ~ '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$' ORDER BY filename";
+    pub const CONFIG: &'static str = "SELECT filename::text, binarydata FROM config WHERE partno = 0 AND filename::text ~ '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'";
+
+    /// Counts the resources and compressed bytes returned by [`Self::CONFIG`].
+    pub const CONFIG_TOTALS: &'static str = "SELECT count(*), COALESCE(sum(octet_length(binarydata)), 0) FROM config WHERE partno = 0 AND filename::text ~ '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'";
 
     /// Reads the current authoritative physical schema.
     pub const SCHEMA: &'static str = "SELECT currentschema FROM schemastorage WHERE schemaid = 0";
@@ -25,10 +28,11 @@ impl PostgresMetadataQueries {
 
     /// Returns all acquisition statements in execution order.
     #[must_use]
-    pub const fn all() -> [&'static str; 5] {
+    pub const fn all() -> [&'static str; 6] {
         [
             Self::VERIFY_TRANSACTION,
             Self::DB_NAMES,
+            Self::CONFIG_TOTALS,
             Self::CONFIG,
             Self::SCHEMA,
             Self::CATALOG,

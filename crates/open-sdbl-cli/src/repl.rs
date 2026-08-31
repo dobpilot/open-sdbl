@@ -1,5 +1,5 @@
 use std::borrow::Cow;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::io::{self, IsTerminal, Write};
 use std::mem::MaybeUninit;
 use std::time::{Duration, Instant};
@@ -8,7 +8,7 @@ use moka::future::Cache;
 use open_sdbl::metadata::{MetadataKind, MetadataObject, MetadataSnapshot, ObjectId};
 use open_sdbl::query::{
     CompiledQuery, PresentationExpression, PresentationPlan, PresentationRequest,
-    find_metadata_object, prepare_postgres_query, queryable_fields,
+    find_metadata_object, prepare_postgres_query, queryable_field_catalog, queryable_fields,
 };
 use open_sdbl::{TokenKind, tokenize};
 use rustyline::completion::{Completer, Pair};
@@ -149,6 +149,21 @@ impl ConsoleHelper {
             .map(str::to_owned)
             .collect::<Vec<_>>();
         candidates.extend(COMPLETION_KEYWORDS.iter().map(|value| (*value).to_owned()));
+        let mut candidate_keys = candidates
+            .iter()
+            .map(|candidate| candidate.to_lowercase())
+            .collect::<HashSet<_>>();
+
+        let fields_by_object = queryable_field_catalog(snapshot);
+        let mut object_by_table = HashMap::new();
+        for object in &snapshot.objects {
+            let object_id = ObjectId::from(&object.guid);
+            if let Some(table) = object.physical_table.as_deref() {
+                object_by_table
+                    .entry(normalize_physical_table(table))
+                    .or_insert(object_id);
+            }
+        }
 
         for object in &snapshot.objects {
             let (Some(kind), Some(name)) = (object.kind, object.name.as_deref()) else {
@@ -160,40 +175,54 @@ impl ConsoleHelper {
                 format!("{}.{name}", russian_metadata_kind(kind)),
             ];
             for object_name in &object_names {
-                push_unique(&mut candidates, object_name);
+                push_unique(&mut candidates, &mut candidate_keys, object_name);
             }
-            push_virtual_table_candidates(&mut candidates, kind, &object_names);
+            push_virtual_table_candidates(
+                &mut candidates,
+                &mut candidate_keys,
+                kind,
+                &object_names,
+            );
             if let Some(table) = object.physical_table.as_deref() {
-                push_unique(&mut candidates, table);
+                push_unique(&mut candidates, &mut candidate_keys, table);
             }
 
-            let Ok(fields) = queryable_fields(snapshot, object) else {
+            let Some(fields) = fields_by_object.get(&ObjectId::from(&object.guid)) else {
                 continue;
             };
-            for field in &fields {
-                push_unique(&mut candidates, &field.name);
+            for field in fields {
+                push_unique(&mut candidates, &mut candidate_keys, &field.name);
                 for alias in &field.aliases {
-                    push_unique(&mut candidates, alias);
+                    push_unique(&mut candidates, &mut candidate_keys, alias);
                 }
                 for object_name in &object_names {
                     for alias in &field.aliases {
-                        push_unique(&mut candidates, &format!("{object_name}.{alias}"));
+                        push_unique(
+                            &mut candidates,
+                            &mut candidate_keys,
+                            &format!("{object_name}.{alias}"),
+                        );
                     }
                 }
 
                 let Some(target) = field.reference_target.as_deref() else {
                     continue;
                 };
-                let Some(target_object) = object_for_reference_target(snapshot, target) else {
+                let Some(target_object) = object_by_table.get(&normalize_physical_table(target))
+                else {
                     continue;
                 };
-                let Ok(target_fields) = queryable_fields(snapshot, target_object) else {
+                let Some(target_fields) = fields_by_object.get(target_object) else {
                     continue;
                 };
                 for source_alias in &field.aliases {
-                    for target_field in &target_fields {
+                    for target_field in target_fields {
                         for target_alias in &target_field.aliases {
-                            push_unique(&mut candidates, &format!("{source_alias}.{target_alias}"));
+                            push_unique(
+                                &mut candidates,
+                                &mut candidate_keys,
+                                &format!("{source_alias}.{target_alias}"),
+                            );
                         }
                     }
                 }
@@ -327,18 +356,15 @@ fn is_completion_character(character: char) -> bool {
     character == '\\' || character == '_' || character == '.' || character.is_alphanumeric()
 }
 
-fn push_unique(values: &mut Vec<String>, value: &str) {
-    if !value.is_empty()
-        && !values
-            .iter()
-            .any(|candidate| candidate.eq_ignore_ascii_case(value))
-    {
+fn push_unique(values: &mut Vec<String>, keys: &mut HashSet<String>, value: &str) {
+    if !value.is_empty() && keys.insert(value.to_lowercase()) {
         values.push(value.to_owned());
     }
 }
 
 fn push_virtual_table_candidates(
     candidates: &mut Vec<String>,
+    candidate_keys: &mut HashSet<String>,
     kind: MetadataKind,
     object_names: &[String],
 ) {
@@ -356,22 +382,17 @@ fn push_virtual_table_candidates(
     };
     for object_name in object_names {
         for suffix in suffixes {
-            push_unique(candidates, &format!("{object_name}.{suffix}"));
+            push_unique(
+                candidates,
+                candidate_keys,
+                &format!("{object_name}.{suffix}"),
+            );
         }
     }
 }
 
-fn object_for_reference_target<'snapshot>(
-    snapshot: &'snapshot MetadataSnapshot,
-    target: &str,
-) -> Option<&'snapshot MetadataObject> {
-    snapshot.objects.iter().find(|object| {
-        object.physical_table.as_deref().is_some_and(|table| {
-            table
-                .trim_start_matches('_')
-                .eq_ignore_ascii_case(target.trim_start_matches('_'))
-        })
-    })
+fn normalize_physical_table(table: &str) -> String {
+    table.trim_start_matches('_').to_lowercase()
 }
 
 const fn russian_metadata_kind(kind: MetadataKind) -> &'static str {
@@ -1178,7 +1199,7 @@ mod tests {
     use super::{
         ConsoleHelper, PRESENTATION_POLICY_VERSION, PresentationPlanKey, completion_start,
         decode_input_line, default_presentation_template, footer_text, format_duration,
-        push_virtual_table_candidates, statement_is_complete, timing_line,
+        push_unique, push_virtual_table_candidates, statement_is_complete, timing_line,
     };
 
     #[test]
@@ -1235,6 +1256,16 @@ mod tests {
     }
 
     #[test]
+    fn candidate_deduplication_keeps_the_first_case_insensitive_spelling() {
+        let mut candidates = vec!["Код".to_owned()];
+        let mut keys = HashSet::from(["код".to_owned()]);
+        push_unique(&mut candidates, &mut keys, "КОД");
+        push_unique(&mut candidates, &mut keys, "Description");
+        push_unique(&mut candidates, &mut keys, "description");
+        assert_eq!(candidates, ["Код", "Description"]);
+    }
+
+    #[test]
     fn completes_virtual_tables_by_resolved_register_kind() {
         let accumulation_names = [
             "Остатки".to_owned(),
@@ -1247,13 +1278,16 @@ mod tests {
             "РегистрСведений.Цены".to_owned(),
         ];
         let mut candidates = Vec::new();
+        let mut candidate_keys = HashSet::new();
         push_virtual_table_candidates(
             &mut candidates,
+            &mut candidate_keys,
             MetadataKind::AccumulationRegister,
             &accumulation_names,
         );
         push_virtual_table_candidates(
             &mut candidates,
+            &mut candidate_keys,
             MetadataKind::InformationRegister,
             &information_names,
         );
@@ -1289,8 +1323,10 @@ mod tests {
     #[test]
     fn does_not_attach_virtual_tables_to_catalogs() {
         let mut candidates = Vec::new();
+        let mut candidate_keys = HashSet::new();
         push_virtual_table_candidates(
             &mut candidates,
+            &mut candidate_keys,
             MetadataKind::Catalog,
             &["Справочник.Номенклатура".to_owned()],
         );

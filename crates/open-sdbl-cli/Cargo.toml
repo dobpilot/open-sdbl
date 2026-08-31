@@ -14,10 +14,11 @@ path = "src/main.rs"
 doc = false
 
 [dependencies]
+futures-util = "0.3.34"
 moka = { version = "0.12.16", features = ["future"] }
 open-sdbl = { path = "../.." }
 rustyline = { version = "18.0.1", default-features = false }
-tokio = { version = "1.53.1", features = ["io-std", "io-util", "macros", "rt-multi-thread"] }
+tokio = { version = "1.53.1", features = ["io-std", "io-util", "macros", "net", "rt-multi-thread", "time"] }
 tokio-postgres = "0.7.18"
 
 [target.'cfg(target_os = "linux")'.dependencies]

@@ -44,8 +44,12 @@ SQL.
 ```console
 git clone https://github.com/dobpilot/open-sdbl.git
 cd open-sdbl
-cargo build --release -p open-sdbl-cli
+cargo build --release
 ```
+
+Обычная release-сборка из корня создаёт CLI в
+`target/release/open-sdbl`. Для сборки только библиотеки используйте
+`cargo build --release --package open-sdbl`.
 
 Запуск консоли:
 
@@ -59,6 +63,17 @@ PGPASSFILE="$HOME/.pgpass" ./target/release/open-sdbl console postgres \
 Пароль читается из `PGPASSWORD`, `PGPASSFILE` или `$HOME/.pgpass`. Команда
 работает через `tokio-postgres`, не требует установленного `psql` и выполняет
 запросы в проверенной read-only транзакции `READ COMMITTED`.
+
+При запуске в терминале загрузка метаданных показывает progress bar с фазой,
+числом ресурсов Config и объёмом сжатых данных. Config читается потоково и
+декодируется параллельно на blocking-пуле Tokio с ограниченным числом задач.
+Progress выводится в `stderr`, поэтому табличный вывод `metadata postgres` в
+`stdout` можно по-прежнему безопасно перенаправлять или обрабатывать скриптом.
+
+Если база доступна через SOCKS5-прокси (например, через `ssh -D`), добавьте
+`--socks5-proxy 127.0.0.1:1080`. Прокси получает исходное имя из `--host` и
+разрешает его на своей стороне. Сейчас поддерживается SOCKS5 без аутентификации;
+пароль PostgreSQL по-прежнему читается только из источников выше.
 
 Команда | Назначение
 --- | ---

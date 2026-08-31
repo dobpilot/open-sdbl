@@ -220,13 +220,12 @@ fn ensure_capacity(
 }
 
 struct Huffman {
-    entries: Vec<HuffmanEntry>,
+    table: Vec<HuffmanEntry>,
     maximum_length: u8,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Default)]
 struct HuffmanEntry {
-    reversed_code: u16,
     length: u8,
     symbol: u16,
 }
@@ -264,7 +263,7 @@ impl Huffman {
             next_code[bits] = code;
         }
 
-        let mut entries = Vec::new();
+        let mut codes = Vec::new();
         let mut maximum_length = 0;
         for (symbol, &length) in lengths.iter().enumerate() {
             if length == 0 {
@@ -272,32 +271,37 @@ impl Huffman {
             }
             let canonical = next_code[usize::from(length)];
             next_code[usize::from(length)] += 1;
-            entries.push(HuffmanEntry {
-                reversed_code: reverse_bits(canonical, length),
-                length,
-                symbol: symbol as u16,
-            });
+            codes.push((
+                reverse_bits(canonical, length),
+                HuffmanEntry {
+                    length,
+                    symbol: symbol as u16,
+                },
+            ));
             maximum_length = maximum_length.max(length);
         }
+        let mut table = vec![HuffmanEntry::default(); 1usize << maximum_length];
+        for (reversed_code, entry) in codes {
+            let step = 1usize << entry.length;
+            for index in (usize::from(reversed_code)..table.len()).step_by(step) {
+                debug_assert_eq!(table[index].length, 0);
+                table[index] = entry;
+            }
+        }
         Ok(Self {
-            entries,
+            table,
             maximum_length,
         })
     }
 
     fn decode(&self, bits: &mut BitReader<'_>) -> Result<u16, MetadataError> {
-        let mut code = 0u16;
-        for length in 1..=self.maximum_length {
-            code |= (bits.read_bits(1)? as u16) << (length - 1);
-            if let Some(entry) = self
-                .entries
-                .iter()
-                .find(|entry| entry.length == length && entry.reversed_code == code)
-            {
-                return Ok(entry.symbol);
-            }
+        let index = bits.peek_bits_padded(self.maximum_length) as usize;
+        let entry = self.table[index];
+        if entry.length == 0 {
+            return Err(bits.error("invalid Huffman code"));
         }
-        Err(bits.error("invalid Huffman code"))
+        bits.advance(entry.length)?;
+        Ok(entry.symbol)
     }
 }
 
@@ -321,15 +325,40 @@ impl<'input> BitReader<'input> {
     }
 
     fn read_bits(&mut self, count: u8) -> Result<u32, MetadataError> {
-        let mut value = 0u32;
-        for shift in 0..count {
-            let Some(byte) = self.input.get(self.bit / 8) else {
-                return Err(self.error("truncated raw-DEFLATE stream"));
-            };
-            value |= u32::from((byte >> (self.bit % 8)) & 1) << shift;
-            self.bit += 1;
+        if usize::from(count) > self.remaining_bits() {
+            return Err(self.error("truncated raw-DEFLATE stream"));
         }
+        let value = self.peek_bits_padded(count);
+        self.bit += usize::from(count);
         Ok(value)
+    }
+
+    fn peek_bits_padded(&self, count: u8) -> u32 {
+        if count == 0 {
+            return 0;
+        }
+        debug_assert!(count <= 24);
+        let byte_index = self.bit / 8;
+        let mut window = 0u32;
+        if let Some(remaining) = self.input.get(byte_index..) {
+            for (index, &byte) in remaining.iter().take(3).enumerate() {
+                window |= u32::from(byte) << (index * 8);
+            }
+        }
+        let mask = (1u32 << count) - 1;
+        (window >> (self.bit % 8)) & mask
+    }
+
+    fn advance(&mut self, count: u8) -> Result<(), MetadataError> {
+        if usize::from(count) > self.remaining_bits() {
+            return Err(self.error("truncated raw-DEFLATE stream"));
+        }
+        self.bit += usize::from(count);
+        Ok(())
+    }
+
+    fn remaining_bits(&self) -> usize {
+        self.input.len().saturating_mul(8).saturating_sub(self.bit)
     }
 
     fn align_byte(&mut self) {
@@ -364,7 +393,7 @@ impl<'input> BitReader<'input> {
 
 #[cfg(test)]
 mod tests {
-    use super::{inflate_raw_deflate, inflate_raw_deflate_bounded};
+    use super::{BitReader, Huffman, inflate_raw_deflate, inflate_raw_deflate_bounded};
 
     fn hex(input: &str) -> Vec<u8> {
         input
@@ -402,5 +431,26 @@ mod tests {
         assert!(inflate_raw_deflate(&[0x03]).is_err());
         let stored = hex("011100eeff73746f72656420626c6f636b2064617461");
         assert!(inflate_raw_deflate_bounded(&stored, 16).is_err());
+    }
+
+    #[test]
+    fn decodes_a_short_final_code_and_rejects_an_incomplete_tree_hole() {
+        let tree = Huffman::new(&[1, 15], 0).unwrap();
+        let mut final_bit = BitReader {
+            input: &[0],
+            bit: 7,
+        };
+        assert_eq!(tree.decode(&mut final_bit).unwrap(), 0);
+        assert_eq!(final_bit.position(), 8);
+
+        let incomplete = Huffman::new(&[1], 0).unwrap();
+        let mut invalid = BitReader::new(&[1]);
+        assert!(
+            incomplete
+                .decode(&mut invalid)
+                .unwrap_err()
+                .to_string()
+                .contains("invalid Huffman code")
+        );
     }
 }
