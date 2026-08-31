@@ -139,6 +139,7 @@ struct PresentationPlanKey {
 #[derive(Debug, Clone)]
 struct ConsoleHelper {
     candidates: Vec<String>,
+    source_candidates: Vec<String>,
     known_identifiers: HashSet<String>,
 }
 
@@ -153,6 +154,8 @@ impl ConsoleHelper {
             .iter()
             .map(|candidate| candidate.to_lowercase())
             .collect::<HashSet<_>>();
+        let mut source_candidates = Vec::new();
+        let mut source_candidate_keys = HashSet::new();
 
         let fields_by_object = queryable_field_catalog(snapshot);
         let mut object_by_table = HashMap::new();
@@ -174,6 +177,7 @@ impl ConsoleHelper {
                 format!("{}.{name}", kind.as_str()),
                 format!("{}.{name}", russian_metadata_kind(kind)),
             ];
+            let qualified_object_names = &object_names[1..];
             for object_name in &object_names {
                 push_unique(&mut candidates, &mut candidate_keys, object_name);
             }
@@ -182,6 +186,19 @@ impl ConsoleHelper {
                 &mut candidate_keys,
                 kind,
                 &object_names,
+            );
+            for object_name in qualified_object_names {
+                push_unique(
+                    &mut source_candidates,
+                    &mut source_candidate_keys,
+                    object_name,
+                );
+            }
+            push_virtual_table_candidates(
+                &mut source_candidates,
+                &mut source_candidate_keys,
+                kind,
+                qualified_object_names,
             );
             if let Some(table) = object.physical_table.as_deref() {
                 push_unique(&mut candidates, &mut candidate_keys, table);
@@ -230,6 +247,7 @@ impl ConsoleHelper {
         }
 
         candidates.sort_by_cached_key(|value| value.to_lowercase());
+        source_candidates.sort_by_cached_key(|value| value.to_lowercase());
         let known_identifiers = candidates
             .iter()
             .flat_map(|candidate| candidate.split('.'))
@@ -238,6 +256,7 @@ impl ConsoleHelper {
             .collect();
         Self {
             candidates,
+            source_candidates,
             known_identifiers,
         }
     }
@@ -245,9 +264,20 @@ impl ConsoleHelper {
     fn complete_values(&self, line: &str, pos: usize) -> (usize, Vec<Pair>) {
         let start = completion_start(line, pos);
         let prefix = line[start..pos].to_lowercase();
-        let values = self
-            .candidates
+        let source_context = is_source_completion_context(line, start);
+        let candidates = if source_context {
+            &self.source_candidates
+        } else {
+            &self.candidates
+        };
+        let complete_virtual_source = prefix.bytes().filter(|byte| *byte == b'.').count() >= 2;
+        let values = candidates
             .iter()
+            .filter(|candidate| {
+                !source_context
+                    || complete_virtual_source
+                    || candidate.bytes().filter(|byte| *byte == b'.').count() == 1
+            })
             .filter(|candidate| candidate.to_lowercase().starts_with(&prefix))
             .map(|candidate| Pair {
                 display: candidate.clone(),
@@ -354,6 +384,14 @@ fn completion_start(line: &str, pos: usize) -> usize {
 
 fn is_completion_character(character: char) -> bool {
     character == '\\' || character == '_' || character == '.' || character.is_alphanumeric()
+}
+
+fn is_source_completion_context(line: &str, start: usize) -> bool {
+    line[..start]
+        .split_whitespace()
+        .next_back()
+        .map(str::to_lowercase)
+        .is_some_and(|keyword| matches!(keyword.as_str(), "из" | "from" | "соединение" | "join"))
 }
 
 fn push_unique(values: &mut Vec<String>, keys: &mut HashSet<String>, value: &str) {
@@ -1244,6 +1282,7 @@ mod tests {
                 "Справочник.Договоры".to_owned(),
                 "Организация.Код".to_owned(),
             ],
+            source_candidates: vec!["Справочник.Договоры".to_owned()],
             known_identifiers: HashSet::new(),
         };
 
@@ -1292,6 +1331,7 @@ mod tests {
             &information_names,
         );
         let helper = ConsoleHelper {
+            source_candidates: candidates.clone(),
             candidates,
             known_identifiers: HashSet::new(),
         };
@@ -1321,6 +1361,56 @@ mod tests {
     }
 
     #[test]
+    fn restricts_source_completion_to_the_qualified_metadata_hierarchy() {
+        let helper = ConsoleHelper {
+            candidates: vec![
+                "Код".to_owned(),
+                "Договоры".to_owned(),
+                "_Референс42".to_owned(),
+                "Организация.Код".to_owned(),
+            ],
+            source_candidates: vec![
+                "Catalog.Contracts".to_owned(),
+                "Document.Sale".to_owned(),
+                "РегистрНакопления.Остатки".to_owned(),
+                "РегистрНакопления.Остатки.Остатки()".to_owned(),
+                "Справочник.Договоры".to_owned(),
+            ],
+            known_identifiers: HashSet::new(),
+        };
+
+        let (_, empty_source) = helper.complete_values("FROM ", "FROM ".len());
+        assert_eq!(empty_source.len(), 4);
+        assert!(
+            empty_source
+                .iter()
+                .all(|candidate| candidate.replacement.matches('.').count() == 1)
+        );
+        assert!(empty_source.iter().all(|candidate| {
+            !matches!(
+                candidate.replacement.as_str(),
+                "Код" | "Договоры" | "_Референс42"
+            )
+        }));
+
+        let (_, catalogs) = helper.complete_values("из спр", "из спр".len());
+        assert_eq!(catalogs.len(), 1);
+        assert_eq!(catalogs[0].replacement, "Справочник.Договоры");
+
+        let virtual_prefix = "JOIN РегистрНакопления.Остатки.ос";
+        let (_, virtual_sources) = helper.complete_values(virtual_prefix, virtual_prefix.len());
+        assert_eq!(virtual_sources.len(), 1);
+        assert_eq!(
+            virtual_sources[0].replacement,
+            "РегистрНакопления.Остатки.Остатки()"
+        );
+
+        let (_, fields) =
+            helper.complete_values("ВЫБРАТЬ Организация.к", "ВЫБРАТЬ Организация.к".len());
+        assert_eq!(fields[0].replacement, "Организация.Код");
+    }
+
+    #[test]
     fn does_not_attach_virtual_tables_to_catalogs() {
         let mut candidates = Vec::new();
         let mut candidate_keys = HashSet::new();
@@ -1344,6 +1434,7 @@ mod tests {
     fn highlights_lexer_tokens_without_changing_display_text() {
         let helper = ConsoleHelper {
             candidates: Vec::new(),
+            source_candidates: Vec::new(),
             known_identifiers: HashSet::from(["договоры".to_owned()]),
         };
         let line = "ВЫБРАТЬ Договоры // test";
