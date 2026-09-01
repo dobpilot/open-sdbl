@@ -1,0 +1,35 @@
+services:
+  postgres:
+    image: postgres:17
+    environment:
+      POSTGRES_DB: onec
+      POSTGRES_USER: onec
+      POSTGRES_PASSWORD: onec
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U onec"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+
+  open-sdbl-trino:
+    build: .
+    environment:
+      OPEN_SDBL_POSTGRES_HOST: postgres
+      OPEN_SDBL_POSTGRES_DATABASE: onec
+      OPEN_SDBL_POSTGRES_USERNAME: onec
+      OPEN_SDBL_POSTGRES_PASSWORD: onec
+      OPEN_SDBL_LISTEN: 0.0.0.0:8088
+    depends_on:
+      postgres: {condition: service_healthy}
+
+  trino:
+    image: trinodb/trino:476
+    ports: ["8080:8080"]
+    volumes:
+      - ./integration/trino/onec.properties:/etc/trino/catalog/onec.properties:ro
+      - ./trino-open-sdbl/target/plugin:/usr/lib/trino/plugin/open-sdbl:ro
+    depends_on: [open-sdbl-trino]
+
+# Load a sanitized real 1C PostgreSQL fixture before starting this environment.
+# The service intentionally rejects a synthetic schema that lacks DBNames,
+# Config, and SchemaStorage authority.

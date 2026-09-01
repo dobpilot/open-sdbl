@@ -7,7 +7,7 @@ use std::time::{Duration, Instant};
 use moka::future::Cache;
 use open_sdbl::metadata::{MetadataKind, MetadataObject, MetadataSnapshot, ObjectId};
 use open_sdbl::query::{
-    CompiledQuery, PresentationExpression, PresentationPlan, PresentationRequest,
+    CompiledQuery, PresentationPlan, PresentationRequest, default_presentation_plan,
     find_metadata_object, prepare_postgres_query, queryable_field_catalog, queryable_fields,
 };
 use open_sdbl::{TokenKind, tokenize};
@@ -618,122 +618,6 @@ async fn presentation_plans(
     plans
 }
 
-fn default_presentation_plan(snapshot: &MetadataSnapshot, object: ObjectId) -> PresentationPlan {
-    let metadata_object = snapshot.object_by_id(object);
-    let kind = metadata_object.and_then(|object| object.kind);
-    let type_name = metadata_object.map_or_else(
-        || "Документ".to_owned(),
-        |metadata_object| {
-            snapshot
-                .descriptors
-                .iter()
-                .find(|descriptor| descriptor.object_guid == metadata_object.guid)
-                .and_then(|descriptor| {
-                    descriptor
-                        .synonyms
-                        .iter()
-                        .find(|synonym| synonym.language.eq_ignore_ascii_case("ru"))
-                        .map(|synonym| synonym.text.trim())
-                        .filter(|text| !text.is_empty())
-                })
-                .map(str::to_owned)
-                .or_else(|| metadata_object.name.clone())
-                .unwrap_or_else(|| "Документ".to_owned())
-        },
-    );
-    let description = snapshot.field_id(object, "Наименование").ok();
-    let code = snapshot.field_id(object, "Код").ok();
-    let number = snapshot.field_id(object, "Номер").ok();
-    let date = snapshot.field_id(object, "Дата").ok();
-    let id = snapshot.field_id(object, "Ссылка").ok();
-
-    let (fields, expression) =
-        default_presentation_template(kind, &type_name, description, code, number, date, id);
-    PresentationPlan {
-        object,
-        fields,
-        expression,
-    }
-}
-
-#[allow(clippy::too_many_arguments)]
-fn default_presentation_template(
-    kind: Option<MetadataKind>,
-    type_name: &str,
-    description: Option<open_sdbl::metadata::FieldId>,
-    code: Option<open_sdbl::metadata::FieldId>,
-    number: Option<open_sdbl::metadata::FieldId>,
-    date: Option<open_sdbl::metadata::FieldId>,
-    id: Option<open_sdbl::metadata::FieldId>,
-) -> (Vec<open_sdbl::metadata::FieldId>, PresentationExpression) {
-    if kind == Some(MetadataKind::Catalog)
-        && let (Some(description), Some(code)) = (description, code)
-    {
-        return (
-            vec![description, code],
-            PresentationExpression::Concat(vec![
-                PresentationExpression::Field(description),
-                PresentationExpression::Literal(" (".to_owned()),
-                PresentationExpression::Field(code),
-                PresentationExpression::Literal(")".to_owned()),
-            ]),
-        );
-    }
-    if kind == Some(MetadataKind::Document) {
-        return match (number, date) {
-            (Some(number), Some(date)) => (
-                vec![number, date],
-                PresentationExpression::Concat(vec![
-                    PresentationExpression::Literal(type_name.to_owned()),
-                    PresentationExpression::Literal(" ".to_owned()),
-                    PresentationExpression::Field(number),
-                    PresentationExpression::Literal(" от ".to_owned()),
-                    PresentationExpression::Field(date),
-                ]),
-            ),
-            (Some(number), None) => (
-                vec![number],
-                PresentationExpression::Concat(vec![
-                    PresentationExpression::Literal(type_name.to_owned()),
-                    PresentationExpression::Literal(" ".to_owned()),
-                    PresentationExpression::Field(number),
-                ]),
-            ),
-            (None, Some(date)) => (
-                vec![date],
-                PresentationExpression::Concat(vec![
-                    PresentationExpression::Literal(type_name.to_owned()),
-                    PresentationExpression::Literal(" от ".to_owned()),
-                    PresentationExpression::Field(date),
-                ]),
-            ),
-            (None, None) => (
-                Vec::new(),
-                PresentationExpression::Literal(type_name.to_owned()),
-            ),
-        };
-    }
-
-    match (description, code) {
-        (Some(description), Some(code)) => (
-            vec![description, code],
-            PresentationExpression::Concat(vec![
-                PresentationExpression::Field(description),
-                PresentationExpression::Literal(" (".to_owned()),
-                PresentationExpression::Field(code),
-                PresentationExpression::Literal(")".to_owned()),
-            ]),
-        ),
-        (Some(field), None) | (None, Some(field)) => {
-            (vec![field], PresentationExpression::Field(field))
-        }
-        (None, None) => match number.or(id) {
-            Some(field) => (vec![field], PresentationExpression::Field(field)),
-            None => (Vec::new(), PresentationExpression::Literal(String::new())),
-        },
-    }
-}
-
 enum MetaOutcome {
     Continue,
     Refreshed,
@@ -1231,13 +1115,15 @@ mod tests {
 
     use moka::future::Cache;
     use open_sdbl::metadata::{FieldId, MetadataKind, ObjectId, StandardFieldId};
-    use open_sdbl::query::{PresentationExpression, PresentationPlan};
+    use open_sdbl::query::{
+        PresentationExpression, PresentationPlan, default_presentation_template,
+    };
     use rustyline::highlight::Highlighter;
 
     use super::{
         ConsoleHelper, PRESENTATION_POLICY_VERSION, PresentationPlanKey, completion_start,
-        decode_input_line, default_presentation_template, footer_text, format_duration,
-        push_unique, push_virtual_table_candidates, statement_is_complete, timing_line,
+        decode_input_line, footer_text, format_duration, push_unique,
+        push_virtual_table_candidates, statement_is_complete, timing_line,
     };
 
     #[test]

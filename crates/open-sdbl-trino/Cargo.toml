@@ -1,0 +1,29 @@
+[package]
+name = "open-sdbl-trino"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+description = "Read-only open-sdbl service for the Trino 476 connector"
+license = "GPL-3.0-only"
+repository = "https://github.com/dobpilot/open-sdbl"
+publish = false
+
+[[bin]]
+name = "open-sdbl-trino"
+path = "src/main.rs"
+doc = false
+
+[dependencies]
+axum = "0.8.6"
+deadpool-postgres = "0.14.1"
+futures-util = "0.3.34"
+native-tls = "0.2.14"
+open-sdbl = { path = "../.." }
+postgres-native-tls = "0.5.1"
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = "1.0.145"
+tokio = { version = "1.53.1", features = ["macros", "net", "rt-multi-thread", "signal", "sync", "time"] }
+tokio-postgres = "0.7.15"
+tokio-stream = "0.1.17"
+tracing = "0.1.41"
+tracing-subscriber = { version = "0.3.20", features = ["env-filter", "fmt"] }

@@ -1,4 +1,5 @@
 /target/
+trino-open-sdbl/target/
 *.swp
 *.swo
 .DS_Store

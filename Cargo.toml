@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/open-sdbl-cli"]
+members = ["crates/open-sdbl-cli", "crates/open-sdbl-trino"]
 default-members = ["crates/open-sdbl-cli"]
 resolver = "3"
 
