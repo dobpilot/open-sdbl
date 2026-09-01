@@ -87,6 +87,104 @@ Progress выводится в `stderr`, поэтому табличный вы�
 В консоли работают история по стрелкам, подсветка синтаксиса и Tab-дополнение
 команд, ключевых слов, объектов, полей и виртуальных таблиц.
 
+## Trino / CedrusData 476
+
+Интеграция состоит из Rust-сервиса и тонкого read-only Java connector. Сервис
+остаётся владельцем метаданных 1С, PostgreSQL SQL и bind-параметров; connector
+собран строго с `io.trino:trino-spi:476` и передаёт projection, predicates и
+`LIMIT`. Причина отказа от stock Thrift и границы компонентов описаны в
+[`docs/trino-architecture.md`](docs/trino-architecture.md).
+
+Минимальный запуск:
+
+```bash
+cargo build --release --package open-sdbl-trino
+
+OPEN_SDBL_POSTGRES_HOST=db.example.local \
+OPEN_SDBL_POSTGRES_DATABASE=onec \
+OPEN_SDBL_POSTGRES_USERNAME=readonly_onec \
+OPEN_SDBL_POSTGRES_PASSWORD='...' \
+OPEN_SDBL_POSTGRES_TLS_MODE=require \
+OPEN_SDBL_METADATA_CACHE_TTL=300 \
+OPEN_SDBL_POSTGRES_POOL_SIZE=8 \
+OPEN_SDBL_POSTGRES_CONNECT_TIMEOUT_MS=10000 \
+OPEN_SDBL_POSTGRES_POOL_CREATE_TIMEOUT_MS=10000 \
+OPEN_SDBL_POSTGRES_POOL_WAIT_TIMEOUT_MS=10000 \
+OPEN_SDBL_STATEMENT_TIMEOUT_MS=60000 \
+OPEN_SDBL_QUERY_TIMEOUT_MS=65000 \
+OPEN_SDBL_LISTEN=0.0.0.0:8088 \
+./target/release/open-sdbl-trino
+
+# Сборка требует JDK 24 — это classfile baseline Trino 476.
+cd trino-open-sdbl && mvn package
+```
+
+Скопируйте всё содержимое `trino-open-sdbl/target/plugin` в каталог
+`plugin/open-sdbl` каждого Trino/CedrusData узла и создайте
+`etc/catalog/onec.properties`:
+
+```properties
+connector.name=open_sdbl
+open-sdbl.uri=http://open-sdbl-trino:8088
+open-sdbl.request-timeout-ms=65000
+```
+
+Проверка:
+
+```bash
+# Локальный Trino 476 с автоматически собранным plugin:
+./run_trino.sh
+
+trino --execute 'SHOW SCHEMAS FROM onec'
+trino --execute 'SHOW TABLES FROM onec."Справочник"'
+trino --execute 'DESCRIBE onec."Справочник"."Контрагенты"'
+trino --execute 'SELECT "Код", "Наименование" FROM onec."Справочник"."Контрагенты" LIMIT 10'
+trino --execute 'SELECT "Код", "Наименование", "ИНН" FROM onec."Справочник"."Контрагенты" WHERE "ИНН" = '\''7701234567'\'' LIMIT 10'
+```
+
+SDBL-операции, которых нет в Trino SQL, доступны через
+полиморфную read-only table function:
+
+```sql
+SELECT *
+FROM TABLE(onec.system.sdbl(
+    query => 'SELECT Контрагент, REFPRESENTATION(Контрагент)
+              FROM Document.Поступление'
+))
+LIMIT 10;
+
+SELECT *
+FROM TABLE(onec.system.sdbl(
+    query => 'SELECT Номенклатура, Цена, Период
+              FROM InformationRegister.ЦеныПродажные.SliceLast()'
+));
+
+SELECT *
+FROM TABLE(onec.system.sdbl(
+    query => 'SELECT Номенклатура, ОстатокОстаток
+              FROM AccumulationRegister.Остатки.Balance()'
+));
+```
+
+Аргумент `query` парсится как SDBL, а не PostgreSQL SQL. Сервис
+допускает только поддержанный `SELECT`, определяет схему результа
+через PostgreSQL prepare без чтения строк и заново проверяет форму при
+исполнении. Внешние projection и `LIMIT` пробрасываются в PostgreSQL;
+внешние predicates пока остаются в Trino, так как их перенос внутрь
+`SliceLast` или `Balance` может изменить семантику.
+
+На уровне PostgreSQL последний запрос выбирает только три поля и содержит
+параметризованные predicate и `LIMIT`. Для временной проверки включите
+`OPEN_SDBL_LOG=open_sdbl_trino=debug`. Health endpoints: `/health`, `/ready`,
+метрики: `/metrics`. Полный Kubernetes-пример приведён в
+[`docs/cedrusdata-476.md`](docs/cedrusdata-476.md), стратегия split — в
+[`docs/trino-splits.md`](docs/trino-splits.md).
+
+Для compose-теста сначала загрузите обезличенную копию настоящей 1С-базы в
+PostgreSQL (нужны `DBNames`, `Config` и `SchemaStorage`), соберите Java plugin и
+запустите `docker compose -f docker-compose.integration.yml up --build`.
+Read-only acceptance-команды собраны в `integration/run-trino-acceptance.sh`.
+
 ## Подключение `open-sdbl` к Rust-проекту
 
 Пока crate не опубликован на crates.io, подключите Git-репозиторий или локальный
