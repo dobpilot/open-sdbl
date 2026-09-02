@@ -12,8 +12,8 @@ mod schema;
 mod value;
 
 pub use config::{
-    ConfigDescriptor, ConfigFieldPurpose, Synonym, parse_config_descriptor,
-    parse_config_descriptors,
+    ConfigDescriptor, ConfigFieldPurpose, ConfigPredefinedValue, Synonym, parse_config_descriptor,
+    parse_config_descriptors, parse_config_predefined_values,
 };
 pub use db_names::{DbNameEntry, DbNames, MetadataKind, parse_db_names};
 pub use deflate::{DEFAULT_OUTPUT_LIMIT, inflate_raw_deflate, inflate_raw_deflate_bounded};
@@ -25,7 +25,8 @@ pub use normalize::{
 pub use queries::{MsSqlMetadataQueries, PostgresMetadataQueries};
 pub use resolve::{
     AllowedLength, IndexComparison, LiveColumn, LiveIndex, LiveTable, MetadataField,
-    MetadataObject, MetadataSnapshot, resolve_metadata,
+    MetadataObject, MetadataSnapshot, MetadataValue, resolve_metadata,
+    resolve_metadata_with_predefined_values,
 };
 pub use schema::{
     ColumnType, SchemaColumn, SchemaIndex, SchemaStorage, SchemaTable, parse_schema_storage,

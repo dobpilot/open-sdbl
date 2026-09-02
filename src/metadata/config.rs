@@ -1,9 +1,7 @@
 use std::borrow::Cow;
 use std::str::FromStr;
 
-#[cfg(test)]
-use super::Value;
-use super::{Guid, MetadataError, inflate_raw_deflate};
+use super::{Guid, MetadataError, Value, inflate_raw_deflate, parse_serialized};
 
 /// Semantic role of a custom field declared by a recognized Config collection.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -64,6 +62,17 @@ pub struct ConfigDescriptor {
     pub field_purpose: Option<ConfigFieldPurpose>,
 }
 
+/// One catalog predefined value decoded from an authoritative `.1c` resource.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ConfigPredefinedValue {
+    /// GUID of the owning catalog, taken from the resource file name.
+    pub owner_guid: Guid,
+    /// Stable predefined-value GUID stored in `_PredefinedID`.
+    pub value_guid: Guid,
+    /// Exact symbolic metadata name accepted by `ЗНАЧЕНИЕ`/`VALUE`.
+    pub name: String,
+}
+
 /// Parses a bare-GUID, part-zero Config resource.
 ///
 /// Returns `Ok(None)` for suffixed slots or for a valid resource without a
@@ -99,6 +108,86 @@ pub fn parse_config_descriptors(
     };
     let decoded = inflate_raw_deflate(compressed)?;
     parse_config_descriptors_streaming(&decoded, &resource_guid)
+}
+
+/// Parses catalog predefined values from a part-zero `<catalog-guid>.1c`
+/// Config resource.
+///
+/// Returns an empty vector for every other file-name shape without decoding
+/// the payload. Only rows with the verified seven-column predefined-value
+/// signature are projected.
+///
+/// # Errors
+///
+/// Returns [`MetadataError`] when a `.1c` resource is compressed or serialized
+/// incorrectly.
+pub fn parse_config_predefined_values(
+    file_name: &str,
+    compressed: &[u8],
+) -> Result<Vec<ConfigPredefinedValue>, MetadataError> {
+    let Some(owner) = file_name.strip_suffix(".1c") else {
+        return Ok(Vec::new());
+    };
+    let owner_guid = Guid::from_str(owner)?;
+    let decoded = inflate_raw_deflate(compressed)?;
+    let value = parse_serialized(&decoded)?;
+    let mut predefined = Vec::new();
+    collect_predefined_values(&value, &owner_guid, &mut predefined);
+    Ok(predefined)
+}
+
+fn collect_predefined_values(
+    value: &Value,
+    owner_guid: &Guid,
+    predefined: &mut Vec<ConfigPredefinedValue>,
+) {
+    let Value::List(values) = value else {
+        return;
+    };
+    if let Some(projected) = project_predefined_value(values, owner_guid) {
+        predefined.push(projected);
+    }
+    for value in values {
+        collect_predefined_values(value, owner_guid, predefined);
+    }
+}
+
+fn project_predefined_value(values: &[Value], owner_guid: &Guid) -> Option<ConfigPredefinedValue> {
+    if values.len() != 11 || values.first()?.as_u32()? != 2 || values.get(2)?.as_u32()? != 7 {
+        return None;
+    }
+    let identifier = values.get(3)?.as_list()?;
+    if identifier.first()?.as_string()? != "#" || identifier.len() != 3 {
+        return None;
+    }
+    let reference = identifier.get(2)?.as_list()?;
+    if reference.len() != 2 || reference.first()?.as_u32()? != 1 {
+        return None;
+    }
+    let Value::Atom(guid) = reference.get(1)? else {
+        return None;
+    };
+    let value_guid = Guid::from_str(guid).ok()?;
+    if value_guid.is_nil() {
+        return None;
+    }
+    let name = typed_string(values.get(6)?)?;
+    if name.is_empty() {
+        return None;
+    }
+    Some(ConfigPredefinedValue {
+        owner_guid: owner_guid.clone(),
+        value_guid,
+        name: name.to_owned(),
+    })
+}
+
+fn typed_string(value: &Value) -> Option<&str> {
+    let values = value.as_list()?;
+    if values.len() != 2 || values.first()?.as_string()? != "S" {
+        return None;
+    }
+    values.get(1)?.as_string()
 }
 
 fn parse_config_descriptors_streaming(
@@ -595,8 +684,9 @@ fn parse_synonyms(value: &Value) -> Vec<Synonym> {
 #[cfg(test)]
 mod tests {
     use super::{
-        ConfigFieldPurpose, collect_descriptors, parse_config_descriptor,
-        parse_config_descriptors_streaming, parse_synonyms,
+        ConfigFieldPurpose, collect_descriptors, collect_predefined_values,
+        parse_config_descriptor, parse_config_descriptors_streaming,
+        parse_config_predefined_values, parse_synonyms,
     };
     use crate::metadata::{Guid, parse_serialized};
     use std::str::FromStr;
@@ -691,6 +781,33 @@ mod tests {
             parse_config_descriptor("03bd775a-e0a1-4205-82ce-6068e73ad134.0", b"not deflate")
                 .unwrap();
         assert!(result.is_none());
+        assert!(
+            parse_config_predefined_values(
+                "03bd775a-e0a1-4205-82ce-6068e73ad134.3",
+                b"not deflate"
+            )
+            .unwrap()
+            .is_empty()
+        );
+    }
+
+    #[test]
+    fn projects_verified_catalog_predefined_rows() {
+        let owner = Guid::from_str("bee248ca-acc6-46a7-899e-148a9d9e4729").unwrap();
+        let value = parse_serialized(
+            r##"{0,{2,249,7,{"#",ae135932-4f94-44df-92c1-c91f15a92848,{1,2e22ad88-32b5-4456-a3da-e56fa2f94623}},{"B",0},{"#",ae135932-4f94-44df-92c1-c91f15a92848,{1,00000000-0000-0000-0000-000000000000}},{"S","Утвержден"},{"S","000000175"},{"S","Утвержден"},{"N",0},0},{2,1,6,{"S","not a predefined row"}}}"##.as_bytes(),
+        )
+        .unwrap();
+        let mut predefined = Vec::new();
+        collect_predefined_values(&value, &owner, &mut predefined);
+
+        assert_eq!(predefined.len(), 1);
+        assert_eq!(predefined[0].owner_guid, owner);
+        assert_eq!(
+            predefined[0].value_guid.as_str(),
+            "2e22ad88-32b5-4456-a3da-e56fa2f94623"
+        );
+        assert_eq!(predefined[0].name, "Утвержден");
     }
 
     #[test]

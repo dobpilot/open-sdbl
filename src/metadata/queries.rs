@@ -14,11 +14,11 @@ impl PostgresMetadataQueries {
     pub const DB_NAMES: &'static str =
         "SELECT binarydata FROM params WHERE filename = 'DBNames' AND partno = 0";
 
-    /// Reads every part-zero resource whose file name is a bare GUID.
-    pub const CONFIG: &'static str = "SELECT filename::text, binarydata FROM config WHERE partno = 0 AND filename::text ~ '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'";
+    /// Reads part-zero bare-GUID descriptors and `.1c` predefined values.
+    pub const CONFIG: &'static str = "SELECT filename::text, binarydata FROM config WHERE partno = 0 AND filename::text ~ '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}(\\.1c)?$'";
 
     /// Counts the resources and compressed bytes returned by [`Self::CONFIG`].
-    pub const CONFIG_TOTALS: &'static str = "SELECT count(*), COALESCE(sum(octet_length(binarydata)), 0) FROM config WHERE partno = 0 AND filename::text ~ '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'";
+    pub const CONFIG_TOTALS: &'static str = "SELECT count(*), COALESCE(sum(octet_length(binarydata)), 0) FROM config WHERE partno = 0 AND filename::text ~ '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}(\\.1c)?$'";
 
     /// Reads the current authoritative physical schema.
     pub const SCHEMA: &'static str = "SELECT currentschema FROM schemastorage WHERE schemaid = 0";
@@ -61,11 +61,11 @@ impl MsSqlMetadataQueries {
     pub const DB_NAMES: &'static str =
         "SELECT [BinaryData] FROM [dbo].[Params] WHERE [FileName] = N'DBNames' AND [PartNo] = 0";
 
-    /// Reads every part-zero resource whose file name is a canonical GUID.
-    pub const CONFIG: &'static str = "SELECT CONVERT(nvarchar(128), [FileName]), [BinaryData] FROM [dbo].[Config] WHERE [PartNo] = 0 AND LEN([FileName]) = 36 AND TRY_CONVERT(uniqueidentifier, [FileName]) IS NOT NULL ORDER BY [FileName]";
+    /// Reads part-zero canonical-GUID descriptors and `.1c` predefined values.
+    pub const CONFIG: &'static str = "SELECT CONVERT(nvarchar(128), [FileName]), [BinaryData] FROM [dbo].[Config] WHERE [PartNo] = 0 AND ((LEN([FileName]) = 36 AND TRY_CONVERT(uniqueidentifier, [FileName]) IS NOT NULL) OR (LEN([FileName]) = 39 AND RIGHT([FileName], 3) = N'.1c' AND TRY_CONVERT(uniqueidentifier, LEFT([FileName], 36)) IS NOT NULL)) ORDER BY [FileName]";
 
     /// Counts the resources and compressed bytes returned by [`Self::CONFIG`].
-    pub const CONFIG_TOTALS: &'static str = "SELECT COUNT_BIG(*), COALESCE(SUM(CONVERT(bigint, DATALENGTH([BinaryData]))), CONVERT(bigint, 0)) FROM [dbo].[Config] WHERE [PartNo] = 0 AND LEN([FileName]) = 36 AND TRY_CONVERT(uniqueidentifier, [FileName]) IS NOT NULL";
+    pub const CONFIG_TOTALS: &'static str = "SELECT COUNT_BIG(*), COALESCE(SUM(CONVERT(bigint, DATALENGTH([BinaryData]))), CONVERT(bigint, 0)) FROM [dbo].[Config] WHERE [PartNo] = 0 AND ((LEN([FileName]) = 36 AND TRY_CONVERT(uniqueidentifier, [FileName]) IS NOT NULL) OR (LEN([FileName]) = 39 AND RIGHT([FileName], 3) = N'.1c' AND TRY_CONVERT(uniqueidentifier, LEFT([FileName], 36)) IS NOT NULL))";
 
     /// Reads the current authoritative physical schema.
     pub const SCHEMA: &'static str =

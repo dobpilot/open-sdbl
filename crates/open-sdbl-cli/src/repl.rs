@@ -1,5 +1,5 @@
 use std::borrow::Cow;
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::io::{self, IsTerminal, Write};
 use std::mem::MaybeUninit;
 use std::time::{Duration, Instant};
@@ -8,7 +8,8 @@ use moka::future::Cache;
 use open_sdbl::metadata::{MetadataKind, MetadataObject, MetadataSnapshot, ObjectId};
 use open_sdbl::query::{
     CompiledQuery, PreparedMsSqlQuery, PreparedPostgresQuery, PresentationExpression,
-    PresentationPlan, PresentationRequest, find_metadata_object,
+    PresentationPlan, PresentationRequest, compile_mssql_presentation_lookup_with_year_offset,
+    compile_postgres_presentation_lookup, find_metadata_object,
     prepare_mssql_query_with_year_offset, prepare_postgres_query, queryable_field_catalog,
     queryable_fields,
 };
@@ -125,6 +126,12 @@ const COMPLETION_KEYWORDS: &[&str] = &[
     "BALANCE",
     "ОБОРОТЫ",
     "TURNOVERS",
+    "ДАТАВРЕМЯ",
+    "DATETIME",
+    "НАЧАЛОПЕРИОДА",
+    "BEGINOFPERIOD",
+    "ЗНАЧЕНИЕ",
+    "VALUE",
 ];
 
 const PRESENTATION_POLICY_VERSION: u32 = 2;
@@ -610,9 +617,27 @@ pub(super) async fn run(
                 println!("SQL: {}", compiled.sql);
                 let execution_started = Instant::now();
                 let execution = session.query(&compiled.sql, compiled.columns.len()).await;
-                let execution_elapsed = execution_started.elapsed();
                 match execution {
-                    Ok(rows) => {
+                    Ok(mut rows) => {
+                        let resolution = resolve_deferred_presentations(
+                            session,
+                            &snapshot,
+                            &presentation_cache,
+                            metadata_generation,
+                            &compiled,
+                            &mut rows,
+                        )
+                        .await;
+                        let execution_elapsed = execution_started.elapsed();
+                        if let Err(error) = resolution {
+                            eprintln!(
+                                "error: {error} ({}: {})",
+                                session.execution_label(),
+                                format_duration(execution_elapsed)
+                            );
+                            statement.clear();
+                            continue;
+                        }
                         println!(
                             "{}",
                             timing_line(session.execution_label(), execution_elapsed)
@@ -621,11 +646,14 @@ pub(super) async fn run(
                             eprintln!("error: {error}");
                         }
                     }
-                    Err(error) => eprintln!(
-                        "error: {error} ({}: {})",
-                        session.execution_label(),
-                        format_duration(execution_elapsed)
-                    ),
+                    Err(error) => {
+                        let execution_elapsed = execution_started.elapsed();
+                        eprintln!(
+                            "error: {error} ({}: {})",
+                            session.execution_label(),
+                            format_duration(execution_elapsed)
+                        );
+                    }
                 }
             }
             Err(error) => eprintln!(
@@ -645,16 +673,149 @@ async fn presentation_plans(
 ) -> Vec<PresentationPlan> {
     let mut plans = Vec::with_capacity(request.targets.len());
     for target in &request.targets {
-        let key = PresentationPlanKey {
-            metadata_generation,
-            object: target.object,
-            language: "ru",
-            policy_version: PRESENTATION_POLICY_VERSION,
-        };
-        let fallback = default_presentation_plan(snapshot, target.object);
-        plans.push(cache.get_with(key, async move { fallback }).await);
+        plans.push(presentation_plan(cache, metadata_generation, snapshot, target.object).await);
     }
     plans
+}
+
+async fn presentation_plan(
+    cache: &Cache<PresentationPlanKey, PresentationPlan>,
+    metadata_generation: u64,
+    snapshot: &MetadataSnapshot,
+    object: ObjectId,
+) -> PresentationPlan {
+    let key = PresentationPlanKey {
+        metadata_generation,
+        object,
+        language: "ru",
+        policy_version: PRESENTATION_POLICY_VERSION,
+    };
+    let fallback = default_presentation_plan(snapshot, object);
+    cache.get_with(key, async move { fallback }).await
+}
+
+async fn resolve_deferred_presentations(
+    session: &mut DatabaseSession,
+    snapshot: &MetadataSnapshot,
+    cache: &Cache<PresentationPlanKey, PresentationPlan>,
+    metadata_generation: u64,
+    compiled: &CompiledQuery,
+    rows: &mut QueryRows,
+) -> Result<(), CliError> {
+    if compiled.deferred_presentations.is_empty() || rows.is_empty() {
+        return Ok(());
+    }
+
+    let mut cells = Vec::new();
+    let mut references = BTreeMap::<ObjectId, BTreeSet<[u8; 16]>>::new();
+    for (row_index, row) in rows.iter_mut().enumerate() {
+        for &column_index in &compiled.deferred_presentations {
+            let cell = row.get_mut(column_index).ok_or_else(|| {
+                CliError::Data(format!(
+                    "database row has no deferred presentation column {column_index}"
+                ))
+            })?;
+            let Some(payload) = cell.as_deref() else {
+                *cell = Some(String::new());
+                continue;
+            };
+            let Some((object, reference)) = decode_deferred_reference(payload, snapshot)? else {
+                *cell = Some(String::new());
+                continue;
+            };
+            references.entry(object).or_default().insert(reference);
+            cells.push((row_index, column_index, object, reference));
+        }
+    }
+
+    let dialect = session.dialect();
+    let mut presentations = HashMap::<(ObjectId, [u8; 16]), String>::new();
+    for (object, object_references) in references {
+        let plan = presentation_plan(cache, metadata_generation, snapshot, object).await;
+        let object_references = object_references.into_iter().collect::<Vec<_>>();
+        for chunk in object_references.chunks(512) {
+            let lookup = match dialect {
+                DatabaseDialect::Postgres => {
+                    compile_postgres_presentation_lookup(snapshot, &plan, chunk)
+                }
+                DatabaseDialect::MsSql { year_offset } => {
+                    compile_mssql_presentation_lookup_with_year_offset(
+                        snapshot,
+                        &plan,
+                        chunk,
+                        year_offset,
+                    )
+                }
+            }
+            .map_err(|error| {
+                CliError::Data(format!(
+                    "cannot compile deferred presentation lookup: {error}"
+                ))
+            })?;
+            let lookup_rows = session.query(&lookup.sql, lookup.columns.len()).await?;
+            for row in lookup_rows {
+                let key = row.first().and_then(Option::as_deref).ok_or_else(|| {
+                    CliError::Data(
+                        "presentation lookup returned a row without a reference".to_owned(),
+                    )
+                })?;
+                let reference = decode_hex_array::<16>(key, "presentation lookup reference")?;
+                let presentation = row.get(1).and_then(Clone::clone).unwrap_or_default();
+                presentations.insert((object, reference), presentation);
+            }
+        }
+    }
+
+    for (row_index, column_index, object, reference) in cells {
+        let presentation = presentations
+            .get(&(object, reference))
+            .cloned()
+            .unwrap_or_default();
+        rows[row_index][column_index] = Some(presentation);
+    }
+    Ok(())
+}
+
+fn decode_deferred_reference(
+    payload: &str,
+    snapshot: &MetadataSnapshot,
+) -> Result<Option<(ObjectId, [u8; 16])>, CliError> {
+    if payload.is_empty() {
+        return Ok(None);
+    }
+    let (database_type, reference) = payload.split_once(':').ok_or_else(|| {
+        CliError::Data("database returned a malformed deferred presentation payload".to_owned())
+    })?;
+    let database_type = decode_hex_array::<4>(database_type, "reference RTRef")?;
+    let reference = decode_hex_array::<16>(reference, "reference RRRef")?;
+    if reference.iter().all(|byte| *byte == 0) {
+        return Ok(None);
+    }
+    let database_type = u32::from_be_bytes(database_type);
+    let object = snapshot
+        .object_id_by_database_type(database_type)
+        .map_err(|error| {
+            CliError::Data(format!(
+                "runtime reference type {database_type} is absent from metadata: {error}"
+            ))
+        })?;
+    Ok(Some((object, reference)))
+}
+
+fn decode_hex_array<const N: usize>(value: &str, label: &str) -> Result<[u8; N], CliError> {
+    if value.len() != N * 2 || !value.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+        return Err(CliError::Data(format!(
+            "database returned malformed {label} {value:?}"
+        )));
+    }
+    let mut decoded = [0_u8; N];
+    for (index, byte) in decoded.iter_mut().enumerate() {
+        let offset = index * 2;
+        *byte = u8::from_str_radix(&value[offset..offset + 2], 16).map_err(|_| {
+            CliError::Data(format!("database returned malformed {label} {value:?}"))
+        })?;
+    }
+    Ok(decoded)
 }
 
 fn default_presentation_plan(snapshot: &MetadataSnapshot, object: ObjectId) -> PresentationPlan {
@@ -1281,8 +1442,9 @@ mod tests {
 
     use super::{
         ConsoleHelper, PRESENTATION_POLICY_VERSION, PresentationPlanKey, completion_start,
-        decode_input_line, default_presentation_template, footer_text, format_duration,
-        push_unique, push_virtual_table_candidates, statement_is_complete, timing_line,
+        decode_hex_array, decode_input_line, default_presentation_template, footer_text,
+        format_duration, push_unique, push_virtual_table_candidates, statement_is_complete,
+        timing_line,
     };
 
     #[test]
@@ -1305,6 +1467,16 @@ mod tests {
         damaged.pop();
         damaged.extend_from_slice(b";\n");
         assert_eq!(decode_input_line(&damaged), Err(damaged.len() - 3));
+    }
+
+    #[test]
+    fn decodes_fixed_width_reference_hex() {
+        assert_eq!(
+            decode_hex_array::<4>("000000EA", "RTRef").unwrap(),
+            [0, 0, 0, 0xea]
+        );
+        assert!(decode_hex_array::<4>("0000", "RTRef").is_err());
+        assert!(decode_hex_array::<4>("000000xz", "RTRef").is_err());
     }
 
     #[test]

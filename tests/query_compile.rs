@@ -1,11 +1,15 @@
+use std::str::FromStr;
+
 use open_sdbl::metadata::{
-    ColumnType, ConfigFieldPurpose, FieldId, LiveColumn, LiveIndex, LiveTable, LookupError,
-    MetadataKind, SchemaColumn, StandardFieldId, parse_config_descriptors, parse_db_names,
-    parse_schema_storage, resolve_metadata,
+    ColumnType, ConfigDescriptor, ConfigFieldPurpose, ConfigPredefinedValue, FieldId, Guid,
+    LiveColumn, LiveIndex, LiveTable, LookupError, MetadataKind, SchemaColumn, SchemaStorage,
+    SchemaTable, StandardFieldId, parse_config_descriptors, parse_db_names, parse_schema_storage,
+    resolve_metadata, resolve_metadata_with_predefined_values,
 };
 use open_sdbl::query::{
-    PresentationExpression, PresentationPlan, compile_mssql_query,
-    compile_mssql_query_with_year_offset, compile_postgres_query, find_metadata_object,
+    PresentationExpression, PresentationPlan, compile_mssql_presentation_lookup_with_year_offset,
+    compile_mssql_query, compile_mssql_query_with_year_offset,
+    compile_postgres_presentation_lookup, compile_postgres_query, find_metadata_object,
     prepare_mssql_query, prepare_postgres_query, queryable_field_catalog, queryable_fields,
 };
 
@@ -78,6 +82,167 @@ fn compiles_binary_literals_for_each_sql_dialect() {
             .sql
             .contains("(\"__src\".\"_fld54\" = '\\xCAFE'::bytea)")
     );
+}
+
+#[test]
+fn compiles_enumeration_value_in_physical_one_c_byte_order() {
+    let snapshot = enumeration_value_snapshot();
+    let postgres = compile_postgres_query(
+        "ВЫБРАТЬ ЗНАЧЕНИЕ(Перечисление.бит_ВидыСтатусовОбъектов.Статус);",
+        &snapshot,
+    )
+    .unwrap();
+    assert!(
+        postgres
+            .sql
+            .contains("decode('9022249e3a1ac4b94be8faddd2f8bde9', 'hex')")
+    );
+
+    let mssql = compile_mssql_query(
+        "SELECT VALUE(Enumeration.бит_ВидыСтатусовОбъектов.Статус);",
+        &snapshot,
+    )
+    .unwrap();
+    assert!(mssql.sql.contains("0x9022249e3a1ac4b94be8faddd2f8bde9"));
+}
+
+#[test]
+fn compiles_catalog_value_as_a_predefined_id_lookup() {
+    let snapshot = catalog_value_snapshot();
+    let postgres = compile_postgres_query(
+        "SELECT Code FROM Catalog.OpenSdblMetadataProbe WHERE ID = VALUE(Catalog.OpenSdblMetadataProbe.Утвержден);",
+        &snapshot,
+    )
+    .unwrap();
+    assert!(
+        postgres
+            .sql
+            .contains("FROM \"_reference53\" AS \"__open_sdbl_value\"")
+    );
+    assert!(postgres.sql.contains(
+        "\"__open_sdbl_value\".\"_predefinedid\" = decode('a3dae56fa2f94623445632b52e22ad88', 'hex')"
+    ));
+    assert!(
+        postgres
+            .sql
+            .contains("SELECT \"__open_sdbl_value\".\"_idrref\"")
+    );
+
+    let mssql = compile_mssql_query(
+        "SELECT VALUE(Catalog.OpenSdblMetadataProbe.ДополнительныеУсловияПоДоговору_Проверен);",
+        &snapshot,
+    )
+    .unwrap();
+    assert!(mssql.sql.contains("0xa161ed47a2787c5a437832a3f6fa6a92"));
+    assert!(mssql.sql.contains("\"_predefinedid\""));
+}
+
+#[test]
+fn compiles_in_list_with_several_catalog_values() {
+    let snapshot = catalog_value_snapshot();
+    let query = "ВЫБРАТЬ Код ИЗ Справочник.OpenSdblMetadataProbe
+        ГДЕ Ссылка В (
+            ЗНАЧЕНИЕ(Справочник.OpenSdblMetadataProbe.Утвержден),
+            ЗНАЧЕНИЕ(Справочник.OpenSdblMetadataProbe.ДополнительныеУсловияПоДоговору_Проверен)
+        );";
+
+    let postgres = compile_postgres_query(query, &snapshot).unwrap();
+    assert!(postgres.sql.contains("\"__src\".\"_idrref\" IN ("));
+    assert_eq!(
+        postgres
+            .sql
+            .matches("SELECT \"__open_sdbl_value\".\"_idrref\"")
+            .count(),
+        2
+    );
+    let approved = postgres
+        .sql
+        .find("a3dae56fa2f94623445632b52e22ad88")
+        .unwrap();
+    let checked = postgres
+        .sql
+        .find("a161ed47a2787c5a437832a3f6fa6a92")
+        .unwrap();
+    assert!(approved < checked, "{}", postgres.sql);
+
+    let mssql = compile_mssql_query(query, &snapshot).unwrap();
+    assert!(mssql.sql.contains("\"__src\".\"_idrref\" IN ("));
+    assert!(mssql.sql.contains("0xa3dae56fa2f94623445632b52e22ad88"));
+    assert!(mssql.sql.contains("0xa161ed47a2787c5a437832a3f6fa6a92"));
+}
+
+#[test]
+fn compiles_in_lists_in_source_free_and_joined_queries() {
+    let snapshot = snapshot();
+    let source_free = compile_postgres_query("SELECT 2 IN (1, 2);", &snapshot).unwrap();
+    assert!(source_free.sql.contains("(2 IN (1, 2))"));
+
+    let joined = compile_mssql_query(
+        "SELECT l.Code FROM Catalog.OpenSdblMetadataProbe l
+         INNER JOIN Catalog.OpenSdblMetadataProbe r ON l.Code = r.Code
+         WHERE l.Code IN (\"Первый\", \"Второй\");",
+        &mssql_snapshot(),
+    )
+    .unwrap();
+    assert!(
+        joined
+            .sql
+            .contains("(\"l\".\"_code\" IN (N'Первый', N'Второй'))")
+    );
+}
+
+#[test]
+fn diagnoses_empty_and_malformed_in_lists() {
+    let snapshot = snapshot();
+    let empty = compile_postgres_query(
+        "SELECT Code FROM Catalog.OpenSdblMetadataProbe WHERE Code IN ();",
+        &snapshot,
+    )
+    .unwrap_err();
+    assert!(
+        empty
+            .message()
+            .contains("IN list must contain at least one expression")
+    );
+
+    let trailing = compile_postgres_query(
+        "SELECT Code FROM Catalog.OpenSdblMetadataProbe WHERE Code В (\"A\",);",
+        &snapshot,
+    )
+    .unwrap_err();
+    assert!(
+        trailing
+            .message()
+            .contains("expected expression after ',' in IN list")
+    );
+
+    let unclosed = compile_postgres_query(
+        "SELECT Code FROM Catalog.OpenSdblMetadataProbe WHERE Code IN (\"A\";",
+        &snapshot,
+    )
+    .unwrap_err();
+    assert!(unclosed.message().contains("expected \")\""));
+}
+
+#[test]
+fn diagnoses_invalid_value_kinds_paths_and_names() {
+    let snapshot = catalog_value_snapshot();
+    let error = compile_postgres_query(
+        "SELECT VALUE(Document.OpenSdblMetadataProbe.Утвержден);",
+        &snapshot,
+    )
+    .unwrap_err();
+    assert!(error.message().contains("only catalogs and enumerations"));
+
+    let error = compile_postgres_query(
+        "SELECT VALUE(Catalog.OpenSdblMetadataProbe.Absent);",
+        &snapshot,
+    )
+    .unwrap_err();
+    assert!(error.message().contains("metadata value was not found"));
+
+    let error = compile_postgres_query("SELECT VALUE(Catalog.OnlyTwo);", &snapshot).unwrap_err();
+    assert!(error.message().contains("expected \".\""));
 }
 
 #[test]
@@ -237,6 +402,193 @@ fn compiles_source_free_literals_and_scalar_presentations() {
 
     let multiline = compile_postgres_query("select\nпредставление(4);", &snapshot).unwrap();
     assert_eq!(multiline.sql, presentation.sql);
+}
+
+#[test]
+fn applies_projection_aliases_and_diagnoses_a_missing_alias() {
+    let snapshot = snapshot();
+    let field = compile_postgres_query(
+        "SELECT Code AS ResultCode FROM Catalog.OpenSdblMetadataProbe;",
+        &snapshot,
+    )
+    .unwrap();
+    assert_eq!(field.columns, ["ResultCode"]);
+    assert!(field.sql.contains("AS \"ResultCode\""));
+
+    let scalar = compile_postgres_query("SELECT 2 + 2 КАК Результат;", &snapshot).unwrap();
+    assert_eq!(scalar.columns, ["Результат"]);
+    assert_eq!(scalar.sql, "SELECT ((2 + 2))::text AS \"Результат\"");
+
+    let aggregate = compile_postgres_query(
+        "SELECT COUNT(*) AS RowCount FROM Catalog.OpenSdblMetadataProbe;",
+        &snapshot,
+    )
+    .unwrap();
+    assert_eq!(aggregate.columns, ["RowCount"]);
+    assert!(aggregate.sql.contains("COUNT(*)::text AS \"RowCount\""));
+
+    let error = compile_postgres_query(
+        "SELECT Code AS FROM Catalog.OpenSdblMetadataProbe;",
+        &snapshot,
+    )
+    .unwrap_err();
+    assert!(error.message().contains("expected projection alias"));
+}
+
+#[test]
+fn compiles_datetime_and_begin_of_period_for_postgres() {
+    let snapshot = snapshot();
+    let source_free = compile_postgres_query(
+        "SELECT DATETIME(2024, 2, 29, 12, 34, 56) AS Moment,
+                BEGINOFPERIOD(DATETIME(2024, 8, 29, 12, 34, 56), MONTH) AS PeriodStart;",
+        &snapshot,
+    )
+    .unwrap();
+    assert_eq!(source_free.columns, ["Moment", "PeriodStart"]);
+    assert!(
+        source_free
+            .sql
+            .contains("(TIMESTAMP '2024-02-29 12:34:56')::text AS \"Moment\"")
+    );
+    assert!(source_free.sql.contains(
+        "(date_trunc('month', TIMESTAMP '2024-08-29 12:34:56'))::text AS \"PeriodStart\""
+    ));
+
+    let source_backed = compile_postgres_query(
+        "ВЫБРАТЬ НАЧАЛОПЕРИОДА(Дата, МЕСЯЦ) КАК НачалоМесяца
+         ИЗ Справочник.OpenSdblMetadataProbe
+         ГДЕ Дата >= ДАТАВРЕМЯ(2026, 9, 2);",
+        &snapshot,
+    )
+    .unwrap();
+    assert!(
+        source_backed
+            .sql
+            .contains("(date_trunc('month', \"__src\".\"_date_time\"))::text AS \"НачалоМесяца\""),
+        "{}",
+        source_backed.sql
+    );
+    assert!(
+        source_backed
+            .sql
+            .contains("(\"__src\".\"_date_time\" >= TIMESTAMP '2026-09-02 00:00:00')")
+    );
+}
+
+#[test]
+fn compiles_datetime_and_begin_of_period_for_mssql_year_offset() {
+    let snapshot = mssql_snapshot();
+    let compiled = compile_mssql_query_with_year_offset(
+        "SELECT BEGINOFPERIOD(Date, MONTH) AS MonthStart
+         FROM Catalog.OpenSdblMetadataProbe
+         WHERE Date >= DATETIME(2026, 9, 2, 10, 11, 12);",
+        &snapshot,
+        2000,
+    )
+    .unwrap();
+
+    assert!(compiled.sql.contains(
+        "CONVERT(nvarchar(max), DATEADD(year, -2000, DATETIME2FROMPARTS(YEAR(\"__src\".\"_date_time\"), MONTH(\"__src\".\"_date_time\"), 1, 0, 0, 0, 0, 0))) AS \"MonthStart\""
+    ));
+    assert!(
+        compiled
+            .sql
+            .contains("DATEADD(year, 2000, CONVERT(datetime2, '2026-09-02T10:11:12', 126))")
+    );
+
+    let virtual_table = compile_mssql_query_with_year_offset(
+        "SELECT КоличествоОстаток
+         FROM AccumulationRegister.Остатки.Balance(DATETIME(2026, 9, 2));",
+        &accumulation_register_snapshot(),
+        2000,
+    )
+    .unwrap();
+    assert!(
+        virtual_table
+            .sql
+            .contains("DATEADD(year, 2000, CONVERT(datetime2, '2026-09-02T00:00:00', 126))")
+    );
+}
+
+#[test]
+fn compiles_date_functions_in_joined_projection_and_filter() {
+    let snapshot = reference_snapshot();
+    let compiled = compile_postgres_query(
+        "SELECT BEGINOFPERIOD(p.Date, DAY) AS StartDay
+         FROM Catalog.OpenSdblMetadataProbe AS p
+         INNER JOIN Catalog.Организации AS o ON p.Code = o.Code
+         WHERE p.Date >= DATETIME(2026, 9, 2);",
+        &snapshot,
+    )
+    .unwrap();
+
+    assert!(
+        compiled
+            .sql
+            .contains("(date_trunc('day', \"p\".\"_date_time\"))::text AS \"StartDay\"")
+    );
+    assert!(
+        compiled
+            .sql
+            .contains("(\"p\".\"_date_time\" >= TIMESTAMP '2026-09-02 00:00:00')")
+    );
+}
+
+#[test]
+fn compiles_every_begin_of_period_kind_for_both_dialects() {
+    let snapshot = snapshot();
+    for period in [
+        "МИНУТА",
+        "ЧАС",
+        "ДЕНЬ",
+        "НЕДЕЛЯ",
+        "ДЕКАДА",
+        "МЕСЯЦ",
+        "КВАРТАЛ",
+        "ПОЛУГОДИЕ",
+        "ГОД",
+    ] {
+        let query = format!("SELECT BEGINOFPERIOD(DATETIME(2026, 9, 22, 12, 34, 56), {period});");
+        compile_postgres_query(&query, &snapshot).unwrap();
+        compile_mssql_query(&query, &mssql_snapshot()).unwrap();
+    }
+}
+
+#[test]
+fn validates_datetime_components_periods_and_mssql_offset_range() {
+    let snapshot = snapshot();
+    for (query, message) in [
+        ("SELECT DATETIME(2026, 9);", "requires 3 to 6"),
+        ("SELECT DATETIME(2025, 2, 29);", "day must be"),
+        ("SELECT DATETIME(2026, 9, 2, 24);", "hour must be"),
+        ("SELECT DATETIME(2026.5, 9, 2);", "integer literals"),
+        (
+            "SELECT BEGINOFPERIOD(DATETIME(2026, 9, 2), CENTURY);",
+            "unsupported BEGINOFPERIOD period",
+        ),
+        (
+            "SELECT BEGINOFPERIOD(4, MONTH);",
+            "first argument must be a date expression",
+        ),
+    ] {
+        let error = compile_postgres_query(query, &snapshot).unwrap_err();
+        assert!(error.message().contains(message), "{error}");
+    }
+
+    let error = compile_mssql_query_with_year_offset(
+        "SELECT DATETIME(9000, 1, 1) FROM Catalog.OpenSdblMetadataProbe;",
+        &mssql_snapshot(),
+        2000,
+    )
+    .unwrap_err();
+    assert!(error.message().contains("outside 1..=9999"));
+
+    let error = compile_postgres_query(
+        "SELECT BEGINOFPERIOD(Code, MONTH) FROM Catalog.OpenSdblMetadataProbe;",
+        &snapshot,
+    )
+    .unwrap_err();
+    assert!(error.message().contains("must resolve to a date field"));
 }
 
 #[test]
@@ -878,8 +1230,8 @@ fn compiles_fixed_and_multi_target_reference_presentations() {
         let compiled = prepared.compile(&snapshot, &plans).unwrap();
         assert_eq!(compiled.sql.matches("LEFT JOIN").count(), expected_targets);
         if multiple {
-            assert!(compiled.sql.contains("\\x00000039"));
-            assert!(compiled.sql.contains("\\x0000003a"));
+            assert!(compiled.sql.contains("decode('00000039', 'hex')"));
+            assert!(compiled.sql.contains("decode('0000003a', 'hex')"));
             assert!(compiled.sql.contains("CASE WHEN"));
         }
     }
@@ -1068,6 +1420,13 @@ fn expands_a_compound_projection_and_rejects_it_in_predicates() {
     );
     assert!(compiled.sql.contains("\"_fld54_tref\"::text"));
     assert!(compiled.sql.contains("\"_fld54_rrref\"::text"));
+
+    let aliased = compile_postgres_query(
+        "SELECT ProbeAttribute AS Value FROM Catalog.OpenSdblMetadataProbe;",
+        &snapshot,
+    )
+    .unwrap();
+    assert_eq!(aliased.columns, ["Value_TRef", "Value_RRRef"]);
 
     let error = compile_postgres_query(
         "SELECT Code FROM Catalog.OpenSdblMetadataProbe WHERE ProbeAttribute IS NULL;",
@@ -1293,6 +1652,52 @@ fn compiles_inner_left_and_right_join_spellings_and_repeated_terminators() {
 }
 
 #[test]
+fn compiles_join_key_with_additional_in_and_value_predicates() {
+    let snapshot = catalog_value_snapshot();
+    let query = "SELECT l.Code FROM Catalog.OpenSdblMetadataProbe l
+        INNER JOIN Catalog.OpenSdblMetadataProbe r
+        ON l.Code = r.Code
+            AND l.ID IN (
+                VALUE(Catalog.OpenSdblMetadataProbe.Утвержден),
+                VALUE(Catalog.OpenSdblMetadataProbe.ДополнительныеУсловияПоДоговору_Проверен)
+            )
+            AND l.Code <> \"Исключен\";";
+
+    for compiled in [
+        compile_postgres_query(query, &snapshot).unwrap(),
+        compile_mssql_query(query, &snapshot).unwrap(),
+    ] {
+        let on = compiled.sql.split_once(" ON ").unwrap().1;
+        assert!(on.starts_with("\"l\".\"_code\" = \"r\".\"_code\" AND "));
+        assert!(on.contains("(\"l\".\"_idrref\" IN ("));
+        assert!(on.contains("a3dae56fa2f94623445632b52e22ad88"));
+        assert!(on.contains("a161ed47a2787c5a437832a3f6fa6a92"));
+        assert!(on.contains(" AND (\"l\".\"_code\" <> "));
+    }
+}
+
+#[test]
+fn keeps_additional_full_join_predicates_in_both_on_clauses() {
+    let compiled = compile_postgres_query(
+        "SELECT l.Code, r.Date FROM Catalog.OpenSdblMetadataProbe l
+         FULL JOIN Catalog.OpenSdblMetadataProbe r
+         ON l.Code = r.Code AND l.Code <> \"Исключен\";",
+        &snapshot(),
+    )
+    .unwrap();
+
+    let condition = "ON \"l\".\"_code\" = \"r\".\"_code\" AND (\"l\".\"_code\" <> 'Исключен')";
+    assert_eq!(
+        compiled.sql.matches(condition).count(),
+        2,
+        "{}",
+        compiled.sql
+    );
+    assert!(!compiled.sql.contains("WHERE (\"l\".\"_code\" <>"));
+    assert!(compiled.sql.contains("WHERE (\"l\".\"_code\" IS NULL)"));
+}
+
+#[test]
 fn resolves_a_one_hop_reference_from_one_join_side() {
     let snapshot = reference_snapshot();
     let compiled = compile_postgres_query(
@@ -1359,7 +1764,20 @@ fn rejects_unsafe_or_ambiguous_join_shapes() {
     assert!(
         inequality
             .message()
-            .contains("cross-source field equalities")
+            .contains("top-level cross-source field equality")
+    );
+
+    let nested_anchor = compile_postgres_query(
+        "SELECT p.Code FROM Catalog.OpenSdblMetadataProbe p
+         LEFT JOIN Catalog.Организации t
+         ON p.Code = t.Code OR p.Code <> t.Code;",
+        &snapshot,
+    )
+    .unwrap_err();
+    assert!(
+        nested_anchor
+            .message()
+            .contains("top-level cross-source field equality")
     );
 
     let same_alias = compile_postgres_query(
@@ -1377,6 +1795,19 @@ fn rejects_unsafe_or_ambiguous_join_shapes() {
     )
     .unwrap_err();
     assert!(reference_condition.message().contains("direct fields only"));
+
+    let additional_reference_condition = compile_postgres_query(
+        "SELECT p.Code FROM Catalog.OpenSdblMetadataProbe p
+         LEFT JOIN Catalog.Организации t
+         ON p.Code = t.Code AND p.Организация.Code = \"A\";",
+        &snapshot,
+    )
+    .unwrap_err();
+    assert!(
+        additional_reference_condition
+            .message()
+            .contains("direct fields only")
+    );
 
     let ambiguous = compile_postgres_query(
         "SELECT Code FROM Catalog.OpenSdblMetadataProbe p
@@ -1410,6 +1841,241 @@ fn rejects_an_ambiguous_schema_reference_target() {
             .message()
             .contains("no unique SchemaStorage reference target")
     );
+}
+
+#[test]
+fn compiles_document_tabular_section_from_extension_table() {
+    let snapshot = tabular_section_snapshot();
+    let compiled = compile_postgres_query(
+        "ВЫБРАТЬ
+            строки.ЦФО КАК ЦФО,
+            строки.Ссылка.ДоговорКонтрагента КАК Договор,
+            строки.СуммаБезНДС КАК СуммаБезНДС,
+            строки.Сумма КАК СуммаСНДС,
+            строки.Период КАК Период,
+            строки.ЦФО.Сам_БизнесРегион КАК Город
+         ИЗ РегистрСведений.бит_СтатусыОбъектов КАК статусы
+         ВНУТРЕННЕЕ СОЕДИНЕНИЕ
+             Документ.бит_ДополнительныеУсловияПоДоговору.ГрафикНачислений КАК строки
+         ПО статусы.Объект = строки.Ссылка;",
+        &snapshot,
+    )
+    .unwrap();
+
+    assert_eq!(
+        compiled.columns,
+        [
+            "ЦФО",
+            "Договор",
+            "СуммаБезНДС",
+            "СуммаСНДС",
+            "Период",
+            "Город"
+        ]
+    );
+    assert!(compiled.sql.contains("FROM \"_inforg60\" AS \"статусы\""));
+    assert!(
+        compiled
+            .sql
+            .contains("JOIN \"_document53_vt54X1\" AS \"строки\"")
+    );
+    assert!(compiled.sql.contains("LEFT JOIN \"_document53\""));
+    assert!(compiled.sql.contains("LEFT JOIN \"_reference62\""));
+    assert!(compiled.sql.contains("AS \"Договор\""));
+    assert!(compiled.sql.contains("AS \"Город\""));
+    assert!(compiled.sql.contains(
+        "(\"статусы\".\"_fld61_rrref\" = \"строки\".\"_document53_idrref\" AND \"статусы\".\"_fld61_rtref\" = decode('00000035', 'hex'))"
+    ));
+
+    let direct = compile_postgres_query(
+        "SELECT Ссылка, НомерСтроки, Сумма
+         FROM Документ.бит_ДополнительныеУсловияПоДоговору.ГрафикНачислений;",
+        &snapshot,
+    )
+    .unwrap();
+    assert_eq!(direct.columns, ["ID", "LineNo", "Сумма"]);
+    assert!(direct.sql.contains("FROM \"_document53_vt54X1\""));
+    assert!(
+        direct
+            .sql
+            .contains("\"_document53_idrref\"::text AS \"ID\"")
+    );
+    assert!(direct.sql.contains("\"_lineno54\"::text AS \"LineNo\""));
+}
+
+#[test]
+fn presents_references_reached_through_dereferenced_join_paths() {
+    let snapshot = dereferenced_presentation_snapshot();
+    let source = "SELECT
+            REFPRESENTATION(строки.ЦФО) AS ЦФО,
+            REFPRESENTATION(строки.Ссылка.ДоговорКонтрагента) AS Договор,
+            REFPRESENTATION(строки.ЦФО.Сам_БизнесРегион) AS Город
+         FROM InformationRegister.бит_СтатусыОбъектов AS статусы
+         INNER JOIN Document.бит_ДополнительныеУсловияПоДоговору.ГрафикНачислений AS строки
+         ON статусы.Объект = строки.Ссылка;";
+
+    let postgres = prepare_postgres_query(source, &snapshot).unwrap();
+    assert_eq!(postgres.presentation_request().targets.len(), 1);
+    let object = postgres.presentation_request().targets[0].object;
+    let id = FieldId::Standard(StandardFieldId::Id);
+    let plan = PresentationPlan {
+        object,
+        fields: vec![id],
+        expression: PresentationExpression::Field(id),
+    };
+    let postgres = postgres
+        .compile(&snapshot, std::slice::from_ref(&plan))
+        .unwrap();
+    assert_dereferenced_presentation_joins(&postgres.sql);
+
+    let mssql = prepare_mssql_query(source, &snapshot).unwrap();
+    assert_eq!(mssql.presentation_request().targets.len(), 1);
+    let mssql = mssql.compile(&snapshot, &[plan]).unwrap();
+    assert_dereferenced_presentation_joins(&mssql.sql);
+}
+
+#[test]
+fn reuses_a_dereference_join_for_projection_and_presentation() {
+    let snapshot = dereferenced_presentation_snapshot();
+    let source = "SELECT
+            строки.ЦФО.Сам_БизнесРегион,
+            REFPRESENTATION(строки.ЦФО.Сам_БизнесРегион)
+         FROM InformationRegister.бит_СтатусыОбъектов AS статусы
+         INNER JOIN Document.бит_ДополнительныеУсловияПоДоговору.ГрафикНачислений AS строки
+         ON статусы.Объект = строки.Ссылка;";
+    let prepared = prepare_postgres_query(source, &snapshot).unwrap();
+    let object = prepared.presentation_request().targets[0].object;
+    let id = FieldId::Standard(StandardFieldId::Id);
+    let compiled = prepared
+        .compile(
+            &snapshot,
+            &[PresentationPlan {
+                object,
+                fields: vec![id],
+                expression: PresentationExpression::Field(id),
+            }],
+        )
+        .unwrap();
+
+    assert_eq!(compiled.sql.matches(" LEFT JOIN ").count(), 2);
+    assert!(compiled.sql.contains(
+        "LEFT JOIN \"_reference62\" AS \"__right_ref1\" ON \"строки\".\"_fld55\" = \"__right_ref1\".\"_idrref\""
+    ));
+    assert!(compiled.sql.contains(
+        "LEFT JOIN \"_reference62\" AS \"__right_ref2\" ON \"__right_ref1\".\"_fld63\" = \"__right_ref2\".\"_idrref\""
+    ));
+}
+
+#[test]
+fn presents_a_scalar_from_a_dereferenced_join_alias_without_a_plan() {
+    let snapshot = tabular_section_snapshot();
+    let source = "SELECT PRESENTATION(строки.ЦФО.Сам_БизнесРегион)
+         FROM InformationRegister.бит_СтатусыОбъектов AS статусы
+         INNER JOIN Document.бит_ДополнительныеУсловияПоДоговору.ГрафикНачислений AS строки
+         ON статусы.Объект = строки.Ссылка;";
+    let prepared = prepare_postgres_query(source, &snapshot).unwrap();
+    assert!(prepared.presentation_request().targets.is_empty());
+    let compiled = prepared.compile(&snapshot, &[]).unwrap();
+
+    assert!(compiled.sql.contains("\"__right_ref1\".\"_fld63\""));
+    assert_eq!(compiled.sql.matches(" LEFT JOIN ").count(), 1);
+}
+
+#[test]
+fn defers_a_universal_reference_reached_through_a_join_path() {
+    let snapshot = universal_dereferenced_presentation_snapshot();
+    let source = "SELECT TOP 10 REFPRESENTATION(строки.Ссылка.ДоговорКонтрагента) AS Договор
+         FROM InformationRegister.бит_СтатусыОбъектов AS статусы
+         INNER JOIN Document.бит_ДополнительныеУсловияПоДоговору.ГрафикНачислений AS строки
+         ON статусы.Объект = строки.Ссылка;";
+
+    let postgres = prepare_postgres_query(source, &snapshot).unwrap();
+    assert!(postgres.presentation_request().targets.is_empty());
+    let postgres = postgres.compile(&snapshot, &[]).unwrap();
+    assert_eq!(postgres.deferred_presentations, [0]);
+    assert!(
+        postgres
+            .sql
+            .contains("encode(\"__right_ref1\".\"_fld59_rtref\", 'hex')")
+    );
+    assert!(
+        postgres
+            .sql
+            .contains("encode(\"__right_ref1\".\"_fld59_rrref\", 'hex')")
+    );
+    assert!(postgres.sql.ends_with(" LIMIT 10"));
+    assert_eq!(postgres.sql.matches(" LEFT JOIN ").count(), 1);
+
+    let mssql = prepare_mssql_query(source, &snapshot).unwrap();
+    let mssql = mssql.compile(&snapshot, &[]).unwrap();
+    assert_eq!(mssql.deferred_presentations, [0]);
+    assert!(
+        mssql
+            .sql
+            .contains("CONVERT(varchar(max), \"__right_ref1\".\"_fld59_rtref\", 2)")
+    );
+    assert!(mssql.sql.starts_with("SELECT TOP (10) "));
+}
+
+#[test]
+fn compiles_safe_batched_deferred_presentation_lookups() {
+    let snapshot = universal_dereferenced_presentation_snapshot();
+    let object = snapshot.object_id_by_database_type(62).unwrap();
+    let id = FieldId::Standard(StandardFieldId::Id);
+    let plan = PresentationPlan {
+        object,
+        fields: vec![id],
+        expression: PresentationExpression::Field(id),
+    };
+    let references = [[0x11; 16], [0x22; 16]];
+
+    let postgres = compile_postgres_presentation_lookup(&snapshot, &plan, &references).unwrap();
+    assert!(postgres.deferred_presentations.is_empty());
+    assert!(postgres.sql.contains(
+        "WHERE \"__presentation_target\".\"_idrref\" IN (decode('11111111111111111111111111111111', 'hex'), decode('22222222222222222222222222222222', 'hex'))"
+    ));
+
+    let mssql =
+        compile_mssql_presentation_lookup_with_year_offset(&snapshot, &plan, &references, 2000)
+            .unwrap();
+    assert!(mssql.sql.contains(
+        "WHERE \"__presentation_target\".\"_idrref\" IN (0x11111111111111111111111111111111, 0x22222222222222222222222222222222)"
+    ));
+}
+
+fn assert_dereferenced_presentation_joins(sql: &str) {
+    assert_eq!(sql.matches(" LEFT JOIN ").count(), 4, "{sql}");
+    assert!(sql.contains(
+        "LEFT JOIN \"_reference62\" AS \"__right_ref1\" ON \"строки\".\"_fld55\" = \"__right_ref1\".\"_idrref\""
+    ));
+    assert!(sql.contains(
+        "LEFT JOIN \"_document53\" AS \"__right_ref2\" ON \"строки\".\"_document53_idrref\" = \"__right_ref2\".\"_idrref\""
+    ));
+    assert!(sql.contains(
+        "LEFT JOIN \"_reference62\" AS \"__right_ref3\" ON \"__right_ref2\".\"_fld59\" = \"__right_ref3\".\"_idrref\""
+    ));
+    assert!(sql.contains(
+        "LEFT JOIN \"_reference62\" AS \"__right_ref4\" ON \"__right_ref1\".\"_fld63\" = \"__right_ref4\".\"_idrref\""
+    ));
+}
+
+#[test]
+fn diagnoses_a_tabular_section_missing_from_schema_storage() {
+    let mut snapshot = tabular_section_snapshot();
+    snapshot
+        .schema
+        .tables
+        .retain(|table| table.name != "Document53_VT54X1");
+
+    let error = compile_postgres_query(
+        "SELECT Сумма
+         FROM Документ.бит_ДополнительныеУсловияПоДоговору.ГрафикНачислений;",
+        &snapshot,
+    )
+    .unwrap_err();
+
+    assert!(error.message().contains("absent from SchemaStorage"));
+    assert!(error.message().contains("_Document53_VT54"));
 }
 
 fn snapshot() -> open_sdbl::metadata::MetadataSnapshot {
@@ -1455,6 +2121,269 @@ fn snapshot() -> open_sdbl::metadata::MetadataSnapshot {
         }],
     }];
     resolve_metadata(db_names, descriptors, schema, live_tables)
+}
+
+fn tabular_section_snapshot() -> open_sdbl::metadata::MetadataSnapshot {
+    let db_names = parse_db_names(&hex(
+        "4d8dbb6a03311045ff45b5062cefac34ea4d20ad09e9f721b9b1d7109c6ad97fcf48cc4d728a832e9c417b087e9f659e9614675a729889d72424533a51add390abac2566f6eef25cbe1f657b393f0e87df83415ddc2498c0bbcf0fcd59f3b3415ddc2498c0bbb7fbaafda8fd605017370926401fb56783fe247801f449fbd1a02e6e124c805eb48f067571936002f459fb645017370926f0ee7dabcfebcdf978d21331a88b7f5ff20ffb2206edb3415ddc2498c0bb6ba9e5ab6c4bd1abb35e4d067571936002fc321cc70f",
+    ))
+    .unwrap();
+    let parent = guid("b8bac76b-c91b-4d78-8a70-ffa39f8de694");
+    let information_register = guid("77777777-7777-4777-8777-777777777777");
+    let catalog = guid("99999999-9999-4999-8999-999999999999");
+    let descriptors = vec![
+        descriptor(&parent, &parent, "бит_ДополнительныеУсловияПоДоговору"),
+        descriptor(
+            &parent,
+            &guid("11111111-1111-4111-8111-111111111111"),
+            "ГрафикНачислений",
+        ),
+        descriptor(
+            &parent,
+            &guid("22222222-2222-4222-8222-222222222222"),
+            "ЦФО",
+        ),
+        descriptor(
+            &parent,
+            &guid("33333333-3333-4333-8333-333333333333"),
+            "СуммаБезНДС",
+        ),
+        descriptor(
+            &parent,
+            &guid("44444444-4444-4444-8444-444444444444"),
+            "Сумма",
+        ),
+        descriptor(
+            &parent,
+            &guid("55555555-5555-4555-8555-555555555555"),
+            "Период",
+        ),
+        descriptor(
+            &parent,
+            &guid("66666666-6666-4666-8666-666666666666"),
+            "ДоговорКонтрагента",
+        ),
+        descriptor(
+            &information_register,
+            &information_register,
+            "бит_СтатусыОбъектов",
+        ),
+        descriptor(
+            &information_register,
+            &guid("88888888-8888-4888-8888-888888888888"),
+            "Объект",
+        ),
+        descriptor(&catalog, &catalog, "ЦентрыФинансовойОтветственности"),
+        descriptor(
+            &catalog,
+            &guid("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"),
+            "Сам_БизнесРегион",
+        ),
+    ];
+    let schema = SchemaStorage {
+        tables: vec![
+            schema_table(
+                "Document53",
+                53,
+                vec![
+                    schema_column("ID", "R", Some("Document53")),
+                    schema_column("Fld59", "R", Some("Reference62")),
+                ],
+            ),
+            schema_table(
+                "Document53_VT54X1",
+                54,
+                vec![
+                    schema_column("Document53_IDRRef", "R", Some("Document53")),
+                    schema_column("LineNo54", "N", None),
+                    schema_column("Fld55", "R", Some("Reference62")),
+                    schema_column("Fld56", "N", None),
+                    schema_column("Fld57", "N", None),
+                    schema_column("Fld58", "T", None),
+                ],
+            ),
+            schema_table(
+                "InfoRg60",
+                60,
+                vec![schema_column("Fld61", "R", Some("Document53"))],
+            ),
+            schema_table(
+                "Reference62",
+                62,
+                vec![
+                    schema_column("ID", "R", Some("Reference62")),
+                    schema_column("Fld63", "B", None),
+                ],
+            ),
+        ],
+    };
+    let live_tables = vec![
+        live_table("_document53", &["_idrref", "_fld59"]),
+        live_table(
+            "_document53_vt54X1",
+            &[
+                "_document53_idrref",
+                "_lineno54",
+                "_fld55",
+                "_fld56",
+                "_fld57",
+                "_fld58",
+            ],
+        ),
+        live_table(
+            "_inforg60",
+            &["_fld61_type", "_fld61_rtref", "_fld61_rrref"],
+        ),
+        live_table("_reference62", &["_idrref", "_fld63"]),
+    ];
+    resolve_metadata(db_names, descriptors, schema, live_tables)
+}
+
+fn dereferenced_presentation_snapshot() -> open_sdbl::metadata::MetadataSnapshot {
+    let mut snapshot = tabular_section_snapshot();
+    let business_region = snapshot
+        .schema
+        .tables
+        .iter_mut()
+        .find(|table| table.name == "Reference62")
+        .unwrap()
+        .columns
+        .iter_mut()
+        .find(|column| column.name == "Fld63")
+        .unwrap();
+    business_region.types = vec![ColumnType {
+        tag: "R".to_owned(),
+        reference_target: Some("Reference62".to_owned()),
+    }];
+    snapshot
+}
+
+fn universal_dereferenced_presentation_snapshot() -> open_sdbl::metadata::MetadataSnapshot {
+    let mut snapshot = tabular_section_snapshot();
+    let agreement = snapshot
+        .schema
+        .tables
+        .iter_mut()
+        .find(|table| table.name == "Document53")
+        .unwrap()
+        .columns
+        .iter_mut()
+        .find(|column| column.name == "Fld59")
+        .unwrap();
+    agreement.types = vec![ColumnType {
+        tag: "R".to_owned(),
+        reference_target: Some(String::new()),
+    }];
+    let document = snapshot
+        .live_tables
+        .iter_mut()
+        .find(|table| table.name == "_document53")
+        .unwrap();
+    document.columns.retain(|column| column.name != "_fld59");
+    document.columns.extend(
+        ["_fld59_type", "_fld59_rtref", "_fld59_rrref"]
+            .into_iter()
+            .map(|name| LiveColumn {
+                name: name.to_owned(),
+                data_type: "bytea".to_owned(),
+            }),
+    );
+    snapshot
+}
+
+fn enumeration_value_snapshot() -> open_sdbl::metadata::MetadataSnapshot {
+    let owner = guid("c8b21fea-1e3d-4ae9-8719-7ff4db08af97");
+    let value = guid("d2f8bde9-fadd-4be8-9022-249e3a1ac4b9");
+    let db_names = parse_db_names(&hex(
+        "ab36d4a94eb64832324c4b4dd4354c354ed135494cb5d4b53037b4d4354f4b33494932b0484cb334d75172cd2bcd55d2b1b4acad0500",
+    ))
+    .unwrap();
+    resolve_metadata(
+        db_names,
+        vec![
+            descriptor(&owner, &owner, "бит_ВидыСтатусовОбъектов"),
+            descriptor(&owner, &value, "Статус"),
+        ],
+        SchemaStorage { tables: Vec::new() },
+        vec![live_table("_enum99", &["_idrref", "_enumorder"])],
+    )
+}
+
+fn catalog_value_snapshot() -> open_sdbl::metadata::MetadataSnapshot {
+    let base = snapshot();
+    let owner = guid("b8bac76b-c91b-4d78-8a70-ffa39f8de694");
+    let mut live_tables = base.live_tables.clone();
+    live_tables[0].columns.push(LiveColumn {
+        name: "_predefinedid".to_owned(),
+        data_type: "bytea".to_owned(),
+    });
+    resolve_metadata_with_predefined_values(
+        base.db_names.clone(),
+        base.descriptors.clone(),
+        vec![
+            ConfigPredefinedValue {
+                owner_guid: owner.clone(),
+                value_guid: guid("2e22ad88-32b5-4456-a3da-e56fa2f94623"),
+                name: "Утвержден".to_owned(),
+            },
+            ConfigPredefinedValue {
+                owner_guid: owner,
+                value_guid: guid("f6fa6a92-32a3-4378-a161-ed47a2787c5a"),
+                name: "ДополнительныеУсловияПоДоговору_Проверен".to_owned(),
+            },
+        ],
+        base.schema.clone(),
+        live_tables,
+    )
+}
+
+fn guid(value: &str) -> Guid {
+    Guid::from_str(value).unwrap()
+}
+
+fn descriptor(resource: &Guid, object: &Guid, name: &str) -> ConfigDescriptor {
+    ConfigDescriptor {
+        resource_guid: resource.clone(),
+        object_guid: object.clone(),
+        marker: "1".to_owned(),
+        name: name.to_owned(),
+        synonyms: Vec::new(),
+        comment: None,
+        field_purpose: None,
+    }
+}
+
+fn schema_table(name: &str, number: u32, columns: Vec<SchemaColumn>) -> SchemaTable {
+    SchemaTable {
+        name: name.to_owned(),
+        number,
+        columns,
+        indexes: Vec::new(),
+    }
+}
+
+fn schema_column(name: &str, tag: &str, reference_target: Option<&str>) -> SchemaColumn {
+    SchemaColumn {
+        name: name.to_owned(),
+        types: vec![ColumnType {
+            tag: tag.to_owned(),
+            reference_target: reference_target.map(str::to_owned),
+        }],
+    }
+}
+
+fn live_table(name: &str, columns: &[&str]) -> LiveTable {
+    LiveTable {
+        name: name.to_owned(),
+        columns: columns
+            .iter()
+            .map(|column| LiveColumn {
+                name: (*column).to_owned(),
+                data_type: "bytea".to_owned(),
+            })
+            .collect(),
+        indexes: Vec::new(),
+    }
 }
 
 fn mssql_snapshot() -> open_sdbl::metadata::MetadataSnapshot {

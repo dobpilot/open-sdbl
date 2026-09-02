@@ -44,6 +44,22 @@ impl Guid {
         }
         bytes
     }
+
+    /// Returns the GUID in the physical 16-byte order used by 1C tables.
+    ///
+    /// 1C stores canonical UUID fields `a-b-c-d-e` as `d + e + c + b + a`,
+    /// preserving the byte order inside every field.
+    #[must_use]
+    pub fn to_1c_bytes(&self) -> [u8; 16] {
+        let canonical = self.to_bytes();
+        let mut physical = [0_u8; 16];
+        physical[..2].copy_from_slice(&canonical[8..10]);
+        physical[2..8].copy_from_slice(&canonical[10..16]);
+        physical[8..10].copy_from_slice(&canonical[6..8]);
+        physical[10..12].copy_from_slice(&canonical[4..6]);
+        physical[12..16].copy_from_slice(&canonical[..4]);
+        physical
+    }
 }
 
 impl FromStr for Guid {
@@ -80,5 +96,17 @@ mod tests {
         assert_eq!(guid.as_str(), "b56f25d2-72a9-4d80-8998-77ac3097c873");
         assert_eq!(guid.to_bytes()[..4], [0xb5, 0x6f, 0x25, 0xd2]);
         assert!(Guid::from_str("b56f25d2").is_err());
+    }
+
+    #[test]
+    fn converts_to_physical_one_c_byte_order() {
+        let guid = Guid::from_str("d2f8bde9-fadd-4be8-9022-249e3a1ac4b9").unwrap();
+        assert_eq!(
+            guid.to_1c_bytes(),
+            [
+                0x90, 0x22, 0x24, 0x9e, 0x3a, 0x1a, 0xc4, 0xb9, 0x4b, 0xe8, 0xfa, 0xdd, 0xd2, 0xf8,
+                0xbd, 0xe9,
+            ]
+        );
     }
 }

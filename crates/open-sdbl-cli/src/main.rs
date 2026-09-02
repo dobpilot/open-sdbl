@@ -11,8 +11,8 @@ use std::time::{Duration, Instant};
 use futures_util::{Stream, StreamExt};
 use open_sdbl::metadata::{
     LiveColumn, LiveIndex, LiveTable, MetadataError, MetadataSnapshot, MsSqlMetadataQueries,
-    PostgresMetadataQueries, parse_config_descriptors, parse_db_names, parse_schema_storage,
-    resolve_metadata,
+    PostgresMetadataQueries, parse_config_descriptors, parse_config_predefined_values,
+    parse_db_names, parse_schema_storage, resolve_metadata_with_predefined_values,
 };
 use open_sdbl::{Diagnostic, tokenize};
 use tiberius::{
@@ -988,7 +988,7 @@ async fn acquire_metadata(transaction: &Transaction<'_>) -> Result<MetadataSnaps
             compressed: row.try_get(1)?,
         })
     });
-    let descriptors = decode_config_stream(
+    let (descriptors, predefined_values) = decode_config_stream(
         resources,
         CONFIG_DECODE_BATCH_SIZE,
         config_pipeline_depth(),
@@ -1017,7 +1017,13 @@ async fn acquire_metadata(transaction: &Transaction<'_>) -> Result<MetadataSnaps
 
     progress.phase("resolve");
     let snapshot = run_metadata_blocking("metadata resolution", move || {
-        Ok(resolve_metadata(db_names, descriptors, schema, live_tables))
+        Ok(resolve_metadata_with_predefined_values(
+            db_names,
+            descriptors,
+            predefined_values,
+            schema,
+            live_tables,
+        ))
     })
     .await?;
     progress.finish();
@@ -1064,7 +1070,7 @@ async fn acquire_mssql_metadata(
             compressed: required_mssql_bytes(&row, 1, "Config payload")?,
         })
     });
-    let descriptors = decode_config_stream(
+    let (descriptors, predefined_values) = decode_config_stream(
         resources,
         CONFIG_DECODE_BATCH_SIZE,
         config_pipeline_depth(),
@@ -1103,7 +1109,13 @@ async fn acquire_mssql_metadata(
 
     progress.phase("resolve");
     let snapshot = run_metadata_blocking("metadata resolution", move || {
-        Ok(resolve_metadata(db_names, descriptors, schema, live_tables))
+        Ok(resolve_metadata_with_predefined_values(
+            db_names,
+            descriptors,
+            predefined_values,
+            schema,
+            live_tables,
+        ))
     })
     .await?;
     progress.finish();
@@ -1172,6 +1184,7 @@ struct ConfigResource {
 struct DecodedConfigResource {
     file_name: String,
     descriptors: Vec<open_sdbl::metadata::ConfigDescriptor>,
+    predefined_values: Vec<open_sdbl::metadata::ConfigPredefinedValue>,
 }
 
 async fn decode_config_stream<S>(
@@ -1179,7 +1192,13 @@ async fn decode_config_stream<S>(
     batch_size: usize,
     pipeline_depth: usize,
     progress: &mut MetadataProgress,
-) -> Result<Vec<open_sdbl::metadata::ConfigDescriptor>, CliError>
+) -> Result<
+    (
+        Vec<open_sdbl::metadata::ConfigDescriptor>,
+        Vec<open_sdbl::metadata::ConfigPredefinedValue>,
+    ),
+    CliError,
+>
 where
     S: Stream<Item = Result<ConfigResource, CliError>>,
 {
@@ -1194,9 +1213,12 @@ where
                 for resource in batch {
                     let descriptors =
                         parse_config_descriptors(&resource.file_name, &resource.compressed)?;
+                    let predefined_values =
+                        parse_config_predefined_values(&resource.file_name, &resource.compressed)?;
                     decoded_resources.push(DecodedConfigResource {
                         file_name: resource.file_name,
                         descriptors,
+                        predefined_values,
                     });
                 }
                 Ok::<_, CliError>((resource_count, compressed_bytes, decoded_resources))
@@ -1218,11 +1240,17 @@ where
         .iter()
         .map(|resource| resource.descriptors.len())
         .sum();
+    let predefined_count = decoded_resources
+        .iter()
+        .map(|resource| resource.predefined_values.len())
+        .sum();
     let mut descriptors = Vec::with_capacity(descriptor_count);
+    let mut predefined_values = Vec::with_capacity(predefined_count);
     for mut resource in decoded_resources {
         descriptors.append(&mut resource.descriptors);
+        predefined_values.append(&mut resource.predefined_values);
     }
-    Ok(descriptors)
+    Ok((descriptors, predefined_values))
 }
 
 async fn run_metadata_blocking<T, F>(label: &'static str, work: F) -> Result<T, CliError>
@@ -1853,10 +1881,11 @@ mod tests {
         ]);
         let mut progress = MetadataProgress::disabled();
         progress.config_totals(2, (compressed.len() * 2) as u64);
-        let descriptors = decode_config_stream(resources, 2, 2, &mut progress)
+        let (descriptors, predefined_values) = decode_config_stream(resources, 2, 2, &mut progress)
             .await
             .unwrap();
         assert!(!descriptors.is_empty());
+        assert!(predefined_values.is_empty());
         assert_eq!(
             descriptors.first().unwrap().resource_guid.as_str(),
             "25c96bd3-fac4-42ef-b695-74c9af43589b"

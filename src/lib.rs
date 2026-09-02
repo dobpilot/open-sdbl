@@ -114,6 +114,12 @@ pub enum Keyword {
     Balance,
     /// `ОБОРОТЫ` or `TURNOVERS`.
     Turnovers,
+    /// `ДАТАВРЕМЯ` or `DATETIME`.
+    DateTime,
+    /// `НАЧАЛОПЕРИОДА` or `BEGINOFPERIOD`.
+    BeginOfPeriod,
+    /// `ЗНАЧЕНИЕ` or `VALUE`.
+    Value,
 }
 
 impl Keyword {
@@ -164,6 +170,9 @@ impl Keyword {
             Self::SliceFirst => "SLICEFIRST",
             Self::Balance => "BALANCE",
             Self::Turnovers => "TURNOVERS",
+            Self::DateTime => "DATETIME",
+            Self::BeginOfPeriod => "BEGINOFPERIOD",
+            Self::Value => "VALUE",
         }
     }
 }
@@ -563,6 +572,9 @@ fn keyword(text: &str) -> Option<Keyword> {
         "СРЕЗПЕРВЫХ" | "SLICEFIRST" => Some(Keyword::SliceFirst),
         "ОСТАТКИ" | "BALANCE" => Some(Keyword::Balance),
         "ОБОРОТЫ" | "TURNOVERS" => Some(Keyword::Turnovers),
+        "ДАТАВРЕМЯ" | "DATETIME" => Some(Keyword::DateTime),
+        "НАЧАЛОПЕРИОДА" | "BEGINOFPERIOD" => Some(Keyword::BeginOfPeriod),
+        "ЗНАЧЕНИЕ" | "VALUE" => Some(Keyword::Value),
         _ => None,
     }
 }

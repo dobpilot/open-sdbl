@@ -1,9 +1,9 @@
 use std::collections::{HashMap, HashSet};
 
 use super::{
-    AttributeId, ConfigDescriptor, ConfigFieldPurpose, DbNames, FieldId, Guid, LookupError,
-    MetadataKind, ObjectId, SchemaStorage, StandardFieldId, collapse_logical_fields,
-    normalize_index_key, recase_postgres_identifier,
+    AttributeId, ConfigDescriptor, ConfigFieldPurpose, ConfigPredefinedValue, DbNames, FieldId,
+    Guid, LookupError, MetadataKind, ObjectId, SchemaStorage, StandardFieldId,
+    collapse_logical_fields, normalize_index_key, recase_postgres_identifier,
 };
 
 #[derive(Debug, Clone, Copy)]
@@ -19,6 +19,7 @@ struct MetadataIndex {
     objects_by_database_type: HashMap<u32, LookupSlot<ObjectId>>,
     attributes_by_id: HashMap<AttributeId, LookupSlot<usize>>,
     attributes_by_owner_name: HashMap<(ObjectId, String), LookupSlot<usize>>,
+    values_by_owner_name: HashMap<(ObjectId, String), LookupSlot<usize>>,
     standard_fields: HashSet<(ObjectId, StandardFieldId)>,
 }
 
@@ -101,6 +102,17 @@ pub struct MetadataField {
     pub live: bool,
 }
 
+/// One resolved enumeration value or catalog predefined value.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MetadataValue {
+    /// Owning enumeration or catalog object.
+    pub owner: ObjectId,
+    /// Stable metadata GUID of the value.
+    pub guid: Guid,
+    /// Exact symbolic metadata name.
+    pub name: String,
+}
+
 /// Fixed-versus-variable storage semantics inferred from a live SQL type.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AllowedLength {
@@ -172,6 +184,8 @@ pub struct MetadataSnapshot {
     pub objects: Vec<MetadataObject>,
     /// Resolved custom fields.
     pub fields: Vec<MetadataField>,
+    /// Resolved enumeration and catalog predefined values.
+    pub values: Vec<MetadataValue>,
     /// SchemaStorage indexes compared with the live catalog.
     pub indexes: Vec<IndexComparison>,
     index: MetadataIndex,
@@ -284,6 +298,30 @@ impl MetadataSnapshot {
             None => Err(LookupError::ObjectNotFound),
         }
     }
+
+    /// Looks up a predefined value by owner and exact normalized metadata name.
+    ///
+    /// # Errors
+    ///
+    /// Returns a typed missing-owner, missing-value, or ambiguity outcome.
+    pub fn predefined_value(
+        &self,
+        owner: ObjectId,
+        name: &str,
+    ) -> Result<&MetadataValue, LookupError> {
+        if !self.index.objects_by_id.contains_key(&owner) {
+            return Err(LookupError::OwnerNotFound);
+        }
+        match self
+            .index
+            .values_by_owner_name
+            .get(&(owner, normalize_name(name)))
+        {
+            Some(LookupSlot::Unique(index)) => Ok(&self.values[*index]),
+            Some(LookupSlot::Ambiguous) => Err(LookupError::AmbiguousValue),
+            None => Err(LookupError::ValueNotFound),
+        }
+    }
 }
 
 /// Resolves authoritative 1C resources against observational PostgreSQL rows.
@@ -291,6 +329,18 @@ impl MetadataSnapshot {
 pub fn resolve_metadata(
     db_names: DbNames,
     descriptors: Vec<ConfigDescriptor>,
+    schema: SchemaStorage,
+    live_tables: Vec<LiveTable>,
+) -> MetadataSnapshot {
+    resolve_metadata_with_predefined_values(db_names, descriptors, Vec::new(), schema, live_tables)
+}
+
+/// Resolves authoritative 1C resources including catalog predefined values.
+#[must_use]
+pub fn resolve_metadata_with_predefined_values(
+    db_names: DbNames,
+    descriptors: Vec<ConfigDescriptor>,
+    predefined_values: Vec<ConfigPredefinedValue>,
     schema: SchemaStorage,
     live_tables: Vec<LiveTable>,
 ) -> MetadataSnapshot {
@@ -381,9 +431,53 @@ pub fn resolve_metadata(
         });
     }
 
+    let object_ids = objects
+        .iter()
+        .map(|object| {
+            (
+                object.guid.clone(),
+                (ObjectId::from(&object.guid), object.kind),
+            )
+        })
+        .collect::<HashMap<_, _>>();
+    let mut values = Vec::new();
+    for descriptor in &descriptors {
+        if descriptor.resource_guid == descriptor.object_guid {
+            continue;
+        }
+        let Some((owner, Some(MetadataKind::Enumeration))) =
+            object_ids.get(&descriptor.resource_guid).copied()
+        else {
+            continue;
+        };
+        values.push(MetadataValue {
+            owner,
+            guid: descriptor.object_guid.clone(),
+            name: descriptor.name.clone(),
+        });
+    }
+    for predefined in predefined_values {
+        let Some((owner, Some(MetadataKind::Catalog))) =
+            object_ids.get(&predefined.owner_guid).copied()
+        else {
+            continue;
+        };
+        values.push(MetadataValue {
+            owner,
+            guid: predefined.value_guid,
+            name: predefined.name,
+        });
+    }
+
     let indexes = compare_indexes(&schema, &live_tables, &live_table_by_name, &db_names);
 
-    let index = build_metadata_index(&objects, &fields, &live_tables, &live_table_by_name);
+    let index = build_metadata_index(
+        &objects,
+        &fields,
+        &values,
+        &live_tables,
+        &live_table_by_name,
+    );
 
     MetadataSnapshot {
         db_names,
@@ -392,6 +486,7 @@ pub fn resolve_metadata(
         live_tables,
         objects,
         fields,
+        values,
         indexes,
         index,
     }
@@ -451,6 +546,7 @@ fn canonical_field_base(identifier: &str) -> Option<&str> {
 fn build_metadata_index(
     objects: &[MetadataObject],
     fields: &[MetadataField],
+    values: &[MetadataValue],
     live_tables: &[LiveTable],
     live_table_by_name: &HashMap<String, usize>,
 ) -> MetadataIndex {
@@ -509,6 +605,13 @@ fn build_metadata_index(
                 }
             }
         }
+    }
+    for (position, value) in values.iter().enumerate() {
+        insert_slot(
+            &mut index.values_by_owner_name,
+            (value.owner, normalize_name(&value.name)),
+            position,
+        );
     }
     index
 }

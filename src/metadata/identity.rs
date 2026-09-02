@@ -143,6 +143,10 @@ pub enum LookupError {
     FieldNotFound,
     /// More than one matching field exists on the owner.
     AmbiguousField,
+    /// No matching predefined value exists on the owner.
+    ValueNotFound,
+    /// More than one matching predefined value exists on the owner.
+    AmbiguousValue,
     /// The requested field is standard and therefore has no metadata GUID.
     StandardFieldHasNoMetadataGuid(StandardFieldId),
     /// The supplied owner GUID does not identify a resolved object.
@@ -156,6 +160,8 @@ impl fmt::Display for LookupError {
             Self::AmbiguousObject => formatter.write_str("metadata object name is ambiguous"),
             Self::FieldNotFound => formatter.write_str("metadata field was not found"),
             Self::AmbiguousField => formatter.write_str("metadata field name is ambiguous"),
+            Self::ValueNotFound => formatter.write_str("metadata value was not found"),
+            Self::AmbiguousValue => formatter.write_str("metadata value name is ambiguous"),
             Self::StandardFieldHasNoMetadataGuid(field) => write!(
                 formatter,
                 "standard field {} has no Config metadata GUID",

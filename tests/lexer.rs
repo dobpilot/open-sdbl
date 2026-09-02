@@ -104,6 +104,24 @@ fn recognizes_accumulation_virtual_tables_bilingually() {
 }
 
 #[test]
+fn recognizes_date_functions_bilingually() {
+    let tokens = tokenize("ДАТАВРЕМЯ DATETIME НАЧАЛОПЕРИОДА BEGINOFPERIOD").unwrap();
+
+    assert_eq!(tokens[0].kind, TokenKind::Keyword(Keyword::DateTime));
+    assert_eq!(tokens[1].kind, TokenKind::Keyword(Keyword::DateTime));
+    assert_eq!(tokens[2].kind, TokenKind::Keyword(Keyword::BeginOfPeriod));
+    assert_eq!(tokens[3].kind, TokenKind::Keyword(Keyword::BeginOfPeriod));
+}
+
+#[test]
+fn recognizes_value_function_bilingually() {
+    let tokens = tokenize("ЗНАЧЕНИЕ VALUE").unwrap();
+
+    assert_eq!(tokens[0].kind, TokenKind::Keyword(Keyword::Value));
+    assert_eq!(tokens[1].kind, TokenKind::Keyword(Keyword::Value));
+}
+
+#[test]
 fn reports_the_opening_quote_of_an_unterminated_string() {
     let error = tokenize("\n  \"text").unwrap_err();
 

@@ -147,6 +147,9 @@ pub struct CompiledQuery {
     pub sql: String,
     /// Output labels in statement order.
     pub columns: Vec<String>,
+    /// Zero-based output columns whose cells contain deferred reference
+    /// presentation payloads for application-side batch resolution.
+    pub deferred_presentations: Vec<usize>,
 }
 
 /// A positional query parsing or metadata-resolution failure.
@@ -253,6 +256,93 @@ impl SqlDialect {
         }
     }
 
+    fn date_scalar_text(self, expression: &str) -> String {
+        match self {
+            Self::MsSql { year_offset } if year_offset != 0 => {
+                self.text(&format!("DATEADD(year, {}, {expression})", -year_offset))
+            }
+            _ => self.scalar_text(expression),
+        }
+    }
+
+    fn datetime_expression(
+        self,
+        value: DateTimeValue,
+        storage_domain: bool,
+        token: &Token<'_>,
+    ) -> Result<String, QueryDiagnostic> {
+        let literal = format!(
+            "{:04}-{:02}-{:02}T{:02}:{:02}:{:02}",
+            value.year, value.month, value.day, value.hour, value.minute, value.second
+        );
+        match self {
+            Self::Postgres => Ok(format!("TIMESTAMP '{}'", literal.replace('T', " "))),
+            Self::MsSql { year_offset } => {
+                if storage_domain {
+                    let physical_year = i32::from(value.year) + year_offset;
+                    if !(1..=9999).contains(&physical_year) {
+                        return Err(QueryDiagnostic::at(
+                            Some(token),
+                            format!(
+                                "DATETIME year {} with MSSQL year offset {year_offset} is outside 1..=9999",
+                                value.year
+                            ),
+                        ));
+                    }
+                }
+                let expression = format!("CONVERT(datetime2, '{literal}', 126)");
+                if storage_domain && year_offset != 0 {
+                    Ok(format!("DATEADD(year, {year_offset}, {expression})"))
+                } else {
+                    Ok(expression)
+                }
+            }
+        }
+    }
+
+    fn begin_of_period(self, value: &str, period: PeriodKind) -> String {
+        match self {
+            Self::Postgres => match period.postgres_name() {
+                Some(period) => format!("date_trunc('{period}', {value})"),
+                None if period == PeriodKind::TenDays => format!(
+                    "(date_trunc('month', {value}) + (LEAST(((EXTRACT(DAY FROM {value})::integer - 1) / 10), 2) * INTERVAL '10 days'))"
+                ),
+                None => format!(
+                    "(date_trunc('year', {value}) + CASE WHEN EXTRACT(MONTH FROM {value}) > 6 THEN INTERVAL '6 months' ELSE INTERVAL '0 months' END)"
+                ),
+            },
+            Self::MsSql { .. } => match period {
+                PeriodKind::Minute => format!(
+                    "DATETIME2FROMPARTS(YEAR({value}), MONTH({value}), DAY({value}), DATEPART(hour, {value}), DATEPART(minute, {value}), 0, 0, 0)"
+                ),
+                PeriodKind::Hour => format!(
+                    "DATETIME2FROMPARTS(YEAR({value}), MONTH({value}), DAY({value}), DATEPART(hour, {value}), 0, 0, 0, 0)"
+                ),
+                PeriodKind::Day => format!(
+                    "DATETIME2FROMPARTS(YEAR({value}), MONTH({value}), DAY({value}), 0, 0, 0, 0, 0)"
+                ),
+                PeriodKind::Week => format!(
+                    "DATEADD(day, -(((DATEDIFF(day, CONVERT(date, '19000101', 112), CONVERT(date, {value})) % 7) + 7) % 7), CONVERT(datetime2, CONVERT(date, {value})))"
+                ),
+                PeriodKind::TenDays => format!(
+                    "DATETIME2FROMPARTS(YEAR({value}), MONTH({value}), CASE WHEN DAY({value}) <= 10 THEN 1 WHEN DAY({value}) <= 20 THEN 11 ELSE 21 END, 0, 0, 0, 0, 0)"
+                ),
+                PeriodKind::Month => {
+                    format!("DATETIME2FROMPARTS(YEAR({value}), MONTH({value}), 1, 0, 0, 0, 0, 0)")
+                }
+                PeriodKind::Quarter => format!(
+                    "DATETIME2FROMPARTS(YEAR({value}), (((MONTH({value}) - 1) / 3) * 3) + 1, 1, 0, 0, 0, 0, 0)"
+                ),
+                PeriodKind::HalfYear => format!(
+                    "DATETIME2FROMPARTS(YEAR({value}), CASE WHEN MONTH({value}) <= 6 THEN 1 ELSE 7 END, 1, 0, 0, 0, 0, 0)"
+                ),
+                PeriodKind::Year => {
+                    format!("DATETIME2FROMPARTS(YEAR({value}), 1, 1, 0, 0, 0, 0, 0)")
+                }
+            },
+        }
+    }
+
     fn column_text(self, expression: &str, data_type: &str) -> String {
         let base = data_type
             .split_once('(')
@@ -333,15 +423,34 @@ impl SqlDialect {
     }
 
     fn binary_u32(self, value: u32) -> String {
-        let bytes = value.to_be_bytes();
+        self.binary_literal(&value.to_be_bytes())
+    }
+
+    fn binary_literal(self, bytes: &[u8]) -> String {
         let hex = bytes
             .iter()
             .map(|byte| format!("{byte:02x}"))
             .collect::<String>();
         match self {
-            Self::Postgres => format!("'\\x{hex}'::bytea"),
+            Self::Postgres => format!("decode('{hex}', 'hex')"),
             Self::MsSql { .. } => format!("0x{hex}"),
         }
+    }
+
+    fn binary_hex_text(self, expression: &str) -> String {
+        match self {
+            Self::Postgres => format!("encode({expression}, 'hex')"),
+            Self::MsSql { .. } => format!("CONVERT(varchar(max), {expression}, 2)"),
+        }
+    }
+
+    fn deferred_reference_payload(self, type_value: &str, reference: &str) -> String {
+        let encoded_type = self.binary_hex_text(type_value);
+        let encoded_reference = self.binary_hex_text(reference);
+        format!(
+            "CASE WHEN {reference} IS NULL THEN {} ELSE concat({encoded_type}, ':', {encoded_reference}) END",
+            self.string_literal("")
+        )
     }
 
     fn select_prefix(self, distinct: bool, top: Option<u32>) -> String {
@@ -449,6 +558,229 @@ pub fn queryable_fields(
         schema_table,
         &CustomFieldNames::Scan(snapshot),
     ))
+}
+
+struct ResolvedSourceMetadata<'snapshot> {
+    object: &'snapshot MetadataObject,
+    live_table: &'snapshot LiveTable,
+    fields: Vec<QueryableField>,
+    qualifier_name: String,
+    identity_is_base: bool,
+}
+
+fn resolve_source_metadata<'snapshot>(
+    source: &SourceAst<'_, '_>,
+    snapshot: &'snapshot MetadataSnapshot,
+) -> Result<ResolvedSourceMetadata<'snapshot>, QueryDiagnostic> {
+    let qualified_name = format!("{}.{}", source.kind.lexeme, source.object.lexeme);
+    let object = find_metadata_object(snapshot, &qualified_name)?;
+    let Some(table_part) = source.table_part else {
+        let live_table = object
+            .physical_table
+            .as_deref()
+            .and_then(|physical| {
+                snapshot
+                    .live_tables
+                    .iter()
+                    .find(|table| table.name.eq_ignore_ascii_case(physical))
+            })
+            .ok_or_else(|| {
+                QueryDiagnostic::at(Some(source.object), "metadata table is not live")
+            })?;
+        return Ok(ResolvedSourceMetadata {
+            object,
+            live_table,
+            fields: queryable_fields(snapshot, object)?,
+            qualifier_name: source.object.lexeme.to_owned(),
+            identity_is_base: true,
+        });
+    };
+
+    if !matches!(
+        object.kind,
+        Some(MetadataKind::Catalog | MetadataKind::Document)
+    ) {
+        return Err(QueryDiagnostic::at(
+            Some(table_part),
+            "tabular-section sources are supported only for catalogs and documents",
+        ));
+    }
+    let descriptors = snapshot
+        .descriptors
+        .iter()
+        .filter(|descriptor| {
+            descriptor.resource_guid == object.guid
+                && names_equal(&descriptor.name, table_part.lexeme)
+        })
+        .collect::<Vec<_>>();
+    if descriptors.is_empty() {
+        return Err(QueryDiagnostic::at(
+            Some(table_part),
+            format!(
+                "tabular section {:?} was not found under metadata object {:?}",
+                table_part.lexeme, source.object.lexeme
+            ),
+        ));
+    }
+    if descriptors.len() > 1 {
+        return Err(QueryDiagnostic::at(
+            Some(table_part),
+            format!(
+                "tabular section {:?} is ambiguous under metadata object {:?}",
+                table_part.lexeme, source.object.lexeme
+            ),
+        ));
+    }
+    let mut mappings = snapshot
+        .db_names
+        .entries()
+        .iter()
+        .filter(|entry| entry.alias == "VT" && entry.guid == descriptors[0].object_guid)
+        .collect::<Vec<_>>();
+    mappings.sort_by_key(|entry| entry.number);
+    mappings.dedup_by(|left, right| left.guid == right.guid && left.number == right.number);
+    let mapping = match mappings.as_slice() {
+        [mapping] => *mapping,
+        [] => {
+            return Err(QueryDiagnostic::at(
+                Some(table_part),
+                format!(
+                    "tabular section {:?} has no exact DBNames VT entry",
+                    table_part.lexeme
+                ),
+            ));
+        }
+        _ => {
+            return Err(QueryDiagnostic::at(
+                Some(table_part),
+                format!(
+                    "tabular section {:?} has ambiguous DBNames VT entries",
+                    table_part.lexeme
+                ),
+            ));
+        }
+    };
+    let parent_physical = object.physical_table.as_deref().ok_or_else(|| {
+        QueryDiagnostic::at(Some(source.object), "metadata object has no physical table")
+    })?;
+    let physical_table = format!("{parent_physical}_VT{}", mapping.number);
+    let mut live_variants = snapshot
+        .live_tables
+        .iter()
+        .filter(|table| {
+            table.name.eq_ignore_ascii_case(&physical_table)
+                || is_extension_table_name(&physical_table, &table.name)
+        })
+        .collect::<Vec<_>>();
+    live_variants.sort_by_key(|table| table.name.to_ascii_lowercase());
+    if live_variants.is_empty() {
+        return Err(QueryDiagnostic::at(
+            Some(table_part),
+            format!(
+                "tabular-section table {physical_table:?} and its exact extension variants are not live"
+            ),
+        ));
+    }
+    let mut schema_variants = snapshot
+        .schema
+        .tables
+        .iter()
+        .filter(|table| {
+            let candidate = table.physical_name();
+            candidate.eq_ignore_ascii_case(&physical_table)
+                || is_extension_table_name(&physical_table, &candidate)
+        })
+        .collect::<Vec<_>>();
+    schema_variants.sort_by_key(|table| table.name.to_ascii_lowercase());
+    if schema_variants.is_empty() {
+        return Err(QueryDiagnostic::at(
+            Some(table_part),
+            format!(
+                "tabular-section table {physical_table:?} and its exact extension variants are absent from SchemaStorage"
+            ),
+        ));
+    }
+    let mut matching_variants = live_variants
+        .iter()
+        .filter_map(|live| {
+            schema_variants
+                .iter()
+                .find(|schema| schema.physical_name().eq_ignore_ascii_case(&live.name))
+                .map(|schema| (*live, *schema))
+        })
+        .collect::<Vec<_>>();
+    matching_variants.sort_by_key(|(live, _)| live.name.to_ascii_lowercase());
+    let (live_table, schema_table) = matching_variants
+        .iter()
+        .copied()
+        .find(|(live, _)| live.name.eq_ignore_ascii_case(&physical_table))
+        .or_else(|| matching_variants.first().copied())
+        .ok_or_else(|| {
+            QueryDiagnostic::at(
+                Some(table_part),
+                format!(
+                    "tabular-section table {physical_table:?} has no same-named variant in SchemaStorage and the live catalog"
+                ),
+            )
+        })?;
+    let mut fields = project_queryable_fields(
+        &live_table.name,
+        live_table,
+        Some(schema_table),
+        &CustomFieldNames::Scan(snapshot),
+    );
+    normalize_table_part_standard_fields(&mut fields, parent_physical);
+    Ok(ResolvedSourceMetadata {
+        object,
+        live_table,
+        fields,
+        qualifier_name: table_part.lexeme.to_owned(),
+        identity_is_base: false,
+    })
+}
+
+fn normalize_table_part_standard_fields(fields: &mut [QueryableField], parent_physical: &str) {
+    let parent = parent_physical.trim_start_matches('_');
+    let owner_reference = format!("_{parent}_IDRRef");
+    for field in fields {
+        let standard = if field
+            .columns
+            .iter()
+            .any(|column| column.physical_name.eq_ignore_ascii_case(&owner_reference))
+        {
+            Some("ID")
+        } else if field
+            .schema_name
+            .strip_prefix("LineNo")
+            .is_some_and(|number| {
+                !number.is_empty() && number.bytes().all(|digit| digit.is_ascii_digit())
+            })
+        {
+            Some("LineNo")
+        } else {
+            None
+        };
+        let Some(standard) = standard else {
+            continue;
+        };
+        let old_name = std::mem::replace(&mut field.name, standard.to_owned());
+        let old_schema = std::mem::replace(&mut field.schema_name, standard.to_owned());
+        let mut aliases = standard_field_aliases(standard)
+            .iter()
+            .map(|alias| (*alias).to_owned())
+            .collect::<Vec<_>>();
+        push_unique_name(&mut aliases, old_name);
+        push_unique_name(&mut aliases, old_schema);
+        field.aliases = aliases;
+        let compound = field.columns.len() > 1;
+        for column in &mut field.columns {
+            column.output_label = if compound {
+                compound_label(standard, standard, &column.physical_name)
+            } else {
+                standard.to_owned()
+            };
+        }
+    }
 }
 
 /// Builds queryable fields for every currently live object in one indexed
@@ -723,6 +1055,110 @@ pub fn prepare_mssql_query_with_year_offset(
     })
 }
 
+/// Compiles a PostgreSQL lookup for presentations of concrete reference
+/// values belonging to one target object.
+///
+/// The returned statement selects the lowercase hexadecimal reference value
+/// and its validated presentation. Reference bytes are encoded by the core;
+/// callers cannot inject SQL through them.
+///
+/// # Errors
+///
+/// Returns a diagnostic when the plan is invalid, the target is not live, or
+/// the batch is empty or exceeds 1,024 unique references.
+pub fn compile_postgres_presentation_lookup(
+    snapshot: &MetadataSnapshot,
+    plan: &PresentationPlan,
+    references: &[[u8; 16]],
+) -> Result<CompiledQuery, QueryDiagnostic> {
+    compile_presentation_lookup(snapshot, plan, references, SqlDialect::Postgres)
+}
+
+/// Compiles an MSSQL lookup for presentations of concrete reference values
+/// belonging to one target object.
+///
+/// # Errors
+///
+/// Returns a diagnostic when the plan is invalid, the target is not live, or
+/// the batch is empty or exceeds 1,024 unique references.
+pub fn compile_mssql_presentation_lookup_with_year_offset(
+    snapshot: &MetadataSnapshot,
+    plan: &PresentationPlan,
+    references: &[[u8; 16]],
+    year_offset: i32,
+) -> Result<CompiledQuery, QueryDiagnostic> {
+    compile_presentation_lookup(snapshot, plan, references, SqlDialect::mssql(year_offset))
+}
+
+fn compile_presentation_lookup(
+    snapshot: &MetadataSnapshot,
+    plan: &PresentationPlan,
+    references: &[[u8; 16]],
+    dialect: SqlDialect,
+) -> Result<CompiledQuery, QueryDiagnostic> {
+    let references = references.iter().copied().collect::<BTreeSet<_>>();
+    if references.is_empty() {
+        return Err(QueryDiagnostic::metadata(
+            "presentation lookup requires at least one reference",
+        ));
+    }
+    if references.len() > 1_024 {
+        return Err(QueryDiagnostic::metadata(
+            "presentation lookup exceeds 1,024 unique references",
+        ));
+    }
+
+    let token = Token {
+        kind: TokenKind::Identifier,
+        lexeme: "presentation lookup",
+        span: crate::Span {
+            start: 0,
+            end: 0,
+            line: 1,
+            column: 1,
+        },
+    };
+    let object = snapshot
+        .object_by_id(plan.object)
+        .ok_or_else(|| QueryDiagnostic::metadata("presentation target was not resolved"))?;
+    let target_table = object
+        .physical_table
+        .as_deref()
+        .and_then(|physical| {
+            snapshot
+                .live_tables
+                .iter()
+                .find(|table| table.name.eq_ignore_ascii_case(physical))
+        })
+        .ok_or_else(|| QueryDiagnostic::metadata("presentation target table is not live"))?;
+    let fields = queryable_fields(snapshot, object)?;
+    let id = fields
+        .iter()
+        .find(|field| names_equal(&field.schema_name, "ID"))
+        .ok_or_else(|| QueryDiagnostic::metadata("presentation target has no ID"))?;
+    let id_column = single_column(id, &token)?;
+    let alias = "__presentation_target";
+    let qualified_id = qualified_column(Some(alias), &id_column.physical_name);
+    let expression =
+        compile_presentation_plan(snapshot, plan.object, alias, plan, &token, dialect)?;
+    let relation = compile_live_relation(snapshot, target_table, &fields, dialect);
+    let values = references
+        .iter()
+        .map(|reference| dialect.binary_literal(reference))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let sql = format!(
+        "SELECT {} AS \"__reference\", {expression} AS \"__presentation\" FROM {relation} AS {} WHERE {qualified_id} IN ({values})",
+        dialect.binary_hex_text(&qualified_id),
+        quote_identifier(alias),
+    );
+    Ok(CompiledQuery {
+        sql,
+        columns: vec!["__reference".to_owned(), "__presentation".to_owned()],
+        deferred_presentations: Vec::new(),
+    })
+}
+
 /// Compiles a query with plans returned by the application's compile-time
 /// presentation callback.
 ///
@@ -798,7 +1234,7 @@ struct UnionLink<'tokens, 'source> {
 struct SelectAst<'tokens, 'source> {
     distinct: bool,
     top: Option<u32>,
-    projection: Vec<Projection<'tokens, 'source>>,
+    projection: Vec<ProjectionItem<'tokens, 'source>>,
     source: Option<SourceAst<'tokens, 'source>>,
     join: Option<JoinAst<'tokens, 'source>>,
     filter: Option<Expression<'tokens, 'source>>,
@@ -808,8 +1244,15 @@ struct SelectAst<'tokens, 'source> {
 struct SourceAst<'tokens, 'source> {
     kind: &'tokens Token<'source>,
     object: &'tokens Token<'source>,
+    table_part: Option<&'tokens Token<'source>>,
     slice: Option<SliceAst<'tokens, 'source>>,
     accumulation: Option<AccumulationAst<'tokens, 'source>>,
+    alias: Option<&'tokens Token<'source>>,
+}
+
+#[derive(Debug)]
+struct ProjectionItem<'tokens, 'source> {
+    expression: Projection<'tokens, 'source>,
     alias: Option<&'tokens Token<'source>>,
 }
 
@@ -975,6 +1418,21 @@ struct OrderTerm<'tokens, 'source> {
 enum Expression<'tokens, 'source> {
     Field(FieldReference<'tokens, 'source>),
     Literal(&'tokens Token<'source>),
+    DateTime {
+        token: &'tokens Token<'source>,
+        value: DateTimeValue,
+    },
+    BeginOfPeriod {
+        token: &'tokens Token<'source>,
+        value: Box<Self>,
+        period: PeriodKind,
+    },
+    MetadataValue {
+        token: &'tokens Token<'source>,
+        kind: &'tokens Token<'source>,
+        object: &'tokens Token<'source>,
+        value: &'tokens Token<'source>,
+    },
     Unary {
         operator: &'tokens Token<'source>,
         value: Box<Self>,
@@ -984,10 +1442,154 @@ enum Expression<'tokens, 'source> {
         operator: &'tokens Token<'source>,
         right: Box<Self>,
     },
+    InList {
+        value: Box<Self>,
+        items: Vec<Self>,
+    },
     IsNull {
         value: Box<Self>,
         negated: bool,
     },
+}
+
+impl Expression<'_, '_> {
+    const fn is_date(&self) -> bool {
+        matches!(self, Self::DateTime { .. } | Self::BeginOfPeriod { .. })
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct DateTimeValue {
+    year: u16,
+    month: u8,
+    day: u8,
+    hour: u8,
+    minute: u8,
+    second: u8,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PeriodKind {
+    Minute,
+    Hour,
+    Day,
+    Week,
+    TenDays,
+    Month,
+    Quarter,
+    HalfYear,
+    Year,
+}
+
+impl PeriodKind {
+    fn from_name(name: &str) -> Option<Self> {
+        match name.to_uppercase().as_str() {
+            "МИНУТА" | "MINUTE" => Some(Self::Minute),
+            "ЧАС" | "HOUR" => Some(Self::Hour),
+            "ДЕНЬ" | "DAY" => Some(Self::Day),
+            "НЕДЕЛЯ" | "WEEK" => Some(Self::Week),
+            "ДЕКАДА" | "TENDAYS" => Some(Self::TenDays),
+            "МЕСЯЦ" | "MONTH" => Some(Self::Month),
+            "КВАРТАЛ" | "QUARTER" => Some(Self::Quarter),
+            "ПОЛУГОДИЕ" | "HALFYEAR" => Some(Self::HalfYear),
+            "ГОД" | "YEAR" => Some(Self::Year),
+            _ => None,
+        }
+    }
+
+    const fn postgres_name(self) -> Option<&'static str> {
+        match self {
+            Self::Minute => Some("minute"),
+            Self::Hour => Some("hour"),
+            Self::Day => Some("day"),
+            Self::Week => Some("week"),
+            Self::Month => Some("month"),
+            Self::Quarter => Some("quarter"),
+            Self::Year => Some("year"),
+            Self::TenDays | Self::HalfYear => None,
+        }
+    }
+}
+
+fn parse_datetime_value(
+    function: &Token<'_>,
+    arguments: &[&Token<'_>],
+) -> Result<DateTimeValue, QueryDiagnostic> {
+    if !(3..=6).contains(&arguments.len()) {
+        return Err(QueryDiagnostic::at(
+            Some(function),
+            "DATETIME requires 3 to 6 integer components",
+        ));
+    }
+    let values = arguments
+        .iter()
+        .map(|argument| {
+            argument.lexeme.parse::<u16>().map_err(|_| {
+                QueryDiagnostic::at(Some(argument), "DATETIME component is out of range")
+            })
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    let year = values[0];
+    let month = u8::try_from(values[1]).unwrap_or(u8::MAX);
+    let day = u8::try_from(values[2]).unwrap_or(u8::MAX);
+    let hour = values
+        .get(3)
+        .copied()
+        .map_or(0, |value| u8::try_from(value).unwrap_or(u8::MAX));
+    let minute = values
+        .get(4)
+        .copied()
+        .map_or(0, |value| u8::try_from(value).unwrap_or(u8::MAX));
+    let second = values
+        .get(5)
+        .copied()
+        .map_or(0, |value| u8::try_from(value).unwrap_or(u8::MAX));
+    if year == 0 || year > 9999 || month == 0 || month > 12 {
+        return Err(QueryDiagnostic::at(
+            Some(arguments[if year == 0 { 0 } else { 1 }]),
+            "DATETIME year must be 1..=9999 and month must be 1..=12",
+        ));
+    }
+    let maximum_day = days_in_month(year, month);
+    if day == 0 || day > maximum_day {
+        return Err(QueryDiagnostic::at(
+            Some(arguments[2]),
+            format!("DATETIME day must be 1..={maximum_day} for the selected month"),
+        ));
+    }
+    for (index, value, maximum, name) in [
+        (3, hour, 23, "hour"),
+        (4, minute, 59, "minute"),
+        (5, second, 59, "second"),
+    ] {
+        if arguments.get(index).is_some() && value > maximum {
+            return Err(QueryDiagnostic::at(
+                Some(arguments[index]),
+                format!("DATETIME {name} must be 0..={maximum}"),
+            ));
+        }
+    }
+    Ok(DateTimeValue {
+        year,
+        month,
+        day,
+        hour,
+        minute,
+        second,
+    })
+}
+
+const fn days_in_month(year: u16, month: u8) -> u8 {
+    match month {
+        4 | 6 | 9 | 11 => 30,
+        2 if is_leap_year(year) => 29,
+        2 => 28,
+        _ => 31,
+    }
+}
+
+const fn is_leap_year(year: u16) -> bool {
+    year % 4 == 0 && (year % 100 != 0 || year % 400 == 0)
 }
 
 struct Parser<'tokens, 'source> {
@@ -1046,11 +1648,23 @@ impl<'tokens, 'source> Parser<'tokens, 'source> {
 
         let mut projection = Vec::new();
         loop {
-            if self.consume_lexeme("*") {
-                projection.push(Projection::All);
+            let expression = if self.consume_lexeme("*") {
+                Projection::All
             } else {
-                projection.push(self.parse_projection()?);
-            }
+                self.parse_projection()?
+            };
+            let alias = if self.consume_keyword(Keyword::As) {
+                if matches!(expression, Projection::All) {
+                    return Err(QueryDiagnostic::at(
+                        self.peek(),
+                        "wildcard projection cannot have an alias",
+                    ));
+                }
+                Some(self.expect_identifier("expected projection alias after AS")?)
+            } else {
+                None
+            };
+            projection.push(ProjectionItem { expression, alias });
             if !self.consume_lexeme(",") {
                 break;
             }
@@ -1229,13 +1843,20 @@ impl<'tokens, 'source> Parser<'tokens, 'source> {
         let kind = self.expect_identifier("expected metadata kind after FROM")?;
         self.expect_lexeme(".")?;
         let object = self.expect_identifier("expected metadata object name")?;
-        let (slice, accumulation) = if self.consume_lexeme(".") {
-            if let Some(token) = self.consume_keyword_token(Keyword::SliceLast) {
-                (Some(self.parse_slice(token, SliceKind::Last)?), None)
-            } else if let Some(token) = self.consume_keyword_token(Keyword::SliceFirst) {
-                (Some(self.parse_slice(token, SliceKind::First)?), None)
-            } else if let Some(token) = self.consume_keyword_token(Keyword::Balance) {
+        let (table_part, slice, accumulation) = if self.consume_lexeme(".") {
+            if self.next_lexeme_is("(")
+                && let Some(token) = self.consume_keyword_token(Keyword::SliceLast)
+            {
+                (None, Some(self.parse_slice(token, SliceKind::Last)?), None)
+            } else if self.next_lexeme_is("(")
+                && let Some(token) = self.consume_keyword_token(Keyword::SliceFirst)
+            {
+                (None, Some(self.parse_slice(token, SliceKind::First)?), None)
+            } else if self.next_lexeme_is("(")
+                && let Some(token) = self.consume_keyword_token(Keyword::Balance)
+            {
                 (
+                    None,
                     None,
                     Some(AccumulationAst {
                         token,
@@ -1243,8 +1864,11 @@ impl<'tokens, 'source> Parser<'tokens, 'source> {
                         arguments: self.parse_virtual_arguments(2, "Balance")?,
                     }),
                 )
-            } else if let Some(token) = self.consume_keyword_token(Keyword::Turnovers) {
+            } else if self.next_lexeme_is("(")
+                && let Some(token) = self.consume_keyword_token(Keyword::Turnovers)
+            {
                 (
+                    None,
                     None,
                     Some(AccumulationAst {
                         token,
@@ -1253,13 +1877,14 @@ impl<'tokens, 'source> Parser<'tokens, 'source> {
                     }),
                 )
             } else {
-                return Err(QueryDiagnostic::at(
-                    self.peek(),
-                    "expected a supported virtual table after metadata object",
-                ));
+                (
+                    Some(self.expect_identifier("expected tabular-section name")?),
+                    None,
+                    None,
+                )
             }
         } else {
-            (None, None)
+            (None, None, None)
         };
         let alias = if self.consume_keyword(Keyword::As) {
             Some(self.expect_identifier("expected source alias after AS")?)
@@ -1274,6 +1899,7 @@ impl<'tokens, 'source> Parser<'tokens, 'source> {
         Ok(SourceAst {
             kind,
             object,
+            table_part,
             slice,
             accumulation,
             alias,
@@ -1389,6 +2015,33 @@ impl<'tokens, 'source> Parser<'tokens, 'source> {
                 negated,
             });
         }
+        if let Some(operator) = self.consume_keyword_token(Keyword::In) {
+            self.expect_lexeme("(")?;
+            if self.consume_lexeme(")") {
+                return Err(QueryDiagnostic::at(
+                    Some(operator),
+                    "IN list must contain at least one expression",
+                ));
+            }
+            let mut items = Vec::new();
+            loop {
+                items.push(self.parse_additive()?);
+                if !self.consume_lexeme(",") {
+                    break;
+                }
+                if self.peek().is_some_and(|token| token.lexeme == ")") {
+                    return Err(QueryDiagnostic::at(
+                        self.peek(),
+                        "expected expression after ',' in IN list",
+                    ));
+                }
+            }
+            self.expect_lexeme(")")?;
+            return Ok(Expression::InList {
+                value: Box::new(expression),
+                items,
+            });
+        }
         if self
             .peek()
             .is_some_and(|token| token.kind == TokenKind::Operator && is_comparison(token.lexeme))
@@ -1461,6 +2114,17 @@ impl<'tokens, 'source> Parser<'tokens, 'source> {
             self.expect_lexeme(")")?;
             return Ok(expression);
         }
+        if self.next_lexeme_is("(") {
+            if let Some(token) = self.consume_keyword_token(Keyword::DateTime) {
+                return self.parse_datetime(token);
+            }
+            if let Some(token) = self.consume_keyword_token(Keyword::BeginOfPeriod) {
+                return self.parse_begin_of_period(token);
+            }
+            if let Some(token) = self.consume_keyword_token(Keyword::Value) {
+                return self.parse_metadata_value(token);
+            }
+        }
         let Some(token) = self.peek() else {
             return Err(QueryDiagnostic::at(None, "expected expression"));
         };
@@ -1480,6 +2144,80 @@ impl<'tokens, 'source> Parser<'tokens, 'source> {
             return Ok(Expression::Literal(self.next().expect("peeked token")));
         }
         Ok(Expression::Field(self.parse_field_reference()?))
+    }
+
+    fn parse_datetime(
+        &mut self,
+        token: &'tokens Token<'source>,
+    ) -> Result<Expression<'tokens, 'source>, QueryDiagnostic> {
+        self.expect_lexeme("(")?;
+        let mut arguments = Vec::with_capacity(6);
+        loop {
+            let argument = self.expect_kind(
+                TokenKind::Number,
+                "DATETIME components must be integer literals",
+            )?;
+            if argument.lexeme.contains('.') {
+                return Err(QueryDiagnostic::at(
+                    Some(argument),
+                    "DATETIME components must be integer literals",
+                ));
+            }
+            arguments.push(argument);
+            if !self.consume_lexeme(",") {
+                break;
+            }
+            if arguments.len() == 6 {
+                return Err(QueryDiagnostic::at(
+                    self.peek(),
+                    "DATETIME accepts at most 6 components",
+                ));
+            }
+        }
+        self.expect_lexeme(")")?;
+        let value = parse_datetime_value(token, &arguments)?;
+        Ok(Expression::DateTime { token, value })
+    }
+
+    fn parse_begin_of_period(
+        &mut self,
+        token: &'tokens Token<'source>,
+    ) -> Result<Expression<'tokens, 'source>, QueryDiagnostic> {
+        self.expect_lexeme("(")?;
+        let value = self.parse_or()?;
+        self.expect_lexeme(",")?;
+        let period = self.expect_identifier("expected period kind after ','")?;
+        let period = PeriodKind::from_name(period.lexeme).ok_or_else(|| {
+            QueryDiagnostic::at(
+                Some(period),
+                format!("unsupported BEGINOFPERIOD period {:?}", period.lexeme),
+            )
+        })?;
+        self.expect_lexeme(")")?;
+        Ok(Expression::BeginOfPeriod {
+            token,
+            value: Box::new(value),
+            period,
+        })
+    }
+
+    fn parse_metadata_value(
+        &mut self,
+        token: &'tokens Token<'source>,
+    ) -> Result<Expression<'tokens, 'source>, QueryDiagnostic> {
+        self.expect_lexeme("(")?;
+        let kind = self.expect_identifier("VALUE expects a metadata kind")?;
+        self.expect_lexeme(".")?;
+        let object = self.expect_identifier("VALUE expects a metadata object")?;
+        self.expect_lexeme(".")?;
+        let value = self.expect_identifier("VALUE expects a predefined value")?;
+        self.expect_lexeme(")")?;
+        Ok(Expression::MetadataValue {
+            token,
+            kind,
+            object,
+            value,
+        })
     }
 
     fn parse_field_reference(
@@ -1677,6 +2415,17 @@ fn compile(
                 ),
             ));
         }
+        if branch.deferred_presentations != first.deferred_presentations {
+            return Err(QueryDiagnostic::at(
+                Some(ast.unions[index - 1].token),
+                format!(
+                    "UNION branch {} defers presentation columns {:?}; expected {:?}",
+                    index + 1,
+                    branch.deferred_presentations,
+                    first.deferred_presentations,
+                ),
+            ));
+        }
     }
 
     if !unioned {
@@ -1684,6 +2433,7 @@ fn compile(
         return Ok(CompiledQuery {
             sql: branch.sql,
             columns: branch.columns,
+            deferred_presentations: branch.deferred_presentations,
         });
     }
 
@@ -1712,24 +2462,34 @@ fn compile(
     Ok(CompiledQuery {
         sql,
         columns: first.columns.clone(),
+        deferred_presentations: first.deferred_presentations.clone(),
     })
 }
 
 struct CompiledBranch {
     sql: String,
     columns: Vec<String>,
+    deferred_presentations: Vec<usize>,
     logical_width: usize,
     order: Vec<String>,
 }
 
 enum SelectedProjection {
     Field(ResolvedPath),
-    Generated { sql: String, label: String },
+    Generated {
+        sql: String,
+        label: String,
+        deferred: bool,
+    },
 }
 
 enum JoinedProjection {
     Field(JoinedPath),
-    Generated { sql: String, label: String },
+    Generated {
+        sql: String,
+        label: String,
+        deferred: bool,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1745,6 +2505,7 @@ struct JoinedSource {
     sql_alias: String,
     object_name: String,
     source_alias: Option<String>,
+    identity_is_base: bool,
     reference_joins: Vec<JoinPlan>,
 }
 
@@ -1767,6 +2528,8 @@ struct JoinedContext<'snapshot> {
 #[derive(Debug, Clone)]
 struct JoinedPath {
     side: JoinedSide,
+    owner: ObjectId,
+    identity_is_base: bool,
     field: QueryableField,
     sql_alias: String,
     path_label: Option<String>,
@@ -1828,6 +2591,8 @@ impl JoinedContext<'_> {
         let source = self.source(side);
         Ok(JoinedPath {
             side,
+            owner: source.object,
+            identity_is_base: source.identity_is_base,
             field: resolve_named_field(&source.fields, field)?,
             sql_alias: source.sql_alias.clone(),
             path_label: None,
@@ -1845,12 +2610,16 @@ impl JoinedContext<'_> {
                 match (left.as_slice(), right.as_slice()) {
                     ([field], []) => Ok(JoinedPath {
                         side: JoinedSide::Left,
+                        owner: self.left.object,
+                        identity_is_base: self.left.identity_is_base,
                         field: (*field).clone(),
                         sql_alias: self.left.sql_alias.clone(),
                         path_label: None,
                     }),
                     ([], [field]) => Ok(JoinedPath {
                         side: JoinedSide::Right,
+                        owner: self.right.object,
+                        identity_is_base: self.right.identity_is_base,
                         field: (*field).clone(),
                         sql_alias: self.right.sql_alias.clone(),
                         path_label: None,
@@ -2012,17 +2781,23 @@ impl JoinedContext<'_> {
             self.dialect,
         );
 
+        let source_alias = self.source(side).sql_alias.clone();
         let existing = self
             .source(side)
             .reference_joins
             .iter()
-            .find(|join| names_equal(&join.source_field, &reference_field.schema_name))
+            .find(|join| {
+                names_equal(&join.source_alias, &source_alias)
+                    && names_equal(&join.source_field, &reference_field.schema_name)
+                    && names_equal(&join.target_table, &target_relation)
+            })
             .map(|join| join.alias.clone());
         let alias = if let Some(alias) = existing {
             alias
         } else {
             let alias = self.next_reference_alias(side);
             self.source_mut(side).reference_joins.push(JoinPlan {
+                source_alias,
                 source_field: reference_field.schema_name,
                 source_column,
                 source_type_column: None,
@@ -2035,6 +2810,8 @@ impl JoinedContext<'_> {
         };
         Ok(JoinedPath {
             side,
+            owner: ObjectId::from(&target_object.guid),
+            identity_is_base: true,
             field: target_field,
             sql_alias: alias,
             path_label: Some(format!(
@@ -2074,6 +2851,7 @@ impl JoinedContext<'_> {
     fn ensure_presentation_join(
         &mut self,
         side: JoinedSide,
+        source_alias: &str,
         reference: &QueryableField,
         target: ObjectId,
         multiple: bool,
@@ -2109,7 +2887,8 @@ impl JoinedContext<'_> {
         let target_relation =
             compile_live_relation(self.snapshot, target_table, &target_fields, self.dialect);
         if let Some(join) = self.source(side).reference_joins.iter().find(|join| {
-            names_equal(&join.source_field, &reference.schema_name)
+            names_equal(&join.source_alias, source_alias)
+                && names_equal(&join.source_field, &reference.schema_name)
                 && names_equal(&join.target_table, &target_relation)
                 && join.database_type == database_type
         }) {
@@ -2117,6 +2896,7 @@ impl JoinedContext<'_> {
         }
         let alias = self.next_reference_alias(side);
         self.source_mut(side).reference_joins.push(JoinPlan {
+            source_alias: source_alias.to_owned(),
             source_field: reference.schema_name.clone(),
             source_column,
             source_type_column,
@@ -2135,7 +2915,7 @@ fn compile_single_presentation(
     operation: PresentationOperation,
     argument: &PresentationArgument<'_, '_>,
     presentations: &mut PresentationCompilation<'_>,
-) -> Result<(String, String), QueryDiagnostic> {
+) -> Result<(String, String, bool), QueryDiagnostic> {
     let label = token.lexeme.to_owned();
     let PresentationArgument::Field(reference) = argument else {
         if operation == PresentationOperation::Property {
@@ -2148,7 +2928,7 @@ fn compile_single_presentation(
             unreachable!()
         };
         let value = compile_literal(literal, context.dialect)?;
-        return Ok((context.dialect.scalar_text(&value), label));
+        return Ok((context.dialect.scalar_text(&value), label, false));
     };
 
     let resolved = context.resolve_path(reference)?;
@@ -2164,7 +2944,7 @@ fn compile_single_presentation(
         &resolved.field,
         reference.last(),
     )?;
-    if targets.is_empty() {
+    if targets == ReferencePresentationTargets::Scalar {
         if operation == PresentationOperation::Property {
             return Err(QueryDiagnostic::at(
                 Some(token),
@@ -2173,9 +2953,22 @@ fn compile_single_presentation(
         }
         let column = single_column(&resolved.field, reference.last())?;
         let value = qualified_column(Some(context.base_alias()), &column.physical_name);
-        return Ok((context.dialect.scalar_text(&value), label));
+        return Ok((context.dialect.scalar_text(&value), label, false));
     }
 
+    if targets == ReferencePresentationTargets::Deferred {
+        let payload = compile_deferred_reference_presentation(
+            context.base_alias(),
+            &resolved.field,
+            reference.last(),
+            context.dialect,
+        )?;
+        return Ok((payload, label, true));
+    }
+
+    let ReferencePresentationTargets::Static(targets) = targets else {
+        unreachable!("scalar and deferred targets returned above")
+    };
     let multiple = targets.len() > 1;
     let source_reference = reference_column(&resolved.field, reference.last())?
         .physical_name
@@ -2187,7 +2980,10 @@ fn compile_single_presentation(
     let mut variants = Vec::new();
     for (target, number) in targets {
         let plan = presentations.plan(target, token)?;
-        let alias = if target == context.object && names_equal(&resolved.field.schema_name, "ID") {
+        let alias = if context.identity_is_base
+            && target == context.object
+            && names_equal(&resolved.field.schema_name, "ID")
+        {
             context.base_alias().to_owned()
         } else {
             context.ensure_presentation_join(&resolved.field, target, multiple, token)?
@@ -2216,6 +3012,7 @@ fn compile_single_presentation(
             context.dialect,
         ),
         label,
+        false,
     ))
 }
 
@@ -2225,7 +3022,7 @@ fn compile_joined_presentation(
     operation: PresentationOperation,
     argument: &PresentationArgument<'_, '_>,
     presentations: &mut PresentationCompilation<'_>,
-) -> Result<(String, String), QueryDiagnostic> {
+) -> Result<(String, String, bool), QueryDiagnostic> {
     let label = token.lexeme.to_owned();
     let PresentationArgument::Field(reference) = argument else {
         if operation == PresentationOperation::Property {
@@ -2238,20 +3035,14 @@ fn compile_joined_presentation(
             unreachable!()
         };
         let value = compile_literal(literal, context.dialect)?;
-        return Ok((context.dialect.scalar_text(&value), label));
+        return Ok((context.dialect.scalar_text(&value), label, false));
     };
     let resolved = context.resolve(reference)?;
-    let source = context.source(resolved.side);
-    if !names_equal(&resolved.sql_alias, &source.sql_alias) {
-        return Err(QueryDiagnostic::at(
-            Some(token),
-            "presentation of an already dereferenced JOIN path is not supported",
-        ));
-    }
-    let owner = source.object;
-    let source_alias = source.sql_alias.clone();
+    let owner = resolved.owner;
+    let source_identity_is_base = resolved.identity_is_base;
+    let source_alias = resolved.sql_alias.clone();
     let targets = presentation_targets(context.snapshot, owner, &resolved.field, reference.last())?;
-    if targets.is_empty() {
+    if targets == ReferencePresentationTargets::Scalar {
         if operation == PresentationOperation::Property {
             return Err(QueryDiagnostic::at(
                 Some(token),
@@ -2260,8 +3051,21 @@ fn compile_joined_presentation(
         }
         let column = single_column(&resolved.field, reference.last())?;
         let value = qualified_column(Some(&source_alias), &column.physical_name);
-        return Ok((context.dialect.scalar_text(&value), label));
+        return Ok((context.dialect.scalar_text(&value), label, false));
     }
+
+    if targets == ReferencePresentationTargets::Deferred {
+        let payload = compile_deferred_reference_presentation(
+            &source_alias,
+            &resolved.field,
+            reference.last(),
+            context.dialect,
+        )?;
+        return Ok((payload, label, true));
+    }
+    let ReferencePresentationTargets::Static(targets) = targets else {
+        unreachable!("scalar and deferred targets returned above")
+    };
     let multiple = targets.len() > 1;
     let source_reference = reference_column(&resolved.field, reference.last())?
         .physical_name
@@ -2273,11 +3077,15 @@ fn compile_joined_presentation(
     let mut variants = Vec::new();
     for (target, number) in targets {
         let plan = presentations.plan(target, token)?;
-        let alias = if target == owner && names_equal(&resolved.field.schema_name, "ID") {
+        let alias = if source_identity_is_base
+            && target == owner
+            && names_equal(&resolved.field.schema_name, "ID")
+        {
             source_alias.clone()
         } else {
             context.ensure_presentation_join(
                 resolved.side,
+                &source_alias,
                 &resolved.field,
                 target,
                 multiple,
@@ -2308,12 +3116,14 @@ fn compile_joined_presentation(
             context.dialect,
         ),
         label,
+        false,
     ))
 }
 
 fn compile_source_free_branch(
     ast: &SelectAst<'_, '_>,
     order_terms: &[OrderTerm<'_, '_>],
+    snapshot: &MetadataSnapshot,
     dialect: SqlDialect,
 ) -> Result<CompiledBranch, QueryDiagnostic> {
     if ast.join.is_some() {
@@ -2332,7 +3142,7 @@ fn compile_source_free_branch(
     let mut projections = Vec::with_capacity(ast.projection.len());
     let mut columns = Vec::with_capacity(ast.projection.len());
     for (index, projection) in ast.projection.iter().enumerate() {
-        let (sql, label) = match projection {
+        let (sql, default_label) = match &projection.expression {
             Projection::Aggregate {
                 token,
                 kind: AggregateKind::Count,
@@ -2346,7 +3156,7 @@ fn compile_source_free_branch(
                 ));
             }
             Projection::Scalar(expression) => {
-                let expression = compile_source_free_expression(expression, dialect)?;
+                let expression = compile_source_free_expression(expression, snapshot, dialect)?;
                 (
                     dialect.scalar_text(&expression),
                     format!("column{}", index + 1),
@@ -2378,6 +3188,9 @@ fn compile_source_free_branch(
                 ));
             }
         };
+        let label = projection
+            .alias
+            .map_or(default_label, |alias| alias.lexeme.to_owned());
         projections.push(format!("{sql} AS {}", quote_identifier(&label)));
         columns.push(label);
     }
@@ -2388,12 +3201,14 @@ fn compile_source_free_branch(
         sql,
         logical_width: columns.len(),
         columns,
+        deferred_presentations: Vec::new(),
         order: Vec::new(),
     })
 }
 
 fn compile_source_free_expression(
     expression: &Expression<'_, '_>,
+    snapshot: &MetadataSnapshot,
     dialect: SqlDialect,
 ) -> Result<String, QueryDiagnostic> {
     match expression {
@@ -2402,6 +3217,27 @@ fn compile_source_free_expression(
             "field expression requires FROM",
         )),
         Expression::Literal(token) => compile_literal(token, dialect),
+        Expression::DateTime { token, value } => dialect.datetime_expression(*value, false, token),
+        Expression::BeginOfPeriod {
+            token,
+            value,
+            period,
+        } => {
+            if !value.is_date() {
+                return Err(QueryDiagnostic::at(
+                    Some(token),
+                    "BEGINOFPERIOD first argument must be a date expression",
+                ));
+            }
+            let value = compile_source_free_expression(value, snapshot, dialect)?;
+            Ok(dialect.begin_of_period(&value, *period))
+        }
+        Expression::MetadataValue {
+            token,
+            kind,
+            object,
+            value,
+        } => compile_metadata_value(token, kind, object, value, snapshot, dialect),
         Expression::Unary { operator, value } => {
             let operator = match operator.kind {
                 TokenKind::Keyword(Keyword::Not) => "NOT ",
@@ -2416,7 +3252,7 @@ fn compile_source_free_expression(
             };
             Ok(format!(
                 "({operator}{})",
-                compile_source_free_expression(value, dialect)?
+                compile_source_free_expression(value, snapshot, dialect)?
             ))
         }
         Expression::Binary {
@@ -2443,23 +3279,122 @@ fn compile_source_free_expression(
             };
             Ok(format!(
                 "({} {operator} {})",
-                compile_source_free_expression(left, dialect)?,
-                compile_source_free_expression(right, dialect)?
+                compile_source_free_expression(left, snapshot, dialect)?,
+                compile_source_free_expression(right, snapshot, dialect)?
             ))
+        }
+        Expression::InList { value, items } => {
+            let value = compile_source_free_expression(value, snapshot, dialect)?;
+            let items = items
+                .iter()
+                .map(|item| compile_source_free_expression(item, snapshot, dialect))
+                .collect::<Result<Vec<_>, _>>()?;
+            Ok(format!("({value} IN ({}))", items.join(", ")))
         }
         Expression::IsNull { value, negated } => Ok(format!(
             "({} IS {}NULL)",
-            compile_source_free_expression(value, dialect)?,
+            compile_source_free_expression(value, snapshot, dialect)?,
             if *negated { "NOT " } else { "" }
         )),
     }
+}
+
+fn compile_metadata_value(
+    token: &Token<'_>,
+    kind_token: &Token<'_>,
+    object_token: &Token<'_>,
+    value_token: &Token<'_>,
+    snapshot: &MetadataSnapshot,
+    dialect: SqlDialect,
+) -> Result<String, QueryDiagnostic> {
+    let kind = kind_from_query_name(kind_token.lexeme).ok_or_else(|| {
+        QueryDiagnostic::at(
+            Some(kind_token),
+            format!("unknown VALUE metadata kind {:?}", kind_token.lexeme),
+        )
+    })?;
+    if !matches!(kind, MetadataKind::Catalog | MetadataKind::Enumeration) {
+        return Err(QueryDiagnostic::at(
+            Some(kind_token),
+            "VALUE currently supports only catalogs and enumerations",
+        ));
+    }
+    let object_id = snapshot
+        .object_id(kind, object_token.lexeme)
+        .map_err(|error| {
+            QueryDiagnostic::at(
+                Some(object_token),
+                format!(
+                    "VALUE object {}.{:?} could not be resolved: {error}",
+                    kind.as_str(),
+                    object_token.lexeme
+                ),
+            )
+        })?;
+    let value = snapshot
+        .predefined_value(object_id, value_token.lexeme)
+        .map_err(|error| {
+            QueryDiagnostic::at(
+                Some(value_token),
+                format!(
+                    "VALUE {:?}.{:?}.{:?} could not be resolved: {error}",
+                    kind_token.lexeme, object_token.lexeme, value_token.lexeme
+                ),
+            )
+        })?;
+    let literal = dialect.binary_literal(&value.guid.to_1c_bytes());
+    if kind == MetadataKind::Enumeration {
+        return Ok(literal);
+    }
+
+    let object = snapshot.object_by_id(object_id).ok_or_else(|| {
+        QueryDiagnostic::at(
+            Some(token),
+            "VALUE catalog object disappeared from metadata index",
+        )
+    })?;
+    let physical_table = object.physical_table.as_deref().ok_or_else(|| {
+        QueryDiagnostic::at(Some(object_token), "VALUE catalog has no physical table")
+    })?;
+    let table = snapshot
+        .live_tables
+        .iter()
+        .find(|table| table.name.eq_ignore_ascii_case(physical_table))
+        .ok_or_else(|| {
+            QueryDiagnostic::at(Some(object_token), "VALUE catalog table is not live")
+        })?;
+    let id = table
+        .columns
+        .iter()
+        .find(|column| column.name.eq_ignore_ascii_case("_IDRRef"))
+        .ok_or_else(|| {
+            QueryDiagnostic::at(Some(object_token), "VALUE catalog has no _IDRRef column")
+        })?;
+    let predefined = table
+        .columns
+        .iter()
+        .find(|column| column.name.eq_ignore_ascii_case("_PredefinedID"))
+        .ok_or_else(|| {
+            QueryDiagnostic::at(
+                Some(object_token),
+                "VALUE catalog has no _PredefinedID column",
+            )
+        })?;
+    let alias = "__open_sdbl_value";
+    Ok(format!(
+        "(SELECT {} FROM {} AS {} WHERE ({} = {literal}))",
+        qualified_column(Some(alias), &id.name),
+        quote_identifier(&table.name),
+        quote_identifier(alias),
+        qualified_column(Some(alias), &predefined.name),
+    ))
 }
 
 fn validate_aggregate_projection(ast: &SelectAst<'_, '_>) -> Result<(), QueryDiagnostic> {
     let count = ast
         .projection
         .iter()
-        .find_map(|projection| match projection {
+        .find_map(|projection| match &projection.expression {
             Projection::Aggregate { token, .. } => Some(*token),
             _ => None,
         });
@@ -2467,7 +3402,7 @@ fn validate_aggregate_projection(ast: &SelectAst<'_, '_>) -> Result<(), QueryDia
         && ast
             .projection
             .iter()
-            .any(|projection| !matches!(projection, Projection::Aggregate { .. }))
+            .any(|projection| !matches!(projection.expression, Projection::Aggregate { .. }))
     {
         return Err(QueryDiagnostic::at(
             Some(token),
@@ -2477,17 +3412,35 @@ fn validate_aggregate_projection(ast: &SelectAst<'_, '_>) -> Result<(), QueryDia
     Ok(())
 }
 
+#[derive(Debug, PartialEq, Eq)]
+enum ReferencePresentationTargets {
+    Scalar,
+    Static(Vec<(ObjectId, u32)>),
+    Deferred,
+}
+
 fn presentation_targets(
     snapshot: &MetadataSnapshot,
     owner: ObjectId,
     field: &QueryableField,
     token: &Token<'_>,
-) -> Result<Vec<(ObjectId, u32)>, QueryDiagnostic> {
+) -> Result<ReferencePresentationTargets, QueryDiagnostic> {
     if names_equal(&field.schema_name, "ID") {
         let object = snapshot
             .object_by_id(owner)
             .ok_or_else(|| QueryDiagnostic::at(Some(token), "reference owner was not resolved"))?;
-        return Ok(vec![(owner, object.number.unwrap_or_default())]);
+        return Ok(ReferencePresentationTargets::Static(vec![(
+            owner,
+            object.number.unwrap_or_default(),
+        )]));
+    }
+    if field.reference_targets.is_empty() {
+        return Ok(ReferencePresentationTargets::Scalar);
+    }
+    if field.reference_targets.iter().any(String::is_empty) {
+        let _ = reference_column(field, token)?;
+        let _ = reference_type_column(field, token)?;
+        return Ok(ReferencePresentationTargets::Deferred);
     }
     let mut targets = Vec::new();
     for target in &field.reference_targets {
@@ -2522,7 +3475,21 @@ fn presentation_targets(
             targets.push((id, object.number.unwrap_or_default()));
         }
     }
-    Ok(targets)
+    Ok(ReferencePresentationTargets::Static(targets))
+}
+
+fn compile_deferred_reference_presentation(
+    source_alias: &str,
+    field: &QueryableField,
+    token: &Token<'_>,
+    dialect: SqlDialect,
+) -> Result<String, QueryDiagnostic> {
+    let reference = reference_column(field, token)?;
+    let type_column = reference_type_column(field, token)?;
+    Ok(dialect.deferred_reference_payload(
+        &qualified_column(Some(source_alias), &type_column.physical_name),
+        &qualified_column(Some(source_alias), &reference.physical_name),
+    ))
 }
 
 fn wrap_reference_presentation(
@@ -2564,23 +3531,20 @@ fn compile_live_relation(
     snapshot: &MetadataSnapshot,
     canonical: &LiveTable,
     fields: &[QueryableField],
-    dialect: SqlDialect,
+    _dialect: SqlDialect,
 ) -> String {
-    if !dialect.is_mssql() {
-        return quote_identifier(&canonical.name);
-    }
-
+    let canonical_name = extension_table_base(&canonical.name).unwrap_or(&canonical.name);
     let mut tables = snapshot
         .live_tables
         .iter()
         .filter(|table| {
-            table.name.eq_ignore_ascii_case(&canonical.name)
-                || is_extension_table_name(&canonical.name, &table.name)
+            table.name.eq_ignore_ascii_case(canonical_name)
+                || is_extension_table_name(canonical_name, &table.name)
         })
         .collect::<Vec<_>>();
     tables.sort_by_key(|table| table.name.to_ascii_lowercase());
     if tables.len() == 1 {
-        return quote_identifier(&canonical.name);
+        return quote_identifier(&tables[0].name);
     }
 
     let mut seen = BTreeSet::new();
@@ -2611,6 +3575,19 @@ fn compile_live_relation(
         })
         .collect::<Vec<_>>();
     format!("({})", branches.join(" UNION ALL "))
+}
+
+fn extension_table_base(candidate: &str) -> Option<&str> {
+    let position = candidate.rfind(['X', 'x'])?;
+    let (prefix, suffix) = candidate.split_at(position);
+    let number = &suffix[1..];
+    prefix
+        .as_bytes()
+        .last()
+        .is_some_and(u8::is_ascii_digit)
+        .then_some(())
+        .filter(|()| number.bytes().all(|digit| digit.is_ascii_digit()))
+        .map(|()| prefix)
 }
 
 fn is_extension_table_name(canonical: &str, candidate: &str) -> bool {
@@ -2736,6 +3713,9 @@ fn compile_source_relation(
         .as_ref()
         .map(|expression| match expression {
             Expression::Literal(token) => compile_literal(token, dialect),
+            Expression::DateTime { .. } | Expression::BeginOfPeriod { .. } => {
+                compile_constant_date_expression(expression, dialect)
+            }
             _ => Err(QueryDiagnostic::at(
                 Some(slice.token),
                 format!("{} period must be a scalar literal", slice.kind.name()),
@@ -2749,6 +3729,7 @@ fn compile_source_relation(
             fields: fields.to_vec(),
             source_alias: Some("__slice_base".to_owned()),
             object_name: source.object.lexeme.to_owned(),
+            identity_is_base: true,
             joins: Vec::new(),
             dialect,
         };
@@ -2977,6 +3958,7 @@ fn compile_accumulation_relation(
             fields: dimension_fields.clone(),
             source_alias: Some("__aggregate_base".to_owned()),
             object_name: source.object.lexeme.to_owned(),
+            identity_is_base: true,
             joins: Vec::new(),
             dialect,
         };
@@ -3254,6 +4236,7 @@ fn compile_accumulation_condition(
         fields: dimension_fields.to_vec(),
         source_alias: Some(alias.to_owned()),
         object_name: source.object.lexeme.to_owned(),
+        identity_is_base: true,
         joins: Vec::new(),
         dialect,
     };
@@ -3499,12 +4482,35 @@ fn compile_virtual_period_literal(
 ) -> Result<String, QueryDiagnostic> {
     match expression {
         Expression::Literal(token) => dialect.datetime_literal(token),
+        Expression::DateTime { .. } | Expression::BeginOfPeriod { .. } => {
+            compile_constant_date_expression(expression, dialect)
+        }
         _ => Err(QueryDiagnostic::at(
             Some(virtual_table.token),
             format!(
                 "{} {argument} must be a scalar literal",
                 virtual_table.kind.name()
             ),
+        )),
+    }
+}
+
+fn compile_constant_date_expression(
+    expression: &Expression<'_, '_>,
+    dialect: SqlDialect,
+) -> Result<String, QueryDiagnostic> {
+    match expression {
+        Expression::DateTime { token, value } => dialect.datetime_expression(*value, true, token),
+        Expression::BeginOfPeriod {
+            token: _,
+            value,
+            period,
+        } => {
+            let value = compile_constant_date_expression(value, dialect)?;
+            Ok(dialect.begin_of_period(&value, *period))
+        }
+        _ => Err(QueryDiagnostic::metadata(
+            "date expression must be a constant DATETIME or BEGINOFPERIOD value",
         )),
     }
 }
@@ -3685,37 +4691,38 @@ fn compile_branch(
     let dialect = presentations.dialect;
     validate_aggregate_projection(ast)?;
     let Some(source) = ast.source.as_ref() else {
-        return compile_source_free_branch(ast, order_terms, dialect);
+        return compile_source_free_branch(ast, order_terms, snapshot, dialect);
     };
     if let Some(join) = &ast.join {
         return compile_joined_branch(ast, join, snapshot, order_terms, union_order, presentations);
     }
-    let qualified_name = format!("{}.{}", source.kind.lexeme, source.object.lexeme);
-    let object = find_metadata_object(snapshot, &qualified_name)?;
-    let live_table = object
-        .physical_table
-        .as_deref()
-        .and_then(|physical| {
-            snapshot
-                .live_tables
-                .iter()
-                .find(|table| table.name.eq_ignore_ascii_case(physical))
-        })
-        .ok_or_else(|| QueryDiagnostic::at(Some(source.object), "metadata table is not live"))?;
-    let fields = queryable_fields(snapshot, object)?;
-    let compiled_source =
-        compile_source_relation(source, snapshot, object, live_table, &fields, dialect)?;
+    let resolved_source = resolve_source_metadata(source, snapshot)?;
+    let compiled_source = compile_source_relation(
+        source,
+        snapshot,
+        resolved_source.object,
+        resolved_source.live_table,
+        &resolved_source.fields,
+        dialect,
+    )?;
     let mut context = CompilationContext {
         snapshot,
-        object: ObjectId::from(&object.guid),
+        object: ObjectId::from(&resolved_source.object.guid),
         fields: compiled_source.fields,
         source_alias: source.alias.map(|token| token.lexeme.to_owned()),
-        object_name: source.object.lexeme.to_owned(),
+        object_name: resolved_source.qualifier_name,
+        identity_is_base: resolved_source.identity_is_base,
         joins: Vec::new(),
         dialect,
     };
 
-    let selected = if matches!(ast.projection.as_slice(), [Projection::All]) {
+    let selected = if matches!(
+        ast.projection.as_slice(),
+        [ProjectionItem {
+            expression: Projection::All,
+            ..
+        }]
+    ) {
         context
             .fields
             .iter()
@@ -3727,7 +4734,7 @@ fn compile_branch(
         if ast
             .projection
             .iter()
-            .any(|projection| matches!(projection, Projection::All))
+            .any(|projection| matches!(projection.expression, Projection::All))
         {
             return Err(QueryDiagnostic::at(
                 Some(source.object),
@@ -3736,30 +4743,48 @@ fn compile_branch(
         }
         let mut selected = Vec::with_capacity(ast.projection.len());
         for projection in &ast.projection {
-            match projection {
+            match &projection.expression {
                 Projection::Field(reference) => {
-                    selected.push(SelectedProjection::Field(context.resolve_path(reference)?))
+                    let mut resolved = context.resolve_path(reference)?;
+                    if let Some(alias) = projection.alias {
+                        resolved.path_label = Some(alias.lexeme.to_owned());
+                    }
+                    selected.push(SelectedProjection::Field(resolved));
                 }
                 Projection::Presentation {
                     token,
                     operation,
                     argument,
                 } => {
-                    let (sql, label) = compile_single_presentation(
+                    let (sql, label, deferred) = compile_single_presentation(
                         &mut context,
                         token,
                         *operation,
                         argument,
                         presentations,
                     )?;
-                    selected.push(SelectedProjection::Generated { sql, label });
+                    selected.push(SelectedProjection::Generated {
+                        sql,
+                        label: projection
+                            .alias
+                            .map_or(label, |alias| alias.lexeme.to_owned()),
+                        deferred,
+                    });
                 }
                 Projection::Scalar(expression) => {
                     let number = selected.len() + 1;
                     let sql = compile_expression(expression, &mut context)?;
                     selected.push(SelectedProjection::Generated {
-                        sql: dialect.scalar_text(&sql),
-                        label: format!("column{number}"),
+                        sql: if expression.is_date() {
+                            dialect.date_scalar_text(&sql)
+                        } else {
+                            dialect.scalar_text(&sql)
+                        },
+                        label: projection.alias.map_or_else(
+                            || format!("column{number}"),
+                            |alias| alias.lexeme.to_owned(),
+                        ),
+                        deferred: false,
                     });
                 }
                 Projection::Aggregate {
@@ -3771,7 +4796,11 @@ fn compile_branch(
                     let sql = compile_aggregate_single(&mut context, *kind, *distinct, argument)?;
                     selected.push(SelectedProjection::Generated {
                         sql,
-                        label: token.lexeme.to_owned(),
+                        label: projection.alias.map_or_else(
+                            || token.lexeme.to_owned(),
+                            |alias| alias.lexeme.to_owned(),
+                        ),
+                        deferred: false,
                     });
                 }
                 Projection::All => unreachable!(),
@@ -3782,6 +4811,7 @@ fn compile_branch(
 
     let mut columns = Vec::new();
     let mut projections = Vec::new();
+    let mut deferred_presentations = Vec::new();
     for selected in &selected {
         match selected {
             SelectedProjection::Field(resolved) => {
@@ -3799,8 +4829,15 @@ fn compile_branch(
                     columns.push(output_label);
                 }
             }
-            SelectedProjection::Generated { sql, label } => {
+            SelectedProjection::Generated {
+                sql,
+                label,
+                deferred,
+            } => {
                 projections.push(format!("{sql} AS {}", quote_identifier(label)));
+                if *deferred {
+                    deferred_presentations.push(columns.len());
+                }
                 columns.push(label.clone());
             }
         }
@@ -3857,12 +4894,12 @@ fn compile_branch(
         sql.push_str(&quote_identifier(&join.alias));
         sql.push_str(" ON ");
         sql.push_str(&qualified_column(
-            Some(context.base_alias()),
+            Some(&join.source_alias),
             &join.source_column,
         ));
         sql.push_str(" = ");
         sql.push_str(&qualified_column(Some(&join.alias), &join.target_id_column));
-        append_type_guard(&mut sql, context.base_alias(), join, dialect);
+        append_type_guard(&mut sql, &join.source_alias, join, dialect);
     }
     if let Some(filter) = filter {
         sql.push_str(" WHERE ");
@@ -3876,6 +4913,7 @@ fn compile_branch(
     Ok(CompiledBranch {
         sql,
         columns,
+        deferred_presentations,
         logical_width: selected.len(),
         order,
     })
@@ -3898,7 +4936,7 @@ fn compile_joined_branch(
         && ast
             .projection
             .iter()
-            .any(|projection| matches!(projection, Projection::Aggregate { .. }))
+            .any(|projection| matches!(projection.expression, Projection::Aggregate { .. }))
     {
         return Err(QueryDiagnostic::at(
             Some(join.token),
@@ -3908,7 +4946,7 @@ fn compile_joined_branch(
     if ast
         .projection
         .iter()
-        .any(|projection| matches!(projection, Projection::All))
+        .any(|projection| matches!(projection.expression, Projection::All))
     {
         return Err(QueryDiagnostic::at(
             Some(join.token),
@@ -3940,30 +4978,48 @@ fn compile_joined_branch(
     };
     let mut selected = Vec::with_capacity(ast.projection.len());
     for projection in &ast.projection {
-        match projection {
+        match &projection.expression {
             Projection::Field(reference) => {
-                selected.push(JoinedProjection::Field(context.resolve(reference)?));
+                let mut resolved = context.resolve(reference)?;
+                if let Some(alias) = projection.alias {
+                    resolved.path_label = Some(alias.lexeme.to_owned());
+                }
+                selected.push(JoinedProjection::Field(resolved));
             }
             Projection::Presentation {
                 token,
                 operation,
                 argument,
             } => {
-                let (sql, label) = compile_joined_presentation(
+                let (sql, label, deferred) = compile_joined_presentation(
                     &mut context,
                     token,
                     *operation,
                     argument,
                     presentations,
                 )?;
-                selected.push(JoinedProjection::Generated { sql, label });
+                selected.push(JoinedProjection::Generated {
+                    sql,
+                    label: projection
+                        .alias
+                        .map_or(label, |alias| alias.lexeme.to_owned()),
+                    deferred,
+                });
             }
             Projection::Scalar(expression) => {
                 let number = selected.len() + 1;
                 let sql = compile_full_join_expression(expression, &mut context)?;
                 selected.push(JoinedProjection::Generated {
-                    sql: dialect.scalar_text(&sql),
-                    label: format!("column{number}"),
+                    sql: if expression.is_date() {
+                        dialect.date_scalar_text(&sql)
+                    } else {
+                        dialect.scalar_text(&sql)
+                    },
+                    label: projection.alias.map_or_else(
+                        || format!("column{number}"),
+                        |alias| alias.lexeme.to_owned(),
+                    ),
+                    deferred: false,
                 });
             }
             Projection::Aggregate {
@@ -3975,7 +5031,10 @@ fn compile_joined_branch(
                 let sql = compile_aggregate_joined(&mut context, *kind, *distinct, argument)?;
                 selected.push(JoinedProjection::Generated {
                     sql,
-                    label: token.lexeme.to_owned(),
+                    label: projection
+                        .alias
+                        .map_or_else(|| token.lexeme.to_owned(), |alias| alias.lexeme.to_owned()),
+                    deferred: false,
                 });
             }
             Projection::All => unreachable!(),
@@ -3984,6 +5043,7 @@ fn compile_joined_branch(
 
     let mut columns = Vec::new();
     let mut projections = Vec::new();
+    let mut deferred_presentations = Vec::new();
     for selected in &selected {
         match selected {
             JoinedProjection::Field(resolved) => {
@@ -3998,8 +5058,15 @@ fn compile_joined_branch(
                     columns.push(output_label);
                 }
             }
-            JoinedProjection::Generated { sql, label } => {
+            JoinedProjection::Generated {
+                sql,
+                label,
+                deferred,
+            } => {
                 projections.push(format!("{sql} AS {}", quote_identifier(label)));
+                if *deferred {
+                    deferred_presentations.push(columns.len());
+                }
                 columns.push(label.clone());
             }
         }
@@ -4011,7 +5078,7 @@ fn compile_joined_branch(
         ));
     }
 
-    let condition = compile_full_join_condition(&join.condition, &context, join.token)?;
+    let condition = compile_full_join_condition(&join.condition, &mut context, join.token)?;
     let filter = ast
         .filter
         .as_ref()
@@ -4096,6 +5163,7 @@ fn compile_joined_branch(
     Ok(CompiledBranch {
         sql,
         columns,
+        deferred_presentations,
         logical_width: selected.len(),
         order,
     })
@@ -4107,103 +5175,261 @@ fn resolve_full_join_source(
     default_alias: &str,
     dialect: SqlDialect,
 ) -> Result<JoinedSource, QueryDiagnostic> {
-    let qualified_name = format!("{}.{}", source.kind.lexeme, source.object.lexeme);
-    let object = find_metadata_object(snapshot, &qualified_name)?;
-    let live_table = object
-        .physical_table
-        .as_deref()
-        .and_then(|physical| {
-            snapshot
-                .live_tables
-                .iter()
-                .find(|table| table.name.eq_ignore_ascii_case(physical))
-        })
-        .ok_or_else(|| QueryDiagnostic::at(Some(source.object), "metadata table is not live"))?;
-    let fields = queryable_fields(snapshot, object)?;
-    let compiled_source =
-        compile_source_relation(source, snapshot, object, live_table, &fields, dialect)?;
+    let resolved = resolve_source_metadata(source, snapshot)?;
+    let compiled_source = compile_source_relation(
+        source,
+        snapshot,
+        resolved.object,
+        resolved.live_table,
+        &resolved.fields,
+        dialect,
+    )?;
     Ok(JoinedSource {
-        object: ObjectId::from(&object.guid),
+        object: ObjectId::from(&resolved.object.guid),
         fields: compiled_source.fields,
         relation: compiled_source.sql,
         sql_alias: source
             .alias
             .map_or_else(|| default_alias.to_owned(), |token| token.lexeme.to_owned()),
-        object_name: source.object.lexeme.to_owned(),
+        object_name: resolved.qualifier_name,
         source_alias: source.alias.map(|token| token.lexeme.to_owned()),
+        identity_is_base: resolved.identity_is_base,
         reference_joins: Vec::new(),
     })
 }
 
 fn compile_full_join_condition(
     expression: &Expression<'_, '_>,
-    context: &JoinedContext<'_>,
+    context: &mut JoinedContext<'_>,
     token: &Token<'_>,
 ) -> Result<FullJoinCondition, QueryDiagnostic> {
     let mut parts = Vec::new();
     let mut left_marker = None;
-    collect_full_join_equalities(expression, context, token, &mut parts, &mut left_marker)?;
+    compile_join_condition_parts(expression, context, &mut parts, &mut left_marker)?;
+    let left_marker = left_marker.ok_or_else(|| {
+        QueryDiagnostic::at(
+            Some(token),
+            "JOIN condition requires at least one top-level cross-source field equality combined by AND",
+        )
+    })?;
     Ok(FullJoinCondition {
         sql: parts.join(" AND "),
-        left_marker: left_marker.expect("a valid FULL JOIN condition has an equality"),
+        left_marker,
     })
 }
 
-fn collect_full_join_equalities(
+fn compile_join_condition_parts(
     expression: &Expression<'_, '_>,
-    context: &JoinedContext<'_>,
-    token: &Token<'_>,
+    context: &mut JoinedContext<'_>,
     parts: &mut Vec<String>,
     left_marker: &mut Option<String>,
 ) -> Result<(), QueryDiagnostic> {
+    if let Expression::Binary {
+        left,
+        operator,
+        right,
+    } = expression
+        && operator.kind == TokenKind::Keyword(Keyword::And)
+    {
+        compile_join_condition_parts(left, context, parts, left_marker)?;
+        return compile_join_condition_parts(right, context, parts, left_marker);
+    }
+
+    if let Some((equality, marker)) = compile_cross_source_join_equality(expression, context)? {
+        if left_marker.is_none() {
+            *left_marker = Some(marker);
+        }
+        parts.push(equality);
+        return Ok(());
+    }
+
+    validate_direct_join_condition_fields(expression, context)?;
+    parts.push(compile_full_join_expression(expression, context)?);
+    Ok(())
+}
+
+fn compile_cross_source_join_equality(
+    expression: &Expression<'_, '_>,
+    context: &JoinedContext<'_>,
+) -> Result<Option<(String, String)>, QueryDiagnostic> {
+    let Expression::Binary {
+        left,
+        operator,
+        right,
+    } = expression
+    else {
+        return Ok(None);
+    };
+    if operator.lexeme != "=" {
+        return Ok(None);
+    }
+    let (Expression::Field(left_reference), Expression::Field(right_reference)) =
+        (left.as_ref(), right.as_ref())
+    else {
+        return Ok(None);
+    };
+    let left_field = context.resolve_direct(left_reference)?;
+    let right_field = context.resolve_direct(right_reference)?;
+    if left_field.side == right_field.side {
+        return Ok(None);
+    }
+    let equality = compile_join_field_equality(
+        context,
+        &left_field,
+        left_reference.last(),
+        &right_field,
+        right_reference.last(),
+    )?;
+    let marker = if left_field.side == JoinedSide::Left {
+        equality.left_marker
+    } else {
+        equality.right_marker
+    };
+    Ok(Some((equality.sql, marker)))
+}
+
+fn validate_direct_join_condition_fields(
+    expression: &Expression<'_, '_>,
+    context: &JoinedContext<'_>,
+) -> Result<(), QueryDiagnostic> {
     match expression {
-        Expression::Binary {
-            left,
-            operator,
-            right,
-        } if operator.kind == TokenKind::Keyword(Keyword::And) => {
-            collect_full_join_equalities(left, context, token, parts, left_marker)?;
-            collect_full_join_equalities(right, context, token, parts, left_marker)
+        Expression::Field(reference) => {
+            context.resolve_direct(reference)?;
         }
-        Expression::Binary {
-            left,
-            operator,
-            right,
-        } if operator.lexeme == "=" => {
-            let (Expression::Field(left_reference), Expression::Field(right_reference)) =
-                (left.as_ref(), right.as_ref())
-            else {
-                return Err(QueryDiagnostic::at(
-                    Some(operator),
-                    "JOIN equality must compare fields from opposing sources",
-                ));
-            };
-            let left_field = context.resolve_direct(left_reference)?;
-            let right_field = context.resolve_direct(right_reference)?;
-            if left_field.side == right_field.side {
-                return Err(QueryDiagnostic::at(
-                    Some(operator),
-                    "JOIN equality must compare fields from opposing sources",
-                ));
-            }
-            let left_column = single_column(&left_field.field, left_reference.last())?;
-            let right_column = single_column(&right_field.field, right_reference.last())?;
-            let left_sql = context.sql_column(&left_field, left_column);
-            let right_sql = context.sql_column(&right_field, right_column);
-            if left_marker.is_none() {
-                let (resolved, column) = if left_field.side == JoinedSide::Left {
-                    (&left_field, left_column)
-                } else {
-                    (&right_field, right_column)
-                };
-                *left_marker = Some(context.sql_column(resolved, column));
-            }
-            parts.push(format!("{left_sql} = {right_sql}"));
-            Ok(())
+        Expression::BeginOfPeriod { value, .. }
+        | Expression::Unary { value, .. }
+        | Expression::IsNull { value, .. } => {
+            validate_direct_join_condition_fields(value, context)?;
         }
+        Expression::Binary { left, right, .. } => {
+            validate_direct_join_condition_fields(left, context)?;
+            validate_direct_join_condition_fields(right, context)?;
+        }
+        Expression::InList { value, items } => {
+            validate_direct_join_condition_fields(value, context)?;
+            for item in items {
+                validate_direct_join_condition_fields(item, context)?;
+            }
+        }
+        Expression::Literal(_) | Expression::DateTime { .. } | Expression::MetadataValue { .. } => {
+        }
+    }
+    Ok(())
+}
+
+struct JoinedFieldEquality {
+    sql: String,
+    left_marker: String,
+    right_marker: String,
+}
+
+fn compile_join_field_equality(
+    context: &JoinedContext<'_>,
+    left: &JoinedPath,
+    left_token: &Token<'_>,
+    right: &JoinedPath,
+    right_token: &Token<'_>,
+) -> Result<JoinedFieldEquality, QueryDiagnostic> {
+    if let ([left_column], [right_column]) = (
+        left.field.columns.as_slice(),
+        right.field.columns.as_slice(),
+    ) {
+        let left_sql = context.sql_column(left, left_column);
+        let right_sql = context.sql_column(right, right_column);
+        return Ok(JoinedFieldEquality {
+            sql: format!("{left_sql} = {right_sql}"),
+            left_marker: left_sql,
+            right_marker: right_sql,
+        });
+    }
+
+    if left.field.columns.len() > 1 && right.field.columns.len() == 1 {
+        return compile_compound_fixed_reference_equality(
+            context,
+            left,
+            left_token,
+            right,
+            right_token,
+            false,
+        );
+    }
+    if right.field.columns.len() > 1 && left.field.columns.len() == 1 {
+        return compile_compound_fixed_reference_equality(
+            context,
+            right,
+            right_token,
+            left,
+            left_token,
+            true,
+        );
+    }
+
+    Err(QueryDiagnostic::at(
+        Some(left_token),
+        "JOIN equality does not support these compound field shapes",
+    ))
+}
+
+fn compile_compound_fixed_reference_equality(
+    context: &JoinedContext<'_>,
+    compound: &JoinedPath,
+    compound_token: &Token<'_>,
+    fixed: &JoinedPath,
+    fixed_token: &Token<'_>,
+    fixed_is_left: bool,
+) -> Result<JoinedFieldEquality, QueryDiagnostic> {
+    let compound_reference = reference_column(&compound.field, compound_token)?;
+    let compound_type = reference_type_column(&compound.field, compound_token)?;
+    let fixed_reference = reference_column(&fixed.field, fixed_token)?;
+    let database_type = fixed_reference_database_type(context.snapshot, &fixed.field, fixed_token)?;
+    let compound_reference_sql = context.sql_column(compound, compound_reference);
+    let compound_type_sql = context.sql_column(compound, compound_type);
+    let fixed_reference_sql = context.sql_column(fixed, fixed_reference);
+    let sql = format!(
+        "({compound_reference_sql} = {fixed_reference_sql} AND {compound_type_sql} = {})",
+        context.dialect.binary_u32(database_type)
+    );
+    let (left_marker, right_marker) = if fixed_is_left {
+        (fixed_reference_sql, compound_reference_sql)
+    } else {
+        (compound_reference_sql, fixed_reference_sql)
+    };
+    Ok(JoinedFieldEquality {
+        sql,
+        left_marker,
+        right_marker,
+    })
+}
+
+fn fixed_reference_database_type(
+    snapshot: &MetadataSnapshot,
+    field: &QueryableField,
+    token: &Token<'_>,
+) -> Result<u32, QueryDiagnostic> {
+    let target = field.reference_target.as_deref().ok_or_else(|| {
+        QueryDiagnostic::at(
+            Some(token),
+            format!(
+                "fixed reference field {:?} has no unique SchemaStorage target",
+                field.name
+            ),
+        )
+    })?;
+    let matches = snapshot
+        .schema
+        .tables
+        .iter()
+        .filter(|table| names_equal(&table.name, target))
+        .collect::<Vec<_>>();
+    match matches.as_slice() {
+        [table] => Ok(table.number),
+        [] => Err(QueryDiagnostic::at(
+            Some(token),
+            format!("reference target {target:?} has no SchemaStorage database type"),
+        )),
         _ => Err(QueryDiagnostic::at(
             Some(token),
-            "JOIN condition supports only cross-source field equalities combined by AND",
+            format!("reference target {target:?} has an ambiguous database type"),
         )),
     }
 }
@@ -4219,6 +5445,30 @@ fn compile_full_join_expression(
             Ok(context.sql_column(&resolved, column))
         }
         Expression::Literal(token) => compile_literal(token, context.dialect),
+        Expression::DateTime { token, value } => {
+            context.dialect.datetime_expression(*value, true, token)
+        }
+        Expression::BeginOfPeriod {
+            token,
+            value,
+            period,
+        } => {
+            let value = compile_full_join_date_operand(value, context, token)?;
+            Ok(context.dialect.begin_of_period(&value, *period))
+        }
+        Expression::MetadataValue {
+            token,
+            kind,
+            object,
+            value,
+        } => compile_metadata_value(
+            token,
+            kind,
+            object,
+            value,
+            context.snapshot,
+            context.dialect,
+        ),
         Expression::Unary { operator, value } => {
             let operator = match operator.kind {
                 TokenKind::Keyword(Keyword::Not) => "NOT ",
@@ -4262,6 +5512,14 @@ fn compile_full_join_expression(
             let right_sql = compile_full_join_operand(right, left, context)?;
             Ok(format!("({left_sql} {operator} {right_sql})"))
         }
+        Expression::InList { value, items } => {
+            let value_sql = compile_full_join_expression(value, context)?;
+            let item_sql = items
+                .iter()
+                .map(|item| compile_full_join_operand(item, value, context))
+                .collect::<Result<Vec<_>, _>>()?;
+            Ok(format!("({value_sql} IN ({}))", item_sql.join(", ")))
+        }
         Expression::IsNull { value, negated } => Ok(format!(
             "({} IS {}NULL)",
             compile_full_join_expression(value, context)?,
@@ -4281,6 +5539,31 @@ fn compile_full_join_operand(
         return context.dialect.literal_for_type(token, &column.data_type);
     }
     compile_full_join_expression(expression, context)
+}
+
+fn compile_full_join_date_operand(
+    expression: &Expression<'_, '_>,
+    context: &mut JoinedContext<'_>,
+    token: &Token<'_>,
+) -> Result<String, QueryDiagnostic> {
+    if let Expression::Field(reference) = expression {
+        let resolved = context.resolve(reference)?;
+        let column = single_column(&resolved.field, reference.last())?;
+        if !is_date_sql_type(&column.data_type) {
+            return Err(QueryDiagnostic::at(
+                Some(token),
+                "BEGINOFPERIOD first argument must resolve to a date field",
+            ));
+        }
+        return Ok(context.sql_column(&resolved, column));
+    }
+    if expression.is_date() {
+        return compile_full_join_expression(expression, context);
+    }
+    Err(QueryDiagnostic::at(
+        Some(token),
+        "BEGINOFPERIOD first argument must be a date expression",
+    ))
 }
 
 fn compile_directional_full_join(
@@ -4361,12 +5644,12 @@ fn append_joined_reference_joins(sql: &mut String, context: &JoinedContext<'_>) 
             sql.push_str(&quote_identifier(&join.alias));
             sql.push_str(" ON ");
             sql.push_str(&qualified_column(
-                Some(&source.sql_alias),
+                Some(&join.source_alias),
                 &join.source_column,
             ));
             sql.push_str(" = ");
             sql.push_str(&qualified_column(Some(&join.alias), &join.target_id_column));
-            append_type_guard(sql, &source.sql_alias, join, context.dialect);
+            append_type_guard(sql, &join.source_alias, join, context.dialect);
         }
     }
 }
@@ -4452,6 +5735,30 @@ fn compile_expression(
             ))
         }
         Expression::Literal(token) => compile_literal(token, context.dialect),
+        Expression::DateTime { token, value } => {
+            context.dialect.datetime_expression(*value, true, token)
+        }
+        Expression::BeginOfPeriod {
+            token,
+            value,
+            period,
+        } => {
+            let value = compile_date_operand(value, context, token)?;
+            Ok(context.dialect.begin_of_period(&value, *period))
+        }
+        Expression::MetadataValue {
+            token,
+            kind,
+            object,
+            value,
+        } => compile_metadata_value(
+            token,
+            kind,
+            object,
+            value,
+            context.snapshot,
+            context.dialect,
+        ),
         Expression::Unary { operator, value } => {
             let operator = match operator.kind {
                 TokenKind::Keyword(Keyword::Not) => "NOT ",
@@ -4495,6 +5802,14 @@ fn compile_expression(
             let right_sql = compile_expression_operand(right, left, context)?;
             Ok(format!("({left_sql} {operator} {right_sql})"))
         }
+        Expression::InList { value, items } => {
+            let value_sql = compile_expression(value, context)?;
+            let item_sql = items
+                .iter()
+                .map(|item| compile_expression_operand(item, value, context))
+                .collect::<Result<Vec<_>, _>>()?;
+            Ok(format!("({value_sql} IN ({}))", item_sql.join(", ")))
+        }
         Expression::IsNull { value, negated } => Ok(format!(
             "({} IS {}NULL)",
             compile_expression(value, context)?,
@@ -4514,6 +5829,47 @@ fn compile_expression_operand(
         return context.dialect.literal_for_type(token, &column.data_type);
     }
     compile_expression(expression, context)
+}
+
+fn compile_date_operand(
+    expression: &Expression<'_, '_>,
+    context: &mut CompilationContext<'_>,
+    token: &Token<'_>,
+) -> Result<String, QueryDiagnostic> {
+    if let Expression::Field(reference) = expression {
+        let resolved = context.resolve_path(reference)?;
+        let column = single_column(&resolved.field, reference.last())?;
+        if !is_date_sql_type(&column.data_type) {
+            return Err(QueryDiagnostic::at(
+                Some(token),
+                "BEGINOFPERIOD first argument must resolve to a date field",
+            ));
+        }
+        return Ok(qualified_column(
+            Some(resolved.sql_alias(context.base_alias())),
+            &column.physical_name,
+        ));
+    }
+    if expression.is_date() {
+        return compile_expression(expression, context);
+    }
+    Err(QueryDiagnostic::at(
+        Some(token),
+        "BEGINOFPERIOD first argument must be a date expression",
+    ))
+}
+
+fn is_date_sql_type(data_type: &str) -> bool {
+    let base = data_type
+        .split_once('(')
+        .map_or(data_type, |(base, _)| base)
+        .trim()
+        .to_ascii_lowercase();
+    base.starts_with("timestamp")
+        || matches!(
+            base.as_str(),
+            "date" | "datetime" | "datetime2" | "smalldatetime" | "datetimeoffset"
+        )
 }
 
 fn compile_literal(token: &Token<'_>, dialect: SqlDialect) -> Result<String, QueryDiagnostic> {
@@ -4597,6 +5953,7 @@ impl ResolvedPath {
 
 #[derive(Debug, Clone)]
 struct JoinPlan {
+    source_alias: String,
     source_field: String,
     source_column: String,
     source_type_column: Option<String>,
@@ -4612,6 +5969,7 @@ struct CompilationContext<'snapshot> {
     fields: Vec<QueryableField>,
     source_alias: Option<String>,
     object_name: String,
+    identity_is_base: bool,
     joins: Vec<JoinPlan>,
     dialect: SqlDialect,
 }
@@ -4744,6 +6102,7 @@ impl CompilationContext<'_> {
         } else {
             let alias = self.next_join_alias();
             self.joins.push(JoinPlan {
+                source_alias: self.base_alias().to_owned(),
                 source_field: reference_field.schema_name,
                 source_column,
                 source_type_column: None,
@@ -4825,6 +6184,7 @@ impl CompilationContext<'_> {
         }
         let alias = self.next_join_alias();
         self.joins.push(JoinPlan {
+            source_alias: self.base_alias().to_owned(),
             source_field: reference.schema_name.clone(),
             source_column,
             source_type_column,
@@ -5177,6 +6537,9 @@ fn is_contextual_identifier(kind: TokenKind) -> bool {
                     | Keyword::SliceLast
                     | Keyword::Balance
                     | Keyword::Turnovers
+                    | Keyword::DateTime
+                    | Keyword::BeginOfPeriod
+                    | Keyword::Value
             )
         )
 }
