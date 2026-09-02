@@ -4,9 +4,151 @@ use open_sdbl::metadata::{
     parse_schema_storage, resolve_metadata,
 };
 use open_sdbl::query::{
-    PresentationExpression, PresentationPlan, compile_postgres_query, find_metadata_object,
-    prepare_postgres_query, queryable_field_catalog, queryable_fields,
+    PresentationExpression, PresentationPlan, compile_mssql_query,
+    compile_mssql_query_with_year_offset, compile_postgres_query, find_metadata_object,
+    prepare_mssql_query, prepare_postgres_query, queryable_field_catalog, queryable_fields,
 };
+
+#[test]
+fn compiles_native_mssql_projection_filter_and_limit() {
+    let snapshot = mssql_snapshot();
+    let compiled = compile_mssql_query(
+        "SELECT TOP 10 Code, ProbeAttribute FROM Catalog.OpenSdblMetadataProbe WHERE Code = \"\u{420}\u{430}\u{437}\u{43e}\u{432}\u{44b}\u{439}\";",
+        &snapshot,
+    )
+    .unwrap();
+
+    assert_eq!(compiled.columns, ["Code", "ProbeAttribute"]);
+    assert_eq!(
+        compiled.sql,
+        "SELECT TOP (10) CONVERT(nvarchar(max), \"__src\".\"_code\") AS \"Code\", CONVERT(varchar(max), \"__src\".\"_fld54\", 1) AS \"ProbeAttribute\" FROM \"_reference53\" AS \"__src\" WHERE (\"__src\".\"_code\" = N'\u{420}\u{430}\u{437}\u{43e}\u{432}\u{44b}\u{439}')"
+    );
+    assert!(!compiled.sql.contains("::"));
+    assert!(!compiled.sql.contains(" LIMIT "));
+}
+
+#[test]
+fn preserves_native_mssql_rowversion_projection() {
+    for data_type in ["timestamp", "rowversion"] {
+        let mut snapshot = mssql_snapshot();
+        snapshot.live_tables[0].columns.push(LiveColumn {
+            name: "_version".to_owned(),
+            data_type: data_type.to_owned(),
+        });
+
+        let compiled = compile_mssql_query(
+            "SELECT Version FROM Catalog.OpenSdblMetadataProbe;",
+            &snapshot,
+        )
+        .unwrap();
+
+        assert_eq!(compiled.columns, ["Version"]);
+        assert_eq!(
+            compiled.sql,
+            "SELECT \"__src\".\"_version\" AS \"Version\" FROM \"_reference53\" AS \"__src\""
+        );
+    }
+}
+
+#[test]
+fn compiles_binary_literals_for_each_sql_dialect() {
+    let mut mssql = mssql_snapshot();
+    mssql.live_tables[0].columns.push(LiveColumn {
+        name: "_version".to_owned(),
+        data_type: "timestamp".to_owned(),
+    });
+    let compiled = compile_mssql_query(
+        "SELECT Version FROM Catalog.OpenSdblMetadataProbe WHERE Version > 0x00000000000007D6;",
+        &mssql,
+    )
+    .unwrap();
+    assert!(
+        compiled
+            .sql
+            .contains("(\"__src\".\"_version\" > 0x00000000000007D6)")
+    );
+
+    let compiled = compile_postgres_query(
+        "SELECT ProbeAttribute FROM Catalog.OpenSdblMetadataProbe WHERE ProbeAttribute = 0XCAFE;",
+        &snapshot(),
+    )
+    .unwrap();
+    assert!(
+        compiled
+            .sql
+            .contains("(\"__src\".\"_fld54\" = '\\xCAFE'::bytea)")
+    );
+}
+
+#[test]
+fn compiles_mssql_historical_balance_without_postgres_aggregate_syntax() {
+    let mut snapshot = accumulation_register_snapshot();
+    for table in &mut snapshot.live_tables {
+        for column in &mut table.columns {
+            if column.name == "_active" {
+                column.data_type = "binary(1)".to_owned();
+            }
+        }
+    }
+    let compiled = compile_mssql_query_with_year_offset(
+        "SELECT TOP 5 \u{41a}\u{43e}\u{43b}\u{438}\u{447}\u{435}\u{441}\u{442}\u{432}\u{43e}\u{41e}\u{441}\u{442}\u{430}\u{442}\u{43e}\u{43a} FROM AccumulationRegister.\u{41e}\u{441}\u{442}\u{430}\u{442}\u{43a}\u{438}.Balance(\"2026-09-01\");",
+        &snapshot,
+        2000,
+    )
+    .unwrap();
+
+    assert!(compiled.sql.starts_with("SELECT TOP (5)"));
+    assert!(compiled.sql.contains("MAX(CASE WHEN"));
+    assert!(compiled.sql.contains(" = 0x01"));
+    assert!(compiled.sql.contains("DATEADD(year, 2000, N'2026-09-01')"));
+    assert!(!compiled.sql.contains(" FILTER ("));
+    assert!(!compiled.sql.contains("(WITH "));
+}
+
+#[test]
+fn translates_mssql_year_offset_in_date_projection_and_filter() {
+    let snapshot = mssql_snapshot();
+    let compiled = compile_mssql_query_with_year_offset(
+        "SELECT Date FROM Catalog.OpenSdblMetadataProbe WHERE Date >= \"2026-09-01\";",
+        &snapshot,
+        2000,
+    )
+    .unwrap();
+
+    assert!(
+        compiled
+            .sql
+            .contains("DATEADD(year, -2000, \"__src\".\"_date_time\")")
+    );
+    assert!(compiled.sql.contains("DATEADD(year, 2000, N'2026-09-01')"));
+}
+
+#[test]
+fn prepares_and_compiles_mssql_presentations() {
+    let snapshot = reference_snapshot();
+    let prepared = prepare_mssql_query(
+        "SELECT TOP 1 Presentation(\u{41e}\u{440}\u{433}\u{430}\u{43d}\u{438}\u{437}\u{430}\u{446}\u{438}\u{44f}) FROM Catalog.OpenSdblMetadataProbe;",
+        &snapshot,
+    )
+    .unwrap();
+    let request = prepared.presentation_request();
+    assert_eq!(request.targets.len(), 1);
+    let plan = PresentationPlan {
+        object: request.targets[0].object,
+        fields: Vec::new(),
+        expression: PresentationExpression::Literal(
+            "\u{43e}\u{431}\u{44a}\u{435}\u{43a}\u{442}".to_owned(),
+        ),
+    };
+    let compiled = prepared.compile(&snapshot, &[plan]).unwrap();
+    assert!(compiled.sql.starts_with("SELECT TOP (1)"));
+    assert!(
+        compiled
+            .sql
+            .contains("N'\u{43e}\u{431}\u{44a}\u{435}\u{43a}\u{442}'")
+    );
+    assert!(!compiled.sql.contains("::bytea"));
+}
 
 #[test]
 fn compiles_source_free_literals_and_scalar_presentations() {
@@ -1239,6 +1381,21 @@ fn snapshot() -> open_sdbl::metadata::MetadataSnapshot {
         }],
     }];
     resolve_metadata(db_names, descriptors, schema, live_tables)
+}
+
+fn mssql_snapshot() -> open_sdbl::metadata::MetadataSnapshot {
+    let mut snapshot = snapshot();
+    for table in &mut snapshot.live_tables {
+        for column in &mut table.columns {
+            column.data_type = match column.data_type.as_str() {
+                "bytea" => "binary(16)".to_owned(),
+                "mvarchar(9)" => "nvarchar(9)".to_owned(),
+                "timestamp without time zone" => "datetime2".to_owned(),
+                other => other.to_owned(),
+            };
+        }
+    }
+    snapshot
 }
 
 fn reference_snapshot() -> open_sdbl::metadata::MetadataSnapshot {

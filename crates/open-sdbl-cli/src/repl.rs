@@ -7,8 +7,10 @@ use std::time::{Duration, Instant};
 use moka::future::Cache;
 use open_sdbl::metadata::{MetadataKind, MetadataObject, MetadataSnapshot, ObjectId};
 use open_sdbl::query::{
-    CompiledQuery, PresentationExpression, PresentationPlan, PresentationRequest,
-    find_metadata_object, prepare_postgres_query, queryable_field_catalog, queryable_fields,
+    CompiledQuery, PreparedMsSqlQuery, PreparedPostgresQuery, PresentationExpression,
+    PresentationPlan, PresentationRequest, find_metadata_object,
+    prepare_mssql_query_with_year_offset, prepare_postgres_query, queryable_field_catalog,
+    queryable_fields,
 };
 use open_sdbl::{TokenKind, tokenize};
 use rustyline::completion::{Completer, Pair};
@@ -19,9 +21,8 @@ use rustyline::history::DefaultHistory;
 use rustyline::validate::Validator;
 use rustyline::{Context, Editor, Helper};
 use tokio::io::{AsyncBufReadExt, BufReader};
-use tokio_postgres::Row;
 
-use super::{CliError, PostgresSession, escape_field, yes_no};
+use super::{CliError, DatabaseDialect, DatabaseSession, QueryRows, escape_field, yes_no};
 
 const CONSOLE_HELP: &str = "Commands:
   \\dt                 list resolved metadata tables
@@ -453,8 +454,33 @@ const fn russian_metadata_kind(kind: MetadataKind) -> &'static str {
     }
 }
 
+enum PreparedQuery {
+    Postgres(PreparedPostgresQuery),
+    MsSql(PreparedMsSqlQuery),
+}
+
+impl PreparedQuery {
+    fn presentation_request(&self) -> &PresentationRequest {
+        match self {
+            Self::Postgres(query) => query.presentation_request(),
+            Self::MsSql(query) => query.presentation_request(),
+        }
+    }
+
+    fn compile(
+        self,
+        snapshot: &MetadataSnapshot,
+        plans: &[PresentationPlan],
+    ) -> Result<CompiledQuery, open_sdbl::query::QueryDiagnostic> {
+        match self {
+            Self::Postgres(query) => query.compile(snapshot, plans),
+            Self::MsSql(query) => query.compile(snapshot, plans),
+        }
+    }
+}
+
 pub(super) async fn run(
-    session: &mut PostgresSession,
+    session: &mut DatabaseSession,
     mut snapshot: MetadataSnapshot,
 ) -> Result<(), CliError> {
     let interactive = io::stdin().is_terminal();
@@ -555,7 +581,16 @@ pub(super) async fn run(
 
         add_history(&mut editor, statement.trim())?;
         let generation_started = Instant::now();
-        let compilation = match prepare_postgres_query(&statement, &snapshot) {
+        let prepared = match session.dialect() {
+            DatabaseDialect::Postgres => {
+                prepare_postgres_query(&statement, &snapshot).map(PreparedQuery::Postgres)
+            }
+            DatabaseDialect::MsSql { year_offset } => {
+                prepare_mssql_query_with_year_offset(&statement, &snapshot, year_offset)
+                    .map(PreparedQuery::MsSql)
+            }
+        };
+        let compilation = match prepared {
             Ok(prepared) => {
                 let plans = presentation_plans(
                     &presentation_cache,
@@ -574,17 +609,21 @@ pub(super) async fn run(
                 println!("{}", timing_line("SQL generation", generation_elapsed));
                 println!("SQL: {}", compiled.sql);
                 let execution_started = Instant::now();
-                let execution = session.query(&compiled.sql).await;
+                let execution = session.query(&compiled.sql, compiled.columns.len()).await;
                 let execution_elapsed = execution_started.elapsed();
                 match execution {
                     Ok(rows) => {
-                        println!("{}", timing_line("PostgreSQL execution", execution_elapsed));
+                        println!(
+                            "{}",
+                            timing_line(session.execution_label(), execution_elapsed)
+                        );
                         if let Err(error) = print_query_rows(&compiled, &rows) {
                             eprintln!("error: {error}");
                         }
                     }
                     Err(error) => eprintln!(
-                        "error: {error} (PostgreSQL execution: {})",
+                        "error: {error} ({}: {})",
+                        session.execution_label(),
                         format_duration(execution_elapsed)
                     ),
                 }
@@ -741,7 +780,7 @@ enum MetaOutcome {
 }
 
 async fn execute_meta_command(
-    session: &mut PostgresSession,
+    session: &mut DatabaseSession,
     snapshot: &mut MetadataSnapshot,
     command: &str,
 ) -> Result<MetaOutcome, CliError> {
@@ -935,13 +974,19 @@ fn object_display_name(object: Option<&MetadataObject>) -> String {
     }
 }
 
-fn print_query_rows(compiled: &CompiledQuery, rows: &[Row]) -> Result<(), CliError> {
+fn print_query_rows(compiled: &CompiledQuery, rows: &QueryRows) -> Result<(), CliError> {
     let mut rendered = Vec::with_capacity(rows.len());
     for row in rows {
         let mut values = Vec::with_capacity(compiled.columns.len());
-        for index in 0..compiled.columns.len() {
-            let value: Option<String> = row.try_get(index)?;
-            values.push(value.unwrap_or_else(|| "NULL".to_owned()));
+        if row.len() != compiled.columns.len() {
+            return Err(CliError::Data(format!(
+                "database returned {} columns, expected {}",
+                row.len(),
+                compiled.columns.len()
+            )));
+        }
+        for value in row {
+            values.push(value.clone().unwrap_or_else(|| "NULL".to_owned()));
         }
         rendered.push(values);
     }

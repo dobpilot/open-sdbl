@@ -121,6 +121,7 @@ impl AllowedLength {
         {
             Some(Self::Variable)
         } else if data_type.contains("mchar")
+            || data_type.starts_with("nchar")
             || data_type.contains("bpchar")
             || data_type == "character"
             || data_type.starts_with("character(")

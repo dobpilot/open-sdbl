@@ -10,24 +10,29 @@ use std::time::{Duration, Instant};
 
 use futures_util::{Stream, StreamExt};
 use open_sdbl::metadata::{
-    LiveColumn, LiveIndex, LiveTable, MetadataError, MetadataSnapshot, PostgresMetadataQueries,
-    parse_config_descriptors, parse_db_names, parse_schema_storage, resolve_metadata,
+    LiveColumn, LiveIndex, LiveTable, MetadataError, MetadataSnapshot, MsSqlMetadataQueries,
+    PostgresMetadataQueries, parse_config_descriptors, parse_db_names, parse_schema_storage,
+    resolve_metadata,
 };
 use open_sdbl::{Diagnostic, tokenize};
+use tiberius::{
+    AuthMethod, Client as MsSqlClient, ColumnType as MsSqlColumnType, Config as MsSqlConfig,
+};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 use tokio::time::timeout;
 use tokio_postgres::types::ToSql;
 use tokio_postgres::{IsolationLevel, NoTls, Row, Transaction};
+use tokio_util::compat::{Compat, TokioAsyncWriteCompatExt};
 
 mod repl;
 
 const HELP: &str = "open-sdbl — tooling for the 1C query language\n\n\
-Usage:\n  open-sdbl lex [FILE|-]\n  open-sdbl metadata postgres --host HOST --database DB --user USER [OPTIONS]\n  open-sdbl console postgres --host HOST --database DB --user USER [OPTIONS]\n  open-sdbl --help\n\n\
-Commands:\n  lex       Print lexical tokens; reads standard input when FILE is '-' or omitted\n  metadata  Read and resolve 1C information-base metadata\n\n\
-  console   Run 1C queries and inspect resolved metadata interactively\n\n\
+Usage:\n  open-sdbl lex [FILE|-]\n  open-sdbl metadata postgres --host HOST --database DB --user USER [OPTIONS]\n  open-sdbl console postgres --host HOST --database DB --user USER [OPTIONS]\n  open-sdbl metadata mssql --host HOST --database DB --user USER [OPTIONS]\n  open-sdbl console mssql --host HOST --database DB --user USER [OPTIONS]\n  open-sdbl --help\n\n\
+Commands:\n  lex       Print lexical tokens; reads standard input when FILE is '-' or omitted\n  metadata  Read and resolve 1C information-base metadata\n  console   Run 1C queries and inspect resolved metadata interactively\n\n\
 PostgreSQL options:\n  --port PORT                 PostgreSQL port (default: 5432)\n  --socks5-proxy HOST:PORT    Route through a SOCKS5 proxy (no authentication)\n\n\
-Authentication:\n  PGPASSWORD, PGPASSFILE, or $HOME/.pgpass\n";
+MSSQL options:\n  --port PORT                 SQL Server port (default: 1433)\n  --socks5-proxy HOST:PORT    Route through a SOCKS5 proxy (no authentication)\n  --trust-server-certificate  Accept an untrusted TLS certificate (development only)\n\n\
+Authentication:\n  PostgreSQL: PGPASSWORD, PGPASSFILE, or $HOME/.pgpass\n  MSSQL: MSSQL_PASSWORD\n";
 
 const CONNECTION_TIMEOUT: Duration = Duration::from_secs(10);
 const PROGRESS_REDRAW_INTERVAL: Duration = Duration::from_millis(50);
@@ -247,11 +252,11 @@ async fn run() -> Result<(), CliError> {
 }
 
 async fn metadata(mut arguments: impl Iterator<Item = String>) -> Result<(), CliError> {
-    let Some(connection) = parse_postgres_connection(&mut arguments, "metadata")? else {
+    let Some(connection) = parse_connection(&mut arguments, "metadata")? else {
         return Ok(());
     };
 
-    let mut session = PostgresSession::connect(&connection).await?;
+    let mut session = DatabaseSession::connect(&connection).await?;
     let result = session.metadata().await;
     let close_result = session.close().await;
     let snapshot = result?;
@@ -261,10 +266,10 @@ async fn metadata(mut arguments: impl Iterator<Item = String>) -> Result<(), Cli
 }
 
 async fn console(mut arguments: impl Iterator<Item = String>) -> Result<(), CliError> {
-    let Some(connection) = parse_postgres_connection(&mut arguments, "console")? else {
+    let Some(connection) = parse_connection(&mut arguments, "console")? else {
         return Ok(());
     };
-    let mut session = PostgresSession::connect(&connection).await?;
+    let mut session = DatabaseSession::connect(&connection).await?;
     let result = async {
         let snapshot = session.metadata().await?;
         repl::run(&mut session, snapshot).await
@@ -275,10 +280,10 @@ async fn console(mut arguments: impl Iterator<Item = String>) -> Result<(), CliE
     close_result
 }
 
-fn parse_postgres_connection(
+fn parse_connection(
     arguments: &mut impl Iterator<Item = String>,
     command: &str,
-) -> Result<Option<PostgresConnection>, CliError> {
+) -> Result<Option<DatabaseConnection>, CliError> {
     let Some(provider) = arguments.next() else {
         return Err(CliError::Usage(format!(
             "missing {command} provider\n\n{HELP}"
@@ -288,32 +293,48 @@ fn parse_postgres_connection(
         print!("{HELP}");
         return Ok(None);
     }
-    if provider != "postgres" {
+    if !matches!(provider.as_str(), "postgres" | "mssql") {
         return Err(CliError::Usage(format!(
             "unsupported {command} provider {provider:?}\n\n{HELP}"
         )));
     }
 
-    let mut connection = PostgresConnection::default();
+    let mut options = ConnectionOptions {
+        host: String::new(),
+        port: if provider == "postgres" { 5432 } else { 1433 },
+        database: String::new(),
+        user: String::new(),
+        socks5_proxy: None,
+    };
+    let mut trust_server_certificate = false;
     while let Some(option) = arguments.next() {
         if matches!(option.as_str(), "-h" | "--help") {
             print!("{HELP}");
             return Ok(None);
         }
+        if option == "--trust-server-certificate" {
+            if provider != "mssql" {
+                return Err(CliError::Usage(format!(
+                    "unknown {command} option {option:?}\n\n{HELP}"
+                )));
+            }
+            trust_server_certificate = true;
+            continue;
+        }
         let value = arguments
             .next()
             .ok_or_else(|| CliError::Usage(format!("missing value for {option:?}\n\n{HELP}")))?;
         match option.as_str() {
-            "--host" => connection.host = value,
-            "--database" => connection.database = value,
-            "--user" => connection.user = value,
+            "--host" => options.host = value,
+            "--database" => options.database = value,
+            "--user" => options.user = value,
             "--port" => {
-                connection.port = value.parse().map_err(|_| {
-                    CliError::Usage(format!("invalid PostgreSQL port {value:?}\n\n{HELP}"))
+                options.port = value.parse().map_err(|_| {
+                    CliError::Usage(format!("invalid {provider} port {value:?}\n\n{HELP}"))
                 })?;
             }
             "--socks5-proxy" => {
-                connection.socks5_proxy = Some(parse_socks5_proxy(&value).map_err(|reason| {
+                options.socks5_proxy = Some(parse_socks5_proxy(&value).map_err(|reason| {
                     CliError::Usage(format!(
                         "invalid SOCKS5 proxy {value:?}: {reason}\n\n{HELP}"
                     ))
@@ -326,17 +347,30 @@ fn parse_postgres_connection(
             }
         }
     }
-    if connection.host.is_empty() || connection.database.is_empty() || connection.user.is_empty() {
+    if options.host.is_empty() || options.database.is_empty() || options.user.is_empty() {
         return Err(CliError::Usage(format!(
             "--host, --database, and --user are required\n\n{HELP}"
         )));
     }
 
-    Ok(Some(connection))
+    Ok(Some(if provider == "postgres" {
+        DatabaseConnection::Postgres(PostgresConnection(options))
+    } else {
+        DatabaseConnection::MsSql(MsSqlConnection {
+            options,
+            trust_server_certificate,
+        })
+    }))
 }
 
 #[derive(Debug)]
-struct PostgresConnection {
+enum DatabaseConnection {
+    Postgres(PostgresConnection),
+    MsSql(MsSqlConnection),
+}
+
+#[derive(Debug)]
+struct ConnectionOptions {
     host: String,
     port: u16,
     database: String,
@@ -344,16 +378,21 @@ struct PostgresConnection {
     socks5_proxy: Option<Socks5Proxy>,
 }
 
-impl Default for PostgresConnection {
-    fn default() -> Self {
-        Self {
-            host: String::new(),
-            port: 5432,
-            database: String::new(),
-            user: String::new(),
-            socks5_proxy: None,
-        }
+#[derive(Debug)]
+struct PostgresConnection(ConnectionOptions);
+
+impl std::ops::Deref for PostgresConnection {
+    type Target = ConnectionOptions;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
     }
+}
+
+#[derive(Debug)]
+struct MsSqlConnection {
+    options: ConnectionOptions,
+    trust_server_certificate: bool,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -444,7 +483,7 @@ impl PostgresSession {
         }
     }
 
-    async fn query(&mut self, sql: &str) -> Result<Vec<Row>, CliError> {
+    async fn query(&mut self, sql: &str, column_count: usize) -> Result<QueryRows, CliError> {
         let transaction = self
             .client
             .build_transaction()
@@ -458,6 +497,14 @@ impl PostgresSession {
         }
         match transaction.query(sql, &[]).await {
             Ok(rows) => {
+                let rows = rows
+                    .iter()
+                    .map(|row| {
+                        (0..column_count)
+                            .map(|index| row.try_get(index).map_err(CliError::from))
+                            .collect()
+                    })
+                    .collect::<Result<Vec<_>, _>>()?;
                 transaction.commit().await?;
                 Ok(rows)
             }
@@ -477,6 +524,283 @@ impl PostgresSession {
             })?
             .map_err(CliError::database_connection)
     }
+}
+
+pub(crate) type QueryRows = Vec<Vec<Option<String>>>;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum DatabaseDialect {
+    Postgres,
+    MsSql { year_offset: i32 },
+}
+
+enum DatabaseSession {
+    Postgres(PostgresSession),
+    MsSql(Box<MsSqlSession>),
+}
+
+impl DatabaseSession {
+    async fn connect(connection: &DatabaseConnection) -> Result<Self, CliError> {
+        match connection {
+            DatabaseConnection::Postgres(connection) => PostgresSession::connect(connection)
+                .await
+                .map(Self::Postgres),
+            DatabaseConnection::MsSql(connection) => MsSqlSession::connect(connection)
+                .await
+                .map(Box::new)
+                .map(Self::MsSql),
+        }
+    }
+
+    pub(crate) const fn dialect(&self) -> DatabaseDialect {
+        match self {
+            Self::Postgres(_) => DatabaseDialect::Postgres,
+            Self::MsSql(session) => DatabaseDialect::MsSql {
+                year_offset: session.year_offset,
+            },
+        }
+    }
+
+    pub(crate) const fn execution_label(&self) -> &'static str {
+        match self {
+            Self::Postgres(_) => "PostgreSQL execution",
+            Self::MsSql(_) => "MSSQL execution",
+        }
+    }
+
+    async fn metadata(&mut self) -> Result<MetadataSnapshot, CliError> {
+        match self {
+            Self::Postgres(session) => session.metadata().await,
+            Self::MsSql(session) => session.metadata().await,
+        }
+    }
+
+    pub(crate) async fn query(
+        &mut self,
+        sql: &str,
+        column_count: usize,
+    ) -> Result<QueryRows, CliError> {
+        match self {
+            Self::Postgres(session) => session.query(sql, column_count).await,
+            Self::MsSql(session) => session.query(sql, column_count).await,
+        }
+    }
+
+    async fn close(self) -> Result<(), CliError> {
+        match self {
+            Self::Postgres(session) => session.close().await,
+            Self::MsSql(session) => session.close().await,
+        }
+    }
+}
+
+type MsSqlTransport = Compat<TcpStream>;
+
+struct MsSqlSession {
+    client: MsSqlClient<MsSqlTransport>,
+    database: String,
+    year_offset: i32,
+}
+
+impl MsSqlSession {
+    async fn connect(connection: &MsSqlConnection) -> Result<Self, CliError> {
+        let options = &connection.options;
+        let password = env::var("MSSQL_PASSWORD").map_err(|error| match error {
+            env::VarError::NotPresent => CliError::Data(
+                "MSSQL_PASSWORD is required for SQL Server authentication".to_owned(),
+            ),
+            env::VarError::NotUnicode(_) => {
+                CliError::Data("MSSQL_PASSWORD is not valid UTF-8".to_owned())
+            }
+        })?;
+        let mut configuration = MsSqlConfig::new();
+        configuration.host(&options.host);
+        configuration.port(options.port);
+        configuration.database(&options.database);
+        configuration.authentication(AuthMethod::sql_server(&options.user, password));
+        configuration.application_name("open-sdbl");
+        configuration.readonly(true);
+        if connection.trust_server_certificate {
+            configuration.trust_cert();
+        }
+
+        let stream = if let Some(proxy) = &options.socks5_proxy {
+            connect_socks5(proxy, &options.host, options.port).await?
+        } else {
+            timeout(
+                CONNECTION_TIMEOUT,
+                TcpStream::connect((options.host.as_str(), options.port)),
+            )
+            .await
+            .map_err(|_| {
+                CliError::Database(format!(
+                    "MSSQL TCP connection timed out after {} seconds",
+                    CONNECTION_TIMEOUT.as_secs()
+                ))
+            })?
+            .map_err(|error| {
+                CliError::Io("cannot connect to MSSQL TCP endpoint".to_owned(), error)
+            })?
+        };
+        stream.set_nodelay(true).map_err(|error| {
+            CliError::Io("cannot configure MSSQL TCP connection".to_owned(), error)
+        })?;
+        let client = timeout(
+            CONNECTION_TIMEOUT,
+            MsSqlClient::connect(configuration, stream.compat_write()),
+        )
+        .await
+        .map_err(|_| {
+            CliError::Database(format!(
+                "MSSQL startup timed out after {} seconds",
+                CONNECTION_TIMEOUT.as_secs()
+            ))
+        })?
+        .map_err(CliError::mssql_connection)?;
+        let mut session = Self {
+            client,
+            database: options.database.clone(),
+            year_offset: 0,
+        };
+        session
+            .execute_batch(
+                "SET QUOTED_IDENTIFIER ON; SET TRANSACTION ISOLATION LEVEL READ COMMITTED;",
+            )
+            .await?;
+        session.verify_database().await?;
+        session.year_offset = session.read_year_offset().await?;
+        Ok(session)
+    }
+
+    async fn execute_batch(&mut self, sql: &str) -> Result<(), CliError> {
+        self.client
+            .simple_query(sql)
+            .await
+            .map_err(CliError::mssql_query)?
+            .into_results()
+            .await
+            .map_err(CliError::mssql_query)?;
+        Ok(())
+    }
+
+    async fn verify_database(&mut self) -> Result<(), CliError> {
+        let rows = self
+            .client
+            .simple_query(MsSqlMetadataQueries::VERIFY_DATABASE)
+            .await
+            .map_err(CliError::mssql_query)?
+            .into_first_result()
+            .await
+            .map_err(CliError::mssql_query)?;
+        let row = exactly_one_mssql_row(&rows, "database verification")?;
+        let actual = required_mssql_string(row, 0, "database name")?;
+        let status = required_mssql_string(row, 1, "database status")?;
+        if !actual.eq_ignore_ascii_case(&self.database) || !status.eq_ignore_ascii_case("ONLINE") {
+            return Err(CliError::Data(format!(
+                "unexpected MSSQL database state: database={actual:?}, status={status:?}"
+            )));
+        }
+        Ok(())
+    }
+
+    async fn read_year_offset(&mut self) -> Result<i32, CliError> {
+        let rows = mssql_rows(&mut self.client, MsSqlMetadataQueries::YEAR_OFFSET).await?;
+        let row = exactly_one_mssql_row(&rows, "_YearOffset")?;
+        let offset = row
+            .try_get::<i32, _>(0)
+            .map_err(CliError::mssql_query)?
+            .ok_or_else(|| {
+                CliError::Data("MSSQL returned NULL for _YearOffset.Offset".to_owned())
+            })?;
+        if !matches!(offset, 0 | 2000) {
+            return Err(CliError::Data(format!(
+                "unsupported MSSQL _YearOffset.Offset value {offset}; expected 0 or 2000"
+            )));
+        }
+        Ok(offset)
+    }
+
+    async fn metadata(&mut self) -> Result<MetadataSnapshot, CliError> {
+        self.execute_batch("BEGIN TRANSACTION").await?;
+        let result = acquire_mssql_metadata(&mut self.client).await;
+        match result {
+            Ok(snapshot) => {
+                self.execute_batch("COMMIT TRANSACTION").await?;
+                Ok(snapshot)
+            }
+            Err(error) => {
+                let _ = self.execute_batch("ROLLBACK TRANSACTION").await;
+                Err(error)
+            }
+        }
+    }
+
+    async fn query(&mut self, sql: &str, column_count: usize) -> Result<QueryRows, CliError> {
+        self.execute_batch("BEGIN TRANSACTION").await?;
+        let result = async {
+            let rows = self
+                .client
+                .simple_query(sql)
+                .await
+                .map_err(CliError::mssql_query)?
+                .into_first_result()
+                .await
+                .map_err(CliError::mssql_query)?;
+            rows.iter()
+                .map(|row| {
+                    (0..column_count)
+                        .map(|index| mssql_cell_text(row, index))
+                        .collect()
+                })
+                .collect()
+        }
+        .await;
+        match result {
+            Ok(rows) => {
+                self.execute_batch("COMMIT TRANSACTION").await?;
+                Ok(rows)
+            }
+            Err(error) => {
+                let _ = self.execute_batch("ROLLBACK TRANSACTION").await;
+                Err(error)
+            }
+        }
+    }
+
+    async fn close(self) -> Result<(), CliError> {
+        drop(self.client);
+        Ok(())
+    }
+}
+
+fn mssql_cell_text(row: &tiberius::Row, index: usize) -> Result<Option<String>, CliError> {
+    let column = row.columns().get(index).ok_or_else(|| {
+        CliError::Data(format!(
+            "MSSQL returned {} columns, but column {index} was requested",
+            row.columns().len()
+        ))
+    })?;
+    match column.column_type() {
+        MsSqlColumnType::BigVarBin | MsSqlColumnType::BigBinary | MsSqlColumnType::Image => row
+            .try_get::<&[u8], _>(index)
+            .map(|value| value.map(format_mssql_binary))
+            .map_err(CliError::mssql_query),
+        _ => row
+            .try_get::<&str, _>(index)
+            .map(|value| value.map(str::to_owned))
+            .map_err(CliError::mssql_query),
+    }
+}
+
+fn format_mssql_binary(value: &[u8]) -> String {
+    use std::fmt::Write as _;
+
+    let mut output = String::with_capacity(2 + value.len() * 2);
+    output.push_str("0x");
+    for byte in value {
+        write!(output, "{byte:02X}").expect("writing to String cannot fail");
+    }
+    output
 }
 
 async fn connect_postgres_raw(
@@ -700,6 +1024,146 @@ async fn acquire_metadata(transaction: &Transaction<'_>) -> Result<MetadataSnaps
     Ok(snapshot)
 }
 
+async fn acquire_mssql_metadata(
+    client: &mut MsSqlClient<MsSqlTransport>,
+) -> Result<MetadataSnapshot, CliError> {
+    let mut progress = MetadataProgress::new();
+    progress.phase("DBNames");
+    let db_names_rows = mssql_rows(client, MsSqlMetadataQueries::DB_NAMES).await?;
+    let db_names_data = required_mssql_bytes(
+        exactly_one_mssql_row(&db_names_rows, "DBNames")?,
+        0,
+        "DBNames payload",
+    )?;
+    let db_names = run_metadata_blocking("DBNames", move || {
+        parse_db_names(&db_names_data).map_err(CliError::from)
+    })
+    .await?;
+
+    let totals = mssql_rows(client, MsSqlMetadataQueries::CONFIG_TOTALS).await?;
+    let totals = exactly_one_mssql_row(&totals, "Config totals")?;
+    let total_resources = unsigned_progress_total(
+        required_mssql_i64(totals, 0, "Config resource count")?,
+        "resource count",
+    )?;
+    let total_bytes = unsigned_progress_total(
+        required_mssql_i64(totals, 1, "Config compressed byte count")?,
+        "compressed byte count",
+    )?;
+    progress.config_totals(total_resources, total_bytes);
+
+    let config_rows = client
+        .simple_query(MsSqlMetadataQueries::CONFIG)
+        .await
+        .map_err(CliError::mssql_query)?
+        .into_row_stream();
+    let resources = config_rows.map(|row| {
+        let row = row.map_err(CliError::mssql_query)?;
+        Ok(ConfigResource {
+            file_name: required_mssql_string(&row, 0, "Config file name")?,
+            compressed: required_mssql_bytes(&row, 1, "Config payload")?,
+        })
+    });
+    let descriptors = decode_config_stream(
+        resources,
+        CONFIG_DECODE_BATCH_SIZE,
+        config_pipeline_depth(),
+        &mut progress,
+    )
+    .await?;
+
+    progress.phase("SchemaStorage");
+    let schema_rows = mssql_rows(client, MsSqlMetadataQueries::SCHEMA).await?;
+    let schema_data = required_mssql_bytes(
+        exactly_one_mssql_row(&schema_rows, "SchemaStorage")?,
+        0,
+        "SchemaStorage payload",
+    )?;
+    let schema = run_metadata_blocking("SchemaStorage", move || {
+        parse_schema_storage(&schema_data).map_err(CliError::from)
+    })
+    .await?;
+
+    progress.phase("catalog");
+    let catalog_rows = mssql_rows(client, MsSqlMetadataQueries::CATALOG).await?;
+    let mut catalog_values = Vec::with_capacity(catalog_rows.len());
+    for row in &catalog_rows {
+        catalog_values.push([
+            required_mssql_string(row, 0, "catalog row tag")?,
+            required_mssql_string(row, 1, "catalog table name")?,
+            required_mssql_string(row, 2, "catalog value")?,
+            required_mssql_string(row, 3, "catalog detail")?,
+            required_mssql_string(row, 4, "catalog columns")?,
+        ]);
+    }
+    let live_tables = run_metadata_blocking("MSSQL catalog", move || {
+        decode_catalog_values(catalog_values)
+    })
+    .await?;
+
+    progress.phase("resolve");
+    let snapshot = run_metadata_blocking("metadata resolution", move || {
+        Ok(resolve_metadata(db_names, descriptors, schema, live_tables))
+    })
+    .await?;
+    progress.finish();
+    Ok(snapshot)
+}
+
+async fn mssql_rows(
+    client: &mut MsSqlClient<MsSqlTransport>,
+    sql: &str,
+) -> Result<Vec<tiberius::Row>, CliError> {
+    client
+        .simple_query(sql)
+        .await
+        .map_err(CliError::mssql_query)?
+        .into_first_result()
+        .await
+        .map_err(CliError::mssql_query)
+}
+
+fn exactly_one_mssql_row<'rows>(
+    rows: &'rows [tiberius::Row],
+    name: &str,
+) -> Result<&'rows tiberius::Row, CliError> {
+    match rows {
+        [row] => Ok(row),
+        [] => Err(CliError::Data(format!("{name} resource is missing"))),
+        _ => Err(CliError::Data(format!(
+            "more than one {name} resource was returned"
+        ))),
+    }
+}
+
+fn required_mssql_string(
+    row: &tiberius::Row,
+    index: usize,
+    name: &str,
+) -> Result<String, CliError> {
+    row.try_get::<&str, _>(index)
+        .map(|value| value.map(str::to_owned))
+        .map_err(CliError::mssql_query)?
+        .ok_or_else(|| CliError::Data(format!("MSSQL returned NULL for {name}")))
+}
+
+fn required_mssql_bytes(
+    row: &tiberius::Row,
+    index: usize,
+    name: &str,
+) -> Result<Vec<u8>, CliError> {
+    row.try_get::<&[u8], _>(index)
+        .map(|value| value.map(<[u8]>::to_vec))
+        .map_err(CliError::mssql_query)?
+        .ok_or_else(|| CliError::Data(format!("MSSQL returned NULL for {name}")))
+}
+
+fn required_mssql_i64(row: &tiberius::Row, index: usize, name: &str) -> Result<i64, CliError> {
+    row.try_get::<i64, _>(index)
+        .map_err(CliError::mssql_query)?
+        .ok_or_else(|| CliError::Data(format!("MSSQL returned NULL for {name}")))
+}
+
 struct ConfigResource {
     file_name: String,
     compressed: Vec<u8>,
@@ -779,7 +1243,7 @@ fn config_pipeline_depth() -> usize {
 
 fn unsigned_progress_total(value: i64, label: &str) -> Result<u64, CliError> {
     u64::try_from(value)
-        .map_err(|_| CliError::Data(format!("PostgreSQL returned a negative Config {label}")))
+        .map_err(|_| CliError::Data(format!("database returned a negative Config {label}")))
 }
 
 async fn verify_transaction(transaction: &Transaction<'_>) -> Result<(), CliError> {
@@ -807,13 +1271,25 @@ fn exactly_one_row<'rows>(rows: &'rows [Row], name: &str) -> Result<&'rows Row, 
 }
 
 fn decode_catalog_rows(rows: Vec<Row>) -> Result<Vec<LiveTable>, CliError> {
+    let values = rows
+        .into_iter()
+        .map(|row| {
+            Ok([
+                row.try_get(0)?,
+                row.try_get(1)?,
+                row.try_get(2)?,
+                row.try_get(3)?,
+                row.try_get(4)?,
+            ])
+        })
+        .collect::<Result<Vec<_>, tokio_postgres::Error>>()?;
+    decode_catalog_values(values)
+}
+
+fn decode_catalog_values(rows: Vec<[String; 5]>) -> Result<Vec<LiveTable>, CliError> {
     let mut tables = BTreeMap::<String, LiveTable>::new();
     for row in rows {
-        let tag: String = row.try_get(0)?;
-        let table_name: String = row.try_get(1)?;
-        let value: String = row.try_get(2)?;
-        let detail: String = row.try_get(3)?;
-        let columns: String = row.try_get(4)?;
+        let [tag, table_name, value, detail, columns] = row;
         let table = tables
             .entry(table_name.clone())
             .or_insert_with(|| LiveTable {
@@ -838,7 +1314,7 @@ fn decode_catalog_rows(rows: Vec<Row>) -> Result<Vec<LiveTable>, CliError> {
             }),
             _ => {
                 return Err(CliError::Data(format!(
-                    "unknown PostgreSQL catalog row tag {tag:?}"
+                    "unknown database catalog row tag {tag:?}"
                 )));
             }
         }
@@ -1071,6 +1547,14 @@ impl CliError {
         Self::Database(format!("PostgreSQL connection failed: {error}"))
     }
 
+    fn mssql_connection(error: tiberius::error::Error) -> Self {
+        Self::Database(format!("MSSQL connection failed: {error}"))
+    }
+
+    fn mssql_query(error: tiberius::error::Error) -> Self {
+        Self::Database(format!("MSSQL query failed: {error}"))
+    }
+
     fn socks5_connection(error: impl fmt::Display) -> Self {
         Self::Database(format!("SOCKS5 proxy connection failed: {error}"))
     }
@@ -1105,10 +1589,149 @@ impl From<tokio_postgres::Error> for CliError {
 #[cfg(test)]
 mod tests {
     use super::{
-        ConfigResource, MetadataProgress, PostgresConnection, Socks5Proxy, connect_postgres_raw,
-        connect_socks5, decode_config_stream, parse_password_line, parse_socks5_proxy,
-        read_password_file, render_metadata_progress, socks5_connect_request,
+        ConfigResource, ConnectionOptions, DatabaseConnection, MetadataProgress, MsSqlConnection,
+        MsSqlSession, PostgresConnection, Socks5Proxy, connect_postgres_raw, connect_socks5,
+        decode_catalog_values, decode_config_stream, format_mssql_binary, parse_connection,
+        parse_password_line, parse_socks5_proxy, read_password_file, render_metadata_progress,
+        socks5_connect_request,
     };
+    use open_sdbl::query::compile_mssql_query_with_year_offset;
+
+    fn mssql_test_connection() -> MsSqlConnection {
+        let user = std::env::var("OPEN_SDBL_MSSQL_TEST_USER")
+            .expect("OPEN_SDBL_MSSQL_TEST_USER must name a SELECT-only SQL login");
+        MsSqlConnection {
+            options: ConnectionOptions {
+                host: std::env::var("OPEN_SDBL_MSSQL_TEST_HOST")
+                    .unwrap_or_else(|_| "192.168.122.222".to_owned()),
+                port: std::env::var("OPEN_SDBL_MSSQL_TEST_PORT")
+                    .map_or(1433, |value| value.parse().expect("invalid test port")),
+                database: std::env::var("OPEN_SDBL_MSSQL_TEST_DATABASE")
+                    .unwrap_or_else(|_| "demo".to_owned()),
+                user,
+                socks5_proxy: None,
+            },
+            trust_server_certificate: std::env::var_os("OPEN_SDBL_MSSQL_TEST_TRUST_CERTIFICATE")
+                .is_some(),
+        }
+    }
+
+    #[tokio::test]
+    #[ignore = "requires OPEN_SDBL_MSSQL_TEST_USER, MSSQL_PASSWORD, and a live 1C database"]
+    async fn reads_metadata_from_the_mssql_demo_database() {
+        let mut session = MsSqlSession::connect(&mssql_test_connection())
+            .await
+            .unwrap();
+        let snapshot = session.metadata().await.unwrap();
+        assert!(!snapshot.objects.is_empty());
+        assert!(!snapshot.live_tables.is_empty());
+        session.close().await.unwrap();
+    }
+
+    #[tokio::test]
+    #[ignore = "requires the MSSQL demo database and its _ДемоЗаказПокупателя document"]
+    async fn reads_native_rowversion_from_the_mssql_demo_database() {
+        let mut session = MsSqlSession::connect(&mssql_test_connection())
+            .await
+            .unwrap();
+        let year_offset = session.year_offset;
+        let snapshot = session.metadata().await.unwrap();
+        let compiled = compile_mssql_query_with_year_offset(
+            "SELECT Version FROM Документ._ДемоЗаказПокупателя WHERE Version > 0x00000000000007D6;",
+            &snapshot,
+            year_offset,
+        )
+        .unwrap();
+
+        assert!(
+            compiled
+                .sql
+                .contains("\"__src\".\"_Version\" AS \"Version\"")
+        );
+        assert!(
+            !compiled
+                .sql
+                .contains("CONVERT(nvarchar(max), \"__src\".\"_Version\")")
+        );
+        assert!(
+            compiled
+                .sql
+                .contains("(\"__src\".\"_Version\" > 0x00000000000007D6)")
+        );
+        let rows = session
+            .query(&compiled.sql, compiled.columns.len())
+            .await
+            .unwrap();
+        assert!(!rows.is_empty());
+        for row in rows {
+            let version = row[0].as_deref().unwrap();
+            assert!(version > "0x00000000000007D6");
+            assert_eq!(version.len(), 18);
+        }
+        session.close().await.unwrap();
+    }
+
+    #[test]
+    fn renders_mssql_binary_as_hexadecimal_text() {
+        assert_eq!(format_mssql_binary(&[0x00, 0x7d, 0xd6]), "0x007DD6");
+    }
+
+    #[test]
+    fn parses_mssql_provider_defaults_and_explicit_tls_exception() {
+        let mut arguments = [
+            "mssql",
+            "--host",
+            "192.168.122.222",
+            "--database",
+            "demo",
+            "--user",
+            "reader",
+            "--trust-server-certificate",
+        ]
+        .into_iter()
+        .map(str::to_owned);
+        let connection = parse_connection(&mut arguments, "metadata")
+            .unwrap()
+            .unwrap();
+        let DatabaseConnection::MsSql(connection) = connection else {
+            panic!("expected MSSQL connection");
+        };
+        assert_eq!(connection.options.host, "192.168.122.222");
+        assert_eq!(connection.options.port, 1433);
+        assert_eq!(connection.options.database, "demo");
+        assert!(connection.trust_server_certificate);
+    }
+
+    #[test]
+    fn rejects_mssql_only_tls_flag_for_postgres() {
+        let mut arguments = [
+            "postgres",
+            "--host",
+            "db",
+            "--database",
+            "test",
+            "--user",
+            "reader",
+            "--trust-server-certificate",
+        ]
+        .into_iter()
+        .map(str::to_owned);
+        let error = parse_connection(&mut arguments, "console").unwrap_err();
+        assert!(error.to_string().contains("unknown console option"));
+    }
+
+    #[test]
+    fn decodes_provider_neutral_catalog_rows() {
+        let tables = decode_catalog_values(vec![
+            ["T", "_Reference1", "", "", ""].map(str::to_owned),
+            ["C", "_Reference1", "_IDRRef", "binary(16)", ""].map(str::to_owned),
+            ["I", "_Reference1", "_Reference1_PK", "true", "_IDRRef"].map(str::to_owned),
+        ])
+        .unwrap();
+        assert_eq!(tables.len(), 1);
+        assert_eq!(tables[0].columns[0].data_type, "binary(16)");
+        assert!(tables[0].indexes[0].unique);
+    }
 
     #[test]
     fn renders_metadata_progress_with_exact_resource_and_byte_totals() {
@@ -1337,13 +1960,13 @@ mod tests {
         let mut permissions = std::fs::metadata(&path).unwrap().permissions();
         permissions.set_mode(0o600);
         std::fs::set_permissions(&path, permissions).unwrap();
-        let connection = PostgresConnection {
+        let connection = PostgresConnection(ConnectionOptions {
             host: "db".to_owned(),
             port: 5432,
             database: "test".to_owned(),
             user: "reader".to_owned(),
             socks5_proxy: None,
-        };
+        });
 
         assert_eq!(
             read_password_file(&path, &connection, true).unwrap(),

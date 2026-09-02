@@ -7,7 +7,7 @@
 
 /// Reading and resolving metadata stored by the 1C platform.
 pub mod metadata;
-/// Bounded query parsing and PostgreSQL generation through resolved metadata.
+/// Bounded query parsing and database SQL generation through resolved metadata.
 pub mod query;
 
 use std::fmt;
@@ -181,6 +181,8 @@ pub enum TokenKind {
     String,
     /// An integer or decimal numeric literal.
     Number,
+    /// A `0x`-prefixed hexadecimal binary literal.
+    Binary,
     /// An operator.
     Operator,
     /// Punctuation such as parentheses or a comma.
@@ -197,6 +199,7 @@ impl fmt::Display for TokenKind {
             Self::Parameter => formatter.write_str("PARAMETER"),
             Self::String => formatter.write_str("STRING"),
             Self::Number => formatter.write_str("NUMBER"),
+            Self::Binary => formatter.write_str("BINARY"),
             Self::Operator => formatter.write_str("OPERATOR"),
             Self::Punctuation => formatter.write_str("PUNCTUATION"),
             Self::Comment => formatter.write_str("COMMENT"),
@@ -222,6 +225,8 @@ pub enum DiagnosticKind {
     UnterminatedString,
     /// An ampersand was not followed by an identifier.
     ExpectedParameterName,
+    /// A `0x` literal was empty, odd-length, or contained a non-hex character.
+    InvalidBinaryLiteral,
     /// The character does not belong to the supported lexical subset.
     UnexpectedCharacter(char),
 }
@@ -249,6 +254,9 @@ impl fmt::Display for Diagnostic {
             DiagnosticKind::ExpectedParameterName => {
                 formatter.write_str("expected a parameter name after '&'")
             }
+            DiagnosticKind::InvalidBinaryLiteral => formatter.write_str(
+                "binary literal must use 0x followed by an even number of hexadecimal digits",
+            ),
             DiagnosticKind::UnexpectedCharacter(character) => {
                 write!(formatter, "unexpected character {character:?}")
             }
@@ -302,6 +310,9 @@ impl<'source> Lexer<'source> {
         }
 
         if character.is_ascii_digit() {
+            if character == '0' && matches!(self.next_character(), Some('x' | 'X')) {
+                return self.consume_binary(start).map(Some);
+            }
             self.consume_number();
             return Ok(Some(self.token(start, TokenKind::Number)));
         }
@@ -380,6 +391,26 @@ impl<'source> Lexer<'source> {
                 self.advance();
             }
         }
+    }
+
+    fn consume_binary(&mut self, start: Mark) -> Result<Token<'source>, Diagnostic> {
+        self.advance();
+        self.advance();
+        let digits_start = self.offset;
+        while self
+            .current()
+            .is_some_and(|character| character.is_ascii_hexdigit())
+        {
+            self.advance();
+        }
+        let digit_count = self.offset - digits_start;
+        if digit_count == 0
+            || digit_count % 2 != 0
+            || self.current().is_some_and(is_identifier_continue)
+        {
+            return Err(self.diagnostic(start, DiagnosticKind::InvalidBinaryLiteral));
+        }
+        Ok(self.token(start, TokenKind::Binary))
     }
 
     fn consume_operator(&mut self) {

@@ -22,7 +22,7 @@ pub use identity::{AttributeId, FieldId, LookupError, ObjectId, StandardFieldId}
 pub use normalize::{
     LogicalField, collapse_logical_fields, normalize_index_key, recase_postgres_identifier,
 };
-pub use queries::PostgresMetadataQueries;
+pub use queries::{MsSqlMetadataQueries, PostgresMetadataQueries};
 pub use resolve::{
     AllowedLength, IndexComparison, LiveColumn, LiveIndex, LiveTable, MetadataField,
     MetadataObject, MetadataSnapshot, resolve_metadata,

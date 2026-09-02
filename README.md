@@ -5,13 +5,13 @@
 [![License: GPL-3.0](https://img.shields.io/badge/license-GPL--3.0--only-blue.svg)](LICENSE)
 
 `open-sdbl` — библиотека и интерактивная консоль для запросов к информационным
-базам 1С на PostgreSQL. Проект читает служебные метаданные 1С, связывает имена
-объектов и реквизитов с физической схемой, а затем преобразует запросы SDBL в
-SQL.
+базам 1С на PostgreSQL и Microsoft SQL Server. Проект читает служебные
+метаданные 1С, связывает имена объектов и реквизитов с физической схемой, а
+затем преобразует запросы SDBL в SQL.
 
 Ядро `open-sdbl` не выполняет I/O и не имеет production-зависимостей. Оно
 декодирует переданные приложением `DBNames`, `Config` и `SchemaStorage`, строит
-снимок метаданных и генерирует SQL. Подключение к PostgreSQL, read-only
+снимок метаданных и генерирует SQL в выбранном диалекте. Подключения к СУБД,
 транзакции, интерактивный терминал и кеш находятся в отдельном приложении
 `open-sdbl-cli`.
 
@@ -27,10 +27,10 @@ SQL.
 
 <img src="docs/img/readme-gifs/metadata-navigation.gif" width="1000" alt="Описание метаданных командой \d">
 
-Перед исполнением консоль показывает сгенерированный PostgreSQL-запрос и
+Перед исполнением консоль показывает сгенерированный SQL-запрос и
 отдельно измеряет генерацию SQL и выполнение в СУБД:
 
-<img src="docs/img/readme-gifs/query-execution.gif" width="1000" alt="Преобразование SDBL в PostgreSQL и выполнение запроса">
+<img src="docs/img/readme-gifs/query-execution.gif" width="1000" alt="Преобразование SDBL в SQL и выполнение запроса">
 
 Виртуальные таблицы и представления ссылок компилируются с учётом реальных
 метаданных информационной базы:
@@ -51,7 +51,14 @@ cargo build --release
 `target/release/open-sdbl`. Для сборки только библиотеки используйте
 `cargo build --release --package open-sdbl`.
 
-Запуск консоли:
+Поддерживаются два провайдера:
+
+Провайдер | Порт | Драйвер | Источник пароля
+--- | ---: | --- | ---
+`postgres` | 5432 | `tokio-postgres` | `PGPASSWORD`, `PGPASSFILE`, `$HOME/.pgpass`
+`mssql` | 1433 | Tiberius/TDS | `MSSQL_PASSWORD`
+
+### PostgreSQL
 
 ```console
 PGPASSFILE="$HOME/.pgpass" ./target/release/open-sdbl console postgres \
@@ -64,16 +71,63 @@ PGPASSFILE="$HOME/.pgpass" ./target/release/open-sdbl console postgres \
 работает через `tokio-postgres`, не требует установленного `psql` и выполняет
 запросы в проверенной read-only транзакции `READ COMMITTED`.
 
+### Microsoft SQL Server
+
+Используйте SQL login с правами только на `SELECT`:
+
+```console
+MSSQL_PASSWORD='secret' ./target/release/open-sdbl console mssql \
+  --host 192.168.122.222 \
+  --database demo \
+  --user open_sdbl_reader
+```
+
+CLI подключается через TDS, запрашивает `ApplicationIntent=ReadOnly` и
+исполняет только фиксированные metadata-`SELECT` и `SELECT`, созданные
+компилятором. SQL Server не имеет эквивалента PostgreSQL
+`READ ONLY` для обычной транзакции, поэтому ограниченные права login —
+обязательная граница безопасности.
+Смещение дат 1С читается из `dbo._YearOffset`: консоль автоматически преобразует
+физические MSSQL datetime-значения и литералы в логические даты 1С.
+Системная колонка `_Version` (`timestamp`/`rowversion`) проецируется без
+серверного `CAST`/`CONVERT`; CLI отображает полученные восемь байт как
+`0x0123456789ABCDEF`.
+Такое значение можно использовать как нативный бинарный литерал в фильтре:
+`ГДЕ Version > 0x00000000000007D6`. После `0x` требуется ненулевое чётное
+число шестнадцатеричных цифр.
+Пользователю базы нужны `SELECT` на схему `dbo` и видимость определений
+объектов для чтения `sys.tables`, `sys.columns` и `sys.indexes`; не
+добавляйте его в
+`db_datawriter` и не выдавайте `ALTER`, `CONTROL` или `EXECUTE`.
+
+Сертификат TLS проверяется по умолчанию. Только для локального сервера с
+самоподписанным сертификатом можно явно добавить
+`--trust-server-certificate`; в production этот флаг использовать не следует.
+Опциональную integration-проверку метаданных можно запустить так:
+
+```console
+OPEN_SDBL_MSSQL_TEST_USER=open_sdbl_reader MSSQL_PASSWORD='secret' \
+  cargo test -p open-sdbl-cli reads_metadata_from_the_mssql_demo_database \
+  -- --ignored
+```
+
+По умолчанию тест использует `192.168.122.222:1433/demo`; хост, порт и базу можно
+переопределить через `OPEN_SDBL_MSSQL_TEST_HOST`,
+`OPEN_SDBL_MSSQL_TEST_PORT` и `OPEN_SDBL_MSSQL_TEST_DATABASE`.
+
+### Общие возможности CLI
+
 При запуске в терминале загрузка метаданных показывает progress bar с фазой,
 числом ресурсов Config и объёмом сжатых данных. Config читается потоково и
 декодируется параллельно на blocking-пуле Tokio с ограниченным числом задач.
-Progress выводится в `stderr`, поэтому табличный вывод `metadata postgres` в
+Progress выводится в `stderr`, поэтому табличный вывод `metadata` в
 `stdout` можно по-прежнему безопасно перенаправлять или обрабатывать скриптом.
 
 Если база доступна через SOCKS5-прокси (например, через `ssh -D`), добавьте
 `--socks5-proxy 127.0.0.1:1080`. Прокси получает исходное имя из `--host` и
 разрешает его на своей стороне. Сейчас поддерживается SOCKS5 без аутентификации;
-пароль PostgreSQL по-прежнему читается только из источников выше.
+пароль выбранного провайдера по-прежнему читается только из источников
+выше.
 
 Команда | Назначение
 --- | ---
@@ -134,8 +188,9 @@ fn build_metadata(
 
 Аргументы `build_metadata` читает ваше приложение; `config_rows` содержит
 ресурсы с голым GUID в `FileName` и `PartNo = 0`. Готовые SELECT-only выражения
-находятся в `PostgresMetadataQueries`; ядро намеренно не знает о сети, паролях
-и async runtime. Полный вариант загрузки через `tokio-postgres` есть в
+находятся в `PostgresMetadataQueries` и `MsSqlMetadataQueries`; ядро
+намеренно не знает о сети, паролях и async runtime. Полные варианты загрузки через
+`tokio-postgres` и Tiberius есть в
 [`open-sdbl-cli`](crates/open-sdbl-cli/src/main.rs).
 
 Для запроса без функций представления достаточно одного вызова:
@@ -154,6 +209,27 @@ fn compile(metadata: &MetadataSnapshot) -> Result<CompiledQuery, QueryDiagnostic
 
 `CompiledQuery` содержит только SQL и имена выходных колонок. Исполнение SQL и
 декодирование результата остаются ответственностью приложения.
+Для MSSQL вызов отличается выбором компилятора и передачей смещения дат:
+
+```rust
+use open_sdbl::{
+    metadata::MetadataSnapshot,
+    query::{
+        CompiledQuery, QueryDiagnostic, compile_mssql_query_with_year_offset,
+    },
+};
+
+fn compile_mssql(
+    metadata: &MetadataSnapshot,
+    year_offset: i32,
+) -> Result<CompiledQuery, QueryDiagnostic> {
+    let query = "ВЫБРАТЬ ПЕРВЫЕ 10 Код, Наименование ИЗ Справочник.Договоры";
+    compile_mssql_query_with_year_offset(query, metadata, year_offset)
+}
+```
+
+`year_offset` — значение `dbo._YearOffset.Offset` (0 или 2000). CLI читает его
+автоматически; при встраивании библиотеки это делает вызывающее приложение.
 
 ## Callback ABI представлений
 
@@ -167,6 +243,7 @@ SDBL + MetadataSnapshot
         │
         ▼
 prepare_postgres_query()
+или prepare_mssql_query_with_year_offset()
         │
         ├── PresentationRequest { ObjectId/GUID возможных типов ссылок }
         │                                      │
@@ -176,6 +253,7 @@ prepare_postgres_query()
         │
         ▼
 PreparedPostgresQuery::compile()
+или PreparedMsSqlQuery::compile()
         │
         ▼
 CompiledQuery { sql, columns }
@@ -238,6 +316,10 @@ fn compile_with_presentations(
     Ok(prepared.compile(metadata, &plans)?)
 }
 ```
+
+Для MSSQL используются те же `PresentationRequest`, `PresentationPlan` и
+callback-политика. На первой фазе вызовите
+`prepare_mssql_query_with_year_offset()`, передав значение `_YearOffset`.
 
 Ядро проверяет, что на каждый запрошенный `ObjectId` получен ровно один план,
 все `FieldId` действительно принадлежат объекту, а шаблон использует только

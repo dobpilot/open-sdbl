@@ -29,6 +29,33 @@ fn recognizes_russian_and_english_keywords_case_insensitively() {
 }
 
 #[test]
+fn tokenizes_hexadecimal_binary_literals_as_one_token() {
+    let source = "Version > 0x00000000000007D6 И Probe = 0XCAFE";
+    let tokens = tokenize(source).unwrap();
+    let binary = tokens
+        .iter()
+        .filter(|token| token.kind == TokenKind::Binary)
+        .collect::<Vec<_>>();
+
+    assert_eq!(binary.len(), 2);
+    assert_eq!(binary[0].lexeme, "0x00000000000007D6");
+    assert_eq!(binary[1].lexeme, "0XCAFE");
+    assert_eq!(
+        &source[binary[0].span.start..binary[0].span.end],
+        binary[0].lexeme
+    );
+}
+
+#[test]
+fn rejects_malformed_hexadecimal_binary_literals() {
+    for source in ["0x", "0x0", "0x0G", "0xGG", "0xCAFEtail"] {
+        let error = tokenize(source).unwrap_err();
+        assert_eq!(error.kind, DiagnosticKind::InvalidBinaryLiteral, "{source}");
+        assert_eq!((error.line, error.column), (1, 1), "{source}");
+    }
+}
+
+#[test]
 fn recognizes_count_bilingually() {
     let tokens = tokenize("count Количество КОЛИЧЕСТВО COUNT").unwrap();
     assert!(

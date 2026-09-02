@@ -9,12 +9,12 @@ use crate::metadata::{
 };
 use crate::{Diagnostic, Keyword, Token, TokenKind, tokenize};
 
-/// One physical PostgreSQL member of a queryable logical field.
+/// One physical SQL member of a queryable logical field.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct QueryableColumn {
     /// Exact catalog identifier used for SQL generation.
     pub physical_name: String,
-    /// PostgreSQL catalog type name.
+    /// Database catalog type name.
     pub data_type: String,
     /// Stable output label used when projecting this member.
     pub output_label: String,
@@ -42,9 +42,9 @@ pub struct QueryableField {
 pub enum PresentationExpression {
     /// A field owned by the target metadata object.
     Field(FieldId),
-    /// Literal text. The core performs PostgreSQL quoting.
+    /// Literal text. The core performs database-specific quoting.
     Literal(String),
-    /// Concatenation evaluated by PostgreSQL.
+    /// Concatenation evaluated by the selected database.
     Concat(Vec<Self>),
 }
 
@@ -103,10 +103,47 @@ impl PreparedPostgresQuery {
     }
 }
 
-/// PostgreSQL text generated from one bounded 1C query.
+/// Parsed and metadata-resolved MSSQL query waiting for application
+/// presentation plans.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PreparedMsSqlQuery {
+    source: String,
+    request: PresentationRequest,
+    year_offset: i32,
+}
+
+impl PreparedMsSqlQuery {
+    /// Returns the batch callback request. It is empty when the query uses no
+    /// reference presentation.
+    #[must_use]
+    pub fn presentation_request(&self) -> &PresentationRequest {
+        &self.request
+    }
+
+    /// Finishes T-SQL generation with application-provided presentation plans.
+    ///
+    /// # Errors
+    ///
+    /// Returns a diagnostic for a missing, duplicate, foreign-field, or
+    /// structurally invalid plan.
+    pub fn compile(
+        &self,
+        snapshot: &MetadataSnapshot,
+        plans: &[PresentationPlan],
+    ) -> Result<CompiledQuery, QueryDiagnostic> {
+        compile_mssql_query_with_year_offset_and_presentations(
+            &self.source,
+            snapshot,
+            self.year_offset,
+            plans,
+        )
+    }
+}
+
+/// Native SQL text generated from one bounded 1C query.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CompiledQuery {
-    /// SELECT-only PostgreSQL statement.
+    /// SELECT-only statement in the requested database dialect.
     pub sql: String,
     /// Output labels in statement order.
     pub columns: Vec<String>,
@@ -183,6 +220,150 @@ impl From<Diagnostic> for QueryDiagnostic {
             offset: error.offset,
             line: error.line,
             column: error.column,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SqlDialect {
+    Postgres,
+    MsSql { year_offset: i32 },
+}
+
+impl SqlDialect {
+    const fn mssql(year_offset: i32) -> Self {
+        Self::MsSql { year_offset }
+    }
+
+    const fn is_mssql(self) -> bool {
+        matches!(self, Self::MsSql { .. })
+    }
+
+    fn text(self, expression: &str) -> String {
+        match self {
+            Self::Postgres => format!("{expression}::text"),
+            Self::MsSql { .. } => format!("CONVERT(nvarchar(max), {expression})"),
+        }
+    }
+
+    fn scalar_text(self, expression: &str) -> String {
+        match self {
+            Self::Postgres => format!("({expression})::text"),
+            Self::MsSql { .. } => self.text(expression),
+        }
+    }
+
+    fn column_text(self, expression: &str, data_type: &str) -> String {
+        let base = data_type
+            .split_once('(')
+            .map_or(data_type, |(base, _)| base)
+            .trim()
+            .to_ascii_lowercase();
+        match self {
+            Self::MsSql { .. } if matches!(base.as_str(), "timestamp" | "rowversion") => {
+                expression.to_owned()
+            }
+            Self::MsSql { .. } if matches!(base.as_str(), "binary" | "varbinary" | "image") => {
+                format!("CONVERT(varchar(max), {expression}, 1)")
+            }
+            Self::MsSql { year_offset }
+                if year_offset != 0
+                    && matches!(
+                        base.as_str(),
+                        "date" | "datetime" | "datetime2" | "smalldatetime"
+                    ) =>
+            {
+                self.text(&format!("DATEADD(year, {}, {expression})", -year_offset))
+            }
+            _ => self.text(expression),
+        }
+    }
+
+    fn literal_for_type(
+        self,
+        token: &Token<'_>,
+        data_type: &str,
+    ) -> Result<String, QueryDiagnostic> {
+        let literal = compile_literal(token, self)?;
+        let base = data_type
+            .split_once('(')
+            .map_or(data_type, |(base, _)| base)
+            .trim();
+        match self {
+            Self::MsSql { year_offset }
+                if year_offset != 0
+                    && token.kind == TokenKind::String
+                    && matches!(
+                        base.to_ascii_lowercase().as_str(),
+                        "date" | "datetime" | "datetime2" | "smalldatetime"
+                    ) =>
+            {
+                Ok(format!("DATEADD(year, {year_offset}, {literal})"))
+            }
+            _ => Ok(literal),
+        }
+    }
+
+    fn datetime_literal(self, token: &Token<'_>) -> Result<String, QueryDiagnostic> {
+        self.literal_for_type(token, "datetime2")
+    }
+
+    fn null_text(self) -> &'static str {
+        match self {
+            Self::Postgres => "NULL::text",
+            Self::MsSql { .. } => "CONVERT(nvarchar(max), NULL)",
+        }
+    }
+
+    fn string_literal(self, value: &str) -> String {
+        let escaped = value.replace('\'', "''");
+        match self {
+            Self::Postgres => format!("'{escaped}'"),
+            Self::MsSql { .. } => format!("N'{escaped}'"),
+        }
+    }
+
+    fn boolean_literal(self, value: bool) -> &'static str {
+        match (self, value) {
+            (Self::Postgres, true) => "TRUE",
+            (Self::Postgres, false) => "FALSE",
+            (Self::MsSql { .. }, true) => "0x01",
+            (Self::MsSql { .. }, false) => "0x00",
+        }
+    }
+
+    fn binary_u32(self, value: u32) -> String {
+        let bytes = value.to_be_bytes();
+        let hex = bytes
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect::<String>();
+        match self {
+            Self::Postgres => format!("'\\x{hex}'::bytea"),
+            Self::MsSql { .. } => format!("0x{hex}"),
+        }
+    }
+
+    fn select_prefix(self, distinct: bool, top: Option<u32>) -> String {
+        let mut sql = String::from("SELECT ");
+        if distinct {
+            sql.push_str("DISTINCT ");
+        }
+        if self.is_mssql()
+            && let Some(top) = top
+        {
+            use std::fmt::Write as _;
+            write!(sql, "TOP ({top}) ").expect("writing to String cannot fail");
+        }
+        sql
+    }
+
+    fn append_limit(self, sql: &mut String, top: Option<u32>) {
+        if self == Self::Postgres
+            && let Some(top) = top
+        {
+            use std::fmt::Write as _;
+            write!(sql, " LIMIT {top}").expect("writing to String cannot fail");
         }
     }
 }
@@ -432,7 +613,41 @@ pub fn compile_postgres_query(
         .filter(|token| token.kind != TokenKind::Comment)
         .collect::<Vec<_>>();
     let ast = Parser::new(&tokens).parse()?;
-    let mut presentations = PresentationCompilation::strict(&[]);
+    let mut presentations = PresentationCompilation::strict(&[], SqlDialect::Postgres);
+    compile(ast, snapshot, &mut presentations)
+}
+
+/// Compiles one bounded 1C SELECT query to Microsoft SQL Server T-SQL.
+///
+/// # Errors
+///
+/// Returns a positional diagnostic for lexical, syntactic, unsupported, or
+/// metadata-resolution failures. No partial SQL is returned.
+pub fn compile_mssql_query(
+    source: &str,
+    snapshot: &MetadataSnapshot,
+) -> Result<CompiledQuery, QueryDiagnostic> {
+    compile_mssql_query_with_year_offset(source, snapshot, 0)
+}
+
+/// Compiles one bounded 1C SELECT query to T-SQL while translating the
+/// physical 1C date offset to logical dates.
+///
+/// # Errors
+///
+/// Returns a positional diagnostic for lexical, syntactic, unsupported, or
+/// metadata-resolution failures. No partial SQL is returned.
+pub fn compile_mssql_query_with_year_offset(
+    source: &str,
+    snapshot: &MetadataSnapshot,
+    year_offset: i32,
+) -> Result<CompiledQuery, QueryDiagnostic> {
+    let tokens = tokenize(source)?
+        .into_iter()
+        .filter(|token| token.kind != TokenKind::Comment)
+        .collect::<Vec<_>>();
+    let ast = Parser::new(&tokens).parse()?;
+    let mut presentations = PresentationCompilation::strict(&[], SqlDialect::mssql(year_offset));
     compile(ast, snapshot, &mut presentations)
 }
 
@@ -451,7 +666,7 @@ pub fn prepare_postgres_query(
         .filter(|token| token.kind != TokenKind::Comment)
         .collect::<Vec<_>>();
     let ast = Parser::new(&tokens).parse()?;
-    let mut presentations = PresentationCompilation::collect();
+    let mut presentations = PresentationCompilation::collect(SqlDialect::Postgres);
     let _ = compile(ast, snapshot, &mut presentations)?;
     Ok(PreparedPostgresQuery {
         source: source.to_owned(),
@@ -462,6 +677,49 @@ pub fn prepare_postgres_query(
                 .map(|object| PresentationTarget { object })
                 .collect(),
         },
+    })
+}
+
+/// Parses and resolves an MSSQL query and returns its compile-time
+/// presentation callback request.
+///
+/// # Errors
+///
+/// Returns a positional diagnostic when the query cannot be safely resolved.
+pub fn prepare_mssql_query(
+    source: &str,
+    snapshot: &MetadataSnapshot,
+) -> Result<PreparedMsSqlQuery, QueryDiagnostic> {
+    prepare_mssql_query_with_year_offset(source, snapshot, 0)
+}
+
+/// Parses and resolves an MSSQL query using the physical 1C date offset.
+///
+/// # Errors
+///
+/// Returns a positional diagnostic when the query cannot be safely resolved.
+pub fn prepare_mssql_query_with_year_offset(
+    source: &str,
+    snapshot: &MetadataSnapshot,
+    year_offset: i32,
+) -> Result<PreparedMsSqlQuery, QueryDiagnostic> {
+    let tokens = tokenize(source)?
+        .into_iter()
+        .filter(|token| token.kind != TokenKind::Comment)
+        .collect::<Vec<_>>();
+    let ast = Parser::new(&tokens).parse()?;
+    let mut presentations = PresentationCompilation::collect(SqlDialect::mssql(year_offset));
+    let _ = compile(ast, snapshot, &mut presentations)?;
+    Ok(PreparedMsSqlQuery {
+        source: source.to_owned(),
+        request: PresentationRequest {
+            targets: presentations
+                .requested
+                .into_iter()
+                .map(|object| PresentationTarget { object })
+                .collect(),
+        },
+        year_offset,
     })
 }
 
@@ -482,7 +740,44 @@ pub fn compile_postgres_query_with_presentations(
         .filter(|token| token.kind != TokenKind::Comment)
         .collect::<Vec<_>>();
     let ast = Parser::new(&tokens).parse()?;
-    let mut presentations = PresentationCompilation::strict(plans);
+    let mut presentations = PresentationCompilation::strict(plans, SqlDialect::Postgres);
+    compile(ast, snapshot, &mut presentations)
+}
+
+/// Compiles an MSSQL query with plans returned by the application's
+/// compile-time presentation callback.
+///
+/// # Errors
+///
+/// Returns a positional diagnostic when syntax, metadata, or any plan is
+/// invalid. No partial SQL is returned.
+pub fn compile_mssql_query_with_presentations(
+    source: &str,
+    snapshot: &MetadataSnapshot,
+    plans: &[PresentationPlan],
+) -> Result<CompiledQuery, QueryDiagnostic> {
+    compile_mssql_query_with_year_offset_and_presentations(source, snapshot, 0, plans)
+}
+
+/// Compiles an MSSQL query with a physical 1C date offset and application
+/// presentation plans.
+///
+/// # Errors
+///
+/// Returns a positional diagnostic when syntax, metadata, or any plan is
+/// invalid. No partial SQL is returned.
+pub fn compile_mssql_query_with_year_offset_and_presentations(
+    source: &str,
+    snapshot: &MetadataSnapshot,
+    year_offset: i32,
+    plans: &[PresentationPlan],
+) -> Result<CompiledQuery, QueryDiagnostic> {
+    let tokens = tokenize(source)?
+        .into_iter()
+        .filter(|token| token.kind != TokenKind::Comment)
+        .collect::<Vec<_>>();
+    let ast = Parser::new(&tokens).parse()?;
+    let mut presentations = PresentationCompilation::strict(plans, SqlDialect::mssql(year_offset));
     compile(ast, snapshot, &mut presentations)
 }
 
@@ -853,11 +1148,13 @@ impl<'tokens, 'source> Parser<'tokens, 'source> {
             self.expect_lexeme("(")?;
             let argument = match self.peek() {
                 Some(value)
-                    if matches!(value.kind, TokenKind::String | TokenKind::Number)
-                        || matches!(
-                            value.kind,
-                            TokenKind::Keyword(Keyword::True | Keyword::False | Keyword::Null)
-                        ) =>
+                    if matches!(
+                        value.kind,
+                        TokenKind::String | TokenKind::Number | TokenKind::Binary
+                    ) || matches!(
+                        value.kind,
+                        TokenKind::Keyword(Keyword::True | Keyword::False | Keyword::Null)
+                    ) =>
                 {
                     PresentationArgument::Literal(self.next().expect("peeked token"))
                 }
@@ -1173,12 +1470,13 @@ impl<'tokens, 'source> Parser<'tokens, 'source> {
                 "query parameters are not supported by this REPL",
             ));
         }
-        if matches!(token.kind, TokenKind::String | TokenKind::Number)
-            || matches!(
-                token.kind,
-                TokenKind::Keyword(Keyword::True | Keyword::False | Keyword::Null)
-            )
-        {
+        if matches!(
+            token.kind,
+            TokenKind::String | TokenKind::Number | TokenKind::Binary
+        ) || matches!(
+            token.kind,
+            TokenKind::Keyword(Keyword::True | Keyword::False | Keyword::Null)
+        ) {
             return Ok(Expression::Literal(self.next().expect("peeked token")));
         }
         Ok(Expression::Field(self.parse_field_reference()?))
@@ -1297,22 +1595,25 @@ struct PresentationCompilation<'plans> {
     plans: &'plans [PresentationPlan],
     requested: BTreeSet<ObjectId>,
     collect_only: bool,
+    dialect: SqlDialect,
 }
 
 impl<'plans> PresentationCompilation<'plans> {
-    fn strict(plans: &'plans [PresentationPlan]) -> Self {
+    fn strict(plans: &'plans [PresentationPlan], dialect: SqlDialect) -> Self {
         Self {
             plans,
             requested: BTreeSet::new(),
             collect_only: false,
+            dialect,
         }
     }
 
-    fn collect() -> Self {
+    fn collect(dialect: SqlDialect) -> Self {
         Self {
             plans: &[],
             requested: BTreeSet::new(),
             collect_only: true,
+            dialect,
         }
     }
 
@@ -1345,6 +1646,7 @@ fn compile(
     snapshot: &MetadataSnapshot,
     presentations: &mut PresentationCompilation<'_>,
 ) -> Result<CompiledQuery, QueryDiagnostic> {
+    let dialect = presentations.dialect;
     let unioned = !ast.unions.is_empty();
     let mut branches = Vec::with_capacity(ast.branches.len());
     for (index, branch) in ast.branches.iter().enumerate() {
@@ -1385,11 +1687,23 @@ fn compile(
         });
     }
 
-    let mut sql = format!("({})", first.sql);
+    let mut sql = if dialect == SqlDialect::Postgres {
+        format!("({})", first.sql)
+    } else {
+        first.sql.clone()
+    };
     for (link, branch) in ast.unions.iter().zip(branches.iter().skip(1)) {
-        sql.push_str(if link.all { " UNION ALL (" } else { " UNION (" });
-        sql.push_str(&branch.sql);
-        sql.push(')');
+        match dialect {
+            SqlDialect::Postgres => {
+                sql.push_str(if link.all { " UNION ALL (" } else { " UNION (" });
+                sql.push_str(&branch.sql);
+                sql.push(')');
+            }
+            SqlDialect::MsSql { .. } => {
+                sql.push_str(if link.all { " UNION ALL " } else { " UNION " });
+                sql.push_str(&branch.sql);
+            }
+        }
     }
     if !first.order.is_empty() {
         sql.push_str(" ORDER BY ");
@@ -1447,6 +1761,7 @@ struct JoinedContext<'snapshot> {
     snapshot: &'snapshot MetadataSnapshot,
     left: JoinedSource,
     right: JoinedSource,
+    dialect: SqlDialect,
 }
 
 #[derive(Debug, Clone)]
@@ -1824,8 +2139,8 @@ fn compile_single_presentation(
         let PresentationArgument::Literal(literal) = argument else {
             unreachable!()
         };
-        let value = compile_literal(literal)?;
-        return Ok((format!("({value})::text"), label));
+        let value = compile_literal(literal, context.dialect)?;
+        return Ok((context.dialect.scalar_text(&value), label));
     };
 
     let resolved = context.resolve_path(reference)?;
@@ -1850,7 +2165,7 @@ fn compile_single_presentation(
         }
         let column = single_column(&resolved.field, reference.last())?;
         let value = qualified_column(Some(context.base_alias()), &column.physical_name);
-        return Ok((format!("({value})::text"), label));
+        return Ok((context.dialect.scalar_text(&value), label));
     }
 
     let multiple = targets.len() > 1;
@@ -1870,8 +2185,17 @@ fn compile_single_presentation(
             context.ensure_presentation_join(&resolved.field, target, multiple, token)?
         };
         let expression = plan.map_or_else(
-            || Ok("NULL::text".to_owned()),
-            |plan| compile_presentation_plan(context.snapshot, target, &alias, plan, token),
+            || Ok(context.dialect.null_text().to_owned()),
+            |plan| {
+                compile_presentation_plan(
+                    context.snapshot,
+                    target,
+                    &alias,
+                    plan,
+                    token,
+                    context.dialect,
+                )
+            },
         )?;
         variants.push((number, expression));
     }
@@ -1881,6 +2205,7 @@ fn compile_single_presentation(
             &source_reference,
             source_type.as_deref(),
             &variants,
+            context.dialect,
         ),
         label,
     ))
@@ -1904,8 +2229,8 @@ fn compile_joined_presentation(
         let PresentationArgument::Literal(literal) = argument else {
             unreachable!()
         };
-        let value = compile_literal(literal)?;
-        return Ok((format!("({value})::text"), label));
+        let value = compile_literal(literal, context.dialect)?;
+        return Ok((context.dialect.scalar_text(&value), label));
     };
     let resolved = context.resolve(reference)?;
     let source = context.source(resolved.side);
@@ -1927,7 +2252,7 @@ fn compile_joined_presentation(
         }
         let column = single_column(&resolved.field, reference.last())?;
         let value = qualified_column(Some(&source_alias), &column.physical_name);
-        return Ok((format!("({value})::text"), label));
+        return Ok((context.dialect.scalar_text(&value), label));
     }
     let multiple = targets.len() > 1;
     let source_reference = reference_column(&resolved.field, reference.last())?
@@ -1952,8 +2277,17 @@ fn compile_joined_presentation(
             )?
         };
         let expression = plan.map_or_else(
-            || Ok("NULL::text".to_owned()),
-            |plan| compile_presentation_plan(context.snapshot, target, &alias, plan, token),
+            || Ok(context.dialect.null_text().to_owned()),
+            |plan| {
+                compile_presentation_plan(
+                    context.snapshot,
+                    target,
+                    &alias,
+                    plan,
+                    token,
+                    context.dialect,
+                )
+            },
         )?;
         variants.push((number, expression));
     }
@@ -1963,6 +2297,7 @@ fn compile_joined_presentation(
             &source_reference,
             source_type.as_deref(),
             &variants,
+            context.dialect,
         ),
         label,
     ))
@@ -1971,6 +2306,7 @@ fn compile_joined_presentation(
 fn compile_source_free_branch(
     ast: &SelectAst<'_, '_>,
     order_terms: &[OrderTerm<'_, '_>],
+    dialect: SqlDialect,
 ) -> Result<CompiledBranch, QueryDiagnostic> {
     if ast.join.is_some() {
         return Err(QueryDiagnostic::metadata("JOIN requires FROM"));
@@ -1994,23 +2330,26 @@ fn compile_source_free_branch(
                 kind: AggregateKind::Count,
                 distinct: false,
                 argument: AggregateArgument::All,
-            } => ("COUNT(*)::text".to_owned(), token.lexeme.to_owned()),
+            } => (dialect.text("COUNT(*)"), token.lexeme.to_owned()),
             Projection::Aggregate { token, .. } => {
                 return Err(QueryDiagnostic::at(
                     Some(token),
                     "aggregate field argument requires FROM",
                 ));
             }
-            Projection::Scalar(expression) => (
-                format!("({})::text", compile_source_free_expression(expression)?),
-                format!("column{}", index + 1),
-            ),
+            Projection::Scalar(expression) => {
+                let expression = compile_source_free_expression(expression, dialect)?;
+                (
+                    dialect.scalar_text(&expression),
+                    format!("column{}", index + 1),
+                )
+            }
             Projection::Presentation {
                 token,
                 operation: PresentationOperation::Reference | PresentationOperation::String,
                 argument: PresentationArgument::Literal(literal),
             } => (
-                format!("({})::text", compile_literal(literal)?),
+                dialect.scalar_text(&compile_literal(literal, dialect)?),
                 token.lexeme.to_owned(),
             ),
             Projection::Presentation { token, .. } => {
@@ -2034,15 +2373,9 @@ fn compile_source_free_branch(
         projections.push(format!("{sql} AS {}", quote_identifier(&label)));
         columns.push(label);
     }
-    let mut sql = String::from("SELECT ");
-    if ast.distinct {
-        sql.push_str("DISTINCT ");
-    }
+    let mut sql = dialect.select_prefix(ast.distinct, ast.top);
     sql.push_str(&projections.join(", "));
-    if let Some(top) = ast.top {
-        sql.push_str(" LIMIT ");
-        sql.push_str(&top.to_string());
-    }
+    dialect.append_limit(&mut sql, ast.top);
     Ok(CompiledBranch {
         sql,
         logical_width: columns.len(),
@@ -2053,13 +2386,14 @@ fn compile_source_free_branch(
 
 fn compile_source_free_expression(
     expression: &Expression<'_, '_>,
+    dialect: SqlDialect,
 ) -> Result<String, QueryDiagnostic> {
     match expression {
         Expression::Field(reference) => Err(QueryDiagnostic::at(
             Some(reference.last()),
             "field expression requires FROM",
         )),
-        Expression::Literal(token) => compile_literal(token),
+        Expression::Literal(token) => compile_literal(token, dialect),
         Expression::Unary { operator, value } => {
             let operator = match operator.kind {
                 TokenKind::Keyword(Keyword::Not) => "NOT ",
@@ -2074,7 +2408,7 @@ fn compile_source_free_expression(
             };
             Ok(format!(
                 "({operator}{})",
-                compile_source_free_expression(value)?
+                compile_source_free_expression(value, dialect)?
             ))
         }
         Expression::Binary {
@@ -2101,13 +2435,13 @@ fn compile_source_free_expression(
             };
             Ok(format!(
                 "({} {operator} {})",
-                compile_source_free_expression(left)?,
-                compile_source_free_expression(right)?
+                compile_source_free_expression(left, dialect)?,
+                compile_source_free_expression(right, dialect)?
             ))
         }
         Expression::IsNull { value, negated } => Ok(format!(
             "({} IS {}NULL)",
-            compile_source_free_expression(value)?,
+            compile_source_free_expression(value, dialect)?,
             if *negated { "NOT " } else { "" }
         )),
     }
@@ -2188,6 +2522,7 @@ fn wrap_reference_presentation(
     reference_column: &str,
     type_column: Option<&str>,
     variants: &[(u32, String)],
+    dialect: SqlDialect,
 ) -> String {
     let reference = qualified_column(Some(source_alias), reference_column);
     if variants.len() == 1 {
@@ -2201,11 +2536,12 @@ fn wrap_reference_presentation(
     let mut sql = format!("CASE WHEN {reference} IS NULL THEN ''");
     for (number, expression) in variants {
         use std::fmt::Write as _;
-        write!(sql, " WHEN {type_value} = '\\x").expect("writing to String cannot fail");
-        for byte in number.to_be_bytes() {
-            write!(sql, "{byte:02x}").expect("writing to String cannot fail");
-        }
-        write!(sql, "'::bytea THEN {expression}").expect("writing to String cannot fail");
+        write!(
+            sql,
+            " WHEN {type_value} = {} THEN {expression}",
+            dialect.binary_u32(*number)
+        )
+        .expect("writing to String cannot fail");
     }
     sql.push_str(" ELSE '' END");
     sql
@@ -2222,6 +2558,7 @@ fn compile_source_relation(
     object: &MetadataObject,
     live_table: &LiveTable,
     fields: &[QueryableField],
+    dialect: SqlDialect,
 ) -> Result<CompiledSourceRelation, QueryDiagnostic> {
     if let Some(accumulation) = &source.accumulation {
         return compile_accumulation_relation(
@@ -2231,6 +2568,7 @@ fn compile_source_relation(
             object,
             live_table,
             fields,
+            dialect,
         );
     }
     let Some(slice) = &source.slice else {
@@ -2317,7 +2655,7 @@ fn compile_source_relation(
         .period
         .as_ref()
         .map(|expression| match expression {
-            Expression::Literal(token) => compile_literal(token),
+            Expression::Literal(token) => compile_literal(token, dialect),
             _ => Err(QueryDiagnostic::at(
                 Some(slice.token),
                 format!("{} period must be a scalar literal", slice.kind.name()),
@@ -2332,6 +2670,7 @@ fn compile_source_relation(
             source_alias: Some("__slice_base".to_owned()),
             object_name: source.object.lexeme.to_owned(),
             joins: Vec::new(),
+            dialect,
         };
         let sql = compile_expression(condition, &mut condition_context)?;
         if !condition_context.joins.is_empty() {
@@ -2389,6 +2728,7 @@ fn compile_accumulation_relation(
     object: &MetadataObject,
     live_table: &LiveTable,
     fields: &[QueryableField],
+    dialect: SqlDialect,
 ) -> Result<CompiledSourceRelation, QueryDiagnostic> {
     if object.kind != Some(MetadataKind::AccumulationRegister) {
         return Err(QueryDiagnostic::at(
@@ -2509,6 +2849,7 @@ fn compile_accumulation_relation(
             active_column,
             period_column,
             record_kind.expect("a balance register has RecordKind"),
+            dialect,
         );
     }
 
@@ -2528,16 +2869,19 @@ fn compile_accumulation_relation(
     let condition = virtual_table.arguments.get(3).and_then(Option::as_ref);
 
     let begin = begin
-        .map(|expression| compile_virtual_period_literal(expression, virtual_table, "begin period"))
+        .map(|expression| {
+            compile_virtual_period_literal(expression, virtual_table, "begin period", dialect)
+        })
         .transpose()?;
     let end = end
         .map(|expression| {
-            compile_virtual_period_literal(expression, virtual_table, "period boundary")
+            compile_virtual_period_literal(expression, virtual_table, "period boundary", dialect)
         })
         .transpose()?;
     let mut predicates = vec![format!(
-        "{} = TRUE",
-        qualified_column(Some("__aggregate_base"), &active_column.physical_name)
+        "{} = {}",
+        qualified_column(Some("__aggregate_base"), &active_column.physical_name),
+        dialect.boolean_literal(true)
     )];
     let qualified_period = qualified_column(Some("__aggregate_base"), &period_column.physical_name);
     if let Some(begin) = begin {
@@ -2554,6 +2898,7 @@ fn compile_accumulation_relation(
             source_alias: Some("__aggregate_base".to_owned()),
             object_name: source.object.lexeme.to_owned(),
             joins: Vec::new(),
+            dialect,
         };
         let sql = compile_expression(condition, &mut condition_context)?;
         if !condition_context.joins.is_empty() {
@@ -2634,6 +2979,7 @@ fn compile_accumulation_balance_relation(
     active_column: &QueryableColumn,
     movement_period: &QueryableColumn,
     record_kind: &QueryableColumn,
+    dialect: SqlDialect,
 ) -> Result<CompiledSourceRelation, QueryDiagnostic> {
     let totals = resolve_balance_totals(
         snapshot,
@@ -2646,7 +2992,7 @@ fn compile_accumulation_balance_relation(
     let condition = virtual_table.arguments.get(1).and_then(Option::as_ref);
     let boundary = boundary
         .map(|expression| {
-            compile_virtual_period_literal(expression, virtual_table, "period boundary")
+            compile_virtual_period_literal(expression, virtual_table, "period boundary", dialect)
         })
         .transpose()?;
     let totals_condition = compile_accumulation_condition(
@@ -2657,6 +3003,7 @@ fn compile_accumulation_balance_relation(
         object,
         dimension_fields,
         "__totals_base",
+        dialect,
     )?;
 
     let relation = if let Some(boundary) = boundary {
@@ -2668,6 +3015,7 @@ fn compile_accumulation_balance_relation(
             object,
             dimension_fields,
             "__movement_base",
+            dialect,
         )?;
         compile_historical_balance_sql(
             &boundary,
@@ -2680,6 +3028,7 @@ fn compile_accumulation_balance_relation(
             movement_table,
             totals_condition.as_deref(),
             movement_condition.as_deref(),
+            dialect,
         )?
     } else {
         compile_current_balance_sql(
@@ -2687,6 +3036,7 @@ fn compile_accumulation_balance_relation(
             dimension_fields,
             resource_fields,
             totals_condition.as_deref(),
+            dialect,
         )?
     };
 
@@ -2804,6 +3154,7 @@ fn resolve_balance_totals<'snapshot>(
     })
 }
 
+#[allow(clippy::too_many_arguments)]
 fn compile_accumulation_condition(
     condition: Option<&Expression<'_, '_>>,
     source: &SourceAst<'_, '_>,
@@ -2812,6 +3163,7 @@ fn compile_accumulation_condition(
     object: &MetadataObject,
     dimension_fields: &[QueryableField],
     alias: &str,
+    dialect: SqlDialect,
 ) -> Result<Option<String>, QueryDiagnostic> {
     let Some(condition) = condition else {
         return Ok(None);
@@ -2823,6 +3175,7 @@ fn compile_accumulation_condition(
         source_alias: Some(alias.to_owned()),
         object_name: source.object.lexeme.to_owned(),
         joins: Vec::new(),
+        dialect,
     };
     let sql = compile_expression(condition, &mut context)?;
     if !context.joins.is_empty() {
@@ -2842,6 +3195,7 @@ fn compile_current_balance_sql(
     dimension_fields: &[QueryableField],
     resource_fields: &[QueryableField],
     condition: Option<&str>,
+    _dialect: SqlDialect,
 ) -> Result<String, QueryDiagnostic> {
     let (dimension_projection, grouping) =
         accumulation_dimensions(dimension_fields, "__totals_base");
@@ -2891,6 +3245,7 @@ fn compile_historical_balance_sql(
     movement_table: &str,
     totals_condition: Option<&str>,
     movement_condition: Option<&str>,
+    dialect: SqlDialect,
 ) -> Result<String, QueryDiagnostic> {
     let totals_period = qualified_column(Some("__anchor_totals"), &totals.period.name);
     let anchor_period = qualified_column(Some("__balance_anchor"), "__period");
@@ -2937,8 +3292,9 @@ fn compile_historical_balance_sql(
     }
     let movement_period = qualified_column(Some("__movement_base"), &movement_period.physical_name);
     let mut movement_predicates = vec![format!(
-        "{} = TRUE",
-        qualified_column(Some("__movement_base"), &active_column.physical_name)
+        "{} = {}",
+        qualified_column(Some("__movement_base"), &active_column.physical_name),
+        dialect.boolean_literal(true)
     )];
     movement_predicates.push(format!(
         "(({anchor_period} <= {boundary} AND {movement_period} >= {anchor_period} AND {movement_period} < {boundary}) OR ({anchor_period} > {boundary} AND {movement_period} >= {boundary} AND {movement_period} < {anchor_period}))"
@@ -2947,17 +3303,39 @@ fn compile_historical_balance_sql(
         movement_predicates.push(condition.to_owned());
     }
 
-    let mut sql = format!(
-        "(WITH \"__balance_anchor\" AS (SELECT COALESCE(MAX({totals_period}) FILTER (WHERE {totals_period} <= {boundary}), MAX({totals_period})) AS \"__period\" FROM {} AS \"__anchor_totals\"), \"__balance_parts\" AS (SELECT {} FROM {} AS \"__totals_base\" CROSS JOIN \"__balance_anchor\" WHERE {} UNION ALL SELECT {} FROM {} AS \"__movement_base\" CROSS JOIN \"__balance_anchor\" WHERE {}) SELECT {} FROM \"__balance_parts\"",
-        quote_identifier(&totals.table.name),
-        totals_parts.join(", "),
-        quote_identifier(&totals.table.name),
-        totals_predicates.join(" AND "),
-        movement_parts.join(", "),
-        quote_identifier(movement_table),
-        movement_predicates.join(" AND "),
-        outer_projection.join(", ")
-    );
+    let anchor = match dialect {
+        SqlDialect::Postgres => format!(
+            "COALESCE(MAX({totals_period}) FILTER (WHERE {totals_period} <= {boundary}), MAX({totals_period}))"
+        ),
+        SqlDialect::MsSql { .. } => format!(
+            "COALESCE(MAX(CASE WHEN {totals_period} <= {boundary} THEN {totals_period} END), MAX({totals_period}))"
+        ),
+    };
+    let totals_table = quote_identifier(&totals.table.name);
+    let movement_table = quote_identifier(movement_table);
+    let mut sql = match dialect {
+        SqlDialect::Postgres => format!(
+            "(WITH \"__balance_anchor\" AS (SELECT {anchor} AS \"__period\" FROM {totals_table} AS \"__anchor_totals\"), \"__balance_parts\" AS (SELECT {} FROM {totals_table} AS \"__totals_base\" CROSS JOIN \"__balance_anchor\" WHERE {} UNION ALL SELECT {} FROM {movement_table} AS \"__movement_base\" CROSS JOIN \"__balance_anchor\" WHERE {}) SELECT {} FROM \"__balance_parts\"",
+            totals_parts.join(", "),
+            totals_predicates.join(" AND "),
+            movement_parts.join(", "),
+            movement_predicates.join(" AND "),
+            outer_projection.join(", ")
+        ),
+        SqlDialect::MsSql { .. } => {
+            let anchor_relation = format!(
+                "(SELECT {anchor} AS \"__period\" FROM {totals_table} AS \"__anchor_totals\") AS \"__balance_anchor\""
+            );
+            format!(
+                "(SELECT {} FROM (SELECT {} FROM {totals_table} AS \"__totals_base\" CROSS JOIN {anchor_relation} WHERE {} UNION ALL SELECT {} FROM {movement_table} AS \"__movement_base\" CROSS JOIN {anchor_relation} WHERE {}) AS \"__balance_parts\"",
+                outer_projection.join(", "),
+                totals_parts.join(", "),
+                totals_predicates.join(" AND "),
+                movement_parts.join(", "),
+                movement_predicates.join(" AND "),
+            )
+        }
+    };
     append_balance_grouping(&mut sql, &grouping, &aggregates);
     sql.push(')');
     Ok(sql)
@@ -3037,9 +3415,10 @@ fn compile_virtual_period_literal(
     expression: &Expression<'_, '_>,
     virtual_table: &AccumulationAst<'_, '_>,
     argument: &str,
+    dialect: SqlDialect,
 ) -> Result<String, QueryDiagnostic> {
     match expression {
-        Expression::Literal(token) => compile_literal(token),
+        Expression::Literal(token) => dialect.datetime_literal(token),
         _ => Err(QueryDiagnostic::at(
             Some(virtual_table.token),
             format!(
@@ -3070,6 +3449,7 @@ fn compile_presentation_plan(
     alias: &str,
     plan: &PresentationPlan,
     token: &Token<'_>,
+    dialect: SqlDialect,
 ) -> Result<String, QueryDiagnostic> {
     if plan.object != target {
         return Err(QueryDiagnostic::at(
@@ -3102,6 +3482,7 @@ fn compile_presentation_plan(
         token,
         0,
         &mut budget,
+        dialect,
     )
 }
 
@@ -3116,6 +3497,7 @@ fn compile_presentation_expression(
     token: &Token<'_>,
     depth: usize,
     budget: &mut usize,
+    dialect: SqlDialect,
 ) -> Result<String, QueryDiagnostic> {
     if depth > 32 || *budget == 0 {
         return Err(QueryDiagnostic::at(
@@ -3135,11 +3517,15 @@ fn compile_presentation_expression(
             let field = presentation_field(snapshot, object, fields, *id, token)?;
             let column = single_column(field, token)?;
             Ok(format!(
-                "COALESCE({}::text, '')",
-                qualified_column(Some(alias), &column.physical_name)
+                "COALESCE({}, {})",
+                dialect.column_text(
+                    &qualified_column(Some(alias), &column.physical_name),
+                    &column.data_type
+                ),
+                dialect.string_literal("")
             ))
         }
-        PresentationExpression::Literal(value) => Ok(format!("'{}'", value.replace('\'', "''"))),
+        PresentationExpression::Literal(value) => Ok(dialect.string_literal(value)),
         PresentationExpression::Concat(parts) => {
             if parts.is_empty() {
                 return Err(QueryDiagnostic::at(
@@ -3160,6 +3546,7 @@ fn compile_presentation_expression(
                         token,
                         depth + 1,
                         budget,
+                        dialect,
                     )
                 })
                 .collect::<Result<Vec<_>, _>>()?;
@@ -3215,9 +3602,10 @@ fn compile_branch(
     union_order: bool,
     presentations: &mut PresentationCompilation<'_>,
 ) -> Result<CompiledBranch, QueryDiagnostic> {
+    let dialect = presentations.dialect;
     validate_aggregate_projection(ast)?;
     let Some(source) = ast.source.as_ref() else {
-        return compile_source_free_branch(ast, order_terms);
+        return compile_source_free_branch(ast, order_terms, dialect);
     };
     if let Some(join) = &ast.join {
         return compile_joined_branch(ast, join, snapshot, order_terms, union_order, presentations);
@@ -3235,7 +3623,8 @@ fn compile_branch(
         })
         .ok_or_else(|| QueryDiagnostic::at(Some(source.object), "metadata table is not live"))?;
     let fields = queryable_fields(snapshot, object)?;
-    let compiled_source = compile_source_relation(source, snapshot, object, live_table, &fields)?;
+    let compiled_source =
+        compile_source_relation(source, snapshot, object, live_table, &fields, dialect)?;
     let mut context = CompilationContext {
         snapshot,
         object: ObjectId::from(&object.guid),
@@ -3243,6 +3632,7 @@ fn compile_branch(
         source_alias: source.alias.map(|token| token.lexeme.to_owned()),
         object_name: source.object.lexeme.to_owned(),
         joins: Vec::new(),
+        dialect,
     };
 
     let selected = if matches!(ast.projection.as_slice(), [Projection::All]) {
@@ -3288,7 +3678,7 @@ fn compile_branch(
                     let number = selected.len() + 1;
                     let sql = compile_expression(expression, &mut context)?;
                     selected.push(SelectedProjection::Generated {
-                        sql: format!("({sql})::text"),
+                        sql: dialect.scalar_text(&sql),
                         label: format!("column{number}"),
                     });
                 }
@@ -3317,12 +3707,13 @@ fn compile_branch(
             SelectedProjection::Field(resolved) => {
                 for column in &resolved.field.columns {
                     let output_label = resolved.output_label(column);
+                    let expression = qualified_column(
+                        Some(resolved.sql_alias(context.base_alias())),
+                        &column.physical_name,
+                    );
                     projections.push(format!(
-                        "{}::text AS {}",
-                        qualified_column(
-                            Some(resolved.sql_alias(context.base_alias())),
-                            &column.physical_name
-                        ),
+                        "{} AS {}",
+                        dialect.column_text(&expression, &column.data_type),
                         quote_identifier(&output_label)
                     ));
                     columns.push(output_label);
@@ -3373,10 +3764,7 @@ fn compile_branch(
         })
         .collect::<Result<Vec<_>, QueryDiagnostic>>()?;
 
-    let mut sql = String::from("SELECT ");
-    if ast.distinct {
-        sql.push_str("DISTINCT ");
-    }
+    let mut sql = dialect.select_prefix(ast.distinct, ast.top);
     sql.push_str(&projections.join(", "));
     sql.push_str(" FROM ");
     sql.push_str(&compiled_source.sql);
@@ -3394,7 +3782,7 @@ fn compile_branch(
         ));
         sql.push_str(" = ");
         sql.push_str(&qualified_column(Some(&join.alias), &join.target_id_column));
-        append_type_guard(&mut sql, context.base_alias(), join);
+        append_type_guard(&mut sql, context.base_alias(), join, dialect);
     }
     if let Some(filter) = filter {
         sql.push_str(" WHERE ");
@@ -3404,10 +3792,7 @@ fn compile_branch(
         sql.push_str(" ORDER BY ");
         sql.push_str(&order.join(", "));
     }
-    if let Some(top) = ast.top {
-        sql.push_str(" LIMIT ");
-        sql.push_str(&top.to_string());
-    }
+    dialect.append_limit(&mut sql, ast.top);
     Ok(CompiledBranch {
         sql,
         columns,
@@ -3455,8 +3840,9 @@ fn compile_joined_branch(
         .source
         .as_ref()
         .expect("a joined branch always has a left source");
-    let left = resolve_full_join_source(left_source, snapshot, "__left")?;
-    let right = resolve_full_join_source(&join.source, snapshot, "__right")?;
+    let dialect = presentations.dialect;
+    let left = resolve_full_join_source(left_source, snapshot, "__left", dialect)?;
+    let right = resolve_full_join_source(&join.source, snapshot, "__right", dialect)?;
     if names_equal(&left.sql_alias, &right.sql_alias) {
         return Err(QueryDiagnostic::at(
             Some(join.token),
@@ -3470,6 +3856,7 @@ fn compile_joined_branch(
         snapshot,
         left,
         right,
+        dialect,
     };
     let mut selected = Vec::with_capacity(ast.projection.len());
     for projection in &ast.projection {
@@ -3495,7 +3882,7 @@ fn compile_joined_branch(
                 let number = selected.len() + 1;
                 let sql = compile_full_join_expression(expression, &mut context)?;
                 selected.push(JoinedProjection::Generated {
-                    sql: format!("({sql})::text"),
+                    sql: dialect.scalar_text(&sql),
                     label: format!("column{number}"),
                 });
             }
@@ -3523,8 +3910,9 @@ fn compile_joined_branch(
                 for column in &resolved.field.columns {
                     let output_label = resolved.output_label(column);
                     projections.push(format!(
-                        "{}::text AS {}",
-                        context.sql_column(resolved, column),
+                        "{} AS {}",
+                        dialect
+                            .column_text(&context.sql_column(resolved, column), &column.data_type),
                         quote_identifier(&output_label)
                     ));
                     columns.push(output_label);
@@ -3592,15 +3980,22 @@ fn compile_joined_branch(
             filter.as_deref(),
             Some(&condition.left_marker),
         );
-        let mut sql = String::from("SELECT ");
-        if ast.distinct {
-            sql.push_str("DISTINCT ");
+        let mut sql = dialect.select_prefix(ast.distinct, ast.top);
+        sql.push_str("* FROM (");
+        if dialect == SqlDialect::Postgres {
+            sql.push('(');
         }
-        sql.push_str("* FROM ((");
         sql.push_str(&first);
-        sql.push_str(") UNION ALL (");
+        sql.push_str(if dialect == SqlDialect::Postgres {
+            ") UNION ALL ("
+        } else {
+            " UNION ALL "
+        });
         sql.push_str(&second);
-        sql.push_str(")) AS \"__full\"");
+        if dialect == SqlDialect::Postgres {
+            sql.push(')');
+        }
+        sql.push_str(") AS \"__full\"");
         sql
     } else {
         compile_native_join(
@@ -3616,10 +4011,7 @@ fn compile_joined_branch(
         sql.push_str(" ORDER BY ");
         sql.push_str(&order.join(", "));
     }
-    if let Some(top) = ast.top {
-        sql.push_str(" LIMIT ");
-        sql.push_str(&top.to_string());
-    }
+    dialect.append_limit(&mut sql, ast.top);
 
     Ok(CompiledBranch {
         sql,
@@ -3633,6 +4025,7 @@ fn resolve_full_join_source(
     source: &SourceAst<'_, '_>,
     snapshot: &MetadataSnapshot,
     default_alias: &str,
+    dialect: SqlDialect,
 ) -> Result<JoinedSource, QueryDiagnostic> {
     let qualified_name = format!("{}.{}", source.kind.lexeme, source.object.lexeme);
     let object = find_metadata_object(snapshot, &qualified_name)?;
@@ -3647,7 +4040,8 @@ fn resolve_full_join_source(
         })
         .ok_or_else(|| QueryDiagnostic::at(Some(source.object), "metadata table is not live"))?;
     let fields = queryable_fields(snapshot, object)?;
-    let compiled_source = compile_source_relation(source, snapshot, object, live_table, &fields)?;
+    let compiled_source =
+        compile_source_relation(source, snapshot, object, live_table, &fields, dialect)?;
     Ok(JoinedSource {
         object: ObjectId::from(&object.guid),
         fields: compiled_source.fields,
@@ -3744,7 +4138,7 @@ fn compile_full_join_expression(
             let column = single_column(&resolved.field, reference.last())?;
             Ok(context.sql_column(&resolved, column))
         }
-        Expression::Literal(token) => compile_literal(token),
+        Expression::Literal(token) => compile_literal(token, context.dialect),
         Expression::Unary { operator, value } => {
             let operator = match operator.kind {
                 TokenKind::Keyword(Keyword::Not) => "NOT ",
@@ -3784,9 +4178,9 @@ fn compile_full_join_expression(
                     ));
                 }
             };
-            let left = compile_full_join_expression(left, context)?;
-            let right = compile_full_join_expression(right, context)?;
-            Ok(format!("({left} {operator} {right})"))
+            let left_sql = compile_full_join_operand(left, right, context)?;
+            let right_sql = compile_full_join_operand(right, left, context)?;
+            Ok(format!("({left_sql} {operator} {right_sql})"))
         }
         Expression::IsNull { value, negated } => Ok(format!(
             "({} IS {}NULL)",
@@ -3794,6 +4188,19 @@ fn compile_full_join_expression(
             if *negated { "NOT " } else { "" }
         )),
     }
+}
+
+fn compile_full_join_operand(
+    expression: &Expression<'_, '_>,
+    other: &Expression<'_, '_>,
+    context: &mut JoinedContext<'_>,
+) -> Result<String, QueryDiagnostic> {
+    if let (Expression::Literal(token), Expression::Field(reference)) = (expression, other) {
+        let resolved = context.resolve(reference)?;
+        let column = single_column(&resolved.field, reference.last())?;
+        return context.dialect.literal_for_type(token, &column.data_type);
+    }
+    compile_full_join_expression(expression, context)
 }
 
 fn compile_directional_full_join(
@@ -3843,10 +4250,7 @@ fn compile_native_join(
         JoinKind::Right => "RIGHT JOIN",
         JoinKind::Full => unreachable!("FULL JOIN is transposed separately"),
     };
-    let mut sql = String::from("SELECT ");
-    if ast.distinct {
-        sql.push_str("DISTINCT ");
-    }
+    let mut sql = context.dialect.select_prefix(ast.distinct, ast.top);
     sql.push_str(&projections.join(", "));
     sql.push_str(" FROM ");
     sql.push_str(&context.left.relation);
@@ -3882,21 +4286,17 @@ fn append_joined_reference_joins(sql: &mut String, context: &JoinedContext<'_>) 
             ));
             sql.push_str(" = ");
             sql.push_str(&qualified_column(Some(&join.alias), &join.target_id_column));
-            append_type_guard(sql, &source.sql_alias, join);
+            append_type_guard(sql, &source.sql_alias, join, context.dialect);
         }
     }
 }
 
-fn append_type_guard(sql: &mut String, source_alias: &str, join: &JoinPlan) {
+fn append_type_guard(sql: &mut String, source_alias: &str, join: &JoinPlan, dialect: SqlDialect) {
     if let (Some(column), Some(number)) = (&join.source_type_column, join.database_type) {
         sql.push_str(" AND ");
         sql.push_str(&qualified_column(Some(source_alias), column));
-        sql.push_str(" = '\\x");
-        for byte in number.to_be_bytes() {
-            use std::fmt::Write as _;
-            write!(sql, "{byte:02x}").expect("writing to String cannot fail");
-        }
-        sql.push_str("'::bytea");
+        sql.push_str(" = ");
+        sql.push_str(&dialect.binary_u32(number));
     }
 }
 
@@ -3971,7 +4371,7 @@ fn compile_expression(
                 &column.physical_name,
             ))
         }
-        Expression::Literal(token) => compile_literal(token),
+        Expression::Literal(token) => compile_literal(token, context.dialect),
         Expression::Unary { operator, value } => {
             let operator = match operator.kind {
                 TokenKind::Keyword(Keyword::Not) => "NOT ",
@@ -4011,9 +4411,9 @@ fn compile_expression(
                     ));
                 }
             };
-            let left = compile_expression(left, context)?;
-            let right = compile_expression(right, context)?;
-            Ok(format!("({left} {operator} {right})"))
+            let left_sql = compile_expression_operand(left, right, context)?;
+            let right_sql = compile_expression_operand(right, left, context)?;
+            Ok(format!("({left_sql} {operator} {right_sql})"))
         }
         Expression::IsNull { value, negated } => Ok(format!(
             "({} IS {}NULL)",
@@ -4023,7 +4423,20 @@ fn compile_expression(
     }
 }
 
-fn compile_literal(token: &Token<'_>) -> Result<String, QueryDiagnostic> {
+fn compile_expression_operand(
+    expression: &Expression<'_, '_>,
+    other: &Expression<'_, '_>,
+    context: &mut CompilationContext<'_>,
+) -> Result<String, QueryDiagnostic> {
+    if let (Expression::Literal(token), Expression::Field(reference)) = (expression, other) {
+        let resolved = context.resolve_path(reference)?;
+        let column = single_column(&resolved.field, reference.last())?;
+        return context.dialect.literal_for_type(token, &column.data_type);
+    }
+    compile_expression(expression, context)
+}
+
+fn compile_literal(token: &Token<'_>, dialect: SqlDialect) -> Result<String, QueryDiagnostic> {
     match token.kind {
         TokenKind::String => {
             let inner = token
@@ -4031,14 +4444,26 @@ fn compile_literal(token: &Token<'_>) -> Result<String, QueryDiagnostic> {
                 .strip_prefix('"')
                 .and_then(|value| value.strip_suffix('"'))
                 .ok_or_else(|| QueryDiagnostic::at(Some(token), "invalid string literal"))?;
-            Ok(format!(
-                "'{}'",
-                inner.replace("\"\"", "\"").replace('\'', "''")
-            ))
+            Ok(dialect.string_literal(&inner.replace("\"\"", "\"")))
         }
         TokenKind::Number => Ok(token.lexeme.to_owned()),
-        TokenKind::Keyword(Keyword::True) => Ok("TRUE".to_owned()),
-        TokenKind::Keyword(Keyword::False) => Ok("FALSE".to_owned()),
+        TokenKind::Binary => {
+            let digits = token
+                .lexeme
+                .get(2..)
+                .filter(|digits| {
+                    !digits.is_empty()
+                        && digits.len() % 2 == 0
+                        && digits.chars().all(|digit| digit.is_ascii_hexdigit())
+                })
+                .ok_or_else(|| QueryDiagnostic::at(Some(token), "invalid binary literal"))?;
+            match dialect {
+                SqlDialect::Postgres => Ok(format!("'\\x{digits}'::bytea")),
+                SqlDialect::MsSql { .. } => Ok(format!("0x{digits}")),
+            }
+        }
+        TokenKind::Keyword(Keyword::True) => Ok(dialect.boolean_literal(true).to_owned()),
+        TokenKind::Keyword(Keyword::False) => Ok(dialect.boolean_literal(false).to_owned()),
         TokenKind::Keyword(Keyword::Null) => Ok("NULL".to_owned()),
         _ => Err(QueryDiagnostic::at(Some(token), "unsupported literal")),
     }
@@ -4108,6 +4533,7 @@ struct CompilationContext<'snapshot> {
     source_alias: Option<String>,
     object_name: String,
     joins: Vec<JoinPlan>,
+    dialect: SqlDialect,
 }
 
 impl CompilationContext<'_> {
@@ -4339,11 +4765,11 @@ fn compile_aggregate_single(
             )
         }
     };
-    Ok(format!(
-        "{}({}{argument})::text",
+    Ok(context.dialect.text(&format!(
+        "{}({}{argument})",
         kind.sql_name(),
         if distinct { "DISTINCT " } else { "" }
-    ))
+    )))
 }
 
 fn compile_aggregate_joined(
@@ -4360,11 +4786,11 @@ fn compile_aggregate_joined(
             context.sql_column(&resolved, column)
         }
     };
-    Ok(format!(
-        "{}({}{argument})::text",
+    Ok(context.dialect.text(&format!(
+        "{}({}{argument})",
         kind.sql_name(),
         if distinct { "DISTINCT " } else { "" }
-    ))
+    )))
 }
 
 fn countable_column<'field>(
