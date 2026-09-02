@@ -81,6 +81,80 @@ fn compiles_binary_literals_for_each_sql_dialect() {
 }
 
 #[test]
+fn compiles_mssql_extension_tables_as_one_source_relation() {
+    let mut snapshot = mssql_snapshot();
+    let mut extension = snapshot.live_tables[0].clone();
+    extension.name = "_reference53X1".to_owned();
+    extension
+        .columns
+        .retain(|column| column.name != "_date_time");
+    extension.columns.push(LiveColumn {
+        name: "_extension_only".to_owned(),
+        data_type: "nvarchar(10)".to_owned(),
+    });
+    snapshot.live_tables.push(extension);
+    let mut unrelated = snapshot.live_tables[0].clone();
+    unrelated.name = "_reference53Xother".to_owned();
+    snapshot.live_tables.push(unrelated);
+
+    let compiled = compile_mssql_query(
+        "SELECT Code, Date FROM Catalog.OpenSdblMetadataProbe;",
+        &snapshot,
+    )
+    .unwrap();
+
+    assert!(compiled.sql.contains("FROM (SELECT"));
+    assert!(
+        compiled
+            .sql
+            .contains("FROM \"_reference53\" UNION ALL SELECT")
+    );
+    assert!(compiled.sql.contains("NULL AS \"_date_time\""));
+    assert!(compiled.sql.contains("FROM \"_reference53X1\""));
+    assert!(!compiled.sql.contains("_extension_only"));
+    assert!(!compiled.sql.contains("_reference53Xother"));
+}
+
+#[test]
+fn compiles_mssql_presentation_join_over_extension_tables() {
+    let mut snapshot = reference_snapshot();
+    let mut extension = snapshot.live_tables[0].clone();
+    extension.name = "_reference53X1".to_owned();
+    snapshot.live_tables.push(extension);
+    let prepared = prepare_mssql_query(
+        "SELECT Presentation(Организация) FROM Catalog.OpenSdblMetadataProbe;",
+        &snapshot,
+    )
+    .unwrap();
+    let target = prepared.presentation_request().targets[0].object;
+    let code = FieldId::Standard(StandardFieldId::Code);
+    let plan = PresentationPlan {
+        object: target,
+        fields: vec![code],
+        expression: PresentationExpression::Concat(vec![
+            PresentationExpression::Literal("[".to_owned()),
+            PresentationExpression::Field(code),
+            PresentationExpression::Literal("]".to_owned()),
+        ]),
+    };
+
+    let compiled = prepared.compile(&snapshot, &[plan]).unwrap();
+
+    assert!(
+        compiled.sql.contains("LEFT JOIN (SELECT"),
+        "{}",
+        compiled.sql
+    );
+    assert!(
+        compiled
+            .sql
+            .contains("FROM \"_reference53\" UNION ALL SELECT")
+    );
+    assert!(compiled.sql.contains("FROM \"_reference53X1\""));
+    assert!(compiled.sql.contains("AS \"__ref1\" ON"));
+}
+
+#[test]
 fn compiles_mssql_historical_balance_without_postgres_aggregate_syntax() {
     let mut snapshot = accumulation_register_snapshot();
     for table in &mut snapshot.live_tables {

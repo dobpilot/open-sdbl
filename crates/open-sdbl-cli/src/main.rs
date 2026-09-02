@@ -1595,7 +1595,39 @@ mod tests {
         parse_password_line, parse_socks5_proxy, read_password_file, render_metadata_progress,
         socks5_connect_request,
     };
-    use open_sdbl::query::compile_mssql_query_with_year_offset;
+    use open_sdbl::metadata::{FieldId, MetadataSnapshot, StandardFieldId};
+    use open_sdbl::query::{
+        CompiledQuery, PresentationExpression, PresentationPlan,
+        compile_mssql_query_with_year_offset, prepare_mssql_query_with_year_offset,
+    };
+
+    fn compile_mssql_test_query(
+        source: &str,
+        snapshot: &MetadataSnapshot,
+        year_offset: i32,
+    ) -> CompiledQuery {
+        let prepared = prepare_mssql_query_with_year_offset(source, snapshot, year_offset).unwrap();
+        let plans = prepared
+            .presentation_request()
+            .targets
+            .iter()
+            .map(|target| {
+                let description = FieldId::Standard(StandardFieldId::Description);
+                let code = FieldId::Standard(StandardFieldId::Code);
+                PresentationPlan {
+                    object: target.object,
+                    fields: vec![description, code],
+                    expression: PresentationExpression::Concat(vec![
+                        PresentationExpression::Field(description),
+                        PresentationExpression::Literal(" (".to_owned()),
+                        PresentationExpression::Field(code),
+                        PresentationExpression::Literal(")".to_owned()),
+                    ]),
+                }
+            })
+            .collect::<Vec<_>>();
+        prepared.compile(snapshot, &plans).unwrap()
+    }
 
     fn mssql_test_connection() -> MsSqlConnection {
         let user = std::env::var("OPEN_SDBL_MSSQL_TEST_USER")
@@ -1668,6 +1700,69 @@ mod tests {
             assert!(version > "0x00000000000007D6");
             assert_eq!(version.len(), 18);
         }
+        session.close().await.unwrap();
+    }
+
+    #[tokio::test]
+    #[ignore = "requires the MSSQL demo database and its _Reference18X1 extension table"]
+    async fn reads_dereferences_and_presents_the_mssql_demo_extension_table() {
+        let mut session = MsSqlSession::connect(&mssql_test_connection())
+            .await
+            .unwrap();
+        let snapshot = session.metadata().await.unwrap();
+        let direct = compile_mssql_test_query(
+            "SELECT TOP 3 ID, Code, Description FROM Catalog._ДемоНоменклатура;",
+            &snapshot,
+            session.year_offset,
+        );
+        assert!(direct.sql.contains("FROM \"_Reference18X1\""));
+        let direct_rows = session
+            .query(&direct.sql, direct.columns.len())
+            .await
+            .unwrap();
+        assert_eq!(direct_rows.len(), 3);
+        assert!(direct_rows.iter().all(|row| {
+            row[2]
+                .as_deref()
+                .is_some_and(|description| !description.trim().is_empty())
+        }));
+
+        let dereference = compile_mssql_test_query(
+            "SELECT TOP 3 Номенклатура.Наименование FROM РегистрНакопления._ДемоОстаткиТоваровВМестахХранения.Остатки();",
+            &snapshot,
+            session.year_offset,
+        );
+        assert!(dereference.sql.contains("FROM \"_Reference18X1\""));
+        let dereference_rows = session
+            .query(&dereference.sql, dereference.columns.len())
+            .await
+            .unwrap();
+        assert_eq!(dereference_rows.len(), 3);
+        assert!(dereference_rows.iter().all(|row| {
+            row[0]
+                .as_deref()
+                .is_some_and(|description| !description.trim().is_empty())
+        }));
+
+        let presentations = compile_mssql_test_query(
+            "SELECT Номенклатура, ПредставлениеСсылки(Номенклатура), Представление(Номенклатура), КоличествоОстаток FROM РегистрНакопления._ДемоОстаткиТоваровВМестахХранения.Остатки();",
+            &snapshot,
+            session.year_offset,
+        );
+        assert!(presentations.sql.contains("FROM \"_Reference18X1\""));
+        let presentation_rows = session
+            .query(&presentations.sql, presentations.columns.len())
+            .await
+            .unwrap();
+        assert!(!presentation_rows.is_empty());
+        assert!(presentation_rows.iter().all(|row| {
+            let reference = row[1].as_deref();
+            let value = row[2].as_deref();
+            reference == value
+                && reference.is_some_and(|presentation| {
+                    !presentation.trim().is_empty() && presentation != " ()"
+                })
+        }));
         session.close().await.unwrap();
     }
 

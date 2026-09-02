@@ -2005,6 +2005,12 @@ impl JoinedContext<'_> {
         let target_id_column = single_column(target_id, reference_token)?
             .physical_name
             .clone();
+        let target_relation = compile_live_relation(
+            self.snapshot,
+            target_live_table,
+            &target_fields,
+            self.dialect,
+        );
 
         let existing = self
             .source(side)
@@ -2021,7 +2027,7 @@ impl JoinedContext<'_> {
                 source_column,
                 source_type_column: None,
                 database_type: None,
-                target_table: target_live_table.name.clone(),
+                target_table: target_relation,
                 target_id_column,
                 alias: alias.clone(),
             });
@@ -2100,9 +2106,11 @@ impl JoinedContext<'_> {
             .find(|field| names_equal(&field.schema_name, "ID"))
             .ok_or_else(|| QueryDiagnostic::at(Some(token), "presentation target has no ID"))?;
         let target_id_column = single_column(target_id, token)?.physical_name.clone();
+        let target_relation =
+            compile_live_relation(self.snapshot, target_table, &target_fields, self.dialect);
         if let Some(join) = self.source(side).reference_joins.iter().find(|join| {
             names_equal(&join.source_field, &reference.schema_name)
-                && names_equal(&join.target_table, &target_table.name)
+                && names_equal(&join.target_table, &target_relation)
                 && join.database_type == database_type
         }) {
             return Ok(join.alias.clone());
@@ -2113,7 +2121,7 @@ impl JoinedContext<'_> {
             source_column,
             source_type_column,
             database_type,
-            target_table: target_table.name.clone(),
+            target_table: target_relation,
             target_id_column,
             alias: alias.clone(),
         });
@@ -2552,6 +2560,78 @@ struct CompiledSourceRelation {
     fields: Vec<QueryableField>,
 }
 
+fn compile_live_relation(
+    snapshot: &MetadataSnapshot,
+    canonical: &LiveTable,
+    fields: &[QueryableField],
+    dialect: SqlDialect,
+) -> String {
+    if !dialect.is_mssql() {
+        return quote_identifier(&canonical.name);
+    }
+
+    let mut tables = snapshot
+        .live_tables
+        .iter()
+        .filter(|table| {
+            table.name.eq_ignore_ascii_case(&canonical.name)
+                || is_extension_table_name(&canonical.name, &table.name)
+        })
+        .collect::<Vec<_>>();
+    tables.sort_by_key(|table| table.name.to_ascii_lowercase());
+    if tables.len() == 1 {
+        return quote_identifier(&canonical.name);
+    }
+
+    let mut seen = BTreeSet::new();
+    let columns = fields
+        .iter()
+        .flat_map(|field| &field.columns)
+        .filter(|column| seen.insert(column.physical_name.to_ascii_lowercase()))
+        .collect::<Vec<_>>();
+    let branches = tables
+        .into_iter()
+        .map(|table| {
+            let projection = columns
+                .iter()
+                .map(|column| {
+                    let value = table
+                        .columns
+                        .iter()
+                        .find(|candidate| names_equal(&candidate.name, &column.physical_name))
+                        .map_or_else(
+                            || "NULL".to_owned(),
+                            |candidate| quote_identifier(&candidate.name),
+                        );
+                    format!("{value} AS {}", quote_identifier(&column.physical_name))
+                })
+                .collect::<Vec<_>>()
+                .join(", ");
+            format!("SELECT {projection} FROM {}", quote_identifier(&table.name))
+        })
+        .collect::<Vec<_>>();
+    format!("({})", branches.join(" UNION ALL "))
+}
+
+fn is_extension_table_name(canonical: &str, candidate: &str) -> bool {
+    let Some(prefix) = candidate.get(..canonical.len()) else {
+        return false;
+    };
+    if !prefix.eq_ignore_ascii_case(canonical) {
+        return false;
+    }
+    let Some(suffix) = candidate.get(canonical.len()..) else {
+        return false;
+    };
+    let Some(number) = suffix
+        .strip_prefix('X')
+        .or_else(|| suffix.strip_prefix('x'))
+    else {
+        return false;
+    };
+    number.chars().all(|digit| digit.is_ascii_digit())
+}
+
 fn compile_source_relation(
     source: &SourceAst<'_, '_>,
     snapshot: &MetadataSnapshot,
@@ -2573,7 +2653,7 @@ fn compile_source_relation(
     }
     let Some(slice) = &source.slice else {
         return Ok(CompiledSourceRelation {
-            sql: quote_identifier(&live_table.name),
+            sql: compile_live_relation(snapshot, live_table, fields, dialect),
             fields: fields.to_vec(),
         });
     };
@@ -3772,7 +3852,7 @@ fn compile_branch(
     sql.push_str(&quote_identifier(context.base_alias()));
     for join in &context.joins {
         sql.push_str(" LEFT JOIN ");
-        sql.push_str(&quote_identifier(&join.target_table));
+        sql.push_str(&join.target_table);
         sql.push_str(" AS ");
         sql.push_str(&quote_identifier(&join.alias));
         sql.push_str(" ON ");
@@ -4276,7 +4356,7 @@ fn append_joined_reference_joins(sql: &mut String, context: &JoinedContext<'_>) 
     for source in [&context.left, &context.right] {
         for join in &source.reference_joins {
             sql.push_str(" LEFT JOIN ");
-            sql.push_str(&quote_identifier(&join.target_table));
+            sql.push_str(&join.target_table);
             sql.push_str(" AS ");
             sql.push_str(&quote_identifier(&join.alias));
             sql.push_str(" ON ");
@@ -4648,6 +4728,13 @@ impl CompilationContext<'_> {
             .physical_name
             .clone();
 
+        let target_relation = compile_live_relation(
+            self.snapshot,
+            target_live_table,
+            &target_fields,
+            self.dialect,
+        );
+
         let alias = if let Some(join) = self
             .joins
             .iter()
@@ -4661,7 +4748,7 @@ impl CompilationContext<'_> {
                 source_column,
                 source_type_column: None,
                 database_type: None,
-                target_table: target_live_table.name.clone(),
+                target_table: target_relation,
                 target_id_column,
                 alias: alias.clone(),
             });
@@ -4727,9 +4814,11 @@ impl CompilationContext<'_> {
             .find(|field| names_equal(&field.schema_name, "ID"))
             .ok_or_else(|| QueryDiagnostic::at(Some(token), "presentation target has no ID"))?;
         let target_id_column = single_column(target_id, token)?.physical_name.clone();
+        let target_relation =
+            compile_live_relation(self.snapshot, target_table, &target_fields, self.dialect);
         if let Some(join) = self.joins.iter().find(|join| {
             names_equal(&join.source_field, &reference.schema_name)
-                && names_equal(&join.target_table, &target_table.name)
+                && names_equal(&join.target_table, &target_relation)
                 && join.database_type == database_type
         }) {
             return Ok(join.alias.clone());
@@ -4740,7 +4829,7 @@ impl CompilationContext<'_> {
             source_column,
             source_type_column,
             database_type,
-            target_table: target_table.name.clone(),
+            target_table: target_relation,
             target_id_column,
             alias: alias.clone(),
         });

@@ -46,6 +46,18 @@ renderer subtracts this value from projected datetime columns and adds it to
 logical date literals used in predicates and virtual-table boundaries. This
 keeps logical 1C dates stable for databases using either offset 0 or 2000.
 
+### Read configuration-extension table variants as one relation
+
+1C can redirect rows of an extended object from its canonical table, such as
+`_Reference18`, into one or more structurally compatible tables named with an
+`X` suffix, such as `_Reference18X1`. The MSSQL renderer treats the canonical
+table and its exact `X[digits]` variants as one `UNION ALL` relation. It exposes
+the canonical field set, substitutes `NULL` when a variant lacks a canonical
+column, and ignores variant-only columns unknown to the resolved metadata.
+This relation is reused for direct object reads, dereference joins, and
+presentation joins. Unrelated tables that merely share a textual prefix are
+not included.
+
 ### Secure defaults
 
 TLS certificate validation remains enabled by default. The CLI accepts

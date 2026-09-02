@@ -15,6 +15,8 @@
   server-side conversion.
 - [x] 2.6 Tokenize, validate, and compile hexadecimal binary literals for both
   SQL dialects.
+- [x] 2.7 Compile MSSQL canonical and configuration-extension `X` tables as
+  one relation for sources, dereferences, and presentation joins.
 
 ## 3. CLI
 
@@ -36,3 +38,8 @@
 - [x] 4.4 Reproduce the rowversion query against the live MSSQL demo database.
 - [x] 4.5 Reproduce a rowversion comparison with a `0x` literal against the
   live MSSQL demo database.
+- [x] 4.6 Reproduce reference presentation through `_Reference18X1` on the
+  live MSSQL demo database.
+- [x] 4.7 Cover direct reads, dotted dereferences, `Presentation`, and
+  `RefPresentation` through an MSSQL extension table in the live integration
+  suite.

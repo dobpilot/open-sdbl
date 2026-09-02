@@ -23,6 +23,13 @@ PostgreSQL SQL SHALL remain compatible.
 - **THEN** MSSQL T-SQL contains a native varbinary literal and PostgreSQL SQL
   contains an equivalent `bytea` literal without treating the value as text
 
+#### Scenario: Presentation from a configuration-extension table
+- **WHEN** an MSSQL reference target has a canonical physical table and one or
+  more `X`-suffixed configuration-extension table variants
+- **THEN** direct reads, dereferences, and presentation joins use one
+  deterministic `UNION ALL` relation over the canonical and exact extension
+  variants, allowing referenced rows redirected by 1C to resolve normally
+
 #### Scenario: Unicode and binary values
 - **WHEN** an MSSQL query contains Cyrillic strings or compares reference type
   discriminators
