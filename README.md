@@ -37,6 +37,11 @@
 
 <img src="docs/img/readme-gifs/virtual-table.gif" width="1000" alt="Остатки регистра накопления и представление ссылки">
 
+При работе с Microsoft SQL Server консоль генерирует T-SQL, читает данные из
+таблиц расширений конфигурации и показывает время выполнения на MSSQL:
+
+<img src="docs/img/readme-gifs/mssql-query.gif" width="1000" alt="Запуск open-sdbl из PowerShell и выполнение запроса на Microsoft SQL Server">
+
 ## Начать использовать
 
 Требуется Rust 1.85 или новее:
@@ -67,6 +72,23 @@ PGPASSFILE="$HOME/.pgpass" ./target/release/open-sdbl console postgres \
   --user reader
 ```
 
+Из PowerShell:
+
+```powershell
+$securePassword = Read-Host "PostgreSQL password" -AsSecureString
+$env:PGPASSWORD = [System.Net.NetworkCredential]::new("", $securePassword).Password
+
+try {
+    .\target\release\open-sdbl.exe console postgres `
+        --host db.example.local `
+        --database onec `
+        --user reader
+}
+finally {
+    Remove-Item Env:PGPASSWORD
+}
+```
+
 Пароль читается из `PGPASSWORD`, `PGPASSFILE` или `$HOME/.pgpass`. Команда
 работает через `tokio-postgres`, не требует установленного `psql` и выполняет
 запросы в проверенной read-only транзакции `READ COMMITTED`.
@@ -81,6 +103,27 @@ MSSQL_PASSWORD='secret' ./target/release/open-sdbl console mssql \
   --database demo \
   --user open_sdbl_reader
 ```
+
+Из PowerShell:
+
+```powershell
+$securePassword = Read-Host "MSSQL password" -AsSecureString
+$env:MSSQL_PASSWORD = [System.Net.NetworkCredential]::new("", $securePassword).Password
+
+try {
+    .\target\release\open-sdbl.exe console mssql `
+        --host sql.example.local `
+        --database demo `
+        --user open_sdbl_reader
+}
+finally {
+    Remove-Item Env:MSSQL_PASSWORD
+}
+```
+
+Для тестового сервера с самоподписанным сертификатом к команде можно добавить
+`--trust-server-certificate`; этот флаг отключает проверку сертификата и не
+подходит для production.
 
 CLI подключается через TDS, запрашивает `ApplicationIntent=ReadOnly` и
 исполняет только фиксированные metadata-`SELECT` и `SELECT`, созданные
@@ -104,9 +147,7 @@ CLI подключается через TDS, запрашивает `Application
 добавляйте его в
 `db_datawriter` и не выдавайте `ALTER`, `CONTROL` или `EXECUTE`.
 
-Сертификат TLS проверяется по умолчанию. Только для локального сервера с
-самоподписанным сертификатом можно явно добавить
-`--trust-server-certificate`; в production этот флаг использовать не следует.
+Сертификат TLS проверяется по умолчанию.
 Опциональную integration-проверку метаданных можно запустить так:
 
 ```console
