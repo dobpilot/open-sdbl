@@ -1,4 +1,57 @@
-use open_sdbl::{DiagnosticKind, Keyword, TokenKind, tokenize};
+use open_sdbl::{DiagnosticKind, Keyword, Lexer, TokenKind, tokenize};
+
+const KEYWORD_ALIASES: [(Keyword, &str, &str); 46] = [
+    (Keyword::Select, "ВЫБРАТЬ", "SELECT"),
+    (Keyword::From, "ИЗ", "FROM"),
+    (Keyword::Where, "ГДЕ", "WHERE"),
+    (Keyword::As, "КАК", "AS"),
+    (Keyword::And, "И", "AND"),
+    (Keyword::Or, "ИЛИ", "OR"),
+    (Keyword::Not, "НЕ", "NOT"),
+    (Keyword::In, "В", "IN"),
+    (Keyword::Is, "ЕСТЬ", "IS"),
+    (Keyword::Null, "NULL", "NULL"),
+    (Keyword::True, "ИСТИНА", "TRUE"),
+    (Keyword::False, "ЛОЖЬ", "FALSE"),
+    (Keyword::Distinct, "РАЗЛИЧНЫЕ", "DISTINCT"),
+    (Keyword::Top, "ПЕРВЫЕ", "TOP"),
+    (Keyword::Order, "УПОРЯДОЧИТЬ", "ORDER"),
+    (Keyword::By, "ПО", "BY"),
+    (Keyword::Group, "СГРУППИРОВАТЬ", "GROUP"),
+    (Keyword::Having, "ИМЕЮЩИЕ", "HAVING"),
+    (Keyword::Union, "ОБЪЕДИНИТЬ", "UNION"),
+    (Keyword::All, "ВСЕ", "ALL"),
+    (Keyword::Into, "ПОМЕСТИТЬ", "INTO"),
+    (Keyword::Join, "СОЕДИНЕНИЕ", "JOIN"),
+    (Keyword::Left, "ЛЕВОЕ", "LEFT"),
+    (Keyword::Right, "ПРАВОЕ", "RIGHT"),
+    (Keyword::Full, "ПОЛНОЕ", "FULL"),
+    (Keyword::Inner, "ВНУТРЕННЕЕ", "INNER"),
+    (Keyword::Outer, "ВНЕШНЕЕ", "OUTER"),
+    (Keyword::On, "ON", "ON"),
+    (Keyword::Case, "ВЫБОР", "CASE"),
+    (Keyword::When, "КОГДА", "WHEN"),
+    (Keyword::Then, "ТОГДА", "THEN"),
+    (Keyword::Else, "ИНАЧЕ", "ELSE"),
+    (Keyword::End, "КОНЕЦ", "END"),
+    (
+        Keyword::RefPresentation,
+        "ПРЕДСТАВЛЕНИЕССЫЛКИ",
+        "REFPRESENTATION",
+    ),
+    (Keyword::Presentation, "ПРЕДСТАВЛЕНИЕ", "PRESENTATION"),
+    (Keyword::Count, "КОЛИЧЕСТВО", "COUNT"),
+    (Keyword::Sum, "СУММА", "SUM"),
+    (Keyword::Min, "МИНИМУМ", "MIN"),
+    (Keyword::Max, "МАКСИМУМ", "MAX"),
+    (Keyword::SliceLast, "СРЕЗПОСЛЕДНИХ", "SLICELAST"),
+    (Keyword::SliceFirst, "СРЕЗПЕРВЫХ", "SLICEFIRST"),
+    (Keyword::Balance, "ОСТАТКИ", "BALANCE"),
+    (Keyword::Turnovers, "ОБОРОТЫ", "TURNOVERS"),
+    (Keyword::DateTime, "ДАТАВРЕМЯ", "DATETIME"),
+    (Keyword::BeginOfPeriod, "НАЧАЛОПЕРИОДА", "BEGINOFPERIOD"),
+    (Keyword::Value, "ЗНАЧЕНИЕ", "VALUE"),
+];
 
 #[test]
 fn tokenizes_a_representative_query_with_positions() {
@@ -26,6 +79,34 @@ fn recognizes_russian_and_english_keywords_case_insensitively() {
             .iter()
             .all(|token| token.kind == TokenKind::Keyword(Keyword::Select))
     );
+}
+
+#[test]
+fn recognizes_the_complete_bilingual_keyword_table() {
+    assert_eq!(KEYWORD_ALIASES.len(), 46);
+    for (index, (keyword, russian, english)) in KEYWORD_ALIASES.into_iter().enumerate() {
+        assert!(
+            KEYWORD_ALIASES[..index]
+                .iter()
+                .all(|(previous, _, _)| *previous != keyword),
+            "duplicate keyword in coverage table: {keyword:?}"
+        );
+        for spelling in [russian, english] {
+            let lowercase = spelling.to_lowercase();
+            let source = format!("{spelling} {lowercase}");
+            let tokens = tokenize(&source).unwrap();
+
+            assert_eq!(tokens.len(), 2, "{spelling}");
+            for token in tokens {
+                assert_eq!(token.kind, TokenKind::Keyword(keyword), "{spelling}");
+                assert_eq!(
+                    token.lexeme,
+                    &source[token.span.start..token.span.end],
+                    "{spelling}"
+                );
+            }
+        }
+    }
 }
 
 #[test]
@@ -144,4 +225,120 @@ fn byte_spans_preserve_multibyte_source_text() {
 
     assert_eq!(&source[tokens[0].span.start..tokens[0].span.end], "Код");
     assert_eq!((tokens[1].span.start, tokens[1].span.column), (7, 5));
+}
+
+#[test]
+fn iterator_yields_one_diagnostic_and_then_fuses() {
+    let mut lexer = Lexer::new("SELECT Code @ FROM");
+
+    assert_eq!(
+        lexer.next().unwrap().unwrap().kind,
+        TokenKind::Keyword(Keyword::Select)
+    );
+    assert_eq!(lexer.next().unwrap().unwrap().kind, TokenKind::Identifier);
+    let error = lexer.next().unwrap().unwrap_err();
+    assert_eq!(error.kind, DiagnosticKind::UnexpectedCharacter('@'));
+    assert_eq!((error.offset, error.line, error.column), (12, 1, 13));
+    assert!(lexer.next().is_none());
+    assert!(lexer.next().is_none());
+    assert_eq!(lexer.next_token(), Ok(None));
+}
+
+#[test]
+fn classifies_every_operator_and_punctuation_lexeme() {
+    let source = "= <> < <= > >= + - * / ( ) [ ] , . ;";
+    let tokens = tokenize(source).unwrap();
+    let expected = [
+        (TokenKind::Operator, "="),
+        (TokenKind::Operator, "<>"),
+        (TokenKind::Operator, "<"),
+        (TokenKind::Operator, "<="),
+        (TokenKind::Operator, ">"),
+        (TokenKind::Operator, ">="),
+        (TokenKind::Operator, "+"),
+        (TokenKind::Operator, "-"),
+        (TokenKind::Operator, "*"),
+        (TokenKind::Operator, "/"),
+        (TokenKind::Punctuation, "("),
+        (TokenKind::Punctuation, ")"),
+        (TokenKind::Punctuation, "["),
+        (TokenKind::Punctuation, "]"),
+        (TokenKind::Punctuation, ","),
+        (TokenKind::Punctuation, "."),
+        (TokenKind::Punctuation, ";"),
+    ];
+
+    assert_eq!(tokens.len(), expected.len());
+    for (token, (kind, lexeme)) in tokens.iter().zip(expected) {
+        assert_eq!((token.kind, token.lexeme), (kind, lexeme));
+    }
+}
+
+#[test]
+fn tokenizes_decimal_numbers_without_consuming_a_trailing_period() {
+    let tokens = tokenize("0 12 12.34 12.").unwrap();
+    let actual = tokens
+        .iter()
+        .map(|token| (token.kind, token.lexeme))
+        .collect::<Vec<_>>();
+
+    assert_eq!(
+        actual,
+        [
+            (TokenKind::Number, "0"),
+            (TokenKind::Number, "12"),
+            (TokenKind::Number, "12.34"),
+            (TokenKind::Number, "12"),
+            (TokenKind::Punctuation, "."),
+        ]
+    );
+}
+
+#[test]
+fn handles_empty_input_comments_at_eof_and_crlf_positions() {
+    assert!(tokenize("").unwrap().is_empty());
+    let mut empty = Lexer::new("");
+    assert!(empty.next().is_none());
+    assert!(empty.next().is_none());
+
+    let comment = tokenize("// comment at EOF").unwrap();
+    assert_eq!(comment.len(), 1);
+    assert_eq!(comment[0].kind, TokenKind::Comment);
+    assert_eq!(comment[0].lexeme, "// comment at EOF");
+
+    let source = "SELECT\r\nКод";
+    let tokens = tokenize(source).unwrap();
+    assert_eq!((tokens[1].span.line, tokens[1].span.column), (2, 1));
+    assert_eq!((tokens[1].span.start, tokens[1].span.end), (8, 14));
+}
+
+#[test]
+fn reports_bom_and_other_unexpected_characters_with_positions() {
+    for (source, character, offset, line, column) in [
+        ("\u{feff}SELECT", '\u{feff}', 0, 1, 1),
+        ("SELECT\n  @", '@', 9, 2, 3),
+    ] {
+        let error = tokenize(source).unwrap_err();
+        assert_eq!(error.kind, DiagnosticKind::UnexpectedCharacter(character));
+        assert_eq!(
+            (error.offset, error.line, error.column),
+            (offset, line, column)
+        );
+    }
+}
+
+#[test]
+fn every_token_span_round_trips_to_its_lexeme() {
+    let source = "ВЫБРАТЬ\r\n  Код, 12.50, \"текст\" // comment";
+    let tokens = tokenize(source).unwrap();
+
+    assert!(!tokens.is_empty());
+    for token in &tokens {
+        assert_eq!(token.lexeme, &source[token.span.start..token.span.end]);
+    }
+    assert!(
+        tokens
+            .windows(2)
+            .all(|pair| pair[0].span.end <= pair[1].span.start)
+    );
 }

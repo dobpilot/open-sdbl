@@ -1,5 +1,8 @@
 use std::collections::{HashMap, HashSet};
+use std::fmt;
+use std::ops::Deref;
 
+use super::normalize::{normalize_logical_name, normalize_standard_field_name};
 use super::{
     AttributeId, ConfigDescriptor, ConfigFieldPurpose, ConfigPredefinedValue, DbNames, FieldId,
     Guid, LookupError, MetadataKind, ObjectId, SchemaStorage, StandardFieldId,
@@ -169,6 +172,124 @@ pub struct IndexComparison {
     pub unique_matches: bool,
 }
 
+/// One typed inconsistency found while reconciling metadata resources.
+#[non_exhaustive]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ResolutionFinding {
+    /// DBNames declares an object without a corresponding Config descriptor.
+    DescriptorMissing {
+        /// Object GUID from DBNames.
+        guid: Guid,
+        /// Expected physical table.
+        table: String,
+    },
+    /// SchemaStorage declares a physical table absent from the live catalog.
+    TableNotLive {
+        /// Canonical physical table name.
+        table: String,
+    },
+    /// The live catalog contains a table absent from SchemaStorage.
+    TableNotDeclared {
+        /// Observed physical table name.
+        table: String,
+    },
+    /// SchemaStorage contains a column type tag unknown to this version.
+    UnknownColumnTag {
+        /// Canonical physical table name.
+        table: String,
+        /// Canonical column name.
+        column: String,
+        /// Unrecognized type tag.
+        tag: String,
+    },
+    /// SchemaStorage contained a malformed child declaration that was skipped.
+    InvalidSchemaDeclaration {
+        /// Canonical physical table name.
+        table: String,
+        /// Structural reason reported by the tolerant projector.
+        detail: String,
+    },
+    /// An identity expected to be unique occurs more than once.
+    DuplicateGuid {
+        /// Duplicated metadata GUID.
+        guid: Guid,
+    },
+    /// A declared index has no equivalent live index or differs in uniqueness.
+    IndexMismatch {
+        /// Canonical physical table name.
+        table: String,
+        /// SchemaStorage index name.
+        index: String,
+    },
+}
+
+impl fmt::Display for ResolutionFinding {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::DescriptorMissing { guid, table } => {
+                write!(formatter, "descriptor missing for {guid} ({table})")
+            }
+            Self::TableNotLive { table } => write!(formatter, "table {table} is not live"),
+            Self::TableNotDeclared { table } => {
+                write!(formatter, "live table {table} is absent from SchemaStorage")
+            }
+            Self::UnknownColumnTag { table, column, tag } => {
+                write!(formatter, "unknown column tag {tag:?} on {table}.{column}")
+            }
+            Self::InvalidSchemaDeclaration { table, detail } => {
+                write!(
+                    formatter,
+                    "invalid SchemaStorage declaration in {table}: {detail}"
+                )
+            }
+            Self::DuplicateGuid { guid } => write!(formatter, "duplicate metadata GUID {guid}"),
+            Self::IndexMismatch { table, index } => {
+                write!(
+                    formatter,
+                    "index {table}.{index} differs from the live catalog"
+                )
+            }
+        }
+    }
+}
+
+/// Structured findings produced by one metadata-resolution pass.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ResolutionReport {
+    findings: Vec<ResolutionFinding>,
+}
+
+impl ResolutionReport {
+    /// Returns all findings in deterministic source order.
+    #[must_use]
+    pub fn findings(&self) -> &[ResolutionFinding] {
+        &self.findings
+    }
+
+    /// Returns `true` when all metadata sources agree.
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.findings.is_empty()
+    }
+}
+
+/// Snapshot and reconciliation report returned by metadata resolution.
+#[derive(Debug, Clone)]
+pub struct ResolvedMetadata {
+    /// Query-ready immutable metadata snapshot.
+    pub snapshot: MetadataSnapshot,
+    /// Typed mismatches observed while building the snapshot.
+    pub report: ResolutionReport,
+}
+
+impl Deref for ResolvedMetadata {
+    type Target = MetadataSnapshot;
+
+    fn deref(&self) -> &Self::Target {
+        &self.snapshot
+    }
+}
+
 /// Source records and the resulting metadata resolution.
 #[derive(Debug, Clone)]
 pub struct MetadataSnapshot {
@@ -331,7 +452,7 @@ pub fn resolve_metadata(
     descriptors: Vec<ConfigDescriptor>,
     schema: SchemaStorage,
     live_tables: Vec<LiveTable>,
-) -> MetadataSnapshot {
+) -> ResolvedMetadata {
     resolve_metadata_with_predefined_values(db_names, descriptors, Vec::new(), schema, live_tables)
 }
 
@@ -343,8 +464,10 @@ pub fn resolve_metadata_with_predefined_values(
     predefined_values: Vec<ConfigPredefinedValue>,
     schema: SchemaStorage,
     live_tables: Vec<LiveTable>,
-) -> MetadataSnapshot {
+) -> ResolvedMetadata {
     let live_table_by_name = index_live_tables(&live_tables);
+    let indexes = compare_indexes(&schema, &live_tables, &live_table_by_name, &db_names);
+    let report = build_resolution_report(&db_names, &descriptors, &schema, &live_tables, &indexes);
     let schema_tables: HashSet<&str> = schema
         .tables
         .iter()
@@ -374,7 +497,8 @@ pub fn resolve_metadata_with_predefined_values(
             name: descriptor.map(|value| value.name.clone()),
             marker: descriptor.map(|value| value.marker.clone()),
             number: Some(entry.number),
-            declared: schema_tables.contains(physical_table.trim_start_matches('_')),
+            declared: schema_tables
+                .contains(physical_table.strip_prefix('_').unwrap_or(&physical_table)),
             live: live_table.is_some(),
             code_allowed_length: infer_allowed_length(live_table, "_code"),
             number_allowed_length: infer_allowed_length(live_table, "_number"),
@@ -442,7 +566,7 @@ pub fn resolve_metadata_with_predefined_values(
         .collect::<HashMap<_, _>>();
     let mut values = Vec::new();
     for descriptor in &descriptors {
-        if descriptor.resource_guid == descriptor.object_guid {
+        if descriptor.resource_guid == descriptor.object_guid || !descriptor.enumeration_value {
             continue;
         }
         let Some((owner, Some(MetadataKind::Enumeration))) =
@@ -469,8 +593,6 @@ pub fn resolve_metadata_with_predefined_values(
         });
     }
 
-    let indexes = compare_indexes(&schema, &live_tables, &live_table_by_name, &db_names);
-
     let index = build_metadata_index(
         &objects,
         &fields,
@@ -479,17 +601,126 @@ pub fn resolve_metadata_with_predefined_values(
         &live_table_by_name,
     );
 
-    MetadataSnapshot {
-        db_names,
-        descriptors,
-        schema,
-        live_tables,
-        objects,
-        fields,
-        values,
-        indexes,
-        index,
+    ResolvedMetadata {
+        snapshot: MetadataSnapshot {
+            db_names,
+            descriptors,
+            schema,
+            live_tables,
+            objects,
+            fields,
+            values,
+            indexes,
+            index,
+        },
+        report,
     }
+}
+
+fn build_resolution_report(
+    db_names: &DbNames,
+    descriptors: &[ConfigDescriptor],
+    schema: &SchemaStorage,
+    live_tables: &[LiveTable],
+    indexes: &[IndexComparison],
+) -> ResolutionReport {
+    const KNOWN_COLUMN_TAGS: [&str; 8] = ["S", "N", "T", "B", "L", "R", "V", "E"];
+    let mut findings = Vec::new();
+    let descriptor_guids = descriptors
+        .iter()
+        .map(|descriptor| &descriptor.object_guid)
+        .collect::<HashSet<_>>();
+    let mut reported_missing = HashSet::new();
+    for (entry, kind) in db_names.objects() {
+        if !descriptor_guids.contains(&entry.guid) && reported_missing.insert(entry.guid.clone()) {
+            findings.push(ResolutionFinding::DescriptorMissing {
+                guid: entry.guid.clone(),
+                table: format!("{}{}", kind.physical_prefix(), entry.number),
+            });
+        }
+    }
+
+    let mut duplicate_guids = Vec::new();
+    let mut seen_db_names = HashSet::new();
+    for (entry, _) in db_names.objects() {
+        if !seen_db_names.insert(&entry.guid) {
+            duplicate_guids.push(entry.guid.clone());
+        }
+    }
+    let mut seen_descriptors = HashSet::new();
+    for descriptor in descriptors {
+        if !seen_descriptors.insert(&descriptor.object_guid) {
+            duplicate_guids.push(descriptor.object_guid.clone());
+        }
+    }
+    duplicate_guids.sort_by(|left, right| left.as_str().cmp(right.as_str()));
+    duplicate_guids.dedup();
+    findings.extend(
+        duplicate_guids
+            .into_iter()
+            .map(|guid| ResolutionFinding::DuplicateGuid { guid }),
+    );
+
+    let live_names = live_tables
+        .iter()
+        .map(|table| table.name.to_ascii_lowercase())
+        .collect::<HashSet<_>>();
+    let declared_names = schema
+        .tables
+        .iter()
+        .map(|table| table.physical_name().to_ascii_lowercase())
+        .collect::<HashSet<_>>();
+    findings.extend(schema.anomalies.iter().map(|anomaly| {
+        ResolutionFinding::InvalidSchemaDeclaration {
+            table: format!("_{}", anomaly.table),
+            detail: anomaly.detail.clone(),
+        }
+    }));
+    for table in &schema.tables {
+        let physical = table.physical_name();
+        if !live_names.contains(&physical.to_ascii_lowercase()) {
+            findings.push(ResolutionFinding::TableNotLive {
+                table: physical.clone(),
+            });
+        }
+        for column in &table.columns {
+            for column_type in &column.types {
+                if !KNOWN_COLUMN_TAGS.contains(&column_type.tag.as_str()) {
+                    findings.push(ResolutionFinding::UnknownColumnTag {
+                        table: physical.clone(),
+                        column: column.physical_name(),
+                        tag: column_type.tag.clone(),
+                    });
+                } else if column_type.tag == "R" && column_type.reference_target.is_none() {
+                    findings.push(ResolutionFinding::InvalidSchemaDeclaration {
+                        table: physical.clone(),
+                        detail: format!(
+                            "reference column {} has no target table",
+                            column.physical_name()
+                        ),
+                    });
+                }
+            }
+        }
+    }
+    for table in live_tables {
+        if !declared_names.contains(&table.name.to_ascii_lowercase()) {
+            findings.push(ResolutionFinding::TableNotDeclared {
+                table: table.name.clone(),
+            });
+        }
+    }
+
+    findings.extend(
+        indexes
+            .iter()
+            .filter(|index| index.live_name.is_none() || !index.unique_matches)
+            .map(|index| ResolutionFinding::IndexMismatch {
+                table: index.table.clone(),
+                index: index.declared_name.clone(),
+            }),
+    );
+    ResolutionReport { findings }
 }
 
 fn index_live_tables(live_tables: &[LiveTable]) -> HashMap<String, usize> {
@@ -575,16 +806,10 @@ fn build_metadata_index(
                     let logical = collapse_logical_fields([column.name.as_str()])
                         .into_iter()
                         .next()
-                        .map_or_else(
-                            || column.name.trim_start_matches('_').to_owned(),
-                            |field| field.name,
-                        );
-                    let logical = if logical == "Date_Time" {
-                        "Date"
-                    } else {
-                        &logical
-                    };
-                    if let Some(standard) = StandardFieldId::from_name(logical) {
+                        .map_or_else(|| normalize_logical_name(&column.name), |field| field.name);
+                    if let Some(standard) =
+                        StandardFieldId::from_name(normalize_standard_field_name(&logical))
+                    {
                         index.standard_fields.insert((id, standard));
                     }
                 }
@@ -734,6 +959,7 @@ mod tests {
                 schema_table("Reference1", &["Fld12", "Fld12_TYPE", "Fld123"]),
                 schema_table("Document2", &["Fld12_RRRef"]),
             ],
+            anomalies: Vec::new(),
         };
 
         let owners = index_schema_field_owners(&schema);

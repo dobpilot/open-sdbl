@@ -1,27 +1,4 @@
-# crate-architecture Specification
-
-## Purpose
-Define the Cargo workspace boundary that keeps deterministic SDBL and metadata
-logic reusable while isolating command-line and database I/O in application
-crates.
-
-## Requirements
-
-### Requirement: Separate the reusable library from CLI applications
-The repository SHALL expose `open-sdbl` as a library-only Cargo package and
-SHALL place the `open-sdbl` executable in a separate `open-sdbl-cli` workspace
-package. Database, process, environment, terminal, and filesystem I/O SHALL be
-owned by the CLI package rather than the core library.
-
-#### Scenario: Core-only dependency
-- **WHEN** another Rust package depends on `open-sdbl`
-- **THEN** it receives query-generation and decoding APIs without a binary
-  target, async runtime, or PostgreSQL client dependency
-
-#### Scenario: CLI build
-- **WHEN** a user builds package `open-sdbl-cli`
-- **THEN** Cargo produces an executable named `open-sdbl` containing the `lex`
-  and `metadata postgres` commands
+## MODIFIED Requirements
 
 ### Requirement: Keep deterministic metadata work in the core
 The `open-sdbl` library SHALL generate fixed metadata acquisition queries and
@@ -82,22 +59,3 @@ SHALL use Rust Edition 2024 and declare an Edition-compatible MSRV.
 - **WHEN** Cargo reads either workspace package manifest
 - **THEN** the package declares `edition = "2024"` and `rust-version` is at
   least 1.85
-
-### Requirement: Build the CLI application by default
-The workspace SHALL select `open-sdbl-cli` as its default Cargo member. A Cargo
-build invoked from the repository root without `--package` or `--workspace`
-SHALL build the CLI application and its `open-sdbl` library dependency while
-preserving explicit library-only and whole-workspace build selection.
-
-#### Scenario: Default release build
-- **WHEN** a user runs `cargo build --release` from a clean repository checkout
-- **THEN** Cargo produces the `target/release/open-sdbl` executable
-
-#### Scenario: Explicit library-only build
-- **WHEN** a user runs `cargo build --release --package open-sdbl`
-- **THEN** Cargo builds the dependency-free library without requiring the CLI
-  application target
-
-#### Scenario: Explicit whole-workspace build
-- **WHEN** a user runs `cargo build --release --workspace`
-- **THEN** Cargo builds both workspace packages and produces the CLI executable

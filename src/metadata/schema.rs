@@ -1,4 +1,4 @@
-use super::{MetadataError, Value, parse_serialized};
+use super::{MetadataError, MetadataErrorKind, Value, parse_serialized};
 
 /// A physical column type declaration from SchemaStorage.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -50,6 +50,15 @@ pub struct SchemaTable {
     pub indexes: Vec<SchemaIndex>,
 }
 
+/// A non-fatal malformed declaration retained while projecting SchemaStorage.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SchemaAnomaly {
+    /// Canonical table name, without the SQL leading underscore.
+    pub table: String,
+    /// Human-readable structural detail suitable for a resolution report.
+    pub detail: String,
+}
+
 impl SchemaTable {
     /// Returns the canonical physical table name including the SQL underscore.
     #[must_use]
@@ -63,6 +72,8 @@ impl SchemaTable {
 pub struct SchemaStorage {
     /// Tables in SchemaStorage source order.
     pub tables: Vec<SchemaTable>,
+    /// Malformed child declarations that did not prevent retaining a table.
+    pub anomalies: Vec<SchemaAnomaly>,
 }
 
 impl SchemaStorage {
@@ -83,35 +94,43 @@ impl SchemaStorage {
 pub fn parse_schema_storage(input: &[u8]) -> Result<SchemaStorage, MetadataError> {
     let value = parse_serialized(input)?;
     let mut tables = Vec::new();
-    collect_tables(&value, &mut tables);
+    let mut anomalies = Vec::new();
+    collect_tables(&value, &mut tables, &mut anomalies);
     if tables.is_empty() {
         return Err(MetadataError::new(
+            MetadataErrorKind::Schema,
             "SchemaStorage contains no recognized table declarations",
         ));
     }
-    Ok(SchemaStorage { tables })
+    Ok(SchemaStorage { tables, anomalies })
 }
 
-fn collect_tables(value: &Value, tables: &mut Vec<SchemaTable>) {
+fn collect_tables(
+    value: &Value,
+    tables: &mut Vec<SchemaTable>,
+    anomalies: &mut Vec<SchemaAnomaly>,
+) {
     let Value::List(values) = value else {
         return;
     };
-    if let Some(table) = project_table(values).or_else(|| project_inline_table(values)) {
+    if let Some(table) =
+        project_table(values, anomalies).or_else(|| project_inline_table(values, anomalies))
+    {
         tables.push(table);
     }
     for value in values {
-        collect_tables(value, tables);
+        collect_tables(value, tables, anomalies);
     }
 }
 
-fn project_table(values: &[Value]) -> Option<SchemaTable> {
+fn project_table(values: &[Value], anomalies: &mut Vec<SchemaAnomaly>) -> Option<SchemaTable> {
     if values.len() < 7 || values.get(1)?.as_string()? != "N" {
         return None;
     }
     let name = values.first()?.as_string()?.to_owned();
     let number = values.get(2)?.as_u32()?;
-    let columns = project_counted(values.get(4)?, project_column)?;
-    let indexes = project_counted(values.get(6)?, project_index)?;
+    let columns = project_counted(values.get(4)?, &name, "columns", project_column, anomalies);
+    let indexes = project_counted(values.get(6)?, &name, "indexes", project_index, anomalies);
     Some(SchemaTable {
         name,
         number,
@@ -120,7 +139,10 @@ fn project_table(values: &[Value]) -> Option<SchemaTable> {
     })
 }
 
-fn project_inline_table(values: &[Value]) -> Option<SchemaTable> {
+fn project_inline_table(
+    values: &[Value],
+    anomalies: &mut Vec<SchemaAnomaly>,
+) -> Option<SchemaTable> {
     if values.len() < 7 || values.get(1)?.as_string()? != "I" || values.get(2)?.as_u32()? != 0 {
         return None;
     }
@@ -130,7 +152,14 @@ fn project_inline_table(values: &[Value]) -> Option<SchemaTable> {
     if parent.is_empty() {
         return None;
     }
-    let mut columns = project_counted(values.get(4)?, project_column)?;
+    let table_name = format!("{parent}_{inline_name}");
+    let mut columns = project_counted(
+        values.get(4)?,
+        &table_name,
+        "columns",
+        project_column,
+        anomalies,
+    );
     let owner_name = format!("{parent}_IDRRef");
     if !columns
         .iter()
@@ -147,27 +176,76 @@ fn project_inline_table(values: &[Value]) -> Option<SchemaTable> {
             },
         );
     }
-    let indexes = project_counted(values.get(6)?, project_index)?;
+    let indexes = project_counted(
+        values.get(6)?,
+        &table_name,
+        "indexes",
+        project_index,
+        anomalies,
+    );
     Some(SchemaTable {
-        name: format!("{parent}_{inline_name}"),
+        name: table_name,
         number,
         columns,
         indexes,
     })
 }
 
-fn project_counted<T>(value: &Value, project: fn(&[Value]) -> Option<T>) -> Option<Vec<T>> {
-    let values = value.as_list()?;
-    let count = values.first()?.as_u32()? as usize;
-    if values.len() < count + 1 {
-        return None;
-    }
-    let projected: Vec<T> = values[1..=count]
+fn project_counted<T>(
+    value: &Value,
+    table: &str,
+    section: &str,
+    project: fn(&[Value]) -> Option<T>,
+    anomalies: &mut Vec<SchemaAnomaly>,
+) -> Vec<T> {
+    let Some(values) = value.as_list() else {
+        anomalies.push(SchemaAnomaly {
+            table: table.to_owned(),
+            detail: format!("{section} declaration is not a list"),
+        });
+        return Vec::new();
+    };
+    let count = values
+        .first()
+        .and_then(Value::as_u32)
+        .map(|count| count as usize);
+    let available = values.len().saturating_sub(1);
+    let count = match count {
+        Some(count) => {
+            if count > available {
+                anomalies.push(SchemaAnomaly {
+                    table: table.to_owned(),
+                    detail: format!(
+                        "{section} declares {count} entries but contains only {available}"
+                    ),
+                });
+            }
+            count.min(available)
+        }
+        None => {
+            anomalies.push(SchemaAnomaly {
+                table: table.to_owned(),
+                detail: format!("{section} count is not an unsigned integer"),
+            });
+            available
+        }
+    };
+    values
         .iter()
-        .map(Value::as_list)
-        .map(|value| value.and_then(project))
-        .collect::<Option<_>>()?;
-    Some(projected)
+        .skip(1)
+        .take(count)
+        .enumerate()
+        .filter_map(|(index, value)| {
+            let projected = value.as_list().and_then(project);
+            if projected.is_none() {
+                anomalies.push(SchemaAnomaly {
+                    table: table.to_owned(),
+                    detail: format!("{section} entry {} is malformed", index + 1),
+                });
+            }
+            projected
+        })
+        .collect()
 }
 
 fn project_column(values: &[Value]) -> Option<SchemaColumn> {
@@ -177,18 +255,19 @@ fn project_column(values: &[Value]) -> Option<SchemaColumn> {
     let name = values.first()?.as_string()?.to_owned();
     let type_collection = values.get(2)?.as_list()?;
     let count = type_collection.first()?.as_u32()? as usize;
-    if type_collection.len() < count + 1 {
+    if count > type_collection.len().saturating_sub(1) {
         return None;
     }
     let mut types = Vec::with_capacity(count);
-    for declaration in &type_collection[1..=count] {
+    for declaration in type_collection.iter().skip(1).take(count) {
         let declaration = declaration.as_list()?;
         let tag = declaration.first()?.as_string()?.to_owned();
-        if !matches!(tag.as_str(), "S" | "N" | "T" | "B" | "L" | "R" | "V" | "E") {
-            return None;
-        }
         let reference_target = if tag == "R" {
-            declaration.get(3)?.as_string().map(str::to_owned)
+            declaration
+                .get(3)
+                .and_then(Value::as_string)
+                .filter(|target| !target.is_empty())
+                .map(str::to_owned)
         } else {
             None
         };
@@ -208,11 +287,13 @@ fn project_index(values: &[Value]) -> Option<SchemaIndex> {
     let unique = values.get(1)?.as_u32()? != 0;
     let fields = values.get(2)?.as_list()?;
     let count = fields.first()?.as_u32()? as usize;
-    if fields.len() < count + 1 {
+    if count > fields.len().saturating_sub(1) {
         return None;
     }
-    let columns = fields[1..=count]
+    let columns = fields
         .iter()
+        .skip(1)
+        .take(count)
         .map(Value::as_string)
         .map(|value| value.map(str::to_owned))
         .collect::<Option<_>>()?;
@@ -241,6 +322,47 @@ mod tests {
         );
         assert!(table.indexes[0].unique);
         assert_eq!(table.indexes[0].columns, ["ID"]);
+    }
+
+    #[test]
+    fn preserves_a_table_when_one_column_has_an_unknown_type_tag() {
+        let source = br#"{0,{1,{"Reference35","N",35,"",{2,{"Code",0,{1,{"S",10,0,"",0}},"",0},{"Future",0,{1,{"NEW",0,0,"",0}},"",0}},{0},{0},1,"R",{0},{0},"",0}}}"#;
+        let schema = parse_schema_storage(source).unwrap();
+
+        assert_eq!(schema.tables.len(), 1);
+        assert_eq!(schema.tables[0].columns.len(), 2);
+        assert_eq!(schema.tables[0].columns[0].types[0].tag, "S");
+        assert_eq!(schema.tables[0].columns[1].types[0].tag, "NEW");
+    }
+
+    #[test]
+    fn retains_a_table_and_reports_malformed_children() {
+        let source = br#"{0,{1,{"Reference35","N",35,"",{"not-a-count",{"Owner",0,{1,{"R",0,0}},"",0},{"Broken"}},{0},{0},1,"R",{0},{0},"",0}}}"#;
+        let schema = parse_schema_storage(source).unwrap();
+
+        assert_eq!(schema.tables.len(), 1);
+        assert_eq!(schema.tables[0].name, "Reference35");
+        assert_eq!(schema.tables[0].columns.len(), 1);
+        assert_eq!(schema.tables[0].columns[0].name, "Owner");
+        assert_eq!(schema.tables[0].columns[0].types[0].tag, "R");
+        assert!(
+            schema.tables[0].columns[0].types[0]
+                .reference_target
+                .is_none()
+        );
+        assert_eq!(schema.anomalies.len(), 2);
+        assert!(
+            schema
+                .anomalies
+                .iter()
+                .any(|anomaly| anomaly.detail.contains("count"))
+        );
+        assert!(
+            schema
+                .anomalies
+                .iter()
+                .any(|anomaly| anomaly.detail.contains("entry 2"))
+        );
     }
 
     #[test]

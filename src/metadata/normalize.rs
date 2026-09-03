@@ -64,19 +64,29 @@ pub fn recase_postgres_identifier(identifier: &str) -> String {
     } else {
         identifier
     };
-    let ascii = identifier.is_ascii();
     let mut output = String::with_capacity(identifier.len());
-    let mut offset = 0;
-    while offset < lower.len() {
-        let byte = lower.as_bytes()[offset];
-        if let Some((token, canonical)) = TOKENS.iter().find(|(token, _)| {
-            (token.as_bytes()[0] == byte || !ascii) && token_matches(lower, offset, token)
-        }) {
+    let mut characters = identifier.char_indices().peekable();
+    while let Some((offset, character)) = characters.next() {
+        let token = if character.is_ascii() {
+            let byte = lower.as_bytes()[offset];
+            TOKENS.iter().find(|(token, _)| {
+                token.as_bytes()[0] == byte && token_matches(lower, offset, token)
+            })
+        } else {
+            None
+        };
+        if let Some((token, canonical)) = token {
             output.push_str(canonical);
-            offset += token.len();
+            let token_end = offset + token.len();
+            while characters
+                .peek()
+                .is_some_and(|(next_offset, _)| *next_offset < token_end)
+            {
+                characters.next();
+            }
             continue;
         }
-        if byte == b'_'
+        if character == '_'
             && let Some(next) = lower.as_bytes().get(offset + 1).copied()
             && matches!(next, b's' | b'r' | b'l' | b'n' | b't')
             && lower
@@ -86,11 +96,10 @@ pub fn recase_postgres_identifier(identifier: &str) -> String {
         {
             output.push('_');
             output.push(char::from(next.to_ascii_uppercase()));
-            offset += 2;
+            characters.next();
             continue;
         }
-        output.push(char::from(identifier.as_bytes()[offset]));
-        offset += 1;
+        output.push(character);
     }
     output
 }
@@ -120,7 +129,7 @@ where
     for column in columns {
         let column = column.as_ref();
         let canonical = recase_postgres_identifier(column);
-        let logical = logical_base(&canonical).trim_start_matches('_').to_owned();
+        let logical = normalize_logical_name(&canonical);
         if !groups.contains_key(&logical) {
             order.push(logical.clone());
         }
@@ -133,6 +142,19 @@ where
             name,
         })
         .collect()
+}
+
+pub(crate) fn normalize_logical_name(canonical: &str) -> String {
+    let logical = logical_base(canonical);
+    logical.strip_prefix('_').unwrap_or(logical).to_owned()
+}
+
+pub(crate) fn normalize_standard_field_name(logical: &str) -> &str {
+    if logical == "Date_Time" {
+        "Date"
+    } else {
+        logical
+    }
 }
 
 /// Collapses an index key and removes DBNames data-separation fields.
@@ -174,7 +196,10 @@ fn logical_base(column: &str) -> &str {
 
 #[cfg(test)]
 mod tests {
-    use super::{collapse_logical_fields, recase_postgres_identifier};
+    use super::{
+        collapse_logical_fields, normalize_logical_name, normalize_standard_field_name,
+        recase_postgres_identifier,
+    };
 
     #[test]
     fn recases_longest_tokens_and_compound_suffixes() {
@@ -183,6 +208,22 @@ mod tests {
         assert_eq!(recase_postgres_identifier("_seqb10"), "_SeqB10");
         assert_eq!(recase_postgres_identifier("_fld12_rrref"), "_Fld12_RRRef");
         assert_eq!(recase_postgres_identifier("_fld12_type"), "_Fld12_TYPE");
+    }
+
+    #[test]
+    fn preserves_non_ascii_identifiers_without_corrupting_utf8() {
+        assert_eq!(
+            recase_postgres_identifier("_СправочникКонтрагенты"),
+            "_СправочникКонтрагенты"
+        );
+        assert_eq!(
+            recase_postgres_identifier("_reference53_Колонка"),
+            "_Reference53_Колонка"
+        );
+        assert_eq!(
+            recase_postgres_identifier("_fld12_rrref_Ссылка"),
+            "_Fld12_RRRef_Ссылка"
+        );
     }
 
     #[test]
@@ -203,5 +244,13 @@ mod tests {
         assert_eq!(fields[1].name, "Recorder");
         assert_eq!(fields[2].name, "value");
         assert_eq!(fields[3].name, "ID");
+    }
+
+    #[test]
+    fn removes_one_physical_prefix_and_normalizes_the_date_standard_field() {
+        assert_eq!(normalize_logical_name("_Date_Time"), "Date_Time");
+        assert_eq!(normalize_logical_name("__Date_Time"), "_Date_Time");
+        assert_eq!(normalize_standard_field_name("Date_Time"), "Date");
+        assert_eq!(normalize_standard_field_name("Period"), "Period");
     }
 }

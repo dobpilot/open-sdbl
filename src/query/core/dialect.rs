@@ -1,0 +1,419 @@
+//! SQL dialect primitives, quoting, literals, and output labels.
+
+use std::collections::HashSet;
+
+use crate::query::core::ast::{DateTimeValue, PeriodKind};
+use crate::query::core::{QueryDiagnostic, QueryDiagnosticKind};
+use crate::{Keyword, Token, TokenKind};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SqlDialect {
+    Postgres,
+    MsSql { year_offset: i32 },
+}
+
+#[derive(Debug, Clone, Copy)]
+pub(super) enum LabelLimit {
+    Bytes(usize),
+    Utf16Units(usize),
+}
+
+pub(super) struct OutputLabelAllocator {
+    limit: LabelLimit,
+    used: HashSet<String>,
+}
+
+impl OutputLabelAllocator {
+    pub(super) fn new(dialect: SqlDialect) -> Self {
+        Self {
+            limit: dialect.output_label_limit(),
+            used: HashSet::new(),
+        }
+    }
+
+    pub(super) fn allocate(&mut self, requested: &str) -> String {
+        let candidate = truncate_label(requested, self.limit);
+        if self.used.insert(candidate.to_lowercase()) {
+            return candidate;
+        }
+        for number in 2usize.. {
+            let suffix = format!("_{number}");
+            let prefix_limit = match self.limit {
+                LabelLimit::Bytes(limit) => LabelLimit::Bytes(limit.saturating_sub(suffix.len())),
+                LabelLimit::Utf16Units(limit) => {
+                    LabelLimit::Utf16Units(limit.saturating_sub(suffix.len()))
+                }
+            };
+            let candidate = format!("{}{}", truncate_label(requested, prefix_limit), suffix);
+            if self.used.insert(candidate.to_lowercase()) {
+                return candidate;
+            }
+        }
+        unreachable!("an unbounded numeric suffix always produces a unique label")
+    }
+}
+
+pub(super) fn truncate_label(value: &str, limit: LabelLimit) -> String {
+    match limit {
+        LabelLimit::Bytes(limit) if value.len() > limit => {
+            let mut end = limit;
+            while !value.is_char_boundary(end) {
+                end -= 1;
+            }
+            value[..end].to_owned()
+        }
+        LabelLimit::Utf16Units(limit) => {
+            let mut units = 0;
+            value
+                .chars()
+                .take_while(|character| {
+                    let next = units + character.len_utf16();
+                    if next > limit {
+                        false
+                    } else {
+                        units = next;
+                        true
+                    }
+                })
+                .collect()
+        }
+        LabelLimit::Bytes(_) => value.to_owned(),
+    }
+}
+
+pub(super) fn compile_literal(
+    token: &Token<'_>,
+    dialect: SqlDialect,
+) -> Result<String, QueryDiagnostic> {
+    match token.kind {
+        TokenKind::String => {
+            let inner = token
+                .lexeme
+                .strip_prefix('"')
+                .and_then(|value| value.strip_suffix('"'))
+                .ok_or_else(|| {
+                    QueryDiagnostic::at(
+                        QueryDiagnosticKind::Syntax,
+                        Some(token),
+                        "invalid string literal",
+                    )
+                })?;
+            Ok(dialect.string_literal(&inner.replace("\"\"", "\"")))
+        }
+        TokenKind::Number => Ok(token.lexeme.to_owned()),
+        TokenKind::Binary => {
+            let digits = token
+                .lexeme
+                .get(2..)
+                .filter(|digits| {
+                    !digits.is_empty()
+                        && digits.len() % 2 == 0
+                        && digits.chars().all(|digit| digit.is_ascii_hexdigit())
+                })
+                .ok_or_else(|| {
+                    QueryDiagnostic::at(
+                        QueryDiagnosticKind::Syntax,
+                        Some(token),
+                        "invalid binary literal",
+                    )
+                })?;
+            match dialect {
+                SqlDialect::Postgres => Ok(format!("'\\x{digits}'::bytea")),
+                SqlDialect::MsSql { .. } => Ok(format!("0x{digits}")),
+            }
+        }
+        TokenKind::Keyword(Keyword::True) => Ok(dialect.boolean_literal(true).to_owned()),
+        TokenKind::Keyword(Keyword::False) => Ok(dialect.boolean_literal(false).to_owned()),
+        TokenKind::Keyword(Keyword::Null) => Ok("NULL".to_owned()),
+        _ => Err(QueryDiagnostic::at(
+            QueryDiagnosticKind::UnsupportedFeature,
+            Some(token),
+            "unsupported literal",
+        )),
+    }
+}
+
+impl SqlDialect {
+    pub(crate) const fn mssql(year_offset: i32) -> Self {
+        Self::MsSql { year_offset }
+    }
+
+    pub(super) const fn is_mssql(self) -> bool {
+        matches!(self, Self::MsSql { .. })
+    }
+
+    pub(super) fn quote_identifier(self, identifier: &str) -> String {
+        match self {
+            Self::Postgres => format!("\"{}\"", identifier.replace('"', "\"\"")),
+            Self::MsSql { .. } => format!("[{}]", identifier.replace(']', "]]")),
+        }
+    }
+
+    pub(super) fn qualified_column(self, alias: Option<&str>, column: &str) -> String {
+        alias.map_or_else(
+            || self.quote_identifier(column),
+            |alias| {
+                format!(
+                    "{}.{}",
+                    self.quote_identifier(alias),
+                    self.quote_identifier(column)
+                )
+            },
+        )
+    }
+
+    pub(super) const fn output_label_limit(self) -> LabelLimit {
+        match self {
+            Self::Postgres => LabelLimit::Bytes(63),
+            Self::MsSql { .. } => LabelLimit::Utf16Units(128),
+        }
+    }
+
+    pub(super) fn text(self, expression: &str) -> String {
+        match self {
+            Self::Postgres => format!("{expression}::text"),
+            Self::MsSql { .. } => format!("CONVERT(nvarchar(max), {expression})"),
+        }
+    }
+
+    pub(super) fn scalar_text(self, expression: &str) -> String {
+        match self {
+            Self::Postgres => format!("({expression})::text"),
+            Self::MsSql { .. } => self.text(expression),
+        }
+    }
+
+    pub(super) fn date_scalar_text(self, expression: &str) -> String {
+        match self {
+            Self::MsSql { year_offset } if year_offset != 0 => {
+                self.text(&format!("DATEADD(year, {}, {expression})", -year_offset))
+            }
+            _ => self.scalar_text(expression),
+        }
+    }
+
+    pub(super) fn datetime_expression(
+        self,
+        value: DateTimeValue,
+        storage_domain: bool,
+        token: &Token<'_>,
+    ) -> Result<String, QueryDiagnostic> {
+        let literal = format!(
+            "{:04}-{:02}-{:02}T{:02}:{:02}:{:02}",
+            value.year, value.month, value.day, value.hour, value.minute, value.second
+        );
+        match self {
+            Self::Postgres => Ok(format!("TIMESTAMP '{}'", literal.replace('T', " "))),
+            Self::MsSql { year_offset } => {
+                if storage_domain {
+                    let physical_year = i32::from(value.year)
+                        .checked_add(year_offset)
+                        .ok_or_else(|| {
+                            QueryDiagnostic::at(
+                                QueryDiagnosticKind::Syntax,
+                                Some(token),
+                                format!(
+                                    "DATETIME year {} with MSSQL year offset {year_offset} is outside 1..=9999",
+                                    value.year
+                                ),
+                            )
+                        })?;
+                    if !(1..=9999).contains(&physical_year) {
+                        return Err(QueryDiagnostic::at(
+                            QueryDiagnosticKind::Syntax,
+                            Some(token),
+                            format!(
+                                "DATETIME year {} with MSSQL year offset {year_offset} is outside 1..=9999",
+                                value.year
+                            ),
+                        ));
+                    }
+                }
+                let expression = format!("CONVERT(datetime2, '{literal}', 126)");
+                if storage_domain && year_offset != 0 {
+                    Ok(format!("DATEADD(year, {year_offset}, {expression})"))
+                } else {
+                    Ok(expression)
+                }
+            }
+        }
+    }
+
+    pub(super) fn begin_of_period(self, value: &str, period: PeriodKind) -> String {
+        match self {
+            Self::Postgres => match period.postgres_name() {
+                Some(period) => format!("date_trunc('{period}', {value})"),
+                None if period == PeriodKind::TenDays => format!(
+                    "(date_trunc('month', {value}) + (LEAST(((EXTRACT(DAY FROM {value})::integer - 1) / 10), 2) * INTERVAL '10 days'))"
+                ),
+                None => format!(
+                    "(date_trunc('year', {value}) + CASE WHEN EXTRACT(MONTH FROM {value}) > 6 THEN INTERVAL '6 months' ELSE INTERVAL '0 months' END)"
+                ),
+            },
+            Self::MsSql { .. } => match period {
+                PeriodKind::Minute => format!(
+                    "DATETIME2FROMPARTS(YEAR({value}), MONTH({value}), DAY({value}), DATEPART(hour, {value}), DATEPART(minute, {value}), 0, 0, 0)"
+                ),
+                PeriodKind::Hour => format!(
+                    "DATETIME2FROMPARTS(YEAR({value}), MONTH({value}), DAY({value}), DATEPART(hour, {value}), 0, 0, 0, 0)"
+                ),
+                PeriodKind::Day => format!(
+                    "DATETIME2FROMPARTS(YEAR({value}), MONTH({value}), DAY({value}), 0, 0, 0, 0, 0)"
+                ),
+                PeriodKind::Week => format!(
+                    "DATEADD(day, -(((DATEDIFF(day, CONVERT(date, '19000101', 112), CONVERT(date, {value})) % 7) + 7) % 7), CONVERT(datetime2, CONVERT(date, {value})))"
+                ),
+                PeriodKind::TenDays => format!(
+                    "DATETIME2FROMPARTS(YEAR({value}), MONTH({value}), CASE WHEN DAY({value}) <= 10 THEN 1 WHEN DAY({value}) <= 20 THEN 11 ELSE 21 END, 0, 0, 0, 0, 0)"
+                ),
+                PeriodKind::Month => {
+                    format!("DATETIME2FROMPARTS(YEAR({value}), MONTH({value}), 1, 0, 0, 0, 0, 0)")
+                }
+                PeriodKind::Quarter => format!(
+                    "DATETIME2FROMPARTS(YEAR({value}), (((MONTH({value}) - 1) / 3) * 3) + 1, 1, 0, 0, 0, 0, 0)"
+                ),
+                PeriodKind::HalfYear => format!(
+                    "DATETIME2FROMPARTS(YEAR({value}), CASE WHEN MONTH({value}) <= 6 THEN 1 ELSE 7 END, 1, 0, 0, 0, 0, 0)"
+                ),
+                PeriodKind::Year => {
+                    format!("DATETIME2FROMPARTS(YEAR({value}), 1, 1, 0, 0, 0, 0, 0)")
+                }
+            },
+        }
+    }
+
+    pub(super) fn column_text(self, expression: &str, data_type: &str) -> String {
+        let base = data_type
+            .split_once('(')
+            .map_or(data_type, |(base, _)| base)
+            .trim()
+            .to_ascii_lowercase();
+        match self {
+            Self::MsSql { .. } if matches!(base.as_str(), "timestamp" | "rowversion") => {
+                expression.to_owned()
+            }
+            Self::MsSql { .. } if matches!(base.as_str(), "binary" | "varbinary" | "image") => {
+                format!("CONVERT(varchar(max), {expression}, 1)")
+            }
+            Self::MsSql { year_offset }
+                if year_offset != 0
+                    && matches!(
+                        base.as_str(),
+                        "date" | "datetime" | "datetime2" | "smalldatetime"
+                    ) =>
+            {
+                self.text(&format!("DATEADD(year, {}, {expression})", -year_offset))
+            }
+            _ => self.text(expression),
+        }
+    }
+
+    pub(super) fn literal_for_type(
+        self,
+        token: &Token<'_>,
+        data_type: &str,
+    ) -> Result<String, QueryDiagnostic> {
+        let literal = compile_literal(token, self)?;
+        let base = data_type
+            .split_once('(')
+            .map_or(data_type, |(base, _)| base)
+            .trim();
+        match self {
+            Self::MsSql { year_offset }
+                if year_offset != 0
+                    && token.kind == TokenKind::String
+                    && matches!(
+                        base.to_ascii_lowercase().as_str(),
+                        "date" | "datetime" | "datetime2" | "smalldatetime"
+                    ) =>
+            {
+                Ok(format!("DATEADD(year, {year_offset}, {literal})"))
+            }
+            _ => Ok(literal),
+        }
+    }
+
+    pub(super) fn datetime_literal(self, token: &Token<'_>) -> Result<String, QueryDiagnostic> {
+        self.literal_for_type(token, "datetime2")
+    }
+
+    pub(super) fn null_text(self) -> &'static str {
+        match self {
+            Self::Postgres => "NULL::text",
+            Self::MsSql { .. } => "CONVERT(nvarchar(max), NULL)",
+        }
+    }
+
+    /// PostgreSQL output requires `standard_conforming_strings = on` (the
+    /// server default): quotes are doubled and backslashes are passed through.
+    pub(super) fn string_literal(self, value: &str) -> String {
+        let escaped = value.replace('\'', "''");
+        match self {
+            Self::Postgres => format!("'{escaped}'"),
+            Self::MsSql { .. } => format!("N'{escaped}'"),
+        }
+    }
+
+    pub(super) fn boolean_literal(self, value: bool) -> &'static str {
+        match (self, value) {
+            (Self::Postgres, true) => "TRUE",
+            (Self::Postgres, false) => "FALSE",
+            (Self::MsSql { .. }, true) => "0x01",
+            (Self::MsSql { .. }, false) => "0x00",
+        }
+    }
+
+    pub(super) fn binary_u32(self, value: u32) -> String {
+        self.binary_literal(&value.to_be_bytes())
+    }
+
+    pub(super) fn binary_literal(self, bytes: &[u8]) -> String {
+        let hex = bytes
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect::<String>();
+        match self {
+            Self::Postgres => format!("decode('{hex}', 'hex')"),
+            Self::MsSql { .. } => format!("0x{hex}"),
+        }
+    }
+
+    pub(super) fn binary_hex_text(self, expression: &str) -> String {
+        match self {
+            Self::Postgres => format!("encode({expression}, 'hex')"),
+            Self::MsSql { .. } => format!("CONVERT(varchar(max), {expression}, 2)"),
+        }
+    }
+
+    pub(super) fn deferred_reference_payload(self, type_value: &str, reference: &str) -> String {
+        let encoded_type = self.binary_hex_text(type_value);
+        let encoded_reference = self.binary_hex_text(reference);
+        format!(
+            "CASE WHEN {reference} IS NULL THEN {} ELSE concat({encoded_type}, ':', {encoded_reference}) END",
+            self.string_literal("")
+        )
+    }
+
+    pub(super) fn select_prefix(self, distinct: bool, top: Option<u32>) -> String {
+        let mut sql = String::from("SELECT ");
+        if distinct {
+            sql.push_str("DISTINCT ");
+        }
+        if self.is_mssql()
+            && let Some(top) = top
+        {
+            use std::fmt::Write as _;
+            write!(sql, "TOP ({top}) ").expect("writing to String cannot fail");
+        }
+        sql
+    }
+
+    pub(super) fn append_limit(self, sql: &mut String, top: Option<u32>) {
+        if self == Self::Postgres
+            && let Some(top) = top
+        {
+            use std::fmt::Write as _;
+            write!(sql, " LIMIT {top}").expect("writing to String cannot fail");
+        }
+    }
+}

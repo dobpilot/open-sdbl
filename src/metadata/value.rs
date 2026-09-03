@@ -1,4 +1,4 @@
-use super::MetadataError;
+use super::{MetadataError, ensure_serialized_depth};
 
 /// A value in the brace-serialized format used by 1C configuration resources.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -56,7 +56,7 @@ impl Value {
 pub fn parse_serialized(input: &[u8]) -> Result<Value, MetadataError> {
     let input = input.strip_prefix(&[0xef, 0xbb, 0xbf]).unwrap_or(input);
     let text = std::str::from_utf8(input)
-        .map_err(|error| MetadataError::at(error.valid_up_to(), "metadata is not valid UTF-8"))?;
+        .map_err(|error| MetadataError::utf8(error.valid_up_to(), "metadata is not valid UTF-8"))?;
     Parser::new(text).parse()
 }
 
@@ -73,12 +73,15 @@ impl<'input> Parser<'input> {
     fn parse(mut self) -> Result<Value, MetadataError> {
         self.skip_whitespace();
         if self.offset == self.input.len() {
-            return Err(MetadataError::at(0, "empty metadata serialization"));
+            return Err(MetadataError::serialization(
+                self.offset,
+                "empty metadata serialization",
+            ));
         }
-        let value = self.value()?;
+        let value = self.value(0)?;
         self.skip_whitespace();
         if self.offset != self.input.len() {
-            return Err(MetadataError::at(
+            return Err(MetadataError::serialization(
                 self.offset,
                 "unexpected trailing metadata",
             ));
@@ -86,17 +89,21 @@ impl<'input> Parser<'input> {
         Ok(value)
     }
 
-    fn value(&mut self) -> Result<Value, MetadataError> {
+    fn value(&mut self, depth: usize) -> Result<Value, MetadataError> {
         match self.current() {
-            Some(b'{') => self.list(),
+            Some(b'{') => self.list(depth),
             Some(b'"') => self.string(),
             Some(b',' | b'}') => Ok(Value::Null),
             Some(_) => self.atom(),
-            None => Err(MetadataError::at(self.offset, "unexpected end of metadata")),
+            None => Err(MetadataError::serialization(
+                self.offset,
+                "unexpected end of metadata",
+            )),
         }
     }
 
-    fn list(&mut self) -> Result<Value, MetadataError> {
+    fn list(&mut self, depth: usize) -> Result<Value, MetadataError> {
+        ensure_serialized_depth(depth, self.offset)?;
         self.offset += 1;
         self.skip_whitespace();
         let mut values = Vec::new();
@@ -105,7 +112,12 @@ impl<'input> Parser<'input> {
         loop {
             self.skip_whitespace();
             match self.current() {
-                None => return Err(MetadataError::at(self.offset, "unterminated metadata list")),
+                None => {
+                    return Err(MetadataError::serialization(
+                        self.offset,
+                        "unterminated metadata list",
+                    ));
+                }
                 Some(b'}') => {
                     if !expecting_value || values.is_empty() {
                         self.offset += 1;
@@ -124,11 +136,11 @@ impl<'input> Parser<'input> {
                     expecting_value = true;
                 }
                 Some(_) if expecting_value => {
-                    values.push(self.value()?);
+                    values.push(self.value(depth + 1)?);
                     expecting_value = false;
                 }
                 Some(_) => {
-                    return Err(MetadataError::at(
+                    return Err(MetadataError::serialization(
                         self.offset,
                         "expected ',' or '}' in metadata list",
                     ));
@@ -146,7 +158,7 @@ impl<'input> Parser<'input> {
                 .iter()
                 .position(|byte| *byte == b'"')
             else {
-                return Err(MetadataError::at(
+                return Err(MetadataError::serialization(
                     self.offset,
                     "unterminated metadata string",
                 ));
@@ -181,7 +193,7 @@ impl<'input> Parser<'input> {
         }
         let atom = self.input[start..self.offset].trim();
         if atom.is_empty() {
-            return Err(MetadataError::at(start, "empty metadata atom"));
+            return Err(MetadataError::serialization(start, "empty metadata atom"));
         }
         Ok(Value::Atom(atom.to_owned()))
     }
@@ -229,6 +241,18 @@ mod tests {
     fn rejects_truncated_and_trailing_values() {
         assert!(parse_serialized(b"{1,{2}").is_err());
         assert!(parse_serialized(b"{1} garbage").is_err());
+    }
+
+    #[test]
+    fn rejects_pathologically_deep_values() {
+        let input = format!("{}0{}", "{".repeat(5_000), "}".repeat(5_000));
+        let error = parse_serialized(input.as_bytes()).unwrap_err();
+        assert_eq!(error.offset(), Some(512));
+        assert!(
+            error
+                .message()
+                .contains("nesting depth exceeds limit of 512")
+        );
     }
 
     #[test]

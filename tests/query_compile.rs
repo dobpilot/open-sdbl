@@ -1,22 +1,410 @@
-use std::str::FromStr;
+mod support;
+
+use support::*;
 
 use open_sdbl::metadata::{
-    ColumnType, ConfigDescriptor, ConfigFieldPurpose, ConfigPredefinedValue, FieldId, Guid,
-    LiveColumn, LiveIndex, LiveTable, LookupError, MetadataKind, SchemaColumn, SchemaStorage,
-    SchemaTable, StandardFieldId, parse_config_descriptors, parse_db_names, parse_schema_storage,
-    resolve_metadata, resolve_metadata_with_predefined_values,
+    ColumnType, ConfigFieldPurpose, FieldId, LiveColumn, LiveTable, LookupError, MetadataKind,
+    MetadataSnapshot, ResolutionFinding, SchemaAnomaly, SchemaColumn, StandardFieldId,
+    parse_config_descriptors, resolve_metadata,
 };
 use open_sdbl::query::{
-    PresentationExpression, PresentationPlan, compile_mssql_presentation_lookup_with_year_offset,
-    compile_mssql_query, compile_mssql_query_with_year_offset,
-    compile_postgres_presentation_lookup, compile_postgres_query, find_metadata_object,
-    prepare_mssql_query, prepare_postgres_query, queryable_field_catalog, queryable_fields,
+    Backend, MsSqlBackend, PostgresBackend, Prepared, PresentationExpression, PresentationPlan,
+    QueryCompiler, QueryDiagnosticKind, find_metadata_object, queryable_field_catalog,
+    queryable_fields,
 };
+
+fn compile_backend_generic<B: Backend>(
+    snapshot: &MetadataSnapshot,
+    backend: B,
+    source: &str,
+) -> Result<open_sdbl::query::CompiledQuery, open_sdbl::query::QueryDiagnostic> {
+    QueryCompiler::new(snapshot, backend).compile(source)
+}
+
+fn mssql_backend(year_offset: i32) -> MsSqlBackend {
+    MsSqlBackend::new(year_offset).expect("test MSSQL year offset must be valid")
+}
+
+fn assert_backend_outcomes_match(
+    source: &str,
+    postgres: &Result<open_sdbl::query::CompiledQuery, open_sdbl::query::QueryDiagnostic>,
+    mssql: &Result<open_sdbl::query::CompiledQuery, open_sdbl::query::QueryDiagnostic>,
+) {
+    match (postgres, mssql) {
+        (Ok(postgres), Ok(mssql)) => {
+            assert_eq!(
+                postgres.columns.len(),
+                mssql.columns.len(),
+                "backend projection widths differ for {source}"
+            );
+            assert_eq!(
+                postgres.deferred_presentations, mssql.deferred_presentations,
+                "backend deferred presentations differ for {source}"
+            );
+        }
+        (Err(postgres), Err(mssql)) => {
+            assert_eq!(
+                postgres.kind(),
+                mssql.kind(),
+                "backend diagnostics differ for {source}"
+            );
+            assert_eq!(
+                (postgres.offset(), postgres.line(), postgres.column()),
+                (mssql.offset(), mssql.line(), mssql.column()),
+                "backend diagnostic positions differ for {source}"
+            );
+        }
+        (postgres, mssql) => {
+            panic!("backend outcomes differ for {source}: PostgreSQL={postgres:?}, MSSQL={mssql:?}")
+        }
+    }
+}
+
+fn assert_error_outcomes_match<Left, Right>(
+    operation: &str,
+    postgres: &Result<Left, open_sdbl::query::QueryDiagnostic>,
+    mssql: &Result<Right, open_sdbl::query::QueryDiagnostic>,
+) {
+    match (postgres, mssql) {
+        (Ok(_), Ok(_)) => {}
+        (Err(postgres), Err(mssql)) => {
+            assert_eq!(
+                postgres.kind(),
+                mssql.kind(),
+                "backend diagnostics differ for {operation}"
+            );
+            assert_eq!(
+                (postgres.offset(), postgres.line(), postgres.column()),
+                (mssql.offset(), mssql.line(), mssql.column()),
+                "backend diagnostic positions differ for {operation}"
+            );
+        }
+        (postgres, mssql) => panic!(
+            "backend outcomes differ for {operation}: PostgreSQL success={}, MSSQL success={}",
+            postgres.is_ok(),
+            mssql.is_ok()
+        ),
+    }
+}
+
+#[derive(Clone, Copy)]
+enum SelectedBackend {
+    Postgres,
+    MsSql,
+}
+
+struct ParityPrepared {
+    postgres: Prepared<PostgresBackend>,
+    mssql: Prepared<MsSqlBackend>,
+    selected: SelectedBackend,
+}
+
+impl ParityPrepared {
+    fn presentation_request(&self) -> &open_sdbl::query::PresentationRequest {
+        self.postgres.presentation_request()
+    }
+
+    fn compile(
+        &self,
+        snapshot: &MetadataSnapshot,
+        plans: &[PresentationPlan],
+    ) -> Result<open_sdbl::query::CompiledQuery, open_sdbl::query::QueryDiagnostic> {
+        let postgres = self.postgres.compile(snapshot, plans);
+        let mssql = self.mssql.compile(snapshot, plans);
+        assert_backend_outcomes_match("prepared query", &postgres, &mssql);
+        match self.selected {
+            SelectedBackend::Postgres => postgres,
+            SelectedBackend::MsSql => mssql,
+        }
+    }
+}
+
+fn select_prepared_backend(
+    postgres: Result<Prepared<PostgresBackend>, open_sdbl::query::QueryDiagnostic>,
+    mssql: Result<Prepared<MsSqlBackend>, open_sdbl::query::QueryDiagnostic>,
+    selected: SelectedBackend,
+) -> Result<ParityPrepared, open_sdbl::query::QueryDiagnostic> {
+    match (postgres, mssql) {
+        (Ok(postgres), Ok(mssql)) => Ok(ParityPrepared {
+            postgres,
+            mssql,
+            selected,
+        }),
+        (Err(postgres), Err(mssql)) => match selected {
+            SelectedBackend::Postgres => Err(postgres),
+            SelectedBackend::MsSql => Err(mssql),
+        },
+        _ => unreachable!("backend preparation parity was checked before selection"),
+    }
+}
+
+macro_rules! for_each_backend {
+    ($source:expr, $snapshot:expr $(,)?) => {{
+        let source = $source;
+        let snapshot = $snapshot;
+        let postgres = compile_backend_generic(snapshot, PostgresBackend, source);
+        let mssql = compile_backend_generic(snapshot, mssql_backend(0), source);
+        assert_backend_outcomes_match(source, &postgres, &mssql);
+        (postgres, mssql)
+    }};
+    (prepare $source:expr, $snapshot:expr $(,)?) => {{
+        let source = $source;
+        let snapshot = $snapshot;
+        let postgres = QueryCompiler::new(snapshot, PostgresBackend).prepare(source);
+        let mssql = QueryCompiler::new(snapshot, mssql_backend(0)).prepare(source);
+        assert_error_outcomes_match(source, &postgres, &mssql);
+        if let (Ok(postgres), Ok(mssql)) = (&postgres, &mssql) {
+            assert_eq!(
+                postgres.presentation_request(),
+                mssql.presentation_request(),
+                "backend presentation requests differ for {source}"
+            );
+        }
+        (postgres, mssql)
+    }};
+    (presentation $snapshot:expr, $plan:expr, $references:expr, $year_offset:expr $(,)?) => {{
+        let snapshot = $snapshot;
+        let plan = $plan;
+        let references = $references;
+        let postgres = QueryCompiler::new(snapshot, PostgresBackend)
+            .compile_presentation_lookup(plan, references);
+        let mssql = QueryCompiler::new(snapshot, mssql_backend($year_offset))
+            .compile_presentation_lookup(plan, references);
+        assert_backend_outcomes_match("presentation lookup", &postgres, &mssql);
+        (postgres, mssql)
+    }};
+}
+
+macro_rules! postgres_compile {
+    ($source:expr, $snapshot:expr $(,)?) => {
+        for_each_backend!($source, $snapshot).0
+    };
+}
+
+macro_rules! postgres_prepare {
+    ($source:expr, $snapshot:expr $(,)?) => {{
+        let (postgres, mssql) = for_each_backend!(prepare $source, $snapshot);
+        select_prepared_backend(postgres, mssql, SelectedBackend::Postgres)
+    }};
+}
+
+macro_rules! postgres_presentation_lookup {
+    ($snapshot:expr, $plan:expr, $references:expr $(,)?) => {
+        for_each_backend!(presentation $snapshot, $plan, $references, 0).0
+    };
+}
+
+macro_rules! mssql_compile {
+    ($source:expr, $snapshot:expr $(,)?) => {
+        for_each_backend!($source, $snapshot).1
+    };
+}
+
+macro_rules! mssql_compile_with_offset {
+    ($source:expr, $snapshot:expr, $year_offset:expr $(,)?) => {
+        QueryCompiler::new($snapshot, mssql_backend($year_offset)).compile($source)
+    };
+}
+
+macro_rules! mssql_prepare {
+    ($source:expr, $snapshot:expr $(,)?) => {{
+        let (postgres, mssql) = for_each_backend!(prepare $source, $snapshot);
+        select_prepared_backend(postgres, mssql, SelectedBackend::MsSql)
+    }};
+}
+
+macro_rules! mssql_presentation_lookup {
+    ($snapshot:expr, $plan:expr, $references:expr, $year_offset:expr $(,)?) => {
+        for_each_backend!(presentation $snapshot, $plan, $references, $year_offset).1
+    };
+}
+
+#[test]
+fn preserves_mssql_goldens_for_dialect_sensitive_features() {
+    let cases = [
+        (
+            "slices",
+            mssql_compile!(
+                "SELECT l.Period, r.Period FROM InformationRegister.Prices.SliceFirst() l INNER JOIN InformationRegister.Prices.SliceLast() r ON l.ProbeAttribute = r.ProbeAttribute;",
+                &information_register_snapshot(),
+            )
+            .unwrap()
+            .sql,
+            "SELECT CONVERT(nvarchar(max), [l].[_period]) AS [Period], CONVERT(nvarchar(max), [r].[_period]) AS [Period_2] FROM (SELECT [__slice_ranked].* FROM (SELECT [__slice_base].*, DENSE_RANK() OVER (PARTITION BY [__slice_base].[_fld54] ORDER BY [__slice_base].[_period] ASC) AS [__open_sdbl_slice_rank] FROM [_inforg53] AS [__slice_base]) AS [__slice_ranked] WHERE [__slice_ranked].[__open_sdbl_slice_rank] = 1) AS [l] INNER JOIN (SELECT [__slice_ranked].* FROM (SELECT [__slice_base].*, DENSE_RANK() OVER (PARTITION BY [__slice_base].[_fld54] ORDER BY [__slice_base].[_period] DESC) AS [__open_sdbl_slice_rank] FROM [_inforg53] AS [__slice_base]) AS [__slice_ranked] WHERE [__slice_ranked].[__open_sdbl_slice_rank] = 1) AS [r] ON [l].[_fld54] = [r].[_fld54]",
+        ),
+        (
+            "turnovers",
+            mssql_compile!(
+                "SELECT Номенклатура, КоличествоОборот FROM AccumulationRegister.Остатки.Turnovers(\"2026-08-01\", \"2026-09-01\",, Номенклатура IS NOT NULL);",
+                &accumulation_register_snapshot(),
+            )
+            .unwrap()
+            .sql,
+            "SELECT CONVERT(nvarchar(max), [__src].[_fld54]) AS [Номенклатура], CONVERT(nvarchar(max), [__src].[_fld55]) AS [КоличествоОборот] FROM (SELECT [__aggregate_base].[_fld54] AS [_fld54], SUM(CASE WHEN [__aggregate_base].[_recordkind] = 0 THEN [__aggregate_base].[_fld55] ELSE -[__aggregate_base].[_fld55] END) AS [_fld55] FROM [_accumrg53] AS [__aggregate_base] WHERE [__aggregate_base].[_active] = 0x01 AND ([__aggregate_base].[_period] >= N'2026-08-01') AND ([__aggregate_base].[_period] < N'2026-09-01') AND ([__aggregate_base].[_fld54] IS NOT NULL) GROUP BY [__aggregate_base].[_fld54]) AS [__src]",
+        ),
+        (
+            "union",
+            mssql_compile!(
+                "SELECT p.Code FROM Catalog.OpenSdblMetadataProbe p WHERE p.Code = \"A\" UNION SELECT q.Date FROM Catalog.OpenSdblMetadataProbe q UNION ALL SELECT r.ProbeAttribute FROM Catalog.OpenSdblMetadataProbe r ORDER BY Code DESC;",
+                &snapshot(),
+            )
+            .unwrap()
+            .sql,
+            "SELECT CONVERT(nvarchar(max), [p].[_code]) AS [Code] FROM [_reference53] AS [p] WHERE ([p].[_code] = N'A') UNION SELECT CONVERT(nvarchar(max), [q].[_date_time]) AS [Date] FROM [_reference53] AS [q] UNION ALL SELECT CONVERT(nvarchar(max), [r].[_fld54]) AS [ProbeAttribute] FROM [_reference53] AS [r] ORDER BY 1 DESC",
+        ),
+        (
+            "full_join",
+            mssql_compile!(
+                "SELECT l.Code, r.Date FROM Catalog.OpenSdblMetadataProbe l FULL JOIN Catalog.OpenSdblMetadataProbe r ON l.Code = r.Code;",
+                &snapshot(),
+            )
+            .unwrap()
+            .sql,
+            "SELECT * FROM (SELECT CONVERT(nvarchar(max), [l].[_code]) AS [Code], CONVERT(nvarchar(max), [r].[_date_time]) AS [Date] FROM [_reference53] AS [l] LEFT JOIN [_reference53] AS [r] ON [l].[_code] = [r].[_code] UNION ALL SELECT CONVERT(nvarchar(max), [l].[_code]) AS [Code], CONVERT(nvarchar(max), [r].[_date_time]) AS [Date] FROM [_reference53] AS [r] LEFT JOIN [_reference53] AS [l] ON [l].[_code] = [r].[_code] WHERE ([l].[_code] IS NULL)) AS [__full]",
+        ),
+        (
+            "dereference",
+            mssql_compile!(
+                "SELECT Организация.Код FROM Catalog.OpenSdblMetadataProbe p;",
+                &reference_snapshot(),
+            )
+            .unwrap()
+            .sql,
+            "SELECT CONVERT(nvarchar(max), [__ref1].[_code]) AS [Организация.Код] FROM [_reference53] AS [p] LEFT JOIN [_reference57] AS [__ref1] ON [p].[_fld54] = [__ref1].[_idrref]",
+        ),
+        (
+            "tabular",
+            mssql_compile!(
+                "SELECT Ссылка, НомерСтроки, Сумма FROM Документ.бит_ДополнительныеУсловияПоДоговору.ГрафикНачислений;",
+                &tabular_section_snapshot(),
+            )
+            .unwrap()
+            .sql,
+            "SELECT CONVERT(nvarchar(max), [__src].[_document53_idrref]) AS [ID], CONVERT(nvarchar(max), [__src].[_lineno54]) AS [LineNo], CONVERT(nvarchar(max), [__src].[_fld57]) AS [Сумма] FROM [_document53_vt54X1] AS [__src]",
+        ),
+        (
+            "aggregate",
+            mssql_compile!(
+                "SELECT COUNT(*) AS RowCount, SUM(ProbeAttribute) AS Total FROM Catalog.OpenSdblMetadataProbe;",
+                &snapshot(),
+            )
+            .unwrap()
+            .sql,
+            "SELECT CONVERT(nvarchar(max), COUNT(*)) AS [RowCount], CONVERT(nvarchar(max), SUM([__src].[_fld54])) AS [Total] FROM [_reference53] AS [__src]",
+        ),
+        (
+            "top_in",
+            mssql_compile!(
+                "SELECT TOP 3 Code FROM Catalog.OpenSdblMetadataProbe WHERE Code IN (\"A\", \"B\");",
+                &snapshot(),
+            )
+            .unwrap()
+            .sql,
+            "SELECT TOP (3) CONVERT(nvarchar(max), [__src].[_code]) AS [Code] FROM [_reference53] AS [__src] WHERE ([__src].[_code] IN (N'A', N'B'))",
+        ),
+        (
+            "value",
+            mssql_compile!(
+                "SELECT VALUE(Catalog.OpenSdblMetadataProbe.Утвержден);",
+                &catalog_value_snapshot(),
+            )
+            .unwrap()
+            .sql,
+            "SELECT CONVERT(nvarchar(max), (SELECT [__open_sdbl_value].[_idrref] FROM [_reference53] AS [__open_sdbl_value] WHERE ([__open_sdbl_value].[_predefinedid] = 0xa3dae56fa2f94623445632b52e22ad88))) AS [column1]",
+        ),
+    ];
+    for (name, actual, expected) in cases {
+        assert_eq!(actual, expected, "MSSQL golden changed for {name}");
+    }
+}
+
+#[test]
+fn validates_mssql_year_offsets_at_backend_construction() {
+    assert_eq!(MsSqlBackend::default().year_offset(), 0);
+    assert_eq!(mssql_backend(10_000).year_offset(), 10_000);
+    for year_offset in [-1, 10_001, i32::MIN, i32::MAX] {
+        let error = MsSqlBackend::new(year_offset).unwrap_err();
+        assert_eq!(error.year_offset(), year_offset);
+    }
+}
+
+#[test]
+fn compiles_through_one_backend_generic_api() {
+    let snapshot = snapshot();
+    let source = "SELECT TOP 1 Code FROM Catalog.OpenSdblMetadataProbe;";
+    let (postgres, mssql) = for_each_backend!(source, &snapshot);
+    let postgres = postgres.unwrap();
+    let mssql = mssql.unwrap();
+
+    assert!(postgres.sql.contains(" LIMIT 1"));
+    assert!(mssql.sql.starts_with("SELECT TOP (1)"));
+}
+
+#[test]
+fn rejects_pathologically_deep_query_expressions() {
+    let snapshot = snapshot();
+    let parentheses = format!("SELECT {}1{};", "(".repeat(5_000), ")".repeat(5_000));
+    let error = postgres_compile!(&parentheses, &snapshot).unwrap_err();
+    assert!(
+        error
+            .message()
+            .contains("nesting depth exceeds limit of 128")
+    );
+    assert!(error.column() > 1);
+
+    let unary = format!("SELECT {}1;", "-".repeat(5_000));
+    let error = postgres_compile!(&unary, &snapshot).unwrap_err();
+    assert!(
+        error
+            .message()
+            .contains("nesting depth exceeds limit of 128")
+    );
+    assert!(error.column() > 1);
+
+    let arithmetic = format!("SELECT {};", vec!["1"; 300_000].join("+"));
+    let error = postgres_compile!(&arithmetic, &snapshot).unwrap_err();
+    assert!(error.message().contains("limit of 4096 binary operators"));
+    assert!(error.column() > 1);
+
+    let predicate = vec!["Code = \"A\""; 5_000].join(" OR ");
+    let logical = format!("SELECT Code FROM Catalog.OpenSdblMetadataProbe WHERE {predicate};");
+    let error = postgres_compile!(&logical, &snapshot).unwrap_err();
+    assert!(error.message().contains("limit of 4096 binary operators"));
+    assert!(error.column() > 1);
+
+    let functions = format!(
+        "SELECT {}DATETIME(2026, 1, 1){};",
+        "BEGINOFPERIOD(".repeat(5_000),
+        ", MONTH)".repeat(5_000)
+    );
+    let error = postgres_compile!(&functions, &snapshot).unwrap_err();
+    assert!(
+        error
+            .message()
+            .contains("nesting depth exceeds limit of 128")
+    );
+    assert!(error.column() > 1);
+}
+
+#[test]
+fn compiles_the_binary_operator_budget_boundary_without_recursion() {
+    let snapshot = snapshot();
+    let arithmetic = format!("SELECT {};", vec!["1"; 4_097].join("+"));
+    let compiled = postgres_compile!(&arithmetic, &snapshot).unwrap();
+    assert_eq!(compiled.sql.matches(" + ").count(), 4_096);
+
+    let predicate = vec!["Code = \"A\""; 2_048].join(" OR ");
+    let logical =
+        format!("SELECT Code FROM Catalog.OpenSdblMetadataProbe WHERE {predicate} AND TRUE;");
+    let compiled = postgres_compile!(&logical, &snapshot).unwrap();
+    assert_eq!(compiled.sql.matches(" OR ").count(), 2_047);
+    assert_eq!(compiled.sql.matches(" AND ").count(), 1);
+}
 
 #[test]
 fn compiles_native_mssql_projection_filter_and_limit() {
     let snapshot = mssql_snapshot();
-    let compiled = compile_mssql_query(
+    let compiled = mssql_compile!(
         "SELECT TOP 10 Code, ProbeAttribute FROM Catalog.OpenSdblMetadataProbe WHERE Code = \"\u{420}\u{430}\u{437}\u{43e}\u{432}\u{44b}\u{439}\";",
         &snapshot,
     )
@@ -25,10 +413,24 @@ fn compiles_native_mssql_projection_filter_and_limit() {
     assert_eq!(compiled.columns, ["Code", "ProbeAttribute"]);
     assert_eq!(
         compiled.sql,
-        "SELECT TOP (10) CONVERT(nvarchar(max), \"__src\".\"_code\") AS \"Code\", CONVERT(varchar(max), \"__src\".\"_fld54\", 1) AS \"ProbeAttribute\" FROM \"_reference53\" AS \"__src\" WHERE (\"__src\".\"_code\" = N'\u{420}\u{430}\u{437}\u{43e}\u{432}\u{44b}\u{439}')"
+        "SELECT TOP (10) CONVERT(nvarchar(max), [__src].[_code]) AS [Code], CONVERT(varchar(max), [__src].[_fld54], 1) AS [ProbeAttribute] FROM [_reference53] AS [__src] WHERE ([__src].[_code] = N'\u{420}\u{430}\u{437}\u{43e}\u{432}\u{44b}\u{439}')"
     );
     assert!(!compiled.sql.contains("::"));
     assert!(!compiled.sql.contains(" LIMIT "));
+    assert!(!compiled.sql.contains('"'));
+}
+
+#[test]
+fn quotes_mssql_live_catalog_identifiers_without_a_textual_rewrite() {
+    let mut snapshot = mssql_snapshot();
+    snapshot.objects[0].physical_table = Some("_Reference]53".to_owned());
+    snapshot.schema.tables[0].name = "Reference]53".to_owned();
+    snapshot.live_tables[0].name = "_reference]53".to_owned();
+
+    let compiled =
+        mssql_compile!("SELECT Code FROM Catalog.OpenSdblMetadataProbe;", &snapshot,).unwrap();
+    assert!(compiled.sql.contains("FROM [_reference]]53] AS [__src]"));
+    assert!(!compiled.sql.contains('"'));
 }
 
 #[test]
@@ -40,7 +442,7 @@ fn preserves_native_mssql_rowversion_projection() {
             data_type: data_type.to_owned(),
         });
 
-        let compiled = compile_mssql_query(
+        let compiled = mssql_compile!(
             "SELECT Version FROM Catalog.OpenSdblMetadataProbe;",
             &snapshot,
         )
@@ -49,7 +451,7 @@ fn preserves_native_mssql_rowversion_projection() {
         assert_eq!(compiled.columns, ["Version"]);
         assert_eq!(
             compiled.sql,
-            "SELECT \"__src\".\"_version\" AS \"Version\" FROM \"_reference53\" AS \"__src\""
+            "SELECT [__src].[_version] AS [Version] FROM [_reference53] AS [__src]"
         );
     }
 }
@@ -61,7 +463,7 @@ fn compiles_binary_literals_for_each_sql_dialect() {
         name: "_version".to_owned(),
         data_type: "timestamp".to_owned(),
     });
-    let compiled = compile_mssql_query(
+    let compiled = mssql_compile!(
         "SELECT Version FROM Catalog.OpenSdblMetadataProbe WHERE Version > 0x00000000000007D6;",
         &mssql,
     )
@@ -69,10 +471,10 @@ fn compiles_binary_literals_for_each_sql_dialect() {
     assert!(
         compiled
             .sql
-            .contains("(\"__src\".\"_version\" > 0x00000000000007D6)")
+            .contains("([__src].[_version] > 0x00000000000007D6)")
     );
 
-    let compiled = compile_postgres_query(
+    let compiled = postgres_compile!(
         "SELECT ProbeAttribute FROM Catalog.OpenSdblMetadataProbe WHERE ProbeAttribute = 0XCAFE;",
         &snapshot(),
     )
@@ -87,7 +489,7 @@ fn compiles_binary_literals_for_each_sql_dialect() {
 #[test]
 fn compiles_enumeration_value_in_physical_one_c_byte_order() {
     let snapshot = enumeration_value_snapshot();
-    let postgres = compile_postgres_query(
+    let postgres = postgres_compile!(
         "ВЫБРАТЬ ЗНАЧЕНИЕ(Перечисление.бит_ВидыСтатусовОбъектов.Статус);",
         &snapshot,
     )
@@ -98,7 +500,7 @@ fn compiles_enumeration_value_in_physical_one_c_byte_order() {
             .contains("decode('9022249e3a1ac4b94be8faddd2f8bde9', 'hex')")
     );
 
-    let mssql = compile_mssql_query(
+    let mssql = mssql_compile!(
         "SELECT VALUE(Enumeration.бит_ВидыСтатусовОбъектов.Статус);",
         &snapshot,
     )
@@ -109,7 +511,7 @@ fn compiles_enumeration_value_in_physical_one_c_byte_order() {
 #[test]
 fn compiles_catalog_value_as_a_predefined_id_lookup() {
     let snapshot = catalog_value_snapshot();
-    let postgres = compile_postgres_query(
+    let postgres = postgres_compile!(
         "SELECT Code FROM Catalog.OpenSdblMetadataProbe WHERE ID = VALUE(Catalog.OpenSdblMetadataProbe.Утвержден);",
         &snapshot,
     )
@@ -128,13 +530,13 @@ fn compiles_catalog_value_as_a_predefined_id_lookup() {
             .contains("SELECT \"__open_sdbl_value\".\"_idrref\"")
     );
 
-    let mssql = compile_mssql_query(
+    let mssql = mssql_compile!(
         "SELECT VALUE(Catalog.OpenSdblMetadataProbe.ДополнительныеУсловияПоДоговору_Проверен);",
         &snapshot,
     )
     .unwrap();
     assert!(mssql.sql.contains("0xa161ed47a2787c5a437832a3f6fa6a92"));
-    assert!(mssql.sql.contains("\"_predefinedid\""));
+    assert!(mssql.sql.contains("[_predefinedid]"));
 }
 
 #[test]
@@ -146,7 +548,7 @@ fn compiles_in_list_with_several_catalog_values() {
             ЗНАЧЕНИЕ(Справочник.OpenSdblMetadataProbe.ДополнительныеУсловияПоДоговору_Проверен)
         );";
 
-    let postgres = compile_postgres_query(query, &snapshot).unwrap();
+    let postgres = postgres_compile!(query, &snapshot).unwrap();
     assert!(postgres.sql.contains("\"__src\".\"_idrref\" IN ("));
     assert_eq!(
         postgres
@@ -165,8 +567,8 @@ fn compiles_in_list_with_several_catalog_values() {
         .unwrap();
     assert!(approved < checked, "{}", postgres.sql);
 
-    let mssql = compile_mssql_query(query, &snapshot).unwrap();
-    assert!(mssql.sql.contains("\"__src\".\"_idrref\" IN ("));
+    let mssql = mssql_compile!(query, &snapshot).unwrap();
+    assert!(mssql.sql.contains("[__src].[_idrref] IN ("));
     assert!(mssql.sql.contains("0xa3dae56fa2f94623445632b52e22ad88"));
     assert!(mssql.sql.contains("0xa161ed47a2787c5a437832a3f6fa6a92"));
 }
@@ -174,10 +576,10 @@ fn compiles_in_list_with_several_catalog_values() {
 #[test]
 fn compiles_in_lists_in_source_free_and_joined_queries() {
     let snapshot = snapshot();
-    let source_free = compile_postgres_query("SELECT 2 IN (1, 2);", &snapshot).unwrap();
+    let source_free = postgres_compile!("SELECT 2 IN (1, 2);", &snapshot).unwrap();
     assert!(source_free.sql.contains("(2 IN (1, 2))"));
 
-    let joined = compile_mssql_query(
+    let joined = mssql_compile!(
         "SELECT l.Code FROM Catalog.OpenSdblMetadataProbe l
          INNER JOIN Catalog.OpenSdblMetadataProbe r ON l.Code = r.Code
          WHERE l.Code IN (\"Первый\", \"Второй\");",
@@ -187,14 +589,14 @@ fn compiles_in_lists_in_source_free_and_joined_queries() {
     assert!(
         joined
             .sql
-            .contains("(\"l\".\"_code\" IN (N'Первый', N'Второй'))")
+            .contains("([l].[_code] IN (N'Первый', N'Второй'))")
     );
 }
 
 #[test]
 fn diagnoses_empty_and_malformed_in_lists() {
     let snapshot = snapshot();
-    let empty = compile_postgres_query(
+    let empty = postgres_compile!(
         "SELECT Code FROM Catalog.OpenSdblMetadataProbe WHERE Code IN ();",
         &snapshot,
     )
@@ -205,7 +607,7 @@ fn diagnoses_empty_and_malformed_in_lists() {
             .contains("IN list must contain at least one expression")
     );
 
-    let trailing = compile_postgres_query(
+    let trailing = postgres_compile!(
         "SELECT Code FROM Catalog.OpenSdblMetadataProbe WHERE Code В (\"A\",);",
         &snapshot,
     )
@@ -216,7 +618,7 @@ fn diagnoses_empty_and_malformed_in_lists() {
             .contains("expected expression after ',' in IN list")
     );
 
-    let unclosed = compile_postgres_query(
+    let unclosed = postgres_compile!(
         "SELECT Code FROM Catalog.OpenSdblMetadataProbe WHERE Code IN (\"A\";",
         &snapshot,
     )
@@ -227,21 +629,21 @@ fn diagnoses_empty_and_malformed_in_lists() {
 #[test]
 fn diagnoses_invalid_value_kinds_paths_and_names() {
     let snapshot = catalog_value_snapshot();
-    let error = compile_postgres_query(
+    let error = postgres_compile!(
         "SELECT VALUE(Document.OpenSdblMetadataProbe.Утвержден);",
         &snapshot,
     )
     .unwrap_err();
     assert!(error.message().contains("only catalogs and enumerations"));
 
-    let error = compile_postgres_query(
+    let error = postgres_compile!(
         "SELECT VALUE(Catalog.OpenSdblMetadataProbe.Absent);",
         &snapshot,
     )
     .unwrap_err();
     assert!(error.message().contains("metadata value was not found"));
 
-    let error = compile_postgres_query("SELECT VALUE(Catalog.OnlyTwo);", &snapshot).unwrap_err();
+    let error = postgres_compile!("SELECT VALUE(Catalog.OnlyTwo);", &snapshot).unwrap_err();
     assert!(error.message().contains("expected \".\""));
 }
 
@@ -262,7 +664,7 @@ fn compiles_mssql_extension_tables_as_one_source_relation() {
     unrelated.name = "_reference53Xother".to_owned();
     snapshot.live_tables.push(unrelated);
 
-    let compiled = compile_mssql_query(
+    let compiled = mssql_compile!(
         "SELECT Code, Date FROM Catalog.OpenSdblMetadataProbe;",
         &snapshot,
     )
@@ -272,10 +674,10 @@ fn compiles_mssql_extension_tables_as_one_source_relation() {
     assert!(
         compiled
             .sql
-            .contains("FROM \"_reference53\" UNION ALL SELECT")
+            .contains("FROM [_reference53] UNION ALL SELECT")
     );
-    assert!(compiled.sql.contains("NULL AS \"_date_time\""));
-    assert!(compiled.sql.contains("FROM \"_reference53X1\""));
+    assert!(compiled.sql.contains("NULL AS [_date_time]"));
+    assert!(compiled.sql.contains("FROM [_reference53X1]"));
     assert!(!compiled.sql.contains("_extension_only"));
     assert!(!compiled.sql.contains("_reference53Xother"));
 }
@@ -286,7 +688,7 @@ fn compiles_mssql_presentation_join_over_extension_tables() {
     let mut extension = snapshot.live_tables[0].clone();
     extension.name = "_reference53X1".to_owned();
     snapshot.live_tables.push(extension);
-    let prepared = prepare_mssql_query(
+    let prepared = mssql_prepare!(
         "SELECT Presentation(Организация) FROM Catalog.OpenSdblMetadataProbe;",
         &snapshot,
     )
@@ -313,10 +715,10 @@ fn compiles_mssql_presentation_join_over_extension_tables() {
     assert!(
         compiled
             .sql
-            .contains("FROM \"_reference53\" UNION ALL SELECT")
+            .contains("FROM [_reference53] UNION ALL SELECT")
     );
-    assert!(compiled.sql.contains("FROM \"_reference53X1\""));
-    assert!(compiled.sql.contains("AS \"__ref1\" ON"));
+    assert!(compiled.sql.contains("FROM [_reference53X1]"));
+    assert!(compiled.sql.contains("AS [__ref1] ON"));
 }
 
 #[test]
@@ -329,7 +731,7 @@ fn compiles_mssql_historical_balance_without_postgres_aggregate_syntax() {
             }
         }
     }
-    let compiled = compile_mssql_query_with_year_offset(
+    let compiled = mssql_compile_with_offset!(
         "SELECT TOP 5 \u{41a}\u{43e}\u{43b}\u{438}\u{447}\u{435}\u{441}\u{442}\u{432}\u{43e}\u{41e}\u{441}\u{442}\u{430}\u{442}\u{43e}\u{43a} FROM AccumulationRegister.\u{41e}\u{441}\u{442}\u{430}\u{442}\u{43a}\u{438}.Balance(\"2026-09-01\");",
         &snapshot,
         2000,
@@ -342,12 +744,13 @@ fn compiles_mssql_historical_balance_without_postgres_aggregate_syntax() {
     assert!(compiled.sql.contains("DATEADD(year, 2000, N'2026-09-01')"));
     assert!(!compiled.sql.contains(" FILTER ("));
     assert!(!compiled.sql.contains("(WITH "));
+    assert!(!compiled.sql.contains('"'), "{}", compiled.sql);
 }
 
 #[test]
 fn translates_mssql_year_offset_in_date_projection_and_filter() {
     let snapshot = mssql_snapshot();
-    let compiled = compile_mssql_query_with_year_offset(
+    let compiled = mssql_compile_with_offset!(
         "SELECT Date FROM Catalog.OpenSdblMetadataProbe WHERE Date >= \"2026-09-01\";",
         &snapshot,
         2000,
@@ -357,7 +760,7 @@ fn translates_mssql_year_offset_in_date_projection_and_filter() {
     assert!(
         compiled
             .sql
-            .contains("DATEADD(year, -2000, \"__src\".\"_date_time\")")
+            .contains("DATEADD(year, -2000, [__src].[_date_time])")
     );
     assert!(compiled.sql.contains("DATEADD(year, 2000, N'2026-09-01')"));
 }
@@ -365,7 +768,7 @@ fn translates_mssql_year_offset_in_date_projection_and_filter() {
 #[test]
 fn prepares_and_compiles_mssql_presentations() {
     let snapshot = reference_snapshot();
-    let prepared = prepare_mssql_query(
+    let prepared = mssql_prepare!(
         "SELECT TOP 1 Presentation(\u{41e}\u{440}\u{433}\u{430}\u{43d}\u{438}\u{437}\u{430}\u{446}\u{438}\u{44f}) FROM Catalog.OpenSdblMetadataProbe;",
         &snapshot,
     )
@@ -386,28 +789,29 @@ fn prepares_and_compiles_mssql_presentations() {
             .sql
             .contains("N'\u{43e}\u{431}\u{44a}\u{435}\u{43a}\u{442}'")
     );
+    assert!(compiled.sql.contains(" IS NULL THEN N'' ELSE "));
     assert!(!compiled.sql.contains("::bytea"));
 }
 
 #[test]
 fn compiles_source_free_literals_and_scalar_presentations() {
     let snapshot = snapshot();
-    let literal = compile_postgres_query("SELECT 4;", &snapshot).unwrap();
+    let literal = postgres_compile!("SELECT 4;", &snapshot).unwrap();
     assert_eq!(literal.columns, ["column1"]);
     assert_eq!(literal.sql, "SELECT (4)::text AS \"column1\"");
 
-    let presentation = compile_postgres_query("select представление(4);", &snapshot).unwrap();
+    let presentation = postgres_compile!("select представление(4);", &snapshot).unwrap();
     assert_eq!(presentation.columns, ["представление"]);
     assert_eq!(presentation.sql, "SELECT (4)::text AS \"представление\"");
 
-    let multiline = compile_postgres_query("select\nпредставление(4);", &snapshot).unwrap();
+    let multiline = postgres_compile!("select\nпредставление(4);", &snapshot).unwrap();
     assert_eq!(multiline.sql, presentation.sql);
 }
 
 #[test]
 fn applies_projection_aliases_and_diagnoses_a_missing_alias() {
     let snapshot = snapshot();
-    let field = compile_postgres_query(
+    let field = postgres_compile!(
         "SELECT Code AS ResultCode FROM Catalog.OpenSdblMetadataProbe;",
         &snapshot,
     )
@@ -415,11 +819,11 @@ fn applies_projection_aliases_and_diagnoses_a_missing_alias() {
     assert_eq!(field.columns, ["ResultCode"]);
     assert!(field.sql.contains("AS \"ResultCode\""));
 
-    let scalar = compile_postgres_query("SELECT 2 + 2 КАК Результат;", &snapshot).unwrap();
+    let scalar = postgres_compile!("SELECT 2 + 2 КАК Результат;", &snapshot).unwrap();
     assert_eq!(scalar.columns, ["Результат"]);
     assert_eq!(scalar.sql, "SELECT ((2 + 2))::text AS \"Результат\"");
 
-    let aggregate = compile_postgres_query(
+    let aggregate = postgres_compile!(
         "SELECT COUNT(*) AS RowCount FROM Catalog.OpenSdblMetadataProbe;",
         &snapshot,
     )
@@ -427,7 +831,7 @@ fn applies_projection_aliases_and_diagnoses_a_missing_alias() {
     assert_eq!(aggregate.columns, ["RowCount"]);
     assert!(aggregate.sql.contains("COUNT(*)::text AS \"RowCount\""));
 
-    let error = compile_postgres_query(
+    let error = postgres_compile!(
         "SELECT Code AS FROM Catalog.OpenSdblMetadataProbe;",
         &snapshot,
     )
@@ -438,7 +842,7 @@ fn applies_projection_aliases_and_diagnoses_a_missing_alias() {
 #[test]
 fn compiles_datetime_and_begin_of_period_for_postgres() {
     let snapshot = snapshot();
-    let source_free = compile_postgres_query(
+    let source_free = postgres_compile!(
         "SELECT DATETIME(2024, 2, 29, 12, 34, 56) AS Moment,
                 BEGINOFPERIOD(DATETIME(2024, 8, 29, 12, 34, 56), MONTH) AS PeriodStart;",
         &snapshot,
@@ -454,7 +858,7 @@ fn compiles_datetime_and_begin_of_period_for_postgres() {
         "(date_trunc('month', TIMESTAMP '2024-08-29 12:34:56'))::text AS \"PeriodStart\""
     ));
 
-    let source_backed = compile_postgres_query(
+    let source_backed = postgres_compile!(
         "ВЫБРАТЬ НАЧАЛОПЕРИОДА(Дата, МЕСЯЦ) КАК НачалоМесяца
          ИЗ Справочник.OpenSdblMetadataProbe
          ГДЕ Дата >= ДАТАВРЕМЯ(2026, 9, 2);",
@@ -478,7 +882,7 @@ fn compiles_datetime_and_begin_of_period_for_postgres() {
 #[test]
 fn compiles_datetime_and_begin_of_period_for_mssql_year_offset() {
     let snapshot = mssql_snapshot();
-    let compiled = compile_mssql_query_with_year_offset(
+    let compiled = mssql_compile_with_offset!(
         "SELECT BEGINOFPERIOD(Date, MONTH) AS MonthStart
          FROM Catalog.OpenSdblMetadataProbe
          WHERE Date >= DATETIME(2026, 9, 2, 10, 11, 12);",
@@ -488,7 +892,7 @@ fn compiles_datetime_and_begin_of_period_for_mssql_year_offset() {
     .unwrap();
 
     assert!(compiled.sql.contains(
-        "CONVERT(nvarchar(max), DATEADD(year, -2000, DATETIME2FROMPARTS(YEAR(\"__src\".\"_date_time\"), MONTH(\"__src\".\"_date_time\"), 1, 0, 0, 0, 0, 0))) AS \"MonthStart\""
+        "CONVERT(nvarchar(max), DATEADD(year, -2000, DATETIME2FROMPARTS(YEAR([__src].[_date_time]), MONTH([__src].[_date_time]), 1, 0, 0, 0, 0, 0))) AS [MonthStart]"
     ));
     assert!(
         compiled
@@ -496,7 +900,7 @@ fn compiles_datetime_and_begin_of_period_for_mssql_year_offset() {
             .contains("DATEADD(year, 2000, CONVERT(datetime2, '2026-09-02T10:11:12', 126))")
     );
 
-    let virtual_table = compile_mssql_query_with_year_offset(
+    let virtual_table = mssql_compile_with_offset!(
         "SELECT КоличествоОстаток
          FROM AccumulationRegister.Остатки.Balance(DATETIME(2026, 9, 2));",
         &accumulation_register_snapshot(),
@@ -513,7 +917,7 @@ fn compiles_datetime_and_begin_of_period_for_mssql_year_offset() {
 #[test]
 fn compiles_date_functions_in_joined_projection_and_filter() {
     let snapshot = reference_snapshot();
-    let compiled = compile_postgres_query(
+    let compiled = postgres_compile!(
         "SELECT BEGINOFPERIOD(p.Date, DAY) AS StartDay
          FROM Catalog.OpenSdblMetadataProbe AS p
          INNER JOIN Catalog.Организации AS o ON p.Code = o.Code
@@ -549,8 +953,8 @@ fn compiles_every_begin_of_period_kind_for_both_dialects() {
         "ГОД",
     ] {
         let query = format!("SELECT BEGINOFPERIOD(DATETIME(2026, 9, 22, 12, 34, 56), {period});");
-        compile_postgres_query(&query, &snapshot).unwrap();
-        compile_mssql_query(&query, &mssql_snapshot()).unwrap();
+        postgres_compile!(&query, &snapshot).unwrap();
+        mssql_compile!(&query, &mssql_snapshot()).unwrap();
     }
 }
 
@@ -571,11 +975,11 @@ fn validates_datetime_components_periods_and_mssql_offset_range() {
             "first argument must be a date expression",
         ),
     ] {
-        let error = compile_postgres_query(query, &snapshot).unwrap_err();
+        let error = postgres_compile!(query, &snapshot).unwrap_err();
         assert!(error.message().contains(message), "{error}");
     }
 
-    let error = compile_mssql_query_with_year_offset(
+    let error = mssql_compile_with_offset!(
         "SELECT DATETIME(9000, 1, 1) FROM Catalog.OpenSdblMetadataProbe;",
         &mssql_snapshot(),
         2000,
@@ -583,7 +987,7 @@ fn validates_datetime_components_periods_and_mssql_offset_range() {
     .unwrap_err();
     assert!(error.message().contains("outside 1..=9999"));
 
-    let error = compile_postgres_query(
+    let error = postgres_compile!(
         "SELECT BEGINOFPERIOD(Code, MONTH) FROM Catalog.OpenSdblMetadataProbe;",
         &snapshot,
     )
@@ -594,23 +998,23 @@ fn validates_datetime_components_periods_and_mssql_offset_range() {
 #[test]
 fn compiles_source_free_arithmetic_and_rejects_fields_without_from() {
     let snapshot = snapshot();
-    let compiled = compile_postgres_query("SELECT 2 + 2, \"готово\";", &snapshot).unwrap();
+    let compiled = postgres_compile!("SELECT 2 + 2, \"готово\";", &snapshot).unwrap();
     assert_eq!(compiled.columns, ["column1", "column2"]);
     assert_eq!(
         compiled.sql,
         "SELECT ((2 + 2))::text AS \"column1\", ('готово')::text AS \"column2\""
     );
 
-    let field = compile_postgres_query("SELECT Код;", &snapshot).unwrap_err();
+    let field = postgres_compile!("SELECT Код;", &snapshot).unwrap_err();
     assert!(field.message().contains("requires FROM"));
-    let wildcard = compile_postgres_query("SELECT *;", &snapshot).unwrap_err();
+    let wildcard = postgres_compile!("SELECT *;", &snapshot).unwrap_err();
     assert!(wildcard.message().contains("requires FROM"));
 }
 
 #[test]
 fn compiles_count_all_and_distinct_field() {
     let snapshot = snapshot();
-    let all = compile_postgres_query(
+    let all = postgres_compile!(
         "select count(*) from Справочник.OpenSdblMetadataProbe;",
         &snapshot,
     )
@@ -621,7 +1025,7 @@ fn compiles_count_all_and_distinct_field() {
         "SELECT COUNT(*)::text AS \"count\" FROM \"_reference53\" AS \"__src\""
     );
 
-    let distinct = compile_postgres_query(
+    let distinct = postgres_compile!(
         "ВЫБРАТЬ КОЛИЧЕСТВО(РАЗЛИЧНЫЕ Код) ИЗ Справочник.OpenSdblMetadataProbe;",
         &snapshot,
     )
@@ -637,17 +1041,17 @@ fn compiles_count_all_and_distinct_field() {
 #[test]
 fn bounds_count_aggregate_shapes() {
     let snapshot = snapshot();
-    let source_free = compile_postgres_query("SELECT COUNT(*);", &snapshot).unwrap();
+    let source_free = postgres_compile!("SELECT COUNT(*);", &snapshot).unwrap();
     assert_eq!(source_free.sql, "SELECT COUNT(*)::text AS \"COUNT\"");
 
-    let mixed = compile_postgres_query(
+    let mixed = postgres_compile!(
         "SELECT COUNT(*), Code FROM Catalog.OpenSdblMetadataProbe;",
         &snapshot,
     )
     .unwrap_err();
     assert!(mixed.message().contains("cannot be mixed"));
 
-    let full = compile_postgres_query(
+    let full = postgres_compile!(
         "SELECT COUNT(*) FROM Catalog.OpenSdblMetadataProbe l FULL JOIN Catalog.OpenSdblMetadataProbe r ON l.Code = r.Code;",
         &snapshot,
     )
@@ -658,7 +1062,7 @@ fn bounds_count_aggregate_shapes() {
 #[test]
 fn compiles_sum_min_max_and_count_distinct_together() {
     let snapshot = snapshot();
-    let compiled = compile_postgres_query(
+    let compiled = postgres_compile!(
         "SELECT SUM(ProbeAttribute), МИНИМУМ(ProbeAttribute), MAX(ProbeAttribute), КОЛИЧЕСТВО(РАЗЛИЧНЫЕ ProbeAttribute) FROM Catalog.OpenSdblMetadataProbe;",
         &snapshot,
     )
@@ -677,14 +1081,14 @@ fn compiles_sum_min_max_and_count_distinct_together() {
 #[test]
 fn rejects_wildcard_and_distinct_for_non_count_aggregates() {
     let snapshot = snapshot();
-    let wildcard = compile_postgres_query(
+    let wildcard = postgres_compile!(
         "SELECT SUM(*) FROM Catalog.OpenSdblMetadataProbe;",
         &snapshot,
     )
     .unwrap_err();
     assert!(wildcard.message().contains("only by COUNT"));
 
-    let distinct = compile_postgres_query(
+    let distinct = postgres_compile!(
         "SELECT MIN(DISTINCT Code) FROM Catalog.OpenSdblMetadataProbe;",
         &snapshot,
     )
@@ -695,7 +1099,7 @@ fn rejects_wildcard_and_distinct_for_non_count_aggregates() {
 #[test]
 fn compiles_information_register_slice_last_by_config_dimensions() {
     let snapshot = information_register_snapshot();
-    let compiled = compile_postgres_query(
+    let compiled = postgres_compile!(
         "SELECT ProbeAttribute, Period FROM InformationRegister.Prices.SliceLast();",
         &snapshot,
     )
@@ -714,6 +1118,14 @@ fn compiles_information_register_slice_last_by_config_dimensions() {
             .sql
             .contains("\"__open_sdbl_slice_rank\" = 1) AS \"__src\"")
     );
+
+    let mssql = mssql_compile!(
+        "SELECT ProbeAttribute, Period FROM InformationRegister.Prices.SliceLast();",
+        &snapshot,
+    )
+    .unwrap();
+    assert!(!mssql.sql.contains('"'), "{}", mssql.sql);
+    assert!(mssql.sql.contains("AS [__open_sdbl_slice_rank]"));
 }
 
 #[test]
@@ -763,7 +1175,7 @@ fn resolves_accumulation_register_field_purpose_from_config() {
 #[test]
 fn applies_slice_last_parameters_before_and_where_after_ranking() {
     let snapshot = information_register_snapshot();
-    let compiled = compile_postgres_query(
+    let compiled = postgres_compile!(
         "ВЫБРАТЬ Период ИЗ РегистрСведений.Prices.СрезПоследних(\"2026-08-30\", ProbeAttribute ЕСТЬ НЕ NULL) ГДЕ Period > \"2020-01-01\";",
         &snapshot,
     )
@@ -789,7 +1201,7 @@ fn applies_slice_last_parameters_before_and_where_after_ranking() {
 #[test]
 fn supports_slice_last_as_a_join_source() {
     let snapshot = information_register_snapshot();
-    let compiled = compile_postgres_query(
+    let compiled = postgres_compile!(
         "SELECT l.Period, r.Period FROM InformationRegister.Prices.SliceLast() l LEFT JOIN InformationRegister.Prices r ON l.ProbeAttribute = r.ProbeAttribute;",
         &snapshot,
     )
@@ -806,7 +1218,7 @@ fn supports_slice_last_as_a_join_source() {
 #[test]
 fn rejects_slice_last_for_invalid_sources_and_arguments() {
     let catalog = snapshot();
-    let wrong_kind = compile_postgres_query(
+    let wrong_kind = postgres_compile!(
         "SELECT Code FROM Catalog.OpenSdblMetadataProbe.SliceLast();",
         &catalog,
     )
@@ -818,14 +1230,14 @@ fn rejects_slice_last_for_invalid_sources_and_arguments() {
     );
 
     let register = information_register_snapshot();
-    let expression = compile_postgres_query(
+    let expression = postgres_compile!(
         "SELECT Period FROM InformationRegister.Prices.SliceLast(2 + 2);",
         &register,
     )
     .unwrap_err();
     assert!(expression.message().contains("scalar literal"));
 
-    let parameter = compile_postgres_query(
+    let parameter = postgres_compile!(
         "SELECT Period FROM InformationRegister.Prices.SliceLast(&Period);",
         &register,
     )
@@ -836,7 +1248,7 @@ fn rejects_slice_last_for_invalid_sources_and_arguments() {
 #[test]
 fn compiles_information_register_slice_first_by_config_dimensions() {
     let snapshot = information_register_snapshot();
-    let compiled = compile_postgres_query(
+    let compiled = postgres_compile!(
         "SELECT ProbeAttribute, Period FROM InformationRegister.Prices.SliceFirst();",
         &snapshot,
     )
@@ -855,7 +1267,7 @@ fn compiles_information_register_slice_first_by_config_dimensions() {
 #[test]
 fn applies_slice_first_lower_bound_before_and_where_after_ranking() {
     let snapshot = information_register_snapshot();
-    let compiled = compile_postgres_query(
+    let compiled = postgres_compile!(
         "ВЫБРАТЬ Период ИЗ РегистрСведений.Prices.СрезПервых(\"2026-08-01\", ProbeAttribute ЕСТЬ НЕ NULL) ГДЕ Period < \"2026-09-01\";",
         &snapshot,
     )
@@ -881,7 +1293,7 @@ fn applies_slice_first_lower_bound_before_and_where_after_ranking() {
 #[test]
 fn supports_slice_first_as_a_join_source() {
     let snapshot = information_register_snapshot();
-    let compiled = compile_postgres_query(
+    let compiled = postgres_compile!(
         "SELECT l.Period, r.Period FROM InformationRegister.Prices.SliceFirst() l INNER JOIN InformationRegister.Prices.SliceLast() r ON l.ProbeAttribute = r.ProbeAttribute;",
         &snapshot,
     )
@@ -903,7 +1315,7 @@ fn supports_slice_first_as_a_join_source() {
 #[test]
 fn rejects_slice_first_for_invalid_sources_and_arguments() {
     let catalog = snapshot();
-    let wrong_kind = compile_postgres_query(
+    let wrong_kind = postgres_compile!(
         "SELECT Code FROM Catalog.OpenSdblMetadataProbe.SliceFirst();",
         &catalog,
     )
@@ -918,7 +1330,7 @@ fn rejects_slice_first_for_invalid_sources_and_arguments() {
     register.live_tables[0]
         .columns
         .retain(|column| column.name != "_period");
-    let missing_period = compile_postgres_query(
+    let missing_period = postgres_compile!(
         "SELECT ProbeAttribute FROM InformationRegister.Prices.SliceFirst();",
         &register,
     )
@@ -926,7 +1338,7 @@ fn rejects_slice_first_for_invalid_sources_and_arguments() {
     assert!(missing_period.message().contains("requires a live Period"));
 
     let register = information_register_snapshot();
-    let parameter = compile_postgres_query(
+    let parameter = postgres_compile!(
         "SELECT Period FROM InformationRegister.Prices.SliceFirst(&Period);",
         &register,
     )
@@ -937,7 +1349,7 @@ fn rejects_slice_first_for_invalid_sources_and_arguments() {
 #[test]
 fn compiles_current_accumulation_register_balances() {
     let snapshot = accumulation_register_snapshot();
-    let compiled = compile_postgres_query(
+    let compiled = postgres_compile!(
         "SELECT Номенклатура, КоличествоОстаток FROM AccumulationRegister.Остатки.Balance();",
         &snapshot,
     )
@@ -967,7 +1379,7 @@ fn compiles_current_accumulation_register_balances() {
 #[test]
 fn applies_balance_period_and_condition_before_outer_where() {
     let snapshot = accumulation_register_snapshot();
-    let compiled = compile_postgres_query(
+    let compiled = postgres_compile!(
         "ВЫБРАТЬ КоличествоОстаток ИЗ РегистрНакопления.Остатки.Остатки(\"2026-09-01\", Номенклатура ЕСТЬ НЕ NULL) ГДЕ КоличествоОстаток > 0;",
         &snapshot,
     )
@@ -1014,7 +1426,7 @@ fn applies_balance_period_and_condition_before_outer_where() {
 #[test]
 fn compiles_bounded_accumulation_register_turnovers() {
     let snapshot = accumulation_register_snapshot();
-    let compiled = compile_postgres_query(
+    let compiled = postgres_compile!(
         "SELECT Номенклатура, КоличествоОборот FROM AccumulationRegister.Остатки.Turnovers(\"2026-08-01\", \"2026-09-01\",, Номенклатура IS NOT NULL);",
         &snapshot,
     )
@@ -1036,7 +1448,7 @@ fn compiles_bounded_accumulation_register_turnovers() {
 #[test]
 fn supports_balance_and_turnovers_as_join_sources() {
     let snapshot = accumulation_register_snapshot();
-    let compiled = compile_postgres_query(
+    let compiled = postgres_compile!(
         "SELECT b.КоличествоОстаток, t.КоличествоОборот FROM AccumulationRegister.Остатки.Balance() b LEFT JOIN AccumulationRegister.Остатки.Turnovers() t ON b.Номенклатура = t.Номенклатура;",
         &snapshot,
     )
@@ -1053,7 +1465,7 @@ fn supports_balance_and_turnovers_as_join_sources() {
 #[test]
 fn rejects_invalid_accumulation_virtual_table_shapes() {
     let catalog = snapshot();
-    let wrong_kind = compile_postgres_query(
+    let wrong_kind = postgres_compile!(
         "SELECT Code FROM Catalog.OpenSdblMetadataProbe.Balance();",
         &catalog,
     )
@@ -1065,7 +1477,7 @@ fn rejects_invalid_accumulation_virtual_table_shapes() {
     );
 
     let register = accumulation_register_snapshot();
-    let periodicity = compile_postgres_query(
+    let periodicity = postgres_compile!(
         "SELECT КоличествоОборот FROM AccumulationRegister.Остатки.Turnovers(,,Day,);",
         &register,
     )
@@ -1076,7 +1488,7 @@ fn rejects_invalid_accumulation_virtual_table_shapes() {
             .contains("periodicity is not supported")
     );
 
-    let resource_condition = compile_postgres_query(
+    let resource_condition = postgres_compile!(
         "SELECT КоличествоОстаток FROM AccumulationRegister.Остатки.Balance(, Количество > 0);",
         &register,
     )
@@ -1087,7 +1499,7 @@ fn rejects_invalid_accumulation_virtual_table_shapes() {
     turnover_only.live_tables[0]
         .columns
         .retain(|column| column.name != "_recordkind");
-    let balance = compile_postgres_query(
+    let balance = postgres_compile!(
         "SELECT КоличествоОстаток FROM AccumulationRegister.Остатки.Balance();",
         &turnover_only,
     )
@@ -1096,13 +1508,13 @@ fn rejects_invalid_accumulation_virtual_table_shapes() {
 
     let mut missing_mapping = accumulation_register_snapshot();
     missing_mapping.db_names = snapshot().db_names;
-    let balance = compile_postgres_query(
+    let balance = postgres_compile!(
         "SELECT КоличествоОстаток FROM AccumulationRegister.Остатки.Balance();",
         &missing_mapping,
     )
     .unwrap_err();
     assert!(balance.message().contains("AccumRgT entry"));
-    let turnovers = compile_postgres_query(
+    let turnovers = postgres_compile!(
         "SELECT КоличествоОборот FROM AccumulationRegister.Остатки.Turnovers();",
         &missing_mapping,
     )
@@ -1114,7 +1526,7 @@ fn rejects_invalid_accumulation_virtual_table_shapes() {
     missing_live_totals
         .live_tables
         .retain(|table| table.name != "_accumrgt56");
-    let balance = compile_postgres_query(
+    let balance = postgres_compile!(
         "SELECT КоличествоОстаток FROM AccumulationRegister.Остатки.Balance();",
         &missing_live_totals,
     )
@@ -1125,7 +1537,7 @@ fn rejects_invalid_accumulation_virtual_table_shapes() {
     missing_totals_resource.schema.tables[1]
         .columns
         .retain(|column| column.name != "Fld55");
-    let balance = compile_postgres_query(
+    let balance = postgres_compile!(
         "SELECT КоличествоОстаток FROM AccumulationRegister.Остатки.Balance();",
         &missing_totals_resource,
     )
@@ -1159,7 +1571,7 @@ fn indexed_metadata_lookups_use_guids_and_numeric_standard_fields() {
 fn prepares_one_guid_batch_and_compiles_safe_presentations() {
     let snapshot = snapshot();
     let source = "SELECT REFPRESENTATION(Ссылка), PRESENTATION(4), Ссылка.Представление FROM Catalog.OpenSdblMetadataProbe;";
-    let prepared = prepare_postgres_query(source, &snapshot).unwrap();
+    let prepared = postgres_prepare!(source, &snapshot).unwrap();
     let request = prepared.presentation_request();
     assert_eq!(request.targets.len(), 1);
     let object = request.targets[0].object;
@@ -1188,10 +1600,10 @@ fn prepares_one_guid_batch_and_compiles_safe_presentations() {
 fn presentation_plans_are_required_and_field_ids_are_validated() {
     let snapshot = snapshot();
     let source = "SELECT ПРЕДСТАВЛЕНИЕССЫЛКИ(Ссылка) FROM Справочник.OpenSdblMetadataProbe;";
-    let missing = compile_postgres_query(source, &snapshot).unwrap_err();
+    let missing = postgres_compile!(source, &snapshot).unwrap_err();
     assert!(missing.message().contains("missing presentation plan"));
 
-    let prepared = prepare_postgres_query(source, &snapshot).unwrap();
+    let prepared = postgres_prepare!(source, &snapshot).unwrap();
     let object = prepared.presentation_request().targets[0].object;
     let foreign = FieldId::Metadata(open_sdbl::metadata::AttributeId::from_bytes([0xff; 16]));
     let invalid = prepared
@@ -1212,7 +1624,7 @@ fn compiles_fixed_and_multi_target_reference_presentations() {
     for (multiple, expected_targets) in [(false, 1), (true, 2)] {
         let snapshot = presentation_reference_snapshot(multiple);
         let source = "SELECT REFPRESENTATION(ProbeAttribute) FROM Catalog.OpenSdblMetadataProbe;";
-        let prepared = prepare_postgres_query(source, &snapshot).unwrap();
+        let prepared = postgres_prepare!(source, &snapshot).unwrap();
         assert_eq!(
             prepared.presentation_request().targets.len(),
             expected_targets
@@ -1234,6 +1646,19 @@ fn compiles_fixed_and_multi_target_reference_presentations() {
             assert!(compiled.sql.contains("decode('0000003a', 'hex')"));
             assert!(compiled.sql.contains("CASE WHEN"));
         }
+
+        let prepared = mssql_prepare!(source, &snapshot).unwrap();
+        assert_eq!(
+            prepared.presentation_request().targets.len(),
+            expected_targets
+        );
+        let compiled = prepared.compile(&snapshot, &plans).unwrap();
+        assert_eq!(compiled.sql.matches("LEFT JOIN").count(), expected_targets);
+        if multiple {
+            assert!(compiled.sql.contains("0x00000039"));
+            assert!(compiled.sql.contains("0x0000003a"));
+            assert!(compiled.sql.contains("CASE WHEN"));
+        }
     }
 }
 
@@ -1241,7 +1666,7 @@ fn compiles_fixed_and_multi_target_reference_presentations() {
 fn preserves_presentations_through_full_join_and_union_branches() {
     let snapshot = snapshot();
     let source = "SELECT REFPRESENTATION(l.Ссылка) FROM Catalog.OpenSdblMetadataProbe l FULL JOIN Catalog.OpenSdblMetadataProbe r ON l.Code = r.Code UNION ALL SELECT REFPRESENTATION(Ссылка) FROM Catalog.OpenSdblMetadataProbe;";
-    let prepared = prepare_postgres_query(source, &snapshot).unwrap();
+    let prepared = postgres_prepare!(source, &snapshot).unwrap();
     assert_eq!(prepared.presentation_request().targets.len(), 1);
     let object = prepared.presentation_request().targets[0].object;
     let code = FieldId::Standard(StandardFieldId::Code);
@@ -1263,7 +1688,7 @@ fn preserves_presentations_through_full_join_and_union_branches() {
 #[test]
 fn compiles_a_russian_catalog_query_through_authoritative_metadata() {
     let snapshot = snapshot();
-    let compiled = compile_postgres_query(
+    let compiled = postgres_compile!(
         "ВЫБРАТЬ ПЕРВЫЕ 5 Код, ProbeAttribute ИЗ Справочник.OpenSdblMetadataProbe КАК p ГДЕ p.Код = \"A\" УПОРЯДОЧИТЬ ПО p.Код ВОЗР;",
         &snapshot,
     )
@@ -1322,14 +1747,14 @@ fn queryable_field_catalog_reflects_current_mutable_snapshot_vectors() {
 #[test]
 fn rejects_parameters_and_unsupported_clauses_before_sql_generation() {
     let snapshot = snapshot();
-    let parameter = compile_postgres_query(
+    let parameter = postgres_compile!(
         "SELECT Code FROM Catalog.OpenSdblMetadataProbe WHERE Code = &Code;",
         &snapshot,
     )
     .unwrap_err();
     assert!(parameter.message().contains("parameters are not supported"));
 
-    let unsupported = compile_postgres_query(
+    let unsupported = postgres_compile!(
         "SELECT Code FROM Catalog.OpenSdblMetadataProbe GROUP BY Code;",
         &snapshot,
     )
@@ -1340,7 +1765,7 @@ fn rejects_parameters_and_unsupported_clauses_before_sql_generation() {
 #[test]
 fn compiles_english_distinct_wildcard_and_real_document_date_spelling() {
     let snapshot = snapshot();
-    let compiled = compile_postgres_query(
+    let compiled = postgres_compile!(
         "SELECT DISTINCT * FROM Catalog.OpenSdblMetadataProbe ORDER BY Date DESC;",
         &snapshot,
     )
@@ -1364,7 +1789,7 @@ fn compiles_english_distinct_wildcard_and_real_document_date_spelling() {
 #[test]
 fn compiles_russian_descending_order() {
     let snapshot = snapshot();
-    let compiled = compile_postgres_query(
+    let compiled = postgres_compile!(
         "ВЫБРАТЬ Дата ИЗ Справочник.OpenSdblMetadataProbe УПОРЯДОЧИТЬ ПО Дата УБЫВ;",
         &snapshot,
     )
@@ -1379,18 +1804,312 @@ fn compiles_russian_descending_order() {
 #[test]
 fn diagnoses_missing_fields_and_ambiguous_bare_objects() {
     let mut snapshot = snapshot();
-    let missing = compile_postgres_query(
+    let missing = postgres_compile!(
         "SELECT Missing FROM Catalog.OpenSdblMetadataProbe;",
         &snapshot,
     )
     .unwrap_err();
     assert_eq!(missing.line(), 1);
     assert!(missing.column() > 1);
+    assert_eq!(missing.kind(), QueryDiagnosticKind::UnknownField);
     assert!(missing.message().contains("was not found"));
 
     snapshot.objects.push(snapshot.objects[0].clone());
     let ambiguous = find_metadata_object(&snapshot, "OpenSdblMetadataProbe").unwrap_err();
+    assert_eq!(ambiguous.kind(), QueryDiagnosticKind::AmbiguousObject);
     assert!(ambiguous.message().contains("ambiguous"));
+}
+
+#[test]
+fn exposes_typed_diagnostic_sources_and_metadata_token_positions() {
+    use std::error::Error as _;
+
+    let snapshot = snapshot();
+    let lexical = postgres_compile!("SELECT @;", &snapshot).unwrap_err();
+    assert_eq!(lexical.kind(), QueryDiagnosticKind::Lex);
+    assert!(lexical.source().is_some());
+
+    let lookup =
+        postgres_compile!("SELECT VALUE(Catalog.DoesNotExist.Value);", &snapshot,).unwrap_err();
+    assert_eq!(lookup.kind(), QueryDiagnosticKind::UnknownObject);
+    assert!(lookup.source().is_some());
+
+    let unknown =
+        postgres_compile!("SELECT Code\nFROM Catalog.DoesNotExist;", &snapshot,).unwrap_err();
+    assert_eq!(unknown.kind(), QueryDiagnosticKind::UnknownObject);
+    assert_eq!(unknown.line(), 2);
+    assert_eq!(unknown.column(), 14);
+
+    let eof_source = "SELECT Code\nFROM ";
+    let eof = postgres_compile!(eof_source, &snapshot).unwrap_err();
+    assert_eq!(eof.kind(), QueryDiagnosticKind::Syntax);
+    assert_eq!(eof.offset(), eof_source.len());
+    assert_eq!(eof.line(), 2);
+    assert_eq!(eof.column(), 6);
+
+    let presentation_named_field = postgres_compile!(
+        "SELECT Представление FROM Catalog.OpenSdblMetadataProbe;",
+        &snapshot,
+    )
+    .unwrap_err();
+    assert_eq!(
+        presentation_named_field.kind(),
+        QueryDiagnosticKind::UnknownField
+    );
+
+    let unsupported = postgres_compile!("SELECT &Parameter;", &snapshot).unwrap_err();
+    assert_eq!(unsupported.kind(), QueryDiagnosticKind::UnsupportedFeature);
+
+    let unknown_value = postgres_compile!(
+        "SELECT VALUE(Catalog.OpenSdblMetadataProbe.DoesNotExist);",
+        &snapshot,
+    )
+    .unwrap_err();
+    assert_eq!(unknown_value.kind(), QueryDiagnosticKind::UnknownValue);
+}
+
+#[test]
+fn covers_syntax_ambiguity_liveness_and_presentation_diagnostic_kinds() {
+    let syntax_source = "SELECT Code FROM";
+    let syntax = postgres_compile!(syntax_source, &snapshot()).unwrap_err();
+    assert_eq!(syntax.kind(), QueryDiagnosticKind::Syntax);
+    assert_eq!(syntax.offset(), syntax_source.len());
+
+    let ambiguous_object = postgres_compile!(
+        "SELECT ID FROM Catalog.Duplicate;",
+        &ambiguous_object_snapshot(),
+    )
+    .unwrap_err();
+    assert_eq!(
+        ambiguous_object.kind(),
+        QueryDiagnosticKind::AmbiguousObject
+    );
+
+    let ambiguous_field = postgres_compile!(
+        "SELECT DuplicateField FROM Catalog.OpenSdblMetadataProbe;",
+        &ambiguous_field_snapshot(),
+    )
+    .unwrap_err();
+    assert_eq!(ambiguous_field.kind(), QueryDiagnosticKind::AmbiguousField);
+
+    let mut not_live_snapshot = snapshot();
+    not_live_snapshot.live_tables.clear();
+    let not_live = postgres_compile!(
+        "SELECT Code FROM Catalog.OpenSdblMetadataProbe;",
+        &not_live_snapshot,
+    )
+    .unwrap_err();
+    assert_eq!(not_live.kind(), QueryDiagnosticKind::NotLive);
+
+    let snapshot = snapshot();
+    let source = "SELECT REFPRESENTATION(Ссылка) FROM Catalog.OpenSdblMetadataProbe;";
+    let missing_plan = postgres_compile!(source, &snapshot).unwrap_err();
+    assert_eq!(missing_plan.kind(), QueryDiagnosticKind::PresentationPlan);
+
+    let prepared = postgres_prepare!(source, &snapshot).unwrap();
+    let object = prepared.presentation_request().targets[0].object;
+    let code = FieldId::Standard(StandardFieldId::Code);
+    let invalid_plan = prepared
+        .compile(
+            &snapshot,
+            &[PresentationPlan {
+                object,
+                fields: vec![code, code],
+                expression: PresentationExpression::Field(code),
+            }],
+        )
+        .unwrap_err();
+    assert_eq!(invalid_plan.kind(), QueryDiagnosticKind::PresentationPlan);
+}
+
+#[test]
+fn reports_resolution_mismatches_without_dropping_unknown_columns() {
+    let base = snapshot();
+    let clean = resolve_metadata(
+        base.db_names.clone(),
+        base.descriptors.clone(),
+        base.schema.clone(),
+        base.live_tables.clone(),
+    );
+    assert!(clean.report.is_empty());
+
+    let mut schema = base.schema.clone();
+    schema.anomalies.push(SchemaAnomaly {
+        table: "Reference53".to_owned(),
+        detail: "columns count is not an unsigned integer".to_owned(),
+    });
+    schema.tables[0].columns.push(SchemaColumn {
+        name: "FutureColumn".to_owned(),
+        types: vec![ColumnType {
+            tag: "FUTURE".to_owned(),
+            reference_target: None,
+        }],
+    });
+    let mut live_tables = base.live_tables.clone();
+    live_tables[0].columns.push(LiveColumn {
+        name: "_futurecolumn".to_owned(),
+        data_type: "bytea".to_owned(),
+    });
+    live_tables.push(LiveTable {
+        name: "_live_only".to_owned(),
+        columns: Vec::new(),
+        indexes: Vec::new(),
+    });
+    live_tables[0].indexes.clear();
+    let resolved = resolve_metadata(
+        base.db_names.clone(),
+        base.descriptors.clone(),
+        schema,
+        live_tables,
+    );
+
+    assert!(resolved.report.findings().iter().any(|finding| matches!(
+        finding,
+        ResolutionFinding::UnknownColumnTag { tag, .. } if tag == "FUTURE"
+    )));
+    assert!(resolved.report.findings().iter().any(|finding| matches!(
+        finding,
+        ResolutionFinding::InvalidSchemaDeclaration { detail, .. }
+            if detail.contains("columns count")
+    )));
+    assert!(resolved.report.findings().iter().any(|finding| matches!(
+        finding,
+        ResolutionFinding::TableNotDeclared { table } if table == "_live_only"
+    )));
+    assert!(
+        resolved
+            .report
+            .findings()
+            .iter()
+            .any(|finding| matches!(finding, ResolutionFinding::IndexMismatch { .. }))
+    );
+    let compiled = postgres_compile!(
+        "SELECT Code FROM Catalog.OpenSdblMetadataProbe;",
+        &resolved.snapshot,
+    )
+    .unwrap();
+    assert_eq!(compiled.columns, ["Code"]);
+    assert!(
+        queryable_fields(&resolved.snapshot, &resolved.snapshot.objects[0])
+            .unwrap()
+            .iter()
+            .any(|field| field.schema_name == "FutureColumn")
+    );
+
+    let without_live = resolve_metadata(
+        base.db_names.clone(),
+        base.descriptors.clone(),
+        base.schema.clone(),
+        Vec::new(),
+    );
+    assert!(
+        without_live
+            .report
+            .findings()
+            .iter()
+            .any(|finding| matches!(
+                finding,
+                ResolutionFinding::TableNotLive { table } if table == "_Reference53"
+            ))
+    );
+
+    let without_descriptor = resolve_metadata(
+        base.db_names.clone(),
+        Vec::new(),
+        base.schema.clone(),
+        base.live_tables.clone(),
+    );
+    assert!(
+        without_descriptor
+            .report
+            .findings()
+            .iter()
+            .any(|finding| matches!(
+                finding,
+                ResolutionFinding::DescriptorMissing { table, .. } if table == "_Reference53"
+            ))
+    );
+
+    let mut duplicated_descriptors = base.descriptors.clone();
+    duplicated_descriptors.push(base.descriptors[0].clone());
+    let duplicated = resolve_metadata(
+        base.db_names.clone(),
+        duplicated_descriptors,
+        base.schema.clone(),
+        base.live_tables.clone(),
+    );
+    assert!(duplicated.report.findings().iter().any(|finding| matches!(
+        finding,
+        ResolutionFinding::DuplicateGuid { guid }
+            if guid == &base.descriptors[0].object_guid
+    )));
+}
+
+#[test]
+fn emits_unique_utf8_safe_output_labels_at_each_dialect_limit() {
+    let snapshot = snapshot();
+    let postgres_prefix = "Я".repeat(40);
+    let postgres = postgres_compile!(
+        &format!(
+            "SELECT Code AS {postgres_prefix}А, Date AS {postgres_prefix}Б FROM Catalog.OpenSdblMetadataProbe;"
+        ),
+        &snapshot,
+    )
+    .unwrap();
+    assert_ne!(postgres.columns[0], postgres.columns[1]);
+    assert!(postgres.columns.iter().all(|label| label.len() <= 63));
+    assert!(
+        postgres
+            .columns
+            .iter()
+            .all(|label| postgres.sql.contains(&format!("AS \"{label}\"")))
+    );
+
+    let mssql_prefix = "Я".repeat(130);
+    let mssql = mssql_compile!(
+        &format!(
+            "SELECT Code AS {mssql_prefix}А, Date AS {mssql_prefix}Б FROM Catalog.OpenSdblMetadataProbe;"
+        ),
+        &mssql_snapshot(),
+    )
+    .unwrap();
+    assert_ne!(mssql.columns[0], mssql.columns[1]);
+    assert!(
+        mssql
+            .columns
+            .iter()
+            .all(|label| label.encode_utf16().count() <= 128)
+    );
+    assert!(
+        mssql
+            .columns
+            .iter()
+            .all(|label| mssql.sql.contains(&format!("AS [{label}]")))
+    );
+}
+
+#[test]
+fn resolves_only_authoritative_enumeration_value_descriptors() {
+    let base = enumeration_value_snapshot();
+    let owner = base
+        .objects
+        .iter()
+        .find(|object| object.kind == Some(MetadataKind::Enumeration))
+        .unwrap()
+        .guid
+        .clone();
+    let form_guid = guid("03bd775a-e0a1-4205-82ce-6068e73ad134");
+    let mut descriptors = base.descriptors.clone();
+    descriptors.push(descriptor(&owner, &form_guid, "ListForm"));
+    let resolved = resolve_metadata(
+        base.db_names.clone(),
+        descriptors,
+        base.schema.clone(),
+        base.live_tables.clone(),
+    );
+
+    assert!(resolved.values.iter().any(|value| value.name == "Статус"));
+    assert!(!resolved.values.iter().any(|value| value.name == "ListForm"));
 }
 
 #[test]
@@ -1409,7 +2128,7 @@ fn expands_a_compound_projection_and_rejects_it_in_predicates() {
         },
     ]);
 
-    let compiled = compile_postgres_query(
+    let compiled = postgres_compile!(
         "SELECT ProbeAttribute FROM Catalog.OpenSdblMetadataProbe;",
         &snapshot,
     )
@@ -1421,14 +2140,14 @@ fn expands_a_compound_projection_and_rejects_it_in_predicates() {
     assert!(compiled.sql.contains("\"_fld54_tref\"::text"));
     assert!(compiled.sql.contains("\"_fld54_rrref\"::text"));
 
-    let aliased = compile_postgres_query(
+    let aliased = postgres_compile!(
         "SELECT ProbeAttribute AS Value FROM Catalog.OpenSdblMetadataProbe;",
         &snapshot,
     )
     .unwrap();
     assert_eq!(aliased.columns, ["Value_TRef", "Value_RRRef"]);
 
-    let error = compile_postgres_query(
+    let error = postgres_compile!(
         "SELECT Code FROM Catalog.OpenSdblMetadataProbe WHERE ProbeAttribute IS NULL;",
         &snapshot,
     )
@@ -1439,7 +2158,7 @@ fn expands_a_compound_projection_and_rejects_it_in_predicates() {
 #[test]
 fn dereferences_a_reference_property_with_one_reused_left_join() {
     let snapshot = reference_snapshot();
-    let compiled = compile_postgres_query(
+    let compiled = postgres_compile!(
         "SELECT Организация.Код FROM Catalog.OpenSdblMetadataProbe WHERE Организация.Код = \"A\" ORDER BY Организация.Код;",
         &snapshot,
     )
@@ -1456,12 +2175,12 @@ fn dereferences_a_reference_property_with_one_reused_left_join() {
 #[test]
 fn supports_a_qualified_reference_path_and_rejects_non_references() {
     let snapshot = reference_snapshot();
-    let explicit = compile_postgres_query(
+    let explicit = postgres_compile!(
         "ВЫБРАТЬ d.Организация.Код ИЗ Справочник.OpenSdblMetadataProbe КАК d;",
         &snapshot,
     )
     .unwrap();
-    let implicit = compile_postgres_query(
+    let implicit = postgres_compile!(
         "SELECT d.Организация.Code FROM Catalog.OpenSdblMetadataProbe d;",
         &snapshot,
     )
@@ -1478,7 +2197,7 @@ fn supports_a_qualified_reference_path_and_rejects_non_references() {
     );
     assert_eq!(implicit.columns, ["Организация.Code"]);
 
-    let error = compile_postgres_query(
+    let error = postgres_compile!(
         "SELECT Code.Value FROM Catalog.OpenSdblMetadataProbe;",
         &snapshot,
     )
@@ -1489,14 +2208,14 @@ fn supports_a_qualified_reference_path_and_rejects_non_references() {
             .contains("no unique SchemaStorage reference target")
     );
 
-    let deep = compile_postgres_query(
+    let deep = postgres_compile!(
         "SELECT d.Организация.Ссылка.Код FROM Catalog.OpenSdblMetadataProbe AS d;",
         &snapshot,
     )
     .unwrap_err();
     assert!(deep.message().contains("deeper than one hop"));
 
-    let collision = compile_postgres_query(
+    let collision = postgres_compile!(
         "SELECT __ref1.Организация.Код FROM Catalog.OpenSdblMetadataProbe AS __ref1;",
         &snapshot,
     )
@@ -1507,7 +2226,7 @@ fn supports_a_qualified_reference_path_and_rejects_non_references() {
 #[test]
 fn leaves_where_and_order_clauses_after_an_unaliased_source() {
     let snapshot = snapshot();
-    let compiled = compile_postgres_query(
+    let compiled = postgres_compile!(
         "SELECT Code FROM Catalog.OpenSdblMetadataProbe WHERE Code = \"A\" ORDER BY Code;",
         &snapshot,
     )
@@ -1520,7 +2239,7 @@ fn leaves_where_and_order_clauses_after_an_unaliased_source() {
 #[test]
 fn compiles_mixed_union_operators_and_orders_the_combined_result() {
     let snapshot = snapshot();
-    let compiled = compile_postgres_query(
+    let compiled = postgres_compile!(
         "SELECT p.Code FROM Catalog.OpenSdblMetadataProbe p WHERE p.Code = \"A\"
          ОБЪЕДИНИТЬ
          ВЫБРАТЬ q.Дата ИЗ Справочник.OpenSdblMetadataProbe КАК q
@@ -1547,7 +2266,7 @@ fn compiles_mixed_union_operators_and_orders_the_combined_result() {
 #[test]
 fn compiles_reference_joins_independently_in_union_branches() {
     let snapshot = reference_snapshot();
-    let compiled = compile_postgres_query(
+    let compiled = postgres_compile!(
         "SELECT p.Организация.Код FROM Catalog.OpenSdblMetadataProbe p
          ОБЪЕДИНИТЬ ВСЕ
          SELECT q.Организация.Код FROM Catalog.OpenSdblMetadataProbe q
@@ -1564,7 +2283,7 @@ fn compiles_reference_joins_independently_in_union_branches() {
 #[test]
 fn rejects_incompatible_union_projections_and_branch_local_ordering() {
     let snapshot = snapshot();
-    let logical_mismatch = compile_postgres_query(
+    let logical_mismatch = postgres_compile!(
         "SELECT Code, Date FROM Catalog.OpenSdblMetadataProbe
          UNION SELECT Code FROM Catalog.OpenSdblMetadataProbe;",
         &snapshot,
@@ -1576,7 +2295,7 @@ fn rejects_incompatible_union_projections_and_branch_local_ordering() {
             .contains("projects 1 logical fields")
     );
 
-    let local_order = compile_postgres_query(
+    let local_order = postgres_compile!(
         "SELECT Code FROM Catalog.OpenSdblMetadataProbe ORDER BY Code
          UNION SELECT Code FROM Catalog.OpenSdblMetadataProbe;",
         &snapshot,
@@ -1584,7 +2303,7 @@ fn rejects_incompatible_union_projections_and_branch_local_ordering() {
     .unwrap_err();
     assert!(local_order.message().contains("unsupported query syntax"));
 
-    let missing_order_field = compile_postgres_query(
+    let missing_order_field = postgres_compile!(
         "SELECT Code FROM Catalog.OpenSdblMetadataProbe
          UNION SELECT Code FROM Catalog.OpenSdblMetadataProbe
          ORDER BY Date;",
@@ -1614,7 +2333,7 @@ fn rejects_union_branches_with_different_compound_expansion_widths() {
         },
     ]);
 
-    let mismatch = compile_postgres_query(
+    let mismatch = postgres_compile!(
         "SELECT ProbeAttribute FROM Catalog.OpenSdblMetadataProbe
          UNION SELECT Code FROM Catalog.OpenSdblMetadataProbe;",
         &snapshot,
@@ -1645,7 +2364,7 @@ fn compiles_inner_left_and_right_join_spellings_and_repeated_terminators() {
             "SELECT l.Code, r.Date FROM Catalog.OpenSdblMetadataProbe l \
              {source_operator} Catalog.OpenSdblMetadataProbe r ON l.Code = r.Code;;"
         );
-        let compiled = compile_postgres_query(&query, &snapshot).unwrap();
+        let compiled = postgres_compile!(&query, &snapshot).unwrap();
         assert!(compiled.sql.contains(sql_operator), "{}", compiled.sql);
         assert!(!compiled.sql.contains(" UNION ALL "));
     }
@@ -1664,21 +2383,33 @@ fn compiles_join_key_with_additional_in_and_value_predicates() {
             AND l.Code <> \"Исключен\";";
 
     for compiled in [
-        compile_postgres_query(query, &snapshot).unwrap(),
-        compile_mssql_query(query, &snapshot).unwrap(),
+        postgres_compile!(query, &snapshot).unwrap(),
+        mssql_compile!(query, &snapshot).unwrap(),
     ] {
         let on = compiled.sql.split_once(" ON ").unwrap().1;
-        assert!(on.starts_with("\"l\".\"_code\" = \"r\".\"_code\" AND "));
-        assert!(on.contains("(\"l\".\"_idrref\" IN ("));
+        let (left_code, left_id) = if compiled.sql.contains("[l]") {
+            ("[l].[_code] = [r].[_code] AND ", "([l].[_idrref] IN (")
+        } else {
+            (
+                "\"l\".\"_code\" = \"r\".\"_code\" AND ",
+                "(\"l\".\"_idrref\" IN (",
+            )
+        };
+        assert!(on.starts_with(left_code));
+        assert!(on.contains(left_id));
         assert!(on.contains("a3dae56fa2f94623445632b52e22ad88"));
         assert!(on.contains("a161ed47a2787c5a437832a3f6fa6a92"));
-        assert!(on.contains(" AND (\"l\".\"_code\" <> "));
+        assert!(on.contains(if compiled.sql.contains("[l]") {
+            " AND ([l].[_code] <> "
+        } else {
+            " AND (\"l\".\"_code\" <> "
+        }));
     }
 }
 
 #[test]
 fn keeps_additional_full_join_predicates_in_both_on_clauses() {
-    let compiled = compile_postgres_query(
+    let compiled = postgres_compile!(
         "SELECT l.Code, r.Date FROM Catalog.OpenSdblMetadataProbe l
          FULL JOIN Catalog.OpenSdblMetadataProbe r
          ON l.Code = r.Code AND l.Code <> \"Исключен\";",
@@ -1700,7 +2431,7 @@ fn keeps_additional_full_join_predicates_in_both_on_clauses() {
 #[test]
 fn resolves_a_one_hop_reference_from_one_join_side() {
     let snapshot = reference_snapshot();
-    let compiled = compile_postgres_query(
+    let compiled = postgres_compile!(
         "SELECT Организация.Код, t.Code
          FROM Catalog.OpenSdblMetadataProbe p
          LEFT JOIN Catalog.Организации t ON p.Code = t.Code;",
@@ -1724,7 +2455,7 @@ fn resolves_a_one_hop_reference_from_one_join_side() {
 #[test]
 fn transposes_full_join_to_duplicate_safe_union_all() {
     let snapshot = snapshot();
-    let compiled = compile_postgres_query(
+    let compiled = postgres_compile!(
         "SELECT DISTINCT TOP 3 l.Code, r.Date
          FROM Catalog.OpenSdblMetadataProbe l
          ПОЛНОЕ ВНЕШНЕЕ СОЕДИНЕНИЕ Catalog.OpenSdblMetadataProbe r
@@ -1742,12 +2473,23 @@ fn transposes_full_join_to_duplicate_safe_union_all() {
     assert!(compiled.sql.contains("(\"l\".\"_code\" IS NULL)"));
     assert_eq!(compiled.sql.matches("IS NOT NULL").count(), 2);
     assert!(compiled.sql.ends_with("ORDER BY 1 ASC LIMIT 3"));
+
+    let mssql = mssql_compile!(
+        "SELECT l.Code, r.Date
+         FROM Catalog.OpenSdblMetadataProbe l
+         FULL JOIN Catalog.OpenSdblMetadataProbe r ON l.Code = r.Code
+         UNION ALL SELECT Code, Date FROM Catalog.OpenSdblMetadataProbe;",
+        &mssql_snapshot(),
+    )
+    .unwrap();
+    assert!(!mssql.sql.contains('"'), "{}", mssql.sql);
+    assert!(mssql.sql.contains("AS [__full]"));
 }
 
 #[test]
 fn rejects_unsafe_or_ambiguous_join_shapes() {
     let snapshot = reference_snapshot();
-    let wildcard = compile_postgres_query(
+    let wildcard = postgres_compile!(
         "SELECT * FROM Catalog.OpenSdblMetadataProbe p
          LEFT JOIN Catalog.Организации t ON p.Code = t.Code;",
         &snapshot,
@@ -1755,7 +2497,7 @@ fn rejects_unsafe_or_ambiguous_join_shapes() {
     .unwrap_err();
     assert!(wildcard.message().contains("wildcard projection"));
 
-    let inequality = compile_postgres_query(
+    let inequality = postgres_compile!(
         "SELECT p.Code FROM Catalog.OpenSdblMetadataProbe p
          LEFT JOIN Catalog.Организации t ON p.Code > t.Code;",
         &snapshot,
@@ -1767,7 +2509,7 @@ fn rejects_unsafe_or_ambiguous_join_shapes() {
             .contains("top-level cross-source field equality")
     );
 
-    let nested_anchor = compile_postgres_query(
+    let nested_anchor = postgres_compile!(
         "SELECT p.Code FROM Catalog.OpenSdblMetadataProbe p
          LEFT JOIN Catalog.Организации t
          ON p.Code = t.Code OR p.Code <> t.Code;",
@@ -1780,7 +2522,7 @@ fn rejects_unsafe_or_ambiguous_join_shapes() {
             .contains("top-level cross-source field equality")
     );
 
-    let same_alias = compile_postgres_query(
+    let same_alias = postgres_compile!(
         "SELECT p.Code FROM Catalog.OpenSdblMetadataProbe p
          LEFT JOIN Catalog.Организации p ON p.Code = p.Code;",
         &snapshot,
@@ -1788,7 +2530,7 @@ fn rejects_unsafe_or_ambiguous_join_shapes() {
     .unwrap_err();
     assert!(same_alias.message().contains("distinct aliases"));
 
-    let reference_condition = compile_postgres_query(
+    let reference_condition = postgres_compile!(
         "SELECT p.Code FROM Catalog.OpenSdblMetadataProbe p
          LEFT JOIN Catalog.Организации t ON p.Организация.Code = t.Code;",
         &snapshot,
@@ -1796,7 +2538,7 @@ fn rejects_unsafe_or_ambiguous_join_shapes() {
     .unwrap_err();
     assert!(reference_condition.message().contains("direct fields only"));
 
-    let additional_reference_condition = compile_postgres_query(
+    let additional_reference_condition = postgres_compile!(
         "SELECT p.Code FROM Catalog.OpenSdblMetadataProbe p
          LEFT JOIN Catalog.Организации t
          ON p.Code = t.Code AND p.Организация.Code = \"A\";",
@@ -1809,7 +2551,7 @@ fn rejects_unsafe_or_ambiguous_join_shapes() {
             .contains("direct fields only")
     );
 
-    let ambiguous = compile_postgres_query(
+    let ambiguous = postgres_compile!(
         "SELECT Code FROM Catalog.OpenSdblMetadataProbe p
          LEFT JOIN Catalog.Организации t ON p.Code = t.Code;",
         &snapshot,
@@ -1831,7 +2573,7 @@ fn rejects_an_ambiguous_schema_reference_target() {
         reference_target: Some("Reference58".to_owned()),
     });
 
-    let error = compile_postgres_query(
+    let error = postgres_compile!(
         "SELECT Организация.Код FROM Catalog.OpenSdblMetadataProbe;",
         &snapshot,
     )
@@ -1846,7 +2588,7 @@ fn rejects_an_ambiguous_schema_reference_target() {
 #[test]
 fn compiles_document_tabular_section_from_extension_table() {
     let snapshot = tabular_section_snapshot();
-    let compiled = compile_postgres_query(
+    let compiled = postgres_compile!(
         "ВЫБРАТЬ
             строки.ЦФО КАК ЦФО,
             строки.Ссылка.ДоговорКонтрагента КАК Договор,
@@ -1887,7 +2629,7 @@ fn compiles_document_tabular_section_from_extension_table() {
         "(\"статусы\".\"_fld61_rrref\" = \"строки\".\"_document53_idrref\" AND \"статусы\".\"_fld61_rtref\" = decode('00000035', 'hex'))"
     ));
 
-    let direct = compile_postgres_query(
+    let direct = postgres_compile!(
         "SELECT Ссылка, НомерСтроки, Сумма
          FROM Документ.бит_ДополнительныеУсловияПоДоговору.ГрафикНачислений;",
         &snapshot,
@@ -1914,7 +2656,7 @@ fn presents_references_reached_through_dereferenced_join_paths() {
          INNER JOIN Document.бит_ДополнительныеУсловияПоДоговору.ГрафикНачислений AS строки
          ON статусы.Объект = строки.Ссылка;";
 
-    let postgres = prepare_postgres_query(source, &snapshot).unwrap();
+    let postgres = postgres_prepare!(source, &snapshot).unwrap();
     assert_eq!(postgres.presentation_request().targets.len(), 1);
     let object = postgres.presentation_request().targets[0].object;
     let id = FieldId::Standard(StandardFieldId::Id);
@@ -1928,14 +2670,14 @@ fn presents_references_reached_through_dereferenced_join_paths() {
         .unwrap();
     assert_dereferenced_presentation_joins(&postgres.sql);
 
-    let mssql = prepare_mssql_query(source, &snapshot).unwrap();
+    let mssql = mssql_prepare!(source, &snapshot).unwrap();
     assert_eq!(mssql.presentation_request().targets.len(), 1);
     let mssql = mssql.compile(&snapshot, &[plan]).unwrap();
     assert_dereferenced_presentation_joins(&mssql.sql);
 }
 
 #[test]
-fn reuses_a_dereference_join_for_projection_and_presentation() {
+fn reuses_a_dereference_join_only_when_the_complete_key_matches() {
     let snapshot = dereferenced_presentation_snapshot();
     let source = "SELECT
             строки.ЦФО.Сам_БизнесРегион,
@@ -1943,18 +2685,16 @@ fn reuses_a_dereference_join_for_projection_and_presentation() {
          FROM InformationRegister.бит_СтатусыОбъектов AS статусы
          INNER JOIN Document.бит_ДополнительныеУсловияПоДоговору.ГрафикНачислений AS строки
          ON статусы.Объект = строки.Ссылка;";
-    let prepared = prepare_postgres_query(source, &snapshot).unwrap();
+    let prepared = postgres_prepare!(source, &snapshot).unwrap();
     let object = prepared.presentation_request().targets[0].object;
     let id = FieldId::Standard(StandardFieldId::Id);
+    let plan = PresentationPlan {
+        object,
+        fields: vec![id],
+        expression: PresentationExpression::Field(id),
+    };
     let compiled = prepared
-        .compile(
-            &snapshot,
-            &[PresentationPlan {
-                object,
-                fields: vec![id],
-                expression: PresentationExpression::Field(id),
-            }],
-        )
+        .compile(&snapshot, std::slice::from_ref(&plan))
         .unwrap();
 
     assert_eq!(compiled.sql.matches(" LEFT JOIN ").count(), 2);
@@ -1963,6 +2703,16 @@ fn reuses_a_dereference_join_for_projection_and_presentation() {
     ));
     assert!(compiled.sql.contains(
         "LEFT JOIN \"_reference62\" AS \"__right_ref2\" ON \"__right_ref1\".\"_fld63\" = \"__right_ref2\".\"_idrref\""
+    ));
+
+    let prepared = mssql_prepare!(source, &snapshot).unwrap();
+    let compiled = prepared.compile(&snapshot, &[plan]).unwrap();
+    assert_eq!(compiled.sql.matches(" LEFT JOIN ").count(), 2);
+    assert!(compiled.sql.contains(
+        "LEFT JOIN [_reference62] AS [__right_ref1] ON [строки].[_fld55] = [__right_ref1].[_idrref]"
+    ));
+    assert!(compiled.sql.contains(
+        "LEFT JOIN [_reference62] AS [__right_ref2] ON [__right_ref1].[_fld63] = [__right_ref2].[_idrref]"
     ));
 }
 
@@ -1973,7 +2723,7 @@ fn presents_a_scalar_from_a_dereferenced_join_alias_without_a_plan() {
          FROM InformationRegister.бит_СтатусыОбъектов AS статусы
          INNER JOIN Document.бит_ДополнительныеУсловияПоДоговору.ГрафикНачислений AS строки
          ON статусы.Объект = строки.Ссылка;";
-    let prepared = prepare_postgres_query(source, &snapshot).unwrap();
+    let prepared = postgres_prepare!(source, &snapshot).unwrap();
     assert!(prepared.presentation_request().targets.is_empty());
     let compiled = prepared.compile(&snapshot, &[]).unwrap();
 
@@ -1989,7 +2739,7 @@ fn defers_a_universal_reference_reached_through_a_join_path() {
          INNER JOIN Document.бит_ДополнительныеУсловияПоДоговору.ГрафикНачислений AS строки
          ON статусы.Объект = строки.Ссылка;";
 
-    let postgres = prepare_postgres_query(source, &snapshot).unwrap();
+    let postgres = postgres_prepare!(source, &snapshot).unwrap();
     assert!(postgres.presentation_request().targets.is_empty());
     let postgres = postgres.compile(&snapshot, &[]).unwrap();
     assert_eq!(postgres.deferred_presentations, [0]);
@@ -2006,13 +2756,13 @@ fn defers_a_universal_reference_reached_through_a_join_path() {
     assert!(postgres.sql.ends_with(" LIMIT 10"));
     assert_eq!(postgres.sql.matches(" LEFT JOIN ").count(), 1);
 
-    let mssql = prepare_mssql_query(source, &snapshot).unwrap();
+    let mssql = mssql_prepare!(source, &snapshot).unwrap();
     let mssql = mssql.compile(&snapshot, &[]).unwrap();
     assert_eq!(mssql.deferred_presentations, [0]);
     assert!(
         mssql
             .sql
-            .contains("CONVERT(varchar(max), \"__right_ref1\".\"_fld59_rtref\", 2)")
+            .contains("CONVERT(varchar(max), [__right_ref1].[_fld59_rtref], 2)")
     );
     assert!(mssql.sql.starts_with("SELECT TOP (10) "));
 }
@@ -2029,32 +2779,76 @@ fn compiles_safe_batched_deferred_presentation_lookups() {
     };
     let references = [[0x11; 16], [0x22; 16]];
 
-    let postgres = compile_postgres_presentation_lookup(&snapshot, &plan, &references).unwrap();
+    let postgres = postgres_presentation_lookup!(&snapshot, &plan, &references).unwrap();
     assert!(postgres.deferred_presentations.is_empty());
     assert!(postgres.sql.contains(
         "WHERE \"__presentation_target\".\"_idrref\" IN (decode('11111111111111111111111111111111', 'hex'), decode('22222222222222222222222222222222', 'hex'))"
     ));
 
-    let mssql =
-        compile_mssql_presentation_lookup_with_year_offset(&snapshot, &plan, &references, 2000)
-            .unwrap();
+    let mssql = mssql_presentation_lookup!(&snapshot, &plan, &references, 2000).unwrap();
     assert!(mssql.sql.contains(
-        "WHERE \"__presentation_target\".\"_idrref\" IN (0x11111111111111111111111111111111, 0x22222222222222222222222222222222)"
+        "WHERE [__presentation_target].[_idrref] IN (0x11111111111111111111111111111111, 0x22222222222222222222222222222222)"
     ));
+
+    let (postgres, mssql) = for_each_backend!(presentation & snapshot, &plan, &[], 0);
+    assert_eq!(
+        postgres.unwrap_err().kind(),
+        QueryDiagnosticKind::PresentationBatch
+    );
+    assert_eq!(
+        mssql.unwrap_err().kind(),
+        QueryDiagnosticKind::PresentationBatch
+    );
+}
+
+#[test]
+fn enforces_presentation_batch_boundaries_for_both_backends() {
+    let snapshot = universal_dereferenced_presentation_snapshot();
+    let object = snapshot.object_id_by_database_type(62).unwrap();
+    let id = FieldId::Standard(StandardFieldId::Id);
+    let plan = PresentationPlan {
+        object,
+        fields: vec![id],
+        expression: PresentationExpression::Field(id),
+    };
+
+    let empty = postgres_presentation_lookup!(&snapshot, &plan, &[]).unwrap_err();
+    assert_eq!(empty.kind(), QueryDiagnosticKind::PresentationBatch);
+
+    for count in [1, 1_024] {
+        let references = (0..count)
+            .map(|number| (number as u128).to_be_bytes())
+            .collect::<Vec<_>>();
+        let (postgres, mssql) = for_each_backend!(presentation & snapshot, &plan, &references, 0);
+        let postgres = postgres.unwrap();
+        let mssql = mssql.unwrap();
+        assert_eq!(postgres.columns, ["__reference", "__presentation"]);
+        assert_eq!(mssql.columns, ["__reference", "__presentation"]);
+        assert_eq!(postgres.sql.matches("decode('").count(), count);
+        assert_eq!(mssql.sql.matches("0x").count(), count);
+    }
+
+    let references = (0..1_025_u128).map(u128::to_be_bytes).collect::<Vec<_>>();
+    let (postgres, mssql) = for_each_backend!(presentation & snapshot, &plan, &references, 0);
+    for oversized in [postgres.unwrap_err(), mssql.unwrap_err()] {
+        assert_eq!(oversized.kind(), QueryDiagnosticKind::PresentationBatch);
+        assert!(oversized.message().contains("exceeds 1,024"));
+    }
 }
 
 fn assert_dereferenced_presentation_joins(sql: &str) {
-    assert_eq!(sql.matches(" LEFT JOIN ").count(), 4, "{sql}");
-    assert!(sql.contains(
+    let normalized = sql.replace(['[', ']'], "\"");
+    assert_eq!(normalized.matches(" LEFT JOIN ").count(), 4, "{sql}");
+    assert!(normalized.contains(
         "LEFT JOIN \"_reference62\" AS \"__right_ref1\" ON \"строки\".\"_fld55\" = \"__right_ref1\".\"_idrref\""
     ));
-    assert!(sql.contains(
+    assert!(normalized.contains(
         "LEFT JOIN \"_document53\" AS \"__right_ref2\" ON \"строки\".\"_document53_idrref\" = \"__right_ref2\".\"_idrref\""
     ));
-    assert!(sql.contains(
+    assert!(normalized.contains(
         "LEFT JOIN \"_reference62\" AS \"__right_ref3\" ON \"__right_ref2\".\"_fld59\" = \"__right_ref3\".\"_idrref\""
     ));
-    assert!(sql.contains(
+    assert!(normalized.contains(
         "LEFT JOIN \"_reference62\" AS \"__right_ref4\" ON \"__right_ref1\".\"_fld63\" = \"__right_ref4\".\"_idrref\""
     ));
 }
@@ -2067,7 +2861,7 @@ fn diagnoses_a_tabular_section_missing_from_schema_storage() {
         .tables
         .retain(|table| table.name != "Document53_VT54X1");
 
-    let error = compile_postgres_query(
+    let error = postgres_compile!(
         "SELECT Сумма
          FROM Документ.бит_ДополнительныеУсловияПоДоговору.ГрафикНачислений;",
         &snapshot,
@@ -2076,584 +2870,5 @@ fn diagnoses_a_tabular_section_missing_from_schema_storage() {
 
     assert!(error.message().contains("absent from SchemaStorage"));
     assert!(error.message().contains("_Document53_VT54"));
-}
-
-fn snapshot() -> open_sdbl::metadata::MetadataSnapshot {
-    let db_names = parse_db_names(&hex(
-        "0dcab10d03310800c05d5c83f46f631b16c800d9003054518a6f2def9e5c7dbbc23636f5390c5d6e435a9391755e98a94d92570c2128efc878e2eb51a0b703bb769761ab61aa13528d441bd271928b26b5ce62505e9ff5ff74ce0f",
-    ))
-    .unwrap();
-    let descriptors = parse_config_descriptors(
-        "b8bac76b-c91b-4d78-8a70-ffa39f8de694",
-        &hex(
-            "4d8d4b0ac3201400af22ae7d9018a3be650f505ae809def303857e426256c1bb37d850ba9e6166d36adb7ad529f64cc15986803d8389ce8327d741ce3460f631593455c9cb945eb7c88f732a14a9d0757e73926a4fc879955f2e965d10cfc31053536a3d467a0c68390e902918303a65608b23381390b219468fbc8f5af854ca7ce7b5fc1f1a10f423b5d60f",
-        ),
-    )
-    .unwrap();
-    let schema = parse_schema_storage(
-        br#"{0,{1,{"Reference53","N",53,"",{4,{"ID",0,{1,{"R",0,0,"Reference53",2}},"",0},{"Code",0,{1,{"S",2147483657,0,"",0}},"",0},{"Date_Time",0,{1,{"T",0,0,"",0}},"",0},{"Fld54",0,{1,{"B",16,0,"",0}},"",0}},{0},{1,{"Code",1,{2,"Code","ID"},0,0,0,{0},0,0}},1,"R",{0},{0},"",0}}}"#,
-    )
-    .unwrap();
-    let live_tables = vec![LiveTable {
-        name: "_reference53".to_owned(),
-        columns: vec![
-            LiveColumn {
-                name: "_idrref".to_owned(),
-                data_type: "bytea".to_owned(),
-            },
-            LiveColumn {
-                name: "_code".to_owned(),
-                data_type: "mvarchar(9)".to_owned(),
-            },
-            LiveColumn {
-                name: "_date_time".to_owned(),
-                data_type: "timestamp without time zone".to_owned(),
-            },
-            LiveColumn {
-                name: "_fld54".to_owned(),
-                data_type: "bytea".to_owned(),
-            },
-        ],
-        indexes: vec![LiveIndex {
-            name: "_reference53_2".to_owned(),
-            columns: vec!["_code".to_owned(), "_idrref".to_owned()],
-            unique: true,
-        }],
-    }];
-    resolve_metadata(db_names, descriptors, schema, live_tables)
-}
-
-fn tabular_section_snapshot() -> open_sdbl::metadata::MetadataSnapshot {
-    let db_names = parse_db_names(&hex(
-        "4d8dbb6a03311045ff45b5062cefac34ea4d20ad09e9f721b9b1d7109c6ad97fcf48cc4d728a832e9c417b087e9f659e9614675a729889d72424533a51add390abac2566f6eef25cbe1f657b393f0e87df83415ddc2498c0bbcf0fcd59f3b3415ddc2498c0bbb7fbaafda8fd605017370926401fb56783fe247801f449fbd1a02e6e124c805eb48f067571936002f459fb645017370926f0ee7dabcfebcdf978d21331a88b7f5ff20ffb2206edb3415ddc2498c0bb6ba9e5ab6c4bd1abb35e4d067571936002fc321cc70f",
-    ))
-    .unwrap();
-    let parent = guid("b8bac76b-c91b-4d78-8a70-ffa39f8de694");
-    let information_register = guid("77777777-7777-4777-8777-777777777777");
-    let catalog = guid("99999999-9999-4999-8999-999999999999");
-    let descriptors = vec![
-        descriptor(&parent, &parent, "бит_ДополнительныеУсловияПоДоговору"),
-        descriptor(
-            &parent,
-            &guid("11111111-1111-4111-8111-111111111111"),
-            "ГрафикНачислений",
-        ),
-        descriptor(
-            &parent,
-            &guid("22222222-2222-4222-8222-222222222222"),
-            "ЦФО",
-        ),
-        descriptor(
-            &parent,
-            &guid("33333333-3333-4333-8333-333333333333"),
-            "СуммаБезНДС",
-        ),
-        descriptor(
-            &parent,
-            &guid("44444444-4444-4444-8444-444444444444"),
-            "Сумма",
-        ),
-        descriptor(
-            &parent,
-            &guid("55555555-5555-4555-8555-555555555555"),
-            "Период",
-        ),
-        descriptor(
-            &parent,
-            &guid("66666666-6666-4666-8666-666666666666"),
-            "ДоговорКонтрагента",
-        ),
-        descriptor(
-            &information_register,
-            &information_register,
-            "бит_СтатусыОбъектов",
-        ),
-        descriptor(
-            &information_register,
-            &guid("88888888-8888-4888-8888-888888888888"),
-            "Объект",
-        ),
-        descriptor(&catalog, &catalog, "ЦентрыФинансовойОтветственности"),
-        descriptor(
-            &catalog,
-            &guid("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"),
-            "Сам_БизнесРегион",
-        ),
-    ];
-    let schema = SchemaStorage {
-        tables: vec![
-            schema_table(
-                "Document53",
-                53,
-                vec![
-                    schema_column("ID", "R", Some("Document53")),
-                    schema_column("Fld59", "R", Some("Reference62")),
-                ],
-            ),
-            schema_table(
-                "Document53_VT54X1",
-                54,
-                vec![
-                    schema_column("Document53_IDRRef", "R", Some("Document53")),
-                    schema_column("LineNo54", "N", None),
-                    schema_column("Fld55", "R", Some("Reference62")),
-                    schema_column("Fld56", "N", None),
-                    schema_column("Fld57", "N", None),
-                    schema_column("Fld58", "T", None),
-                ],
-            ),
-            schema_table(
-                "InfoRg60",
-                60,
-                vec![schema_column("Fld61", "R", Some("Document53"))],
-            ),
-            schema_table(
-                "Reference62",
-                62,
-                vec![
-                    schema_column("ID", "R", Some("Reference62")),
-                    schema_column("Fld63", "B", None),
-                ],
-            ),
-        ],
-    };
-    let live_tables = vec![
-        live_table("_document53", &["_idrref", "_fld59"]),
-        live_table(
-            "_document53_vt54X1",
-            &[
-                "_document53_idrref",
-                "_lineno54",
-                "_fld55",
-                "_fld56",
-                "_fld57",
-                "_fld58",
-            ],
-        ),
-        live_table(
-            "_inforg60",
-            &["_fld61_type", "_fld61_rtref", "_fld61_rrref"],
-        ),
-        live_table("_reference62", &["_idrref", "_fld63"]),
-    ];
-    resolve_metadata(db_names, descriptors, schema, live_tables)
-}
-
-fn dereferenced_presentation_snapshot() -> open_sdbl::metadata::MetadataSnapshot {
-    let mut snapshot = tabular_section_snapshot();
-    let business_region = snapshot
-        .schema
-        .tables
-        .iter_mut()
-        .find(|table| table.name == "Reference62")
-        .unwrap()
-        .columns
-        .iter_mut()
-        .find(|column| column.name == "Fld63")
-        .unwrap();
-    business_region.types = vec![ColumnType {
-        tag: "R".to_owned(),
-        reference_target: Some("Reference62".to_owned()),
-    }];
-    snapshot
-}
-
-fn universal_dereferenced_presentation_snapshot() -> open_sdbl::metadata::MetadataSnapshot {
-    let mut snapshot = tabular_section_snapshot();
-    let agreement = snapshot
-        .schema
-        .tables
-        .iter_mut()
-        .find(|table| table.name == "Document53")
-        .unwrap()
-        .columns
-        .iter_mut()
-        .find(|column| column.name == "Fld59")
-        .unwrap();
-    agreement.types = vec![ColumnType {
-        tag: "R".to_owned(),
-        reference_target: Some(String::new()),
-    }];
-    let document = snapshot
-        .live_tables
-        .iter_mut()
-        .find(|table| table.name == "_document53")
-        .unwrap();
-    document.columns.retain(|column| column.name != "_fld59");
-    document.columns.extend(
-        ["_fld59_type", "_fld59_rtref", "_fld59_rrref"]
-            .into_iter()
-            .map(|name| LiveColumn {
-                name: name.to_owned(),
-                data_type: "bytea".to_owned(),
-            }),
-    );
-    snapshot
-}
-
-fn enumeration_value_snapshot() -> open_sdbl::metadata::MetadataSnapshot {
-    let owner = guid("c8b21fea-1e3d-4ae9-8719-7ff4db08af97");
-    let value = guid("d2f8bde9-fadd-4be8-9022-249e3a1ac4b9");
-    let db_names = parse_db_names(&hex(
-        "ab36d4a94eb64832324c4b4dd4354c354ed135494cb5d4b53037b4d4354f4b33494932b0484cb334d75172cd2bcd55d2b1b4acad0500",
-    ))
-    .unwrap();
-    resolve_metadata(
-        db_names,
-        vec![
-            descriptor(&owner, &owner, "бит_ВидыСтатусовОбъектов"),
-            descriptor(&owner, &value, "Статус"),
-        ],
-        SchemaStorage { tables: Vec::new() },
-        vec![live_table("_enum99", &["_idrref", "_enumorder"])],
-    )
-}
-
-fn catalog_value_snapshot() -> open_sdbl::metadata::MetadataSnapshot {
-    let base = snapshot();
-    let owner = guid("b8bac76b-c91b-4d78-8a70-ffa39f8de694");
-    let mut live_tables = base.live_tables.clone();
-    live_tables[0].columns.push(LiveColumn {
-        name: "_predefinedid".to_owned(),
-        data_type: "bytea".to_owned(),
-    });
-    resolve_metadata_with_predefined_values(
-        base.db_names.clone(),
-        base.descriptors.clone(),
-        vec![
-            ConfigPredefinedValue {
-                owner_guid: owner.clone(),
-                value_guid: guid("2e22ad88-32b5-4456-a3da-e56fa2f94623"),
-                name: "Утвержден".to_owned(),
-            },
-            ConfigPredefinedValue {
-                owner_guid: owner,
-                value_guid: guid("f6fa6a92-32a3-4378-a161-ed47a2787c5a"),
-                name: "ДополнительныеУсловияПоДоговору_Проверен".to_owned(),
-            },
-        ],
-        base.schema.clone(),
-        live_tables,
-    )
-}
-
-fn guid(value: &str) -> Guid {
-    Guid::from_str(value).unwrap()
-}
-
-fn descriptor(resource: &Guid, object: &Guid, name: &str) -> ConfigDescriptor {
-    ConfigDescriptor {
-        resource_guid: resource.clone(),
-        object_guid: object.clone(),
-        marker: "1".to_owned(),
-        name: name.to_owned(),
-        synonyms: Vec::new(),
-        comment: None,
-        field_purpose: None,
-    }
-}
-
-fn schema_table(name: &str, number: u32, columns: Vec<SchemaColumn>) -> SchemaTable {
-    SchemaTable {
-        name: name.to_owned(),
-        number,
-        columns,
-        indexes: Vec::new(),
-    }
-}
-
-fn schema_column(name: &str, tag: &str, reference_target: Option<&str>) -> SchemaColumn {
-    SchemaColumn {
-        name: name.to_owned(),
-        types: vec![ColumnType {
-            tag: tag.to_owned(),
-            reference_target: reference_target.map(str::to_owned),
-        }],
-    }
-}
-
-fn live_table(name: &str, columns: &[&str]) -> LiveTable {
-    LiveTable {
-        name: name.to_owned(),
-        columns: columns
-            .iter()
-            .map(|column| LiveColumn {
-                name: (*column).to_owned(),
-                data_type: "bytea".to_owned(),
-            })
-            .collect(),
-        indexes: Vec::new(),
-    }
-}
-
-fn mssql_snapshot() -> open_sdbl::metadata::MetadataSnapshot {
-    let mut snapshot = snapshot();
-    for table in &mut snapshot.live_tables {
-        for column in &mut table.columns {
-            column.data_type = match column.data_type.as_str() {
-                "bytea" => "binary(16)".to_owned(),
-                "mvarchar(9)" => "nvarchar(9)".to_owned(),
-                "timestamp without time zone" => "datetime2".to_owned(),
-                other => other.to_owned(),
-            };
-        }
-    }
-    snapshot
-}
-
-fn reference_snapshot() -> open_sdbl::metadata::MetadataSnapshot {
-    let mut snapshot = snapshot();
-    snapshot.fields[0].name = Some("Организация".to_owned());
-    let source_field = snapshot.schema.tables[0]
-        .columns
-        .iter_mut()
-        .find(|column| column.name == "Fld54")
-        .unwrap();
-    source_field.types = vec![ColumnType {
-        tag: "R".to_owned(),
-        reference_target: Some("Reference57".to_owned()),
-    }];
-
-    let mut target_object = snapshot.objects[0].clone();
-    target_object.name = Some("Организации".to_owned());
-    target_object.number = Some(57);
-    target_object.physical_table = Some("_Reference57".to_owned());
-    snapshot.objects.push(target_object);
-
-    let mut target_schema = snapshot.schema.tables[0].clone();
-    target_schema.name = "Reference57".to_owned();
-    target_schema.number = 57;
-    target_schema
-        .columns
-        .retain(|column| column.name != "Fld54");
-    snapshot.schema.tables.push(target_schema);
-
-    let mut target_live = snapshot.live_tables[0].clone();
-    target_live.name = "_reference57".to_owned();
-    target_live.columns.retain(|column| column.name != "_fld54");
-    snapshot.live_tables.push(target_live);
-    snapshot
-}
-
-fn information_register_snapshot() -> open_sdbl::metadata::MetadataSnapshot {
-    let mut snapshot = snapshot();
-    let object = &mut snapshot.objects[0];
-    object.kind = Some(MetadataKind::InformationRegister);
-    object.name = Some("Prices".to_owned());
-    object.physical_table = Some("_InfoRg53".to_owned());
-
-    let schema = &mut snapshot.schema.tables[0];
-    schema.name = "InfoRg53".to_owned();
-    let date = schema
-        .columns
-        .iter_mut()
-        .find(|column| column.name == "Date_Time")
-        .unwrap();
-    date.name = "Period".to_owned();
-
-    let live = &mut snapshot.live_tables[0];
-    live.name = "_inforg53".to_owned();
-    let date = live
-        .columns
-        .iter_mut()
-        .find(|column| column.name == "_date_time")
-        .unwrap();
-    date.name = "_period".to_owned();
-
-    let field = &mut snapshot.fields[0];
-    field.owner_tables = vec!["_InfoRg53".to_owned()];
-    field.purpose = Some(ConfigFieldPurpose::InformationRegisterDimension);
-    snapshot
-}
-
-fn accumulation_register_snapshot() -> open_sdbl::metadata::MetadataSnapshot {
-    let mut snapshot = snapshot();
-    snapshot.db_names = parse_db_names(&hex(
-        "95cbb11142210c00d05da8933bf9249094360ee0b94012c0464b2b8edd3d0b07f8fd7b8b60b9b845ab8ea1d9917a13146b179cd38a4ee9a32a41ba467cdef767022efbe47924e0ba611d1c5abd179c1684748c895e95b151a84d2a2cea906eaf9e8069c36a5d8af33170fe12556ba8ae8c212377b1c12de7bfe7bdbf",
-    ))
-    .unwrap();
-    let object = &mut snapshot.objects[0];
-    object.kind = Some(MetadataKind::AccumulationRegister);
-    object.name = Some("Остатки".to_owned());
-    object.physical_table = Some("_AccumRg53".to_owned());
-
-    let schema = &mut snapshot.schema.tables[0];
-    schema.name = "AccumRg53".to_owned();
-    schema
-        .columns
-        .retain(|column| !matches!(column.name.as_str(), "ID" | "Code"));
-    let date = schema
-        .columns
-        .iter_mut()
-        .find(|column| column.name == "Date_Time")
-        .unwrap();
-    date.name = "Period".to_owned();
-    schema.columns.extend([
-        SchemaColumn {
-            name: "Active".to_owned(),
-            types: vec![ColumnType {
-                tag: "L".to_owned(),
-                reference_target: None,
-            }],
-        },
-        SchemaColumn {
-            name: "RecordKind".to_owned(),
-            types: vec![ColumnType {
-                tag: "N".to_owned(),
-                reference_target: None,
-            }],
-        },
-        SchemaColumn {
-            name: "Fld55".to_owned(),
-            types: vec![ColumnType {
-                tag: "N".to_owned(),
-                reference_target: None,
-            }],
-        },
-    ]);
-
-    let live = &mut snapshot.live_tables[0];
-    live.name = "_accumrg53".to_owned();
-    live.columns
-        .retain(|column| !matches!(column.name.as_str(), "_idrref" | "_code"));
-    let date = live
-        .columns
-        .iter_mut()
-        .find(|column| column.name == "_date_time")
-        .unwrap();
-    date.name = "_period".to_owned();
-    live.columns.extend([
-        LiveColumn {
-            name: "_active".to_owned(),
-            data_type: "boolean".to_owned(),
-        },
-        LiveColumn {
-            name: "_recordkind".to_owned(),
-            data_type: "numeric(1,0)".to_owned(),
-        },
-        LiveColumn {
-            name: "_fld55".to_owned(),
-            data_type: "numeric(10,2)".to_owned(),
-        },
-    ]);
-
-    let dimension = &mut snapshot.fields[0];
-    dimension.name = Some("Номенклатура".to_owned());
-    dimension.owner_tables = vec!["_AccumRg53".to_owned()];
-    dimension.purpose = Some(ConfigFieldPurpose::AccumulationRegisterDimension);
-    let mut resource = dimension.clone();
-    resource.name = Some("Количество".to_owned());
-    resource.number = 55;
-    resource.physical_name = "_Fld55".to_owned();
-    resource.purpose = Some(ConfigFieldPurpose::AccumulationRegisterResource);
-    snapshot.fields.push(resource);
-
-    let mut totals_schema = snapshot.schema.tables[0].clone();
-    totals_schema.name = "AccumRgT56".to_owned();
-    totals_schema.number = 56;
-    totals_schema
-        .columns
-        .retain(|column| matches!(column.name.as_str(), "Period" | "Fld54" | "Fld55"));
-    totals_schema.columns.push(SchemaColumn {
-        name: "Splitter".to_owned(),
-        types: vec![ColumnType {
-            tag: "N".to_owned(),
-            reference_target: None,
-        }],
-    });
-    totals_schema.indexes.clear();
-    snapshot.schema.tables.push(totals_schema);
-
-    let mut totals_live = snapshot.live_tables[0].clone();
-    totals_live.name = "_accumrgt56".to_owned();
-    totals_live
-        .columns
-        .retain(|column| matches!(column.name.as_str(), "_period" | "_fld54" | "_fld55"));
-    totals_live.columns.push(LiveColumn {
-        name: "_splitter".to_owned(),
-        data_type: "numeric(10,0)".to_owned(),
-    });
-    totals_live.indexes.clear();
-    snapshot.live_tables.push(totals_live);
-    snapshot
-}
-
-fn presentation_reference_snapshot(multiple: bool) -> open_sdbl::metadata::MetadataSnapshot {
-    let db_names = parse_db_names(&hex(if multiple {
-        "55ce3112c3200c04c0bf5073333612207d200fc80f10a02a9322adc77f0f850b7bebbbb93b381e26d67a2d86aebb81471548ab1bdc1ba9cb98453986f7f4f99bdf3e43cc74c623e5aec506c15b67709a0e2b9a51b96b73a62c6a31bc3e63e579e5f70bd2022622083323df3c57ea6a950bea021659df5415ede6d992f3fc03"
-    } else {
-        "55cd310e82210c40e1bb30d3c49f16682fe001bc012ded641c5c097797c141bff9256f615eca3aac3705934b816667e0d16f10315082a737a19c1e1efef69779ca15775ea59a349d08318c808a0768930a9d4c46105616cde9fe9ca7a7d35f5f500e2044042622a83ffe2f7def0f"
-    }))
-    .unwrap();
-    let descriptors = parse_config_descriptors(
-        "b8bac76b-c91b-4d78-8a70-ffa39f8de694",
-        &hex(
-            "4d8d4b0ac3201400af22ae7d9018a3be650f505ae809def303857e426256c1bb37d850ba9e6166d36adb7ad529f64cc15986803d8389ce8327d741ce3460f631593455c9cb945eb7c88f732a14a9d0757e73926a4fc879955f2e965d10cfc31053536a3d467a0c68390e902918303a65608b23381390b219468fbc8f5af854ca7ce7b5fc1f1a10f423b5d60f",
-        ),
-    )
-    .unwrap();
-    let extra_type = if multiple {
-        ",{\"R\",0,0,\"Reference58\",2}"
-    } else {
-        ""
-    };
-    let third_table = if multiple {
-        r#",{"Reference58","N",58,"",{2,{"ID",0,{1,{"R",0,0,"Reference58",2}},"",0},{"Code",0,{1,{"S",10,0,"",0}},"",0}},{0},{0},1,"R",{0},{0},"",0}"#
-    } else {
-        ""
-    };
-    let table_count = if multiple { 3 } else { 2 };
-    let schema_text = format!(
-        r#"{{0,{{{table_count},{{"Reference53","N",53,"",{{2,{{"ID",0,{{1,{{"R",0,0,"Reference53",2}}}},"",0}},{{"Fld54",0,{{{},{{"R",0,0,"Reference57",2}}{extra_type}}},"",0}}}},{{0}},{{0}},1,"R",{{0}},{{0}},"",0}},{{"Reference57","N",57,"",{{2,{{"ID",0,{{1,{{"R",0,0,"Reference57",2}}}},"",0}},{{"Code",0,{{1,{{"S",10,0,"",0}}}},"",0}}}},{{0}},{{0}},1,"R",{{0}},{{0}},"",0}}{third_table}}}}}"#,
-        if multiple { 2 } else { 1 }
-    );
-    let schema = parse_schema_storage(schema_text.as_bytes()).unwrap();
-    let mut live_tables = vec![
-        LiveTable {
-            name: "_reference53".to_owned(),
-            columns: vec![
-                LiveColumn {
-                    name: "_idrref".to_owned(),
-                    data_type: "bytea".to_owned(),
-                },
-                LiveColumn {
-                    name: "_fld54_rtref".to_owned(),
-                    data_type: "bytea".to_owned(),
-                },
-                LiveColumn {
-                    name: "_fld54_rrref".to_owned(),
-                    data_type: "bytea".to_owned(),
-                },
-            ],
-            indexes: Vec::new(),
-        },
-        LiveTable {
-            name: "_reference57".to_owned(),
-            columns: vec![
-                LiveColumn {
-                    name: "_idrref".to_owned(),
-                    data_type: "bytea".to_owned(),
-                },
-                LiveColumn {
-                    name: "_code".to_owned(),
-                    data_type: "mvarchar(10)".to_owned(),
-                },
-            ],
-            indexes: Vec::new(),
-        },
-    ];
-    if multiple {
-        let mut target = live_tables[1].clone();
-        target.name = "_reference58".to_owned();
-        live_tables.push(target);
-    }
-    resolve_metadata(db_names, descriptors, schema, live_tables)
-}
-
-fn hex(value: &str) -> Vec<u8> {
-    value
-        .as_bytes()
-        .chunks_exact(2)
-        .map(|pair| u8::from_str_radix(std::str::from_utf8(pair).unwrap(), 16).unwrap())
-        .collect()
+    assert_eq!(error.kind(), QueryDiagnosticKind::Metadata);
 }

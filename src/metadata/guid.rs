@@ -1,7 +1,7 @@
 use std::fmt;
 use std::str::FromStr;
 
-use super::MetadataError;
+use super::{MetadataError, MetadataErrorKind};
 
 /// A validated, canonical lowercase 1C metadata GUID.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -67,12 +67,18 @@ impl FromStr for Guid {
 
     fn from_str(value: &str) -> Result<Self, Self::Err> {
         if value.len() != 36 {
-            return Err(MetadataError::new(format!("invalid GUID {value:?}")));
+            return Err(MetadataError::new(
+                MetadataErrorKind::Guid,
+                format!("invalid GUID {value:?}"),
+            ));
         }
         for (index, byte) in value.bytes().enumerate() {
             let separator = matches!(index, 8 | 13 | 18 | 23);
             if (separator && byte != b'-') || (!separator && !byte.is_ascii_hexdigit()) {
-                return Err(MetadataError::new(format!("invalid GUID {value:?}")));
+                return Err(MetadataError::new(
+                    MetadataErrorKind::Guid,
+                    format!("invalid GUID {value:?}"),
+                ));
             }
         }
         Ok(Self(value.to_ascii_lowercase()))

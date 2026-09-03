@@ -7,11 +7,9 @@ use std::time::{Duration, Instant};
 use moka::future::Cache;
 use open_sdbl::metadata::{MetadataKind, MetadataObject, MetadataSnapshot, ObjectId};
 use open_sdbl::query::{
-    CompiledQuery, PreparedMsSqlQuery, PreparedPostgresQuery, PresentationExpression,
-    PresentationPlan, PresentationRequest, compile_mssql_presentation_lookup_with_year_offset,
-    compile_postgres_presentation_lookup, find_metadata_object,
-    prepare_mssql_query_with_year_offset, prepare_postgres_query, queryable_field_catalog,
-    queryable_fields,
+    CompiledQuery, MsSqlBackend, PostgresBackend, Prepared, PresentationExpression,
+    PresentationPlan, PresentationRequest, QueryCompiler, find_metadata_object,
+    queryable_field_catalog, queryable_fields,
 };
 use open_sdbl::{TokenKind, tokenize};
 use rustyline::completion::{Completer, Pair};
@@ -438,7 +436,7 @@ fn push_virtual_table_candidates(
 }
 
 fn normalize_physical_table(table: &str) -> String {
-    table.trim_start_matches('_').to_lowercase()
+    table.strip_prefix('_').unwrap_or(table).to_lowercase()
 }
 
 const fn russian_metadata_kind(kind: MetadataKind) -> &'static str {
@@ -462,8 +460,8 @@ const fn russian_metadata_kind(kind: MetadataKind) -> &'static str {
 }
 
 enum PreparedQuery {
-    Postgres(PreparedPostgresQuery),
-    MsSql(PreparedMsSqlQuery),
+    Postgres(Prepared<PostgresBackend>),
+    MsSql(Prepared<MsSqlBackend>),
 }
 
 impl PreparedQuery {
@@ -589,13 +587,12 @@ pub(super) async fn run(
         add_history(&mut editor, statement.trim())?;
         let generation_started = Instant::now();
         let prepared = match session.dialect() {
-            DatabaseDialect::Postgres => {
-                prepare_postgres_query(&statement, &snapshot).map(PreparedQuery::Postgres)
-            }
-            DatabaseDialect::MsSql { year_offset } => {
-                prepare_mssql_query_with_year_offset(&statement, &snapshot, year_offset)
-                    .map(PreparedQuery::MsSql)
-            }
+            DatabaseDialect::Postgres => QueryCompiler::new(&snapshot, PostgresBackend)
+                .prepare(&statement)
+                .map(PreparedQuery::Postgres),
+            DatabaseDialect::MsSql { backend } => QueryCompiler::new(&snapshot, backend)
+                .prepare(&statement)
+                .map(PreparedQuery::MsSql),
         };
         let compilation = match prepared {
             Ok(prepared) => {
@@ -735,16 +732,10 @@ async fn resolve_deferred_presentations(
         let object_references = object_references.into_iter().collect::<Vec<_>>();
         for chunk in object_references.chunks(512) {
             let lookup = match dialect {
-                DatabaseDialect::Postgres => {
-                    compile_postgres_presentation_lookup(snapshot, &plan, chunk)
-                }
-                DatabaseDialect::MsSql { year_offset } => {
-                    compile_mssql_presentation_lookup_with_year_offset(
-                        snapshot,
-                        &plan,
-                        chunk,
-                        year_offset,
-                    )
+                DatabaseDialect::Postgres => QueryCompiler::new(snapshot, PostgresBackend)
+                    .compile_presentation_lookup(&plan, chunk),
+                DatabaseDialect::MsSql { backend } => {
+                    QueryCompiler::new(snapshot, backend).compile_presentation_lookup(&plan, chunk)
                 }
             }
             .map_err(|error| {

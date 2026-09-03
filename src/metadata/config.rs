@@ -1,7 +1,9 @@
 use std::borrow::Cow;
 use std::str::FromStr;
 
-use super::{Guid, MetadataError, Value, inflate_raw_deflate, parse_serialized};
+use super::{
+    Guid, MetadataError, Value, ensure_serialized_depth, inflate_raw_deflate, parse_serialized,
+};
 
 /// Semantic role of a custom field declared by a recognized Config collection.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -34,6 +36,24 @@ impl ConfigFieldPurpose {
     }
 }
 
+const ENUM_VALUES_COLLECTION_GUID: &str = "bee0a08c-07eb-40c0-8544-5c364c171465";
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ConfigCollectionPurpose {
+    Field(ConfigFieldPurpose),
+    EnumerationValue,
+}
+
+impl ConfigCollectionPurpose {
+    fn from_collection(value: &str) -> Option<Self> {
+        if value.eq_ignore_ascii_case(ENUM_VALUES_COLLECTION_GUID) {
+            Some(Self::EnumerationValue)
+        } else {
+            ConfigFieldPurpose::from_collection(value).map(Self::Field)
+        }
+    }
+}
+
 /// One localized synonym from a Config descriptor.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Synonym {
@@ -60,6 +80,8 @@ pub struct ConfigDescriptor {
     pub comment: Option<String>,
     /// Field role established by a recognized enclosing Config collection.
     pub field_purpose: Option<ConfigFieldPurpose>,
+    /// Whether the descriptor belongs to the authoritative enum-values collection.
+    pub enumeration_value: bool,
 }
 
 /// One catalog predefined value decoded from an authoritative `.1c` resource.
@@ -196,7 +218,7 @@ fn parse_config_descriptors_streaming(
 ) -> Result<Vec<ConfigDescriptor>, MetadataError> {
     let input = input.strip_prefix(&[0xef, 0xbb, 0xbf]).unwrap_or(input);
     let text = std::str::from_utf8(input)
-        .map_err(|error| MetadataError::at(error.valid_up_to(), "metadata is not valid UTF-8"))?;
+        .map_err(|error| MetadataError::utf8(error.valid_up_to(), "metadata is not valid UTF-8"))?;
     ConfigParser::new(text, resource_guid).parse()
 }
 
@@ -277,13 +299,16 @@ impl<'input, 'resource> ConfigParser<'input, 'resource> {
     fn parse(mut self) -> Result<Vec<ConfigDescriptor>, MetadataError> {
         self.skip_whitespace();
         if self.offset == self.input.len() {
-            return Err(MetadataError::at(0, "empty metadata serialization"));
+            return Err(MetadataError::serialization(
+                self.offset,
+                "empty metadata serialization",
+            ));
         }
         let mut descriptors = Vec::new();
         self.value(&mut descriptors, None, 0)?;
         self.skip_whitespace();
         if self.offset != self.input.len() {
-            return Err(MetadataError::at(
+            return Err(MetadataError::serialization(
                 self.offset,
                 "unexpected trailing metadata",
             ));
@@ -297,7 +322,7 @@ impl<'input, 'resource> ConfigParser<'input, 'resource> {
     fn value(
         &mut self,
         descriptors: &mut Vec<ProjectedConfigDescriptor>,
-        inherited_purpose: Option<(ConfigFieldPurpose, usize)>,
+        inherited_purpose: Option<(ConfigCollectionPurpose, usize)>,
         depth: usize,
     ) -> Result<ConfigCandidate<'input>, MetadataError> {
         match self.current() {
@@ -309,16 +334,20 @@ impl<'input, 'resource> ConfigParser<'input, 'resource> {
             Some(_) => self
                 .atom()
                 .map(|value| ConfigCandidate::Scalar(SimpleValue::Atom(value))),
-            None => Err(MetadataError::at(self.offset, "unexpected end of metadata")),
+            None => Err(MetadataError::serialization(
+                self.offset,
+                "unexpected end of metadata",
+            )),
         }
     }
 
     fn list(
         &mut self,
         descriptors: &mut Vec<ProjectedConfigDescriptor>,
-        inherited_purpose: Option<(ConfigFieldPurpose, usize)>,
+        inherited_purpose: Option<(ConfigCollectionPurpose, usize)>,
         depth: usize,
     ) -> Result<ConfigCandidate<'input>, MetadataError> {
+        ensure_serialized_depth(depth, self.offset)?;
         self.offset += 1;
         self.skip_whitespace();
         let mut local_descriptors = Vec::new();
@@ -334,7 +363,10 @@ impl<'input, 'resource> ConfigParser<'input, 'resource> {
             self.skip_whitespace();
             match self.current() {
                 None => {
-                    return Err(MetadataError::at(self.offset, "unterminated metadata list"));
+                    return Err(MetadataError::serialization(
+                        self.offset,
+                        "unterminated metadata list",
+                    ));
                 }
                 Some(b'}') => {
                     if expecting_value && value_count != 0 {
@@ -393,7 +425,7 @@ impl<'input, 'resource> ConfigParser<'input, 'resource> {
                     expecting_value = false;
                 }
                 Some(_) => {
-                    return Err(MetadataError::at(
+                    return Err(MetadataError::serialization(
                         self.offset,
                         "expected ',' or '}' in metadata list",
                     ));
@@ -426,7 +458,7 @@ impl<'input, 'resource> ConfigParser<'input, 'resource> {
                 .iter()
                 .position(|byte| *byte == b'"')
             else {
-                return Err(MetadataError::at(
+                return Err(MetadataError::serialization(
                     self.offset,
                     "unterminated metadata string",
                 ));
@@ -460,7 +492,7 @@ impl<'input, 'resource> ConfigParser<'input, 'resource> {
         }
         let atom = self.input[start..self.offset].trim();
         if atom.is_empty() {
-            return Err(MetadataError::at(start, "empty metadata atom"));
+            return Err(MetadataError::serialization(start, "empty metadata atom"));
         }
         Ok(atom)
     }
@@ -495,7 +527,7 @@ fn record_config_candidate<'input>(
     value_index: usize,
     simple_values: &mut Option<Vec<SimpleValue<'input>>>,
     window: &mut Vec<ConfigCandidate<'input>>,
-    field_purpose: &mut Option<(ConfigFieldPurpose, usize)>,
+    field_purpose: &mut Option<(ConfigCollectionPurpose, usize)>,
     local_purpose_found: &mut bool,
     depth: usize,
     resource_guid: &Guid,
@@ -514,7 +546,7 @@ fn record_config_candidate<'input>(
         && value_index < 2
         && let Some(purpose) = candidate
             .as_str()
-            .and_then(ConfigFieldPurpose::from_collection)
+            .and_then(ConfigCollectionPurpose::from_collection)
     {
         *field_purpose = Some((purpose, depth));
         *local_purpose_found = true;
@@ -523,7 +555,12 @@ fn record_config_candidate<'input>(
                 .purpose_depth
                 .is_none_or(|purpose_depth| purpose_depth < depth)
             {
-                descriptor.descriptor.field_purpose = Some(purpose);
+                descriptor.descriptor.field_purpose = match purpose {
+                    ConfigCollectionPurpose::Field(purpose) => Some(purpose),
+                    ConfigCollectionPurpose::EnumerationValue => None,
+                };
+                descriptor.descriptor.enumeration_value =
+                    purpose == ConfigCollectionPurpose::EnumerationValue;
                 descriptor.purpose_depth = Some(depth);
             }
         }
@@ -549,7 +586,7 @@ fn project_config_descriptor(
     name: &ConfigCandidate<'_>,
     synonyms: &ConfigCandidate<'_>,
     comment: Option<&ConfigCandidate<'_>>,
-    field_purpose: Option<(ConfigFieldPurpose, usize)>,
+    field_purpose: Option<(ConfigCollectionPurpose, usize)>,
     resource_guid: &Guid,
     descriptors: &mut Vec<ProjectedConfigDescriptor>,
 ) {
@@ -587,7 +624,12 @@ fn project_config_descriptor(
             name: name.to_owned(),
             synonyms,
             comment,
-            field_purpose: field_purpose.map(|(purpose, _)| purpose),
+            field_purpose: field_purpose.and_then(|(purpose, _)| match purpose {
+                ConfigCollectionPurpose::Field(purpose) => Some(purpose),
+                ConfigCollectionPurpose::EnumerationValue => None,
+            }),
+            enumeration_value: field_purpose
+                .is_some_and(|(purpose, _)| purpose == ConfigCollectionPurpose::EnumerationValue),
         },
         purpose_depth: field_purpose.map(|(_, depth)| depth),
     });
@@ -611,7 +653,7 @@ fn streaming_synonyms(values: &[SimpleValue<'_>]) -> Vec<Synonym> {
 fn collect_descriptors(
     value: &Value,
     resource_guid: &Guid,
-    inherited_purpose: Option<ConfigFieldPurpose>,
+    inherited_purpose: Option<ConfigCollectionPurpose>,
     descriptors: &mut Vec<ConfigDescriptor>,
 ) {
     let Value::List(values) = value else {
@@ -621,7 +663,7 @@ fn collect_descriptors(
         .iter()
         .take(2)
         .filter_map(Value::as_str)
-        .find_map(ConfigFieldPurpose::from_collection)
+        .find_map(ConfigCollectionPurpose::from_collection)
         .or(inherited_purpose);
     for (index, window) in values.windows(3).enumerate() {
         let Some(self_reference) = window.first().and_then(Value::as_list) else {
@@ -657,7 +699,11 @@ fn collect_descriptors(
             name: name.to_owned(),
             synonyms: parse_synonyms(&window[2]),
             comment,
-            field_purpose,
+            field_purpose: field_purpose.and_then(|purpose| match purpose {
+                ConfigCollectionPurpose::Field(purpose) => Some(purpose),
+                ConfigCollectionPurpose::EnumerationValue => None,
+            }),
+            enumeration_value: field_purpose == Some(ConfigCollectionPurpose::EnumerationValue),
         });
     }
     for value in values {
@@ -706,6 +752,19 @@ mod tests {
         assert_eq!(descriptor.synonyms.len(), 2);
         assert_eq!(descriptor.synonyms[0].text, "Корр. счет");
         assert_eq!(descriptor.comment.as_deref(), Some("Комментарий"));
+    }
+
+    #[test]
+    fn rejects_pathologically_deep_config() {
+        let owner = Guid::from_str("b8bac76b-c91b-4d78-8a70-ffa39f8de694").unwrap();
+        let input = format!("{}0{}", "{".repeat(5_000), "}".repeat(5_000));
+        let error = parse_config_descriptors_streaming(input.as_bytes(), &owner).unwrap_err();
+        assert_eq!(error.offset(), Some(512));
+        assert!(
+            error
+                .message()
+                .contains("nesting depth exceeds limit of 512")
+        );
     }
 
     #[test]
@@ -767,6 +826,33 @@ mod tests {
             collect_descriptors(&value, &owner, None, &mut descriptors);
             assert_eq!(descriptors[0].field_purpose, Some(expected));
         }
+    }
+
+    #[test]
+    fn marks_only_descriptors_from_the_enum_values_collection() {
+        let owner = Guid::from_str("b8bac76b-c91b-4d78-8a70-ffa39f8de694").unwrap();
+        let source = br#"{
+            {bee0a08c-07eb-40c0-8544-5c364c171465,1,
+                {{1,0,25c96bd3-fac4-42ef-b695-74c9af43589b},"RealValue",{0}}},
+            {forms,1,
+                {{1,0,03bd775a-e0a1-4205-82ce-6068e73ad134},"ListForm",{0}}}}
+        "#;
+        let value = parse_serialized(source).unwrap();
+        let mut expected = Vec::new();
+        collect_descriptors(&value, &owner, None, &mut expected);
+        let actual = parse_config_descriptors_streaming(source, &owner).unwrap();
+
+        assert_eq!(actual, expected);
+        let real = actual
+            .iter()
+            .find(|descriptor| descriptor.name == "RealValue")
+            .unwrap();
+        let form = actual
+            .iter()
+            .find(|descriptor| descriptor.name == "ListForm")
+            .unwrap();
+        assert!(real.enumeration_value);
+        assert!(!form.enumeration_value);
     }
 
     #[test]

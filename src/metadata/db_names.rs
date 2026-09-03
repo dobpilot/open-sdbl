@@ -5,7 +5,7 @@ use std::str::FromStr;
 
 #[cfg(test)]
 use super::Value;
-use super::{Guid, MetadataError, inflate_raw_deflate};
+use super::{Guid, MetadataError, ensure_serialized_depth, inflate_raw_deflate};
 
 /// A physical-name entry from `Params.DBNames`.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -196,6 +196,7 @@ pub fn parse_db_names(compressed: &[u8]) -> Result<DbNames, MetadataError> {
     let entries = parse_db_name_entries(&decoded)?;
     if entries.is_empty() {
         return Err(MetadataError::new(
+            super::MetadataErrorKind::Schema,
             "DBNames contains no valid GUID/alias/number entries",
         ));
     }
@@ -230,7 +231,7 @@ pub fn parse_db_names(compressed: &[u8]) -> Result<DbNames, MetadataError> {
 fn parse_db_name_entries(input: &[u8]) -> Result<Vec<DbNameEntry>, MetadataError> {
     let input = input.strip_prefix(&[0xef, 0xbb, 0xbf]).unwrap_or(input);
     let text = std::str::from_utf8(input)
-        .map_err(|error| MetadataError::at(error.valid_up_to(), "metadata is not valid UTF-8"))?;
+        .map_err(|error| MetadataError::utf8(error.valid_up_to(), "metadata is not valid UTF-8"))?;
     DbNamesParser::new(text).parse()
 }
 
@@ -277,13 +278,16 @@ impl<'input> DbNamesParser<'input> {
     fn parse(mut self) -> Result<Vec<DbNameEntry>, MetadataError> {
         self.skip_whitespace();
         if self.offset == self.input.len() {
-            return Err(MetadataError::at(0, "empty metadata serialization"));
+            return Err(MetadataError::serialization(
+                self.offset,
+                "empty metadata serialization",
+            ));
         }
         let mut entries = Vec::new();
-        self.value(&mut entries)?;
+        self.value(&mut entries, 0)?;
         self.skip_whitespace();
         if self.offset != self.input.len() {
-            return Err(MetadataError::at(
+            return Err(MetadataError::serialization(
                 self.offset,
                 "unexpected trailing metadata",
             ));
@@ -294,17 +298,26 @@ impl<'input> DbNamesParser<'input> {
     fn value(
         &mut self,
         entries: &mut Vec<DbNameEntry>,
+        depth: usize,
     ) -> Result<Candidate<'input>, MetadataError> {
         match self.current() {
-            Some(b'{') => self.list(entries),
+            Some(b'{') => self.list(entries, depth),
             Some(b'"') => self.string().map(Candidate::String),
             Some(b',' | b'}') => Ok(Candidate::Other),
             Some(_) => self.atom().map(Candidate::Atom),
-            None => Err(MetadataError::at(self.offset, "unexpected end of metadata")),
+            None => Err(MetadataError::serialization(
+                self.offset,
+                "unexpected end of metadata",
+            )),
         }
     }
 
-    fn list(&mut self, entries: &mut Vec<DbNameEntry>) -> Result<Candidate<'input>, MetadataError> {
+    fn list(
+        &mut self,
+        entries: &mut Vec<DbNameEntry>,
+        depth: usize,
+    ) -> Result<Candidate<'input>, MetadataError> {
+        ensure_serialized_depth(depth, self.offset)?;
         self.offset += 1;
         self.skip_whitespace();
         let mut candidates = [None, None, None];
@@ -315,7 +328,10 @@ impl<'input> DbNamesParser<'input> {
             self.skip_whitespace();
             match self.current() {
                 None => {
-                    return Err(MetadataError::at(self.offset, "unterminated metadata list"));
+                    return Err(MetadataError::serialization(
+                        self.offset,
+                        "unterminated metadata list",
+                    ));
                 }
                 Some(b'}') => {
                     if expecting_value && value_count != 0 {
@@ -333,7 +349,7 @@ impl<'input> DbNamesParser<'input> {
                     expecting_value = true;
                 }
                 Some(_) if expecting_value => {
-                    let candidate = self.value(entries)?;
+                    let candidate = self.value(entries, depth + 1)?;
                     if value_count < candidates.len() {
                         candidates[value_count] = Some(candidate);
                     }
@@ -341,7 +357,7 @@ impl<'input> DbNamesParser<'input> {
                     expecting_value = false;
                 }
                 Some(_) => {
-                    return Err(MetadataError::at(
+                    return Err(MetadataError::serialization(
                         self.offset,
                         "expected ',' or '}' in metadata list",
                     ));
@@ -374,7 +390,7 @@ impl<'input> DbNamesParser<'input> {
                 .iter()
                 .position(|byte| *byte == b'"')
             else {
-                return Err(MetadataError::at(
+                return Err(MetadataError::serialization(
                     self.offset,
                     "unterminated metadata string",
                 ));
@@ -408,7 +424,7 @@ impl<'input> DbNamesParser<'input> {
         }
         let atom = self.input[start..self.offset].trim();
         if atom.is_empty() {
-            return Err(MetadataError::at(start, "empty metadata atom"));
+            return Err(MetadataError::serialization(start, "empty metadata atom"));
         }
         Ok(atom)
     }
@@ -462,6 +478,7 @@ fn collect_entries(value: &Value, output: &mut Vec<DbNameEntry>) {
 #[cfg(test)]
 mod tests {
     use super::{MetadataKind, collect_entries, parse_db_name_entries, parse_db_names};
+    use crate::hex_test_support::hex;
     use crate::metadata::{Guid, normalize_index_key, parse_serialized};
     use std::str::FromStr;
 
@@ -535,6 +552,18 @@ mod tests {
     }
 
     #[test]
+    fn rejects_pathologically_deep_db_names() {
+        let input = format!("{}0{}", "{".repeat(5_000), "}".repeat(5_000));
+        let error = parse_db_name_entries(input.as_bytes()).unwrap_err();
+        assert_eq!(error.offset(), Some(512));
+        assert!(
+            error
+                .message()
+                .contains("nesting depth exceeds limit of 512")
+        );
+    }
+
+    #[test]
     fn streaming_projection_matches_the_generic_tree_and_validates_all_input() {
         let source = br#"{4,"ignored ""text""",{b56f25d2-72a9-4d80-8998-77ac3097c873,"Reference",2565},{{03bd775a-e0a1-4205-82ce-6068e73ad134,"Fld",2566}},}"#;
         let value = parse_serialized(source).unwrap();
@@ -546,13 +575,5 @@ mod tests {
         let error = parse_db_name_entries(malformed).unwrap_err();
         assert_eq!(error.message(), "unterminated metadata string");
         assert!(error.offset().is_some());
-    }
-
-    fn hex(input: &str) -> Vec<u8> {
-        input
-            .as_bytes()
-            .chunks_exact(2)
-            .map(|pair| u8::from_str_radix(std::str::from_utf8(pair).unwrap(), 16).unwrap())
-            .collect()
     }
 }

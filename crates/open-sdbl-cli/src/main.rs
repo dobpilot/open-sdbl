@@ -14,6 +14,7 @@ use open_sdbl::metadata::{
     PostgresMetadataQueries, parse_config_descriptors, parse_config_predefined_values,
     parse_db_names, parse_schema_storage, resolve_metadata_with_predefined_values,
 };
+use open_sdbl::query::MsSqlBackend;
 use open_sdbl::{Diagnostic, tokenize};
 use tiberius::{
     AuthMethod, Client as MsSqlClient, ColumnType as MsSqlColumnType, Config as MsSqlConfig,
@@ -26,6 +27,10 @@ use tokio_postgres::{IsolationLevel, NoTls, Row, Transaction};
 use tokio_util::compat::{Compat, TokioAsyncWriteCompatExt};
 
 mod repl;
+
+#[cfg(test)]
+#[path = "../../../tests/support/hex.rs"]
+mod hex_test_support;
 
 const HELP: &str = "open-sdbl — tooling for the 1C query language\n\n\
 Usage:\n  open-sdbl lex [FILE|-]\n  open-sdbl metadata postgres --host HOST --database DB --user USER [OPTIONS]\n  open-sdbl console postgres --host HOST --database DB --user USER [OPTIONS]\n  open-sdbl metadata mssql --host HOST --database DB --user USER [OPTIONS]\n  open-sdbl console mssql --host HOST --database DB --user USER [OPTIONS]\n  open-sdbl --help\n\n\
@@ -531,7 +536,7 @@ pub(crate) type QueryRows = Vec<Vec<Option<String>>>;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum DatabaseDialect {
     Postgres,
-    MsSql { year_offset: i32 },
+    MsSql { backend: MsSqlBackend },
 }
 
 enum DatabaseSession {
@@ -556,7 +561,7 @@ impl DatabaseSession {
         match self {
             Self::Postgres(_) => DatabaseDialect::Postgres,
             Self::MsSql(session) => DatabaseDialect::MsSql {
-                year_offset: session.year_offset,
+                backend: session.backend,
             },
         }
     }
@@ -599,7 +604,7 @@ type MsSqlTransport = Compat<TcpStream>;
 struct MsSqlSession {
     client: MsSqlClient<MsSqlTransport>,
     database: String,
-    year_offset: i32,
+    backend: MsSqlBackend,
 }
 
 impl MsSqlSession {
@@ -660,7 +665,7 @@ impl MsSqlSession {
         let mut session = Self {
             client,
             database: options.database.clone(),
-            year_offset: 0,
+            backend: MsSqlBackend::default(),
         };
         session
             .execute_batch(
@@ -668,7 +673,9 @@ impl MsSqlSession {
             )
             .await?;
         session.verify_database().await?;
-        session.year_offset = session.read_year_offset().await?;
+        let year_offset = session.read_year_offset().await?;
+        session.backend =
+            MsSqlBackend::new(year_offset).map_err(|error| CliError::Data(error.to_string()))?;
         Ok(session)
     }
 
@@ -1016,7 +1023,7 @@ async fn acquire_metadata(transaction: &Transaction<'_>) -> Result<MetadataSnaps
     .await?;
 
     progress.phase("resolve");
-    let snapshot = run_metadata_blocking("metadata resolution", move || {
+    let resolved = run_metadata_blocking("metadata resolution", move || {
         Ok(resolve_metadata_with_predefined_values(
             db_names,
             descriptors,
@@ -1027,7 +1034,8 @@ async fn acquire_metadata(transaction: &Transaction<'_>) -> Result<MetadataSnaps
     })
     .await?;
     progress.finish();
-    Ok(snapshot)
+    print_resolution_report(&resolved.report);
+    Ok(resolved.snapshot)
 }
 
 async fn acquire_mssql_metadata(
@@ -1108,7 +1116,7 @@ async fn acquire_mssql_metadata(
     .await?;
 
     progress.phase("resolve");
-    let snapshot = run_metadata_blocking("metadata resolution", move || {
+    let resolved = run_metadata_blocking("metadata resolution", move || {
         Ok(resolve_metadata_with_predefined_values(
             db_names,
             descriptors,
@@ -1119,7 +1127,19 @@ async fn acquire_mssql_metadata(
     })
     .await?;
     progress.finish();
-    Ok(snapshot)
+    print_resolution_report(&resolved.report);
+    Ok(resolved.snapshot)
+}
+
+fn print_resolution_report(report: &open_sdbl::metadata::ResolutionReport) {
+    const MAX_PRINTED_FINDINGS: usize = 100;
+    for finding in report.findings().iter().take(MAX_PRINTED_FINDINGS) {
+        eprintln!("metadata resolution: {finding}");
+    }
+    let omitted = report.findings().len().saturating_sub(MAX_PRINTED_FINDINGS);
+    if omitted != 0 {
+        eprintln!("metadata resolution: {omitted} additional findings omitted");
+    }
 }
 
 async fn mssql_rows(
@@ -1616,6 +1636,7 @@ impl From<tokio_postgres::Error> for CliError {
 
 #[cfg(test)]
 mod tests {
+    use super::hex_test_support::hex;
     use super::{
         ConfigResource, ConnectionOptions, DatabaseConnection, MetadataProgress, MsSqlConnection,
         MsSqlSession, PostgresConnection, Socks5Proxy, connect_postgres_raw, connect_socks5,
@@ -1625,8 +1646,7 @@ mod tests {
     };
     use open_sdbl::metadata::{FieldId, MetadataSnapshot, StandardFieldId};
     use open_sdbl::query::{
-        CompiledQuery, PresentationExpression, PresentationPlan,
-        compile_mssql_query_with_year_offset, prepare_mssql_query_with_year_offset,
+        CompiledQuery, MsSqlBackend, PresentationExpression, PresentationPlan, QueryCompiler,
     };
 
     fn compile_mssql_test_query(
@@ -1634,7 +1654,10 @@ mod tests {
         snapshot: &MetadataSnapshot,
         year_offset: i32,
     ) -> CompiledQuery {
-        let prepared = prepare_mssql_query_with_year_offset(source, snapshot, year_offset).unwrap();
+        let backend = MsSqlBackend::new(year_offset).expect("test MSSQL year offset must be valid");
+        let prepared = QueryCompiler::new(snapshot, backend)
+            .prepare(source)
+            .unwrap();
         let plans = prepared
             .presentation_request()
             .targets
@@ -1694,14 +1717,13 @@ mod tests {
         let mut session = MsSqlSession::connect(&mssql_test_connection())
             .await
             .unwrap();
-        let year_offset = session.year_offset;
+        let backend = session.backend;
         let snapshot = session.metadata().await.unwrap();
-        let compiled = compile_mssql_query_with_year_offset(
-            "SELECT Version FROM Документ._ДемоЗаказПокупателя WHERE Version > 0x00000000000007D6;",
-            &snapshot,
-            year_offset,
-        )
-        .unwrap();
+        let compiled = QueryCompiler::new(&snapshot, backend)
+            .compile(
+                "SELECT Version FROM Документ._ДемоЗаказПокупателя WHERE Version > 0x00000000000007D6;",
+            )
+            .unwrap();
 
         assert!(
             compiled
@@ -1741,7 +1763,7 @@ mod tests {
         let direct = compile_mssql_test_query(
             "SELECT TOP 3 ID, Code, Description FROM Catalog._ДемоНоменклатура;",
             &snapshot,
-            session.year_offset,
+            session.backend.year_offset(),
         );
         assert!(direct.sql.contains("FROM \"_Reference18X1\""));
         let direct_rows = session
@@ -1758,7 +1780,7 @@ mod tests {
         let dereference = compile_mssql_test_query(
             "SELECT TOP 3 Номенклатура.Наименование FROM РегистрНакопления._ДемоОстаткиТоваровВМестахХранения.Остатки();",
             &snapshot,
-            session.year_offset,
+            session.backend.year_offset(),
         );
         assert!(dereference.sql.contains("FROM \"_Reference18X1\""));
         let dereference_rows = session
@@ -1775,7 +1797,7 @@ mod tests {
         let presentations = compile_mssql_test_query(
             "SELECT Номенклатура, ПредставлениеСсылки(Номенклатура), Представление(Номенклатура), КоличествоОстаток FROM РегистрНакопления._ДемоОстаткиТоваровВМестахХранения.Остатки();",
             &snapshot,
-            session.year_offset,
+            session.backend.year_offset(),
         );
         assert!(presentations.sql.contains("FROM \"_Reference18X1\""));
         let presentation_rows = session
@@ -1905,18 +1927,6 @@ mod tests {
             .await
             .unwrap_err();
         assert!(error.to_string().contains("DEFLATE"));
-    }
-
-    fn hex(value: &str) -> Vec<u8> {
-        value
-            .as_bytes()
-            .chunks_exact(2)
-            .map(|pair| {
-                let high = char::from(pair[0]).to_digit(16).unwrap();
-                let low = char::from(pair[1]).to_digit(16).unwrap();
-                ((high << 4) | low) as u8
-            })
-            .collect()
     }
 
     #[test]

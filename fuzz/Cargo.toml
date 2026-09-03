@@ -1,0 +1,27 @@
+[package]
+name = "open-sdbl-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2024"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+open-sdbl = { path = ".." }
+
+[[bin]]
+name = "inflate"
+path = "fuzz_targets/inflate.rs"
+test = false
+doc = false
+bench = false
+
+# Keep fuzz-only dependencies and targets outside the production workspace.
+[workspace]
+members = ["."]
+resolver = "3"
+
+[profile.release]
+debug = 1
