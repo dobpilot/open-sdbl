@@ -271,7 +271,7 @@ open-sdbl = { git = "https://github.com/dobpilot/open-sdbl.git" }
 
 ```rust
 use open_sdbl::metadata::{
-    LiveTable, MetadataError, MetadataSnapshot, parse_config_descriptors,
+    LiveTable, MetadataError, ResolvedMetadata, parse_config_descriptors,
     parse_db_names, parse_schema_storage, resolve_metadata,
 };
 
@@ -280,7 +280,7 @@ fn build_metadata(
     config_rows: &[(String, Vec<u8>)],
     schema_blob: &[u8],
     live_tables: Vec<LiveTable>,
-) -> Result<MetadataSnapshot, MetadataError> {
+) -> Result<ResolvedMetadata, MetadataError> {
     let db_names = parse_db_names(db_names_blob)?;
     let schema = parse_schema_storage(schema_blob)?;
     let mut descriptors = Vec::new();
@@ -305,43 +305,91 @@ fn build_metadata(
 `tokio-postgres` и Tiberius есть в
 [`open-sdbl-cli`](crates/open-sdbl-cli/src/main.rs).
 
-Для запроса без функций представления достаточно одного вызова:
+`resolve_metadata*` возвращает `ResolvedMetadata`: поле `snapshot` используется
+для компиляции, а `report` содержит детерминированный список
+`ResolutionFinding`. Отчёт нужно проверять после каждого обновления метаданных:
+он сообщает об отсутствующих Config-дескрипторах и физических таблицах,
+неизвестных тегах колонок, повреждённых декларациях, дубликатах GUID и
+расхождениях индексов. Такие находки не обязательно делают весь снимок
+непригодным: согласованные объекты и поля остаются доступны, а обращение к
+неживому объекту завершается типизированной диагностикой.
 
-```rust
-use open_sdbl::{
-    metadata::MetadataSnapshot,
-    query::{CompiledQuery, QueryDiagnostic, compile_postgres_query},
-};
-
-fn compile(metadata: &MetadataSnapshot) -> Result<CompiledQuery, QueryDiagnostic> {
-    let query = "ВЫБРАТЬ Код, Наименование ИЗ Справочник.Договоры";
-    compile_postgres_query(query, metadata)
-}
-```
-
-`CompiledQuery` содержит только SQL и имена выходных колонок. Исполнение SQL и
-декодирование результата остаются ответственностью приложения.
-Для MSSQL вызов отличается выбором компилятора и передачей смещения дат:
+Основной API компиляции — `QueryCompiler<B>`, параметризованный
+неизменяемым backend-value. PostgreSQL не имеет состояния, а MSSQL
+хранит только смещение дат:
 
 ```rust
 use open_sdbl::{
     metadata::MetadataSnapshot,
     query::{
-        CompiledQuery, QueryDiagnostic, compile_mssql_query_with_year_offset,
+        CompiledQuery, MsSqlBackend, PostgresBackend, QueryCompiler,
+        QueryDiagnostic,
     },
 };
+
+fn compile_postgres(metadata: &MetadataSnapshot) -> Result<CompiledQuery, QueryDiagnostic> {
+    let query = "ВЫБРАТЬ Код, Наименование ИЗ Справочник.Договоры";
+    QueryCompiler::new(metadata, PostgresBackend).compile(query)
+}
 
 fn compile_mssql(
     metadata: &MetadataSnapshot,
     year_offset: i32,
-) -> Result<CompiledQuery, QueryDiagnostic> {
+) -> Result<CompiledQuery, Box<dyn std::error::Error>> {
     let query = "ВЫБРАТЬ ПЕРВЫЕ 10 Код, Наименование ИЗ Справочник.Договоры";
-    compile_mssql_query_with_year_offset(query, metadata, year_offset)
+    let backend = MsSqlBackend::new(year_offset)?;
+    Ok(QueryCompiler::new(metadata, backend).compile(query)?)
 }
 ```
 
 `year_offset` — значение `dbo._YearOffset.Offset` (0 или 2000). CLI читает его
 автоматически; при встраивании библиотеки это делает вызывающее приложение.
+`MsSqlBackend::new` возвращает `Result` и отклоняет смещения вне
+`0..=10_000`; backend со смещением ноль можно получить через
+`MsSqlBackend::default()`.
+Legacy free functions удалены: компиляция для обеих СУБД выполняется только
+через `QueryCompiler<B>`.
+`CompiledQuery` содержит SQL, имена
+выходных колонок и маркеры отложенных представлений; исполнение
+остаётся ответственностью приложения.
+
+`Backend` — sealed trait, реализованный библиотекой для `PostgresBackend` и
+`MsSqlBackend`. Он позволяет писать общий код без динамической диспетчеризации,
+но намеренно не является точкой расширения для сторонних SQL-диалектов:
+
+```rust
+use open_sdbl::{
+    metadata::MetadataSnapshot,
+    query::{Backend, CompiledQuery, QueryCompiler, QueryDiagnostic},
+};
+
+fn compile<B: Backend>(
+    metadata: &MetadataSnapshot,
+    backend: B,
+    source: &str,
+) -> Result<CompiledQuery, QueryDiagnostic> {
+    QueryCompiler::new(metadata, backend).compile(source)
+}
+```
+
+## Типизированные отчёты и диагностики
+
+Не классифицируйте ошибки по тексту. `QueryDiagnostic::kind()` возвращает
+`QueryDiagnosticKind` для лексической или синтаксической ошибки, неизвестного
+или неоднозначного объекта/поля/значения, неживой таблицы, неподдерживаемой
+возможности и ошибок presentation-плана или batch. Enum помечен
+`#[non_exhaustive]`, поэтому при `match` необходима fallback-ветка.
+`offset()` измеряется в байтах исходного SDBL, `line()` и `column()` — позиции
+для вывода пользователю. Для обёрнутых lexer/lookup-ошибок стандартный
+`std::error::Error::source()` сохраняет исходную причину.
+
+Ошибки декодирования метаданных аналогично доступны через
+`MetadataError::kind()` и `MetadataErrorKind`. Если `offset()` присутствует,
+`offset_unit()` явно различает битовое смещение DEFLATE и байтовое смещение
+brace-serialized/UTF-8 данных. `ResolutionReport` отличается от
+`MetadataError`: первый описывает восстановимые расхождения уже построенного
+снимка, второй означает, что конкретный вход декодировать или проверить не
+удалось.
 
 ## Callback ABI представлений
 
@@ -359,8 +407,7 @@ fn compile_mssql(
 SDBL + MetadataSnapshot
         │
         ▼
-prepare_postgres_query()
-или prepare_mssql_query_with_year_offset()
+QueryCompiler::new(snapshot, backend).prepare()
         │
         ├── PresentationRequest { ObjectId/GUID возможных типов ссылок }
         │                                      │
@@ -369,8 +416,8 @@ prepare_postgres_query()
         ◄── PresentationPlan { FieldId[], структурированный шаблон }
         │
         ▼
-PreparedPostgresQuery::compile()
-или PreparedMsSqlQuery::compile()
+Prepared<PostgresBackend>::compile()
+или Prepared<MsSqlBackend>::compile()
         │
         ▼
 CompiledQuery { sql, columns, deferred_presentations }
@@ -383,9 +430,9 @@ CompiledQuery { sql, columns, deferred_presentations }
 фактически возвращённые ссылки по типу и получает их представления пакетами до
 512 значений. `ПЕРВЫЕ`/`LIMIT` и фильтры остаются в основном SQL; предварительного
 сканирования таблицы и JOIN ко всем объектам конфигурации нет. SQL пакетного
-lookup строят `compile_postgres_presentation_lookup()` и
-`compile_mssql_presentation_lookup_with_year_offset()`, поэтому приложение не
-склеивает физические идентификаторы самостоятельно.
+lookup строит `QueryCompiler::compile_presentation_lookup()`, а конкретный SQL
+определяется типом backend, поэтому приложение не склеивает физические
+идентификаторы самостоятельно.
 
 Контракт использует идентификаторы, а не имена:
 
@@ -407,8 +454,8 @@ Lookup-методы `MetadataSnapshot::object_id()` и
 use open_sdbl::{
     metadata::{LookupError, MetadataSnapshot},
     query::{
-        CompiledQuery, PresentationExpression, PresentationPlan,
-        prepare_postgres_query,
+        CompiledQuery, PostgresBackend, PresentationExpression,
+        PresentationPlan, QueryCompiler,
     },
 };
 
@@ -416,7 +463,7 @@ fn compile_with_presentations(
     source: &str,
     metadata: &MetadataSnapshot,
 ) -> Result<CompiledQuery, Box<dyn std::error::Error>> {
-    let prepared = prepare_postgres_query(source, metadata)?;
+    let prepared = QueryCompiler::new(metadata, PostgresBackend).prepare(source)?;
 
     // Это callback приложения. Запрос содержит дедуплицированный набор GUID
     // всех возможных типов ссылок, найденных ядром в SDBL.
@@ -447,7 +494,9 @@ fn compile_with_presentations(
 
 Для MSSQL используются те же `PresentationRequest`, `PresentationPlan` и
 callback-политика. На первой фазе вызовите
-`prepare_mssql_query_with_year_offset()`, передав значение `_YearOffset`.
+`QueryCompiler::new(metadata, MsSqlBackend::new(year_offset)?).prepare(source)`,
+передав значение `_YearOffset` в backend. Конструктор отклоняет значения вне
+диапазона `0..=10000`.
 
 Ядро проверяет, что на каждый запрошенный `ObjectId` получен ровно один план,
 все `FieldId` действительно принадлежат объекту, а шаблон использует только

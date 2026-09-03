@@ -149,5 +149,5 @@
   `cargo test --workspace`, and `cargo doc --no-deps` with warnings denied
   all pass.
 - [x] 9.2 `openspec validate harden-core-reliability --strict` passes.
-- [ ] 9.3 README and crate docs updated for the new `Backend` trait,
+- [x] 9.3 README and crate docs updated for the new `Backend` trait,
   fallible `MsSqlBackend::new`, resolution reports, and diagnostic kinds.
