@@ -162,7 +162,8 @@ finally {
 
 ### Microsoft SQL Server
 
-Используйте SQL login с правами только на `SELECT`:
+Используйте отдельный SQL login, включённый в `db_datareader`, но не в
+`db_datawriter`, `db_owner` или серверную роль `sysadmin`:
 
 ```console
 MSSQL_PASSWORD='secret' ./target/release/open-sdbl console mssql \
@@ -196,7 +197,9 @@ CLI подключается через TDS, запрашивает `Application
 исполняет только фиксированные metadata-`SELECT` и `SELECT`, созданные
 компилятором. SQL Server не имеет эквивалента PostgreSQL
 `READ ONLY` для обычной транзакции, поэтому ограниченные права login —
-обязательная граница безопасности.
+обязательная граница безопасности. Перед каждым чтением CLI проверяет на
+сервере `@@TRANCOUNT`, уровень изоляции и членство в read-only ролях; сессия с
+незавершённой транзакцией или write-capable ролью отвергается.
 Смещение дат 1С читается из `dbo._YearOffset`: консоль автоматически преобразует
 физические MSSQL datetime-значения и литералы в логические даты 1С.
 Системная колонка `_Version` (`timestamp`/`rowversion`) проецируется без

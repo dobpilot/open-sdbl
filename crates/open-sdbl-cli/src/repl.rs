@@ -20,8 +20,12 @@ use rustyline::history::DefaultHistory;
 use rustyline::validate::Validator;
 use rustyline::{Context, Editor, Helper};
 use tokio::io::{AsyncBufReadExt, BufReader};
+use unicode_width::UnicodeWidthStr;
 
-use super::{CliError, DatabaseDialect, DatabaseSession, QueryRows, escape_field, yes_no};
+use super::{
+    CliError, DatabaseDialect, DatabaseSession, MAX_CELL_WIDTH, MAX_PRINTED_ROWS, QueryRows,
+    bounded_field, escape_field, yes_no,
+};
 
 const CONSOLE_HELP: &str = "Commands:
   \\dt                 list resolved metadata tables
@@ -487,6 +491,7 @@ impl PreparedQuery {
 pub(super) async fn run(
     session: &mut DatabaseSession,
     mut snapshot: MetadataSnapshot,
+    output: &mut impl Write,
 ) -> Result<(), CliError> {
     let interactive = io::stdin().is_terminal();
     let _terminal_guard = TerminalUtf8Guard::enable(interactive)?;
@@ -509,10 +514,12 @@ pub(super) async fn run(
     let mut metadata_generation = 0_u64;
 
     if interactive {
-        println!("open-sdbl 1C query console. Type \\help for help.");
+        writeln!(output, "open-sdbl 1C query console. Type \\help for help.")
+            .map_err(CliError::standard_output)?;
     }
     let mut footer = PinnedFooter::enable(interactive)?;
     loop {
+        output.flush().map_err(CliError::standard_output)?;
         footer.redraw()?;
 
         line.clear();
@@ -529,7 +536,7 @@ pub(super) async fn run(
                     line.len()
                 }
                 Err(ReadlineError::Interrupted) => {
-                    println!("^C");
+                    writeln!(output, "^C").map_err(CliError::standard_output)?;
                     statement.clear();
                     continue;
                 }
@@ -565,7 +572,7 @@ pub(super) async fn run(
 
         if statement.is_empty() && line.trim_start().starts_with('\\') {
             add_history(&mut editor, line.trim())?;
-            match execute_meta_command(session, &mut snapshot, line.trim()).await {
+            match execute_meta_command(session, &mut snapshot, line.trim(), output).await {
                 Ok(MetaOutcome::Continue) => {}
                 Ok(MetaOutcome::Refreshed) => {
                     metadata_generation = metadata_generation.wrapping_add(1);
@@ -574,7 +581,7 @@ pub(super) async fn run(
                     }
                 }
                 Ok(MetaOutcome::Quit) => return Ok(()),
-                Err(error) => eprintln!("error: {error}"),
+                Err(error) => eprintln!("error: {}", escape_field(&error.to_string())),
             }
             continue;
         }
@@ -610,10 +617,44 @@ pub(super) async fn run(
         let generation_elapsed = generation_started.elapsed();
         match compilation {
             Ok(compiled) => {
-                println!("{}", timing_line("SQL generation", generation_elapsed));
-                println!("SQL: {}", compiled.sql);
+                writeln!(
+                    output,
+                    "{}",
+                    timing_line("SQL generation", generation_elapsed)
+                )
+                .and_then(|()| writeln!(output, "SQL: {}", escape_field(&compiled.sql)))
+                .map_err(CliError::standard_output)?;
+                output.flush().map_err(CliError::standard_output)?;
                 let execution_started = Instant::now();
-                let execution = session.query(&compiled.sql, compiled.columns.len()).await;
+                let cancellation = session.cancellation();
+                let execution = tokio::select! {
+                    result = session.query(&compiled.sql, compiled.columns.len()) => Some(result),
+                    signal = tokio::signal::ctrl_c() => {
+                        signal.map_err(|error| {
+                            CliError::Io("cannot listen for Ctrl-C".to_owned(), error)
+                        })?;
+                        None
+                    }
+                };
+                let Some(execution) = execution else {
+                    footer.restore()?;
+                    writeln!(output, "^C cancelling query").map_err(CliError::standard_output)?;
+                    output.flush().map_err(CliError::standard_output)?;
+                    tokio::select! {
+                        result = session.cancel_query(cancellation) => result?,
+                        signal = tokio::signal::ctrl_c() => {
+                            signal.map_err(|error| {
+                                CliError::Io("cannot listen for Ctrl-C".to_owned(), error)
+                            })?;
+                            return Err(CliError::Terminal(
+                                "query cancellation interrupted by a second Ctrl-C".to_owned(),
+                            ));
+                        }
+                    }
+                    writeln!(output, "query cancelled").map_err(CliError::standard_output)?;
+                    statement.clear();
+                    continue;
+                };
                 match execution {
                     Ok(mut rows) => {
                         let resolution = resolve_deferred_presentations(
@@ -627,6 +668,7 @@ pub(super) async fn run(
                         .await;
                         let execution_elapsed = execution_started.elapsed();
                         if let Err(error) = resolution {
+                            let error = escape_field(&error.to_string());
                             eprintln!(
                                 "error: {error} ({}: {})",
                                 session.execution_label(),
@@ -635,28 +677,40 @@ pub(super) async fn run(
                             statement.clear();
                             continue;
                         }
-                        println!(
+                        writeln!(
+                            output,
                             "{}",
                             timing_line(session.execution_label(), execution_elapsed)
-                        );
-                        if let Err(error) = print_query_rows(&compiled, &rows) {
-                            eprintln!("error: {error}");
-                        }
+                        )
+                        .map_err(CliError::standard_output)?;
+                        validate_query_rows(&compiled, &rows)?;
+                        print_query_rows(output, &compiled, &rows)
+                            .map_err(CliError::standard_output)?;
                     }
                     Err(error) => {
                         let execution_elapsed = execution_started.elapsed();
+                        let error = escape_field(&error.to_string());
                         eprintln!(
                             "error: {error} ({}: {})",
                             session.execution_label(),
                             format_duration(execution_elapsed)
                         );
+                        if session.is_dead() {
+                            return Err(CliError::Database(
+                                "database session is no longer usable; reconnect required"
+                                    .to_owned(),
+                            ));
+                        }
                     }
                 }
             }
-            Err(error) => eprintln!(
-                "error: {error} (SQL generation: {})",
-                format_duration(generation_elapsed)
-            ),
+            Err(error) => {
+                let error = escape_field(&error.to_string());
+                eprintln!(
+                    "error: {error} (SQL generation: {})",
+                    format_duration(generation_elapsed)
+                );
+            }
         }
         statement.clear();
     }
@@ -935,24 +989,27 @@ async fn execute_meta_command(
     session: &mut DatabaseSession,
     snapshot: &mut MetadataSnapshot,
     command: &str,
+    output: &mut impl Write,
 ) -> Result<MetaOutcome, CliError> {
     match command {
         "\\q" => Ok(MetaOutcome::Quit),
         "\\help" | "\\?" => {
-            print!("{CONSOLE_HELP}");
+            output
+                .write_all(CONSOLE_HELP.as_bytes())
+                .map_err(CliError::standard_output)?;
             Ok(MetaOutcome::Continue)
         }
         "\\dt" => {
-            print_tables(snapshot);
+            print_tables(output, snapshot).map_err(CliError::standard_output)?;
             Ok(MetaOutcome::Continue)
         }
         "\\di" => {
-            print_indexes(snapshot);
+            print_indexes(output, snapshot).map_err(CliError::standard_output)?;
             Ok(MetaOutcome::Continue)
         }
         "\\refresh" => {
             *snapshot = session.metadata().await?;
-            println!("Metadata refreshed.");
+            writeln!(output, "Metadata refreshed.").map_err(CliError::standard_output)?;
             Ok(MetaOutcome::Refreshed)
         }
         _ if command == "\\d" => Err(CliError::Data(
@@ -960,7 +1017,7 @@ async fn execute_meta_command(
         )),
         _ if command.starts_with("\\d ") || command.starts_with("\\d\t") => {
             let name = command[2..].trim();
-            print_description(snapshot, name)?;
+            print_description(output, snapshot, name)?;
             Ok(MetaOutcome::Continue)
         }
         _ => Err(CliError::Data(format!(
@@ -998,7 +1055,7 @@ fn timing_line(phase: &str, duration: Duration) -> String {
     format!("{phase}: {}", format_duration(duration))
 }
 
-fn print_tables(snapshot: &MetadataSnapshot) {
+fn print_tables(output: &mut impl Write, snapshot: &MetadataSnapshot) -> io::Result<()> {
     let mut rows: Vec<Vec<String>> = snapshot
         .objects
         .iter()
@@ -1014,11 +1071,15 @@ fn print_tables(snapshot: &MetadataSnapshot) {
         })
         .collect();
     rows.sort_by(|left, right| (&left[0], &left[1]).cmp(&(&right[0], &right[1])));
-    print_table(&["Kind", "Name", "GUID", "Table", "Schema", "Live"], &rows);
-    println!("({} objects)", rows.len());
+    print_table(
+        output,
+        &["Kind", "Name", "GUID", "Table", "Schema", "Live"],
+        &rows,
+    )?;
+    writeln!(output, "({} objects)", rows.len())
 }
 
-fn print_indexes(snapshot: &MetadataSnapshot) {
+fn print_indexes(output: &mut impl Write, snapshot: &MetadataSnapshot) -> io::Result<()> {
     let mut rows: Vec<Vec<String>> = snapshot
         .indexes
         .iter()
@@ -1035,25 +1096,35 @@ fn print_indexes(snapshot: &MetadataSnapshot) {
         .collect();
     rows.sort_by(|left, right| (&left[0], &left[2]).cmp(&(&right[0], &right[2])));
     print_table(
+        output,
         &["Metadata", "Table", "Declared", "Live", "Key", "Match"],
         &rows,
-    );
-    println!("({} indexes)", rows.len());
+    )?;
+    writeln!(output, "({} indexes)", rows.len())
 }
 
-fn print_description(snapshot: &MetadataSnapshot, name: &str) -> Result<(), CliError> {
+fn print_description(
+    output: &mut impl Write,
+    snapshot: &MetadataSnapshot,
+    name: &str,
+) -> Result<(), CliError> {
     let object =
         find_metadata_object(snapshot, name).map_err(|error| CliError::Data(error.to_string()))?;
     let fields =
         queryable_fields(snapshot, object).map_err(|error| CliError::Data(error.to_string()))?;
-    println!(
+    writeln!(
+        output,
         "{}  GUID={}  table={}  schema={}  live={}",
-        object_display_name(Some(object)),
+        bounded_field(&object_display_name(Some(object)), MAX_CELL_WIDTH),
         object.guid,
-        object.physical_table.as_deref().unwrap_or(""),
+        bounded_field(
+            object.physical_table.as_deref().unwrap_or(""),
+            MAX_CELL_WIDTH
+        ),
         yes_no(object.declared),
         yes_no(object.live),
-    );
+    )
+    .map_err(CliError::standard_output)?;
 
     let field_rows: Vec<Vec<String>> = fields
         .into_iter()
@@ -1072,8 +1143,9 @@ fn print_description(snapshot: &MetadataSnapshot, name: &str) -> Result<(), CliE
             ]
         })
         .collect();
-    println!("Attributes:");
+    writeln!(output, "Attributes:").map_err(CliError::standard_output)?;
     print_table(
+        output,
         &[
             "Name",
             "Schema name",
@@ -1082,7 +1154,8 @@ fn print_description(snapshot: &MetadataSnapshot, name: &str) -> Result<(), CliE
             "Reference target",
         ],
         &field_rows,
-    );
+    )
+    .map_err(CliError::standard_output)?;
 
     let table = object.physical_table.as_deref().unwrap_or("");
     let index_rows: Vec<Vec<String>> = snapshot
@@ -1098,8 +1171,9 @@ fn print_description(snapshot: &MetadataSnapshot, name: &str) -> Result<(), CliE
             ]
         })
         .collect();
-    println!("Indexes:");
-    print_table(&["Declared", "Live", "Key", "Match"], &index_rows);
+    writeln!(output, "Indexes:").map_err(CliError::standard_output)?;
+    print_table(output, &["Declared", "Live", "Key", "Match"], &index_rows)
+        .map_err(CliError::standard_output)?;
     Ok(())
 }
 
@@ -1126,10 +1200,8 @@ fn object_display_name(object: Option<&MetadataObject>) -> String {
     }
 }
 
-fn print_query_rows(compiled: &CompiledQuery, rows: &QueryRows) -> Result<(), CliError> {
-    let mut rendered = Vec::with_capacity(rows.len());
+fn validate_query_rows(compiled: &CompiledQuery, rows: &QueryRows) -> Result<(), CliError> {
     for row in rows {
-        let mut values = Vec::with_capacity(compiled.columns.len());
         if row.len() != compiled.columns.len() {
             return Err(CliError::Data(format!(
                 "database returned {} columns, expected {}",
@@ -1137,59 +1209,156 @@ fn print_query_rows(compiled: &CompiledQuery, rows: &QueryRows) -> Result<(), Cl
                 compiled.columns.len()
             )));
         }
-        for value in row {
-            values.push(value.clone().unwrap_or_else(|| "NULL".to_owned()));
-        }
-        rendered.push(values);
     }
-    let headers: Vec<&str> = compiled.columns.iter().map(String::as_str).collect();
-    print_table(&headers, &rendered);
-    println!("({} rows)", rows.len());
     Ok(())
 }
 
-fn print_table(headers: &[&str], rows: &[Vec<String>]) {
-    let mut widths: Vec<usize> = headers.iter().map(|header| display_width(header)).collect();
-    for row in rows {
-        for (index, value) in row.iter().enumerate().take(widths.len()) {
-            widths[index] = widths[index].max(display_width(value));
-        }
-    }
-    print_table_row(
-        &headers
-            .iter()
-            .map(|value| (*value).to_owned())
-            .collect::<Vec<_>>(),
-        &widths,
-    );
-    println!(
-        "{}",
-        widths
-            .iter()
-            .map(|width| "-".repeat(*width))
-            .collect::<Vec<_>>()
-            .join("-+-")
-    );
-    for row in rows {
-        print_table_row(row, &widths);
+fn print_query_rows(
+    output: &mut impl Write,
+    compiled: &CompiledQuery,
+    rows: &QueryRows,
+) -> io::Result<()> {
+    let headers: Vec<&str> = compiled.columns.iter().map(String::as_str).collect();
+    print_table(output, &headers, rows)?;
+    writeln!(output, "({} rows)", rows.len())
+}
+
+trait TableRow {
+    fn cell(&self, index: usize) -> &str;
+}
+
+impl TableRow for Vec<String> {
+    fn cell(&self, index: usize) -> &str {
+        self.get(index).map_or("", String::as_str)
     }
 }
 
-fn print_table_row(values: &[String], widths: &[usize]) {
-    let cells: Vec<String> = widths
+impl TableRow for Vec<Option<String>> {
+    fn cell(&self, index: usize) -> &str {
+        match self.get(index) {
+            Some(Some(value)) => value,
+            Some(None) => "NULL",
+            None => "",
+        }
+    }
+}
+
+struct HeaderRow<'a>(&'a [&'a str]);
+
+impl TableRow for HeaderRow<'_> {
+    fn cell(&self, index: usize) -> &str {
+        self.0.get(index).copied().unwrap_or("")
+    }
+}
+
+fn print_table<R: TableRow>(
+    output: &mut impl Write,
+    headers: &[&str],
+    rows: &[R],
+) -> io::Result<()> {
+    print_table_with_width(output, headers, rows, detected_table_width())
+}
+
+fn print_table_with_width<R: TableRow>(
+    output: &mut impl Write,
+    headers: &[&str],
+    rows: &[R],
+    terminal_width: Option<usize>,
+) -> io::Result<()> {
+    let mut widths = headers
         .iter()
-        .enumerate()
-        .map(|(index, width)| {
-            let value = values.get(index).map_or("", String::as_str);
-            let value = escape_field(value);
-            format!("{value:<width$}")
-        })
-        .collect();
-    println!("{}", cells.join(" | "));
+        .map(|header| display_width(header).clamp(1, MAX_CELL_WIDTH))
+        .collect::<Vec<_>>();
+    for row in rows.iter().take(MAX_PRINTED_ROWS) {
+        for (index, width) in widths.iter_mut().enumerate() {
+            *width = (*width)
+                .max(display_width(row.cell(index)))
+                .min(MAX_CELL_WIDTH);
+        }
+    }
+    if let Some(terminal_width) = terminal_width {
+        fit_table_widths(&mut widths, terminal_width);
+    }
+    if widths.is_empty() {
+        return Ok(());
+    }
+
+    write_table_row(output, &HeaderRow(headers), &widths)?;
+    for (index, width) in widths.iter().enumerate() {
+        if index != 0 {
+            output.write_all(b"-+-")?;
+        }
+        output.write_all("-".repeat(*width).as_bytes())?;
+    }
+    writeln!(output)?;
+    for row in rows.iter().take(MAX_PRINTED_ROWS) {
+        write_table_row(output, row, &widths)?;
+    }
+    let omitted = rows.len().saturating_sub(MAX_PRINTED_ROWS);
+    if omitted != 0 {
+        writeln!(output, "({omitted} rows omitted)")?;
+    }
+    Ok(())
+}
+
+fn fit_table_widths(widths: &mut Vec<usize>, terminal_width: usize) {
+    if terminal_width == 0 {
+        widths.clear();
+        return;
+    }
+    while widths.len() > 1 && widths.len() * 4 - 3 > terminal_width {
+        widths.pop();
+    }
+    let separators = widths.len().saturating_sub(1) * 3;
+    let available = terminal_width.saturating_sub(separators);
+    while widths.iter().sum::<usize>() > available {
+        let Some((index, _)) = widths
+            .iter()
+            .enumerate()
+            .filter(|(_, width)| **width > 1)
+            .max_by_key(|(_, width)| **width)
+        else {
+            break;
+        };
+        widths[index] -= 1;
+    }
+}
+
+fn write_table_row(
+    output: &mut impl Write,
+    values: &impl TableRow,
+    widths: &[usize],
+) -> io::Result<()> {
+    for (index, width) in widths.iter().enumerate() {
+        if index != 0 {
+            output.write_all(b" | ")?;
+        }
+        let value = bounded_field(values.cell(index), *width);
+        let padding = width.saturating_sub(UnicodeWidthStr::width(value.as_str()));
+        output.write_all(value.as_bytes())?;
+        output.write_all(" ".repeat(padding).as_bytes())?;
+    }
+    writeln!(output)
 }
 
 fn display_width(value: &str) -> usize {
-    escape_field(value).chars().count()
+    UnicodeWidthStr::width(escape_field(value).as_str())
+}
+
+fn detected_table_width() -> Option<usize> {
+    if !io::stdout().is_terminal() {
+        return None;
+    }
+    #[cfg(target_os = "linux")]
+    {
+        terminal_size().map(|(_, columns)| usize::from(columns))
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        std::env::var("COLUMNS")
+            .ok()
+            .and_then(|columns| columns.parse().ok())
+    }
 }
 
 fn statement_is_complete(source: &str) -> bool {
@@ -1430,13 +1599,15 @@ mod tests {
     use open_sdbl::metadata::{FieldId, MetadataKind, ObjectId, StandardFieldId};
     use open_sdbl::query::{PresentationExpression, PresentationPlan};
     use rustyline::highlight::Highlighter;
+    use unicode_width::UnicodeWidthStr;
 
     use super::{
         ConsoleHelper, PRESENTATION_POLICY_VERSION, PresentationPlanKey, completion_start,
-        decode_hex_array, decode_input_line, default_presentation_template, footer_text,
-        format_duration, push_unique, push_virtual_table_candidates, statement_is_complete,
-        timing_line,
+        decode_hex_array, decode_input_line, default_presentation_template, display_width,
+        footer_text, format_duration, print_table_with_width, push_unique,
+        push_virtual_table_candidates, statement_is_complete, timing_line,
     };
+    use crate::{MAX_CELL_WIDTH, MAX_PRINTED_ROWS};
 
     #[test]
     fn recognizes_multiline_termination_outside_strings_and_comments() {
@@ -1479,6 +1650,37 @@ mod tests {
             timing_line("PostgreSQL execution", Duration::from_micros(42)),
             "PostgreSQL execution: 42 µs"
         );
+    }
+
+    #[test]
+    fn aligns_cjk_by_display_columns() {
+        assert_eq!(display_width("界"), 2);
+        assert_eq!(display_width("\x1b"), "\\u{1b}".len());
+        let rows = vec![
+            vec!["界".to_owned(), "x".to_owned()],
+            vec!["a".to_owned(), "y".to_owned()],
+        ];
+        let mut output = Vec::new();
+        print_table_with_width(&mut output, &["A", "B"], &rows, None).unwrap();
+        assert_eq!(
+            String::from_utf8(output).unwrap(),
+            "A  | B\n---+--\n界 | x\na  | y\n"
+        );
+    }
+
+    #[test]
+    fn bounds_table_rows_cells_and_terminal_width() {
+        let rows = (0..MAX_PRINTED_ROWS + 2)
+            .map(|_| vec!["界".repeat(MAX_CELL_WIDTH), "value".to_owned()])
+            .collect::<Vec<_>>();
+        let mut output = Vec::new();
+        print_table_with_width(&mut output, &["Wide", "Value"], &rows, Some(24)).unwrap();
+        let output = String::from_utf8(output).unwrap();
+        assert!(output.contains("…"));
+        assert!(output.ends_with("(2 rows omitted)\n"));
+        for line in output.lines().take(MAX_PRINTED_ROWS + 2) {
+            assert!(UnicodeWidthStr::width(line) <= 24, "{line:?}");
+        }
     }
 
     #[test]
