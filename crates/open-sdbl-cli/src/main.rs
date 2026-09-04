@@ -41,7 +41,7 @@ use error::CliError;
 use net::socks5::{Socks5Proxy, connect_socks5, parse_socks5_proxy, socks5_connect_request};
 use output::{
     MAX_CELL_WIDTH, MAX_PRINTED_ROWS, bounded_field, escape_field, lex, print_snapshot,
-    read_lex_source, yes_no,
+    read_lex_source, write_top_level_error, yes_no,
 };
 #[cfg(test)]
 use pipeline::{ConfigDecodeLimits, ConfigResource, decode_catalog_values, decode_config_stream};
@@ -86,7 +86,8 @@ async fn async_main(credentials: Credentials) -> ExitCode {
         Ok(()) => ExitCode::SUCCESS,
         Err(error) if error.is_broken_pipe() => ExitCode::SUCCESS,
         Err(error) => {
-            eprintln!("{}", escape_field(&error.to_string()));
+            let stderr = io::stderr();
+            let _ = write_top_level_error(&mut stderr.lock(), &error);
             ExitCode::from(error.exit_code())
         }
     }

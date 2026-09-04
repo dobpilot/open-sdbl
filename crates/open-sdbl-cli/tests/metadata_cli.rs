@@ -74,3 +74,27 @@ fn obsolete_psql_option_is_rejected_before_connecting() {
             .contains("unknown metadata option \"--psql\"")
     );
 }
+
+#[test]
+fn plaintext_opt_in_error_preserves_help_line_breaks() {
+    let output = Command::new(env!("CARGO_BIN_EXE_open-sdbl"))
+        .args([
+            "console",
+            "postgres",
+            "--sslmode",
+            "disable",
+            "--host",
+            "db",
+            "--database",
+            "test",
+            "--user",
+            "reader",
+        ])
+        .output()
+        .unwrap();
+
+    assert!(!output.status.success());
+    let stderr = String::from_utf8(output.stderr).unwrap();
+    assert!(stderr.contains("--insecure-plaintext\n\nopen-sdbl — tooling"));
+    assert!(!stderr.contains(r"\n"));
+}
