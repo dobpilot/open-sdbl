@@ -112,6 +112,8 @@
   hasher instead of allocating whole-collection `String` values.
 - [x] 5.8 Calibrate the compilation work budget with a positive 100-branch,
   164-column query while retaining a pathological rejection test.
+- [ ] 5.9 Expand the query fuzz fixture so dereferences and tabular sections are
+  reachable, and compile the fuzz workspace in CI without running the fuzzer.
 
 ## 6. REPL performance and correctness
 
@@ -146,6 +148,8 @@
   `clap`, documenting the dependency decision).
 - [x] 7.5 Keep non-Linux terminal support buildable and add a Windows target
   check to CI.
+- [ ] 7.6 Move the remaining root `main.rs` tests beside their owning modules
+  and remove duplicate coverage.
 
 ## 8. Verification
 
