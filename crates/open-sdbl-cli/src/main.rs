@@ -29,9 +29,7 @@ use auth::pgpass::Credentials;
 #[cfg(all(test, unix))]
 use auth::pgpass::reject_password_file_owner;
 #[cfg(test)]
-use auth::pgpass::{
-    EnvironmentSecret, parse_password_line, read_password_file, reject_insecure_password_file,
-};
+use auth::pgpass::{EnvironmentSecret, parse_password_line, read_password_file};
 use db::mssql::MsSqlSession;
 #[cfg(test)]
 use db::mssql::{apply_mssql_cleanup, format_mssql_binary};
@@ -187,12 +185,12 @@ async fn bounded_database_call<T>(
     duration: Duration,
     future: impl Future<Output = Result<T, CliError>>,
 ) -> Result<T, CliError> {
-    timeout(duration, future).await.map_err(|_| {
-        CliError::Database(format!(
-            "{label} timed out after {:.3} seconds",
-            duration.as_secs_f64()
-        ))
-    })?
+    timeout(duration, future)
+        .await
+        .map_err(|_| CliError::DatabaseTimeout {
+            operation: label.to_owned(),
+            duration,
+        })?
 }
 
 async fn query_timeout<T>(
@@ -328,8 +326,8 @@ mod tests {
         await_postgres_driver, bounded_database_call, bounded_field, connect_postgres_raw,
         connect_socks5, decode_catalog_values, decode_config_stream, escape_field,
         format_mssql_binary, lex, parse_connection, parse_password_line, parse_socks5_proxy,
-        read_password_file, reject_insecure_password_file, render_metadata_progress, run_lex,
-        select_postgres_sslmode, socks5_connect_request,
+        read_password_file, render_metadata_progress, run_lex, select_postgres_sslmode,
+        socks5_connect_request,
     };
     use open_sdbl::metadata::{FieldId, MetadataSnapshot, StandardFieldId};
     use open_sdbl::query::{
@@ -613,6 +611,7 @@ mod tests {
             })
             .await
             .unwrap_err();
+        assert!(error.is_database_timeout());
         assert!(error.to_string().contains("timed out"));
         server.abort();
         let _ = server.await;
@@ -714,7 +713,7 @@ mod tests {
     }
 
     #[test]
-    fn parses_mssql_ca_file_and_rejects_it_for_postgres() {
+    fn parses_private_ca_files_for_both_database_providers() {
         let mut arguments = [
             "mssql",
             "--host",
@@ -749,8 +748,31 @@ mod tests {
         ]
         .into_iter()
         .map(str::to_owned);
+        let connection = parse_connection(&mut arguments, "metadata", &mut Vec::new())
+            .unwrap()
+            .unwrap();
+        let DatabaseConnection::Postgres(connection) = connection else {
+            panic!("expected PostgreSQL connection");
+        };
+        assert_eq!(connection.trust_ca_file.as_deref(), Some("company-ca.pem"));
+
+        let mut arguments = [
+            "postgres",
+            "--host",
+            "db",
+            "--database",
+            "test",
+            "--user",
+            "reader",
+            "--sslmode",
+            "require",
+            "--trust-ca-file",
+            "company-ca.pem",
+        ]
+        .into_iter()
+        .map(str::to_owned);
         let error = parse_connection(&mut arguments, "metadata", &mut Vec::new()).unwrap_err();
-        assert!(error.to_string().contains("unknown metadata option"));
+        assert!(error.to_string().contains("requires PostgreSQL --sslmode"));
     }
 
     #[test]
@@ -1045,9 +1067,9 @@ mod tests {
         let address = listener.local_addr().unwrap();
         let server = tokio::spawn(async move {
             let (mut stream, _) = listener.accept().await.unwrap();
-            let mut greeting = [0_u8; 4];
+            let mut greeting = [0_u8; 3];
             stream.read_exact(&mut greeting).await.unwrap();
-            assert_eq!(greeting, [0x05, 0x02, 0x00, 0x02]);
+            assert_eq!(greeting, [0x05, 0x01, 0x02]);
             stream.write_all(&[0x05, 0x02]).await.unwrap();
 
             let mut authentication = [0_u8; 13];
@@ -1079,6 +1101,33 @@ mod tests {
             .await
             .unwrap();
         drop(stream);
+        server.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn rejects_socks5_authentication_downgrade() {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        use tokio::net::TcpListener;
+
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            let mut greeting = [0_u8; 3];
+            stream.read_exact(&mut greeting).await.unwrap();
+            assert_eq!(greeting, [0x05, 0x01, 0x02]);
+            stream.write_all(&[0x05, 0x00]).await.unwrap();
+        });
+        let proxy = Socks5Proxy {
+            host: address.ip().to_string(),
+            port: address.port(),
+            username: Some("user".to_owned()),
+        };
+
+        let error = connect_socks5(&proxy, Some("secret"), "database.internal", 5432)
+            .await
+            .unwrap_err();
+        assert!(error.to_string().contains("despite configured credentials"));
         server.await.unwrap();
     }
 
@@ -1182,6 +1231,7 @@ mod tests {
                 socks5_proxy: None,
             },
             sslmode: PostgresSslMode::VerifyFull,
+            trust_ca_file: None,
         };
 
         let password = read_password_file(&path, &connection, true)
@@ -1196,7 +1246,7 @@ mod tests {
     fn rejects_non_regular_and_wrong_owner_password_files() {
         use std::ffi::CString;
         use std::os::unix::ffi::OsStrExt;
-        use std::os::unix::fs::MetadataExt;
+        use std::os::unix::fs::{MetadataExt, symlink};
 
         let path = std::env::temp_dir().join(format!(
             "open-sdbl-pgpass-fifo-{}-{}",
@@ -1206,10 +1256,30 @@ mod tests {
         let path_bytes = CString::new(path.as_os_str().as_bytes()).unwrap();
         // SAFETY: `path_bytes` is a valid NUL-terminated path and the mode is valid.
         assert_eq!(unsafe { libc::mkfifo(path_bytes.as_ptr(), 0o600) }, 0);
+        let connection = PostgresConnection {
+            options: ConnectionOptions {
+                host: "db".to_owned(),
+                port: 5432,
+                database: "test".to_owned(),
+                user: "reader".to_owned(),
+                socks5_proxy: None,
+            },
+            sslmode: PostgresSslMode::VerifyFull,
+            trust_ca_file: None,
+        };
         let metadata = std::fs::metadata(&path).unwrap();
-        let error = reject_insecure_password_file(&path, &metadata).unwrap_err();
+        let error = read_password_file(&path, &connection, true).unwrap_err();
         assert!(error.to_string().contains("regular file"));
         std::fs::remove_file(&path).unwrap();
+
+        let target = path.with_extension("target");
+        let link = path.with_extension("link");
+        std::fs::write(&target, "*:5432:test:reader:secret\n").unwrap();
+        symlink(&target, &link).unwrap();
+        let error = read_password_file(&link, &connection, true).unwrap_err();
+        assert!(error.to_string().contains("cannot open"));
+        std::fs::remove_file(link).unwrap();
+        std::fs::remove_file(target).unwrap();
 
         let owner = metadata.uid();
         let error = reject_password_file_owner(&path, owner, owner.wrapping_add(1)).unwrap_err();

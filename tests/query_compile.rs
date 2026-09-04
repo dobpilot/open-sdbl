@@ -1785,13 +1785,30 @@ fn prepared_queries_are_bound_to_their_resolved_snapshot() {
 #[test]
 fn bounds_total_work_for_repeated_tabular_section_union_branches() {
     let branch = "SELECT Сумма FROM Документ.бит_ДополнительныеУсловияПоДоговору.ГрафикНачислений";
-    let source = std::iter::repeat_n(branch, 8_200)
+    let source = std::iter::repeat_n(branch, 12_000)
         .collect::<Vec<_>>()
         .join(" UNION ");
     let error = QueryCompiler::new(&tabular_section_snapshot(), PostgresBackend)
         .compile(&source)
         .unwrap_err();
     assert_eq!(error.kind(), QueryDiagnosticKind::WorkBudgetExceeded);
+}
+
+#[test]
+fn accepts_a_wide_legitimate_union_within_the_work_budget() {
+    let snapshot = with_live_tables(snapshot(), |tables| {
+        tables[0].columns.extend((0..160).map(|index| LiveColumn {
+            name: format!("_extra{index}"),
+            data_type: "bytea".to_owned(),
+        }));
+    });
+    let branch = "SELECT * FROM Catalog.OpenSdblMetadataProbe";
+    let source = std::iter::repeat_n(branch, 100)
+        .collect::<Vec<_>>()
+        .join(" UNION ALL ");
+    let (postgres, mssql) = for_each_backend!(&source, &snapshot);
+    assert_eq!(postgres.unwrap().columns.len(), 164);
+    assert_eq!(mssql.unwrap().columns.len(), 164);
 }
 
 #[test]

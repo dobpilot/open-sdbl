@@ -15,7 +15,6 @@ use crate::args::MsSqlConnection;
 use crate::auth::pgpass::Credentials;
 use crate::error::CliError;
 use crate::net::socks5::{connect_socks5, socks5_password};
-use crate::output::escape_field;
 use crate::pipeline::{
     ConfigDecodeLimits, ConfigMetadata, ConfigResource, MetadataSource, acquire_metadata,
     config_pipeline_depth, decode_catalog_values, decode_config_stream, run_metadata_blocking,
@@ -150,23 +149,25 @@ impl MsSqlSession {
 
     async fn execute_batch(&mut self, sql: &str) -> Result<(), CliError> {
         self.ensure_usable()?;
-        let client = self.client_mut()?;
-        let result = query_timeout("MSSQL batch", async {
-            client
-                .simple_query(sql)
-                .await
-                .map_err(CliError::mssql_query)?
-                .into_results()
-                .await
-                .map_err(CliError::mssql_query)?;
-            Ok(())
-        })
-        .await;
+        let result = {
+            let client = self.client_mut()?;
+            query_timeout("MSSQL batch", async {
+                client
+                    .simple_query(sql)
+                    .await
+                    .map_err(CliError::mssql_query)?
+                    .into_results()
+                    .await
+                    .map_err(CliError::mssql_query)?;
+                Ok(())
+            })
+            .await
+        };
         if result
             .as_ref()
-            .is_err_and(CliError::is_mssql_connection_failure)
+            .is_err_and(CliError::requires_mssql_disconnect)
         {
-            self.poisoned = true;
+            self.poison_and_drop();
         }
         result
     }
@@ -223,17 +224,20 @@ impl MsSqlSession {
 
     async fn verify_readonly(&mut self) -> Result<(), CliError> {
         self.ensure_usable()?;
-        let rows = mssql_rows(
-            self.client_mut()?,
-            "MSSQL read-only verification",
-            MSSQL_VERIFY_READONLY,
-        )
-        .await;
+        let rows = {
+            let client = self.client_mut()?;
+            mssql_rows(
+                client,
+                "MSSQL read-only verification",
+                MSSQL_VERIFY_READONLY,
+            )
+            .await
+        };
         if rows
             .as_ref()
-            .is_err_and(CliError::is_mssql_connection_failure)
+            .is_err_and(CliError::requires_mssql_disconnect)
         {
-            self.poisoned = true;
+            self.poison_and_drop();
         }
         let rows = rows?;
         let row = exactly_one_mssql_row(&rows, "read-only verification")?;
@@ -264,8 +268,9 @@ impl MsSqlSession {
     }
 
     async fn rollback_after_error(&mut self, original: CliError) -> CliError {
-        if original.is_mssql_connection_failure() {
-            self.poisoned = true;
+        if should_disconnect_after_mssql_error(&original) {
+            self.poison_and_drop();
+            return original;
         }
         let rollback = self
             .execute_batch("IF @@TRANCOUNT > 0 ROLLBACK TRANSACTION")
@@ -284,6 +289,11 @@ impl MsSqlSession {
                 "{original}; MSSQL rollback cleanup failed and the session was poisoned: {cleanup}"
             )),
         }
+    }
+
+    fn poison_and_drop(&mut self) {
+        self.poisoned = true;
+        drop(self.client.take());
     }
 
     pub(crate) async fn metadata(&mut self) -> Result<MetadataSnapshot, CliError> {
@@ -325,24 +335,12 @@ impl MsSqlSession {
     }
 
     pub(crate) async fn cancel_and_reconnect(&mut self) -> Result<(), CliError> {
-        let rollback = if self.client.is_some() {
-            self.execute_batch("IF @@TRANCOUNT > 0 ROLLBACK TRANSACTION")
-                .await
-                .err()
-        } else {
-            None
-        };
-        self.poisoned = true;
-        drop(self.client.take());
+        // Dropping an in-flight Tiberius future can leave the TDS stream between
+        // protocol messages. Do not send cleanup commands on that connection.
+        self.poison_and_drop();
         let connection = self.connection.clone();
         let replacement = Self::connect_with_secrets(&connection, self.secrets.clone()).await?;
         *self = replacement;
-        if let Some(error) = rollback {
-            eprintln!(
-                "warning: MSSQL rollback after cancellation failed; the connection was dropped and replaced: {}",
-                escape_field(&error.to_string())
-            );
-        }
         Ok(())
     }
 
@@ -350,6 +348,10 @@ impl MsSqlSession {
         drop(self.client);
         Ok(())
     }
+}
+
+fn should_disconnect_after_mssql_error(error: &CliError) -> bool {
+    error.requires_mssql_disconnect()
 }
 
 fn mssql_cell_text(row: &tiberius::Row, index: usize) -> Result<Option<String>, CliError> {
@@ -454,15 +456,12 @@ impl MetadataSource for MsSqlMetadataSource<'_> {
                 compressed: required_mssql_bytes(&row, 1, "Config payload")?,
             })
         });
-        query_timeout(
-            "MSSQL Config stream",
-            decode_config_stream(
-                resources,
-                CONFIG_DECODE_BATCH_SIZE,
-                config_pipeline_depth(),
-                ConfigDecodeLimits::default(),
-                progress,
-            ),
+        decode_config_stream(
+            resources,
+            CONFIG_DECODE_BATCH_SIZE,
+            config_pipeline_depth(),
+            ConfigDecodeLimits::default(),
+            progress,
         )
         .await
     }
@@ -615,10 +614,25 @@ impl MsSqlSession {
 
 #[cfg(test)]
 mod tests {
-    use super::format_mssql_binary;
+    use std::time::Duration;
+
+    use super::{format_mssql_binary, should_disconnect_after_mssql_error};
+    use crate::error::CliError;
 
     #[test]
     fn formats_binary_as_tsql_hex() {
         assert_eq!(format_mssql_binary(&[0, 0x7d, 0xd6]), "0x007DD6");
+    }
+
+    #[test]
+    fn timeout_requires_dropping_mssql_without_rollback() {
+        let timeout = CliError::DatabaseTimeout {
+            operation: "MSSQL user query".to_owned(),
+            duration: Duration::from_secs(120),
+        };
+        assert!(should_disconnect_after_mssql_error(&timeout));
+
+        let semantic_error = CliError::Data("invalid row".to_owned());
+        assert!(!should_disconnect_after_mssql_error(&semantic_error));
     }
 }

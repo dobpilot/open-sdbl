@@ -7,7 +7,7 @@ use crate::net::socks5::{Socks5Proxy, parse_socks5_proxy};
 pub(crate) const HELP: &str = "open-sdbl — tooling for the 1C query language\n\n\
 Usage:\n  open-sdbl lex [FILE|-]\n  open-sdbl metadata postgres --host HOST --database DB --user USER [OPTIONS]\n  open-sdbl console postgres --host HOST --database DB --user USER [OPTIONS]\n  open-sdbl metadata mssql --host HOST --database DB --user USER [OPTIONS]\n  open-sdbl console mssql --host HOST --database DB --user USER [OPTIONS]\n  open-sdbl --help\n\n\
 Commands:\n  lex       Print lexical tokens; reads standard input when FILE is '-' or omitted\n  metadata  Read and resolve 1C information-base metadata\n  console   Run 1C queries and inspect resolved metadata interactively\n\n\
-PostgreSQL options:\n  --port PORT                 PostgreSQL port (default: 5432)\n  --sslmode MODE              disable, require, verify-ca, or verify-full (default)\n  --insecure-plaintext        Required explicit opt-in for --sslmode disable\n  --socks5-proxy HOST:PORT    Route through a SOCKS5 proxy\n  --socks5-user USER          Authenticate to SOCKS5 using SOCKS5_PASSWORD\n\n\
+PostgreSQL options:\n  --port PORT                 PostgreSQL port (default: 5432)\n  --sslmode MODE              disable, require, verify-ca, or verify-full (default)\n  --trust-ca-file PATH        Trust only certificates signed by this private CA\n  --insecure-plaintext        Required explicit opt-in for --sslmode disable\n  --socks5-proxy HOST:PORT    Route through a SOCKS5 proxy\n  --socks5-user USER          Authenticate to SOCKS5 using SOCKS5_PASSWORD\n\n\
 MSSQL options:\n  --port PORT                 SQL Server port (default: 1433)\n  --socks5-proxy HOST:PORT    Route through a SOCKS5 proxy\n  --socks5-user USER          Authenticate to SOCKS5 using SOCKS5_PASSWORD\n  --trust-server-certificate  Accept any TLS certificate (unsafe; development only)\n  --trust-ca-file PATH        Trust a specific PEM, CRT, or DER certificate\n\n\
 Authentication:\n  PostgreSQL: PGPASSWORD, PGPASSFILE, or $HOME/.pgpass\n  MSSQL: MSSQL_PASSWORD\n  SOCKS5: SOCKS5_PASSWORD (when --socks5-user is present)\n  Password environment variables are consumed and removed; password flags are unsupported\n\n\
 Read-only requirements:\n  PostgreSQL queries run in verified READ ONLY, READ COMMITTED transactions\n  MSSQL login must belong to db_datareader, but not db_datawriter, db_owner, or sysadmin\n";
@@ -33,6 +33,7 @@ pub(crate) struct ConnectionOptions {
 pub(crate) struct PostgresConnection {
     pub(crate) options: ConnectionOptions,
     pub(crate) sslmode: PostgresSslMode,
+    pub(crate) trust_ca_file: Option<String>,
 }
 
 impl std::ops::Deref for PostgresConnection {
@@ -150,7 +151,7 @@ pub(crate) fn parse_connection(
                     ))
                 })?);
             }
-            "--trust-ca-file" if provider == "mssql" => trust_ca_file = Some(value),
+            "--trust-ca-file" => trust_ca_file = Some(value),
             _ => {
                 return Err(CliError::Usage(format!(
                     "unknown {command} option {option:?}\n\n{HELP}"
@@ -184,7 +185,21 @@ pub(crate) fn parse_connection(
                 "--insecure-plaintext is valid only with --sslmode disable\n\n{HELP}"
             )));
         }
-        DatabaseConnection::Postgres(PostgresConnection { options, sslmode })
+        if trust_ca_file.is_some()
+            && !matches!(
+                sslmode,
+                PostgresSslMode::VerifyCa | PostgresSslMode::VerifyFull
+            )
+        {
+            return Err(CliError::Usage(format!(
+                "--trust-ca-file requires PostgreSQL --sslmode verify-ca or verify-full\n\n{HELP}"
+            )));
+        }
+        DatabaseConnection::Postgres(PostgresConnection {
+            options,
+            sslmode,
+            trust_ca_file,
+        })
     } else {
         if trust_server_certificate && trust_ca_file.is_some() {
             return Err(CliError::Usage(format!(

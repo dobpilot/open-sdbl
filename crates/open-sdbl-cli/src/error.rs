@@ -1,5 +1,6 @@
 use std::fmt;
 use std::io;
+use std::time::Duration;
 
 use open_sdbl::Diagnostic;
 use open_sdbl::metadata::MetadataError;
@@ -12,6 +13,10 @@ pub(crate) enum CliError {
     Metadata(MetadataError),
     Data(String),
     Database(String),
+    DatabaseTimeout {
+        operation: String,
+        duration: Duration,
+    },
     MsSql {
         operation: &'static str,
         source: tiberius::error::Error,
@@ -26,6 +31,7 @@ impl CliError {
             Self::Usage(_)
             | Self::Io(_, _)
             | Self::Database(_)
+            | Self::DatabaseTimeout { .. }
             | Self::MsSql { .. }
             | Self::Terminal(_) => 2,
         }
@@ -72,6 +78,14 @@ impl CliError {
             }
         )
     }
+
+    pub(crate) const fn is_database_timeout(&self) -> bool {
+        matches!(self, Self::DatabaseTimeout { .. })
+    }
+
+    pub(crate) fn requires_mssql_disconnect(&self) -> bool {
+        self.is_database_timeout() || self.is_mssql_connection_failure()
+    }
 }
 
 impl fmt::Display for CliError {
@@ -84,6 +98,14 @@ impl fmt::Display for CliError {
             Self::MsSql { operation, source } => {
                 write!(formatter, "MSSQL {operation} failed: {source}")
             }
+            Self::DatabaseTimeout {
+                operation,
+                duration,
+            } => write!(
+                formatter,
+                "{operation} timed out after {:.3} seconds",
+                duration.as_secs_f64()
+            ),
             Self::Data(message) | Self::Database(message) | Self::Terminal(message) => {
                 formatter.write_str(message)
             }

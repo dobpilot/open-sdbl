@@ -711,15 +711,37 @@ fn snapshot_fingerprint(
     struct Fingerprint([u64; 2]);
 
     impl Fingerprint {
-        fn write(&mut self, bytes: &[u8]) {
+        fn write_fragment(&mut self, bytes: &[u8]) {
             for &byte in bytes {
                 self.0[0] = (self.0[0] ^ u64::from(byte)).wrapping_mul(0x0000_0100_0000_01b3);
                 self.0[1] = (self.0[1] ^ u64::from(byte))
                     .rotate_left(7)
                     .wrapping_mul(0x9e37_79b1_85eb_ca87);
             }
+        }
+
+        fn finish_value(&mut self) {
             self.0[0] ^= 0xff;
             self.0[1] ^= 0x9d;
+        }
+
+        fn write(&mut self, bytes: &[u8]) {
+            self.write_fragment(bytes);
+            self.finish_value();
+        }
+
+        fn write_debug(&mut self, value: &impl std::fmt::Debug) {
+            use std::fmt::Write as _;
+
+            write!(self, "{value:?}").expect("formatting into a fingerprint cannot fail");
+            self.finish_value();
+        }
+    }
+
+    impl std::fmt::Write for Fingerprint {
+        fn write_str(&mut self, value: &str) -> std::fmt::Result {
+            self.write_fragment(value.as_bytes());
+            Ok(())
         }
     }
 
@@ -730,14 +752,14 @@ fn snapshot_fingerprint(
         state.write(&entry.number.to_le_bytes());
     }
     for descriptor in descriptors {
-        state.write(format!("{descriptor:?}").as_bytes());
+        state.write_debug(descriptor);
     }
-    state.write(format!("{schema:?}").as_bytes());
-    state.write(format!("{live_tables:?}").as_bytes());
-    state.write(format!("{objects:?}").as_bytes());
-    state.write(format!("{fields:?}").as_bytes());
-    state.write(format!("{values:?}").as_bytes());
-    state.write(format!("{indexes:?}").as_bytes());
+    state.write_debug(schema);
+    state.write_debug(&live_tables);
+    state.write_debug(&objects);
+    state.write_debug(&fields);
+    state.write_debug(&values);
+    state.write_debug(&indexes);
     SnapshotFingerprint(state.0)
 }
 

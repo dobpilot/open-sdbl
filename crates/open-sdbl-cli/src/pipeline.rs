@@ -1,5 +1,6 @@
 use std::collections::BTreeMap;
 use std::sync::Arc;
+use std::time::Duration;
 
 use futures_util::{Stream, StreamExt};
 use open_sdbl::metadata::{
@@ -7,7 +8,9 @@ use open_sdbl::metadata::{
     resolve_metadata_with_predefined_values,
 };
 use tokio::sync::Semaphore;
+use tokio::time::timeout;
 
+use crate::QUERY_TIMEOUT;
 use crate::error::CliError;
 use crate::output::print_resolution_report;
 use crate::progress::MetadataProgress;
@@ -163,6 +166,28 @@ pub(crate) async fn decode_config_stream<S>(
 where
     S: Stream<Item = Result<ConfigResource, CliError>>,
 {
+    decode_config_stream_with_progress_timeout(
+        resources,
+        batch_size,
+        pipeline_depth,
+        limits,
+        progress,
+        QUERY_TIMEOUT,
+    )
+    .await
+}
+
+async fn decode_config_stream_with_progress_timeout<S>(
+    resources: S,
+    batch_size: usize,
+    pipeline_depth: usize,
+    limits: ConfigDecodeLimits,
+    progress: &mut MetadataProgress,
+    progress_timeout: Duration,
+) -> Result<ConfigMetadata, CliError>
+where
+    S: Stream<Item = Result<ConfigResource, CliError>>,
+{
     if limits.in_flight_bytes == 0
         || limits.resource_bytes == 0
         || limits.batch_bytes == 0
@@ -235,7 +260,16 @@ where
     let mut total_decoded_bytes = 0_usize;
     let mut descriptors = Vec::new();
     let mut predefined_values = Vec::new();
-    while let Some(result) = jobs.next().await {
+    loop {
+        let next = timeout(progress_timeout, jobs.next()).await.map_err(|_| {
+            CliError::DatabaseTimeout {
+                operation: "Config stream progress".to_owned(),
+                duration: progress_timeout,
+            }
+        })?;
+        let Some(result) = next else {
+            break;
+        };
         let mut batch = result?;
         total_decoded_bytes = total_decoded_bytes
             .checked_add(batch.decoded_bytes)
@@ -290,7 +324,14 @@ pub(crate) fn unsigned_progress_total(value: i64, label: &str) -> Result<u64, Cl
 
 #[cfg(test)]
 mod tests {
-    use super::decode_catalog_values;
+    use std::time::Duration;
+
+    use futures_util::stream;
+
+    use super::{
+        ConfigDecodeLimits, decode_catalog_values, decode_config_stream_with_progress_timeout,
+    };
+    use crate::progress::MetadataProgress;
 
     #[test]
     fn decodes_provider_neutral_catalog_rows() {
@@ -300,5 +341,22 @@ mod tests {
         ])
         .unwrap();
         assert_eq!(tables[0].columns[0].name, "_IDRRef");
+    }
+
+    #[tokio::test]
+    async fn times_out_only_when_the_config_pipeline_stops_making_progress() {
+        let mut progress = MetadataProgress::new();
+        let error = decode_config_stream_with_progress_timeout(
+            stream::pending(),
+            128,
+            2,
+            ConfigDecodeLimits::default(),
+            &mut progress,
+            Duration::from_millis(1),
+        )
+        .await
+        .unwrap_err();
+        assert!(error.is_database_timeout());
+        assert!(error.to_string().contains("Config stream progress"));
     }
 }

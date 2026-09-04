@@ -17,6 +17,11 @@ and SHALL bound the number of printed rows and the width of each cell.
 - **THEN** the CLI prints up to the limit plus a trailer stating how
   many rows were omitted
 
+#### Scenario: Narrow terminal
+- **WHEN** the terminal is too narrow to display every result column
+- **THEN** the CLI prints the fitting prefix and a trailer stating how many
+  columns were omitted
+
 ### Requirement: Secure PostgreSQL transport by default
 The CLI SHALL support TLS for PostgreSQL connections with certificate
 and hostname verification as the default mode, SHALL honor `PGSSLMODE`
@@ -32,6 +37,11 @@ the user explicitly opts in.
 - **WHEN** the user passes the plaintext mode without the explicit
   insecure opt-in flag
 - **THEN** the CLI refuses to connect and names the required flag
+
+#### Scenario: Private PostgreSQL CA
+- **WHEN** a private CA file is supplied in `verify-ca` or `verify-full` mode
+- **THEN** PostgreSQL TLS validates the server chain against that CA instead
+  of disabling certificate verification
 
 ### Requirement: Warn when certificate verification is disabled
 Disabling MSSQL certificate verification SHALL emit a visible warning on
@@ -101,3 +111,8 @@ code when a connection is refused.
 - **WHEN** the proxy offers only username/password authentication and
   credentials are configured
 - **THEN** the tunnel is established using RFC 1929 authentication
+
+#### Scenario: Authentication downgrade
+- **WHEN** proxy credentials are configured
+- **THEN** the client does not advertise anonymous authentication and rejects
+  a proxy that selects it

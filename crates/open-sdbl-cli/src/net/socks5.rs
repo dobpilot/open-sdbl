@@ -81,14 +81,23 @@ pub(crate) async fn connect_socks5(
         let mut stream = TcpStream::connect((proxy.host.as_str(), proxy.port)).await?;
 
         if proxy.username.is_some() {
-            stream.write_all(&[0x05, 0x02, 0x00, 0x02]).await?;
+            // Credentials are an explicit policy choice. Do not advertise the
+            // unauthenticated method, which would allow a proxy to downgrade
+            // the connection silently.
+            stream.write_all(&[0x05, 0x01, 0x02]).await?;
         } else {
             stream.write_all(&[0x05, 0x01, 0x00]).await?;
         }
         let mut method = [0_u8; 2];
         stream.read_exact(&mut method).await?;
         match method {
-            [0x05, 0x00] => {}
+            [0x05, 0x00] if proxy.username.is_none() => {}
+            [0x05, 0x00] => {
+                return Err(io::Error::new(
+                    io::ErrorKind::PermissionDenied,
+                    "proxy selected unauthenticated SOCKS5 access despite configured credentials",
+                ));
+            }
             [0x05, 0x02] => {
                 let username = proxy.username.as_deref().ok_or_else(|| {
                     io::Error::new(

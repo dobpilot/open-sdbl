@@ -243,7 +243,9 @@ pub(super) struct CompilationCatalog<'snapshot> {
 }
 
 impl<'snapshot> CompilationCatalog<'snapshot> {
-    const WORK_LIMIT: usize = 16_384;
+    // Allows wide generated 1C documents to participate in substantial UNION
+    // queries while still bounding adversarial cross-branch work.
+    const WORK_LIMIT: usize = 32_768;
 
     pub(super) fn new(snapshot: &'snapshot MetadataSnapshot) -> Self {
         Self {

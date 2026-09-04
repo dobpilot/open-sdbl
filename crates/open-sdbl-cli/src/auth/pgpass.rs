@@ -1,5 +1,5 @@
 use std::env;
-use std::fs::{self, File};
+use std::fs::{self, OpenOptions};
 use std::io::{self, Read};
 use std::path::{Path, PathBuf};
 
@@ -8,7 +8,7 @@ use zeroize::Zeroizing;
 use crate::args::PostgresConnection;
 use crate::error::CliError;
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub(crate) enum EnvironmentSecret {
     Missing,
     InvalidUnicode,
@@ -92,7 +92,15 @@ pub(crate) fn read_password_file(
     connection: &PostgresConnection,
     explicit: bool,
 ) -> Result<Option<Zeroizing<String>>, CliError> {
-    let mut file = match File::open(path) {
+    let mut options = OpenOptions::new();
+    options.read(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+
+        options.custom_flags(libc::O_NONBLOCK | libc::O_NOFOLLOW | libc::O_CLOEXEC);
+    }
+    let mut file = match options.open(path) {
         Ok(file) => file,
         Err(error) if !explicit && error.kind() == io::ErrorKind::NotFound => return Ok(None),
         Err(error) => {
@@ -192,32 +200,48 @@ pub(crate) fn parse_password_line(line: &str) -> Option<PasswordRecord> {
         return None;
     }
     let mut fields = Vec::with_capacity(5);
-    let mut field = String::new();
+    let mut field_start = 0;
     let mut escaped = false;
-    for character in line.chars() {
+    for (offset, character) in line.char_indices() {
         if escaped {
-            field.push(character);
             escaped = false;
         } else if character == '\\' {
             escaped = true;
         } else if character == ':' && fields.len() < 4 {
-            fields.push(std::mem::take(&mut field));
+            fields.push(&line[field_start..offset]);
+            field_start = offset + 1;
+        }
+    }
+    fields.push(&line[field_start..]);
+    let [host, port, database, user, password] = fields.try_into().ok()?;
+    Some(PasswordRecord {
+        host: decode_password_field(host),
+        port: decode_password_field(port),
+        database: decode_password_field(database),
+        user: decode_password_field(user),
+        // Exact preallocation prevents reallocations from leaving password
+        // prefixes in abandoned allocator blocks.
+        password: Zeroizing::new(decode_password_field(password)),
+    })
+}
+
+fn decode_password_field(encoded: &str) -> String {
+    let mut decoded = String::with_capacity(encoded.len());
+    let mut escaped = false;
+    for character in encoded.chars() {
+        if escaped {
+            decoded.push(character);
+            escaped = false;
+        } else if character == '\\' {
+            escaped = true;
         } else {
-            field.push(character);
+            decoded.push(character);
         }
     }
     if escaped {
-        field.push('\\');
+        decoded.push('\\');
     }
-    fields.push(field);
-    let [host, port, database, user, password] = fields.try_into().ok()?;
-    Some(PasswordRecord {
-        host,
-        port,
-        database,
-        user,
-        password: Zeroizing::new(password),
-    })
+    decoded
 }
 
 fn matches_password_field(pattern: &str, value: &str) -> bool {

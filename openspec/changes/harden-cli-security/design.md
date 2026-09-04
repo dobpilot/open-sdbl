@@ -134,6 +134,12 @@
   optional and decided in-phase (new dependency must be justified
   against the manual parser's growing surface).
 
+The implementation keeps the manual parser for this change. Its option set is
+still small, the parser now has table-driven value handling and focused tests,
+and adding `clap` would materially increase the CLI dependency graph without
+removing provider-specific validation. Reconsider this decision when subcommands
+or mutually dependent option groups grow further.
+
 ## 8. Dependency posture
 
 New CLI dependencies and their justification:

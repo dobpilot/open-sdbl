@@ -34,6 +34,10 @@
   reply code before the reserved byte. Tests against the fake proxy
   including an auth-required scenario.
 - [x] 2.5 Add a `cargo audit` CI job.
+- [x] 2.6 When SOCKS5 credentials are configured, advertise only RFC 1929
+  authentication so a proxy cannot downgrade the tunnel to anonymous access.
+- [x] 2.7 Support a private PostgreSQL CA through `--trust-ca-file` while
+  retaining certificate verification in `verify-ca` and `verify-full` modes.
 
 ## 3. Session reliability and read-only symmetry
 
@@ -57,6 +61,14 @@
 - [x] 3.6 Detect a dead session after a connection error instead of
   looping on identical failures (check `is_closed()` / reconnect or
   exit).
+- [x] 3.7 Treat every client-side MSSQL timeout as an indeterminate TDS
+  state: poison and drop the connection without attempting `ROLLBACK`.
+  Test the timeout classification and cleanup policy.
+- [x] 3.8 Keep non-interactive SIGINT under the operating system's default
+  handling, and check for a dead session after metadata commands and
+  deferred-presentation resolution errors.
+- [x] 3.9 Apply the Config timeout to each wait for pipeline progress rather
+  than to the complete metadata stream.
 
 ## 4. Credential handling
 
@@ -69,6 +81,11 @@
   `SOCKS5_PASSWORD` from the process environment after reading.
 - [x] 4.3 Add a test asserting the CLI rejects any `--password`-style
   flag so credentials never land in argv.
+- [x] 4.4 Open `.pgpass` non-blocking and without following symlinks on
+  Unix before validating the opened descriptor. Exercise FIFO and symlink
+  rejection through `read_password_file`.
+- [x] 4.5 Parse `.pgpass` fields from borrowed slices and preallocate the
+  decoded password exactly, avoiding reallocations that retain secret prefixes.
 
 ## 5. Library invariants
 
@@ -91,6 +108,10 @@
 - [x] 5.5 Add `#![forbid(unsafe_code)]` to the library crate root.
 - [x] 5.6 Add a fuzz target compiling arbitrary source against a fixed
   synthetic snapshot.
+- [x] 5.7 Feed snapshot debug representations directly into the fingerprint
+  hasher instead of allocating whole-collection `String` values.
+- [x] 5.8 Calibrate the compilation work budget with a positive 100-branch,
+  164-column query while retaining a pathological rejection test.
 
 ## 6. REPL performance and correctness
 
@@ -106,6 +127,8 @@
 - [x] 6.3 History write failures log and continue; unresolved deferred
   presentations render a visible marker; cap `read_until` line length
   in non-interactive mode.
+- [x] 6.4 Print an explicit omission trailer when a narrow terminal cannot
+  display all result columns.
 
 ## 7. CLI structure
 
@@ -121,6 +144,8 @@
 - [x] 7.4 Harden argument parsing: reject option-like values after
   value-taking flags, support `--opt=value` and `lex --help` (or adopt
   `clap`, documenting the dependency decision).
+- [x] 7.5 Keep non-Linux terminal support buildable and add a Windows target
+  check to CI.
 
 ## 8. Verification
 

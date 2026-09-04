@@ -678,7 +678,10 @@ pub(super) async fn run(
                     }
                 }
                 Ok(MetaOutcome::Quit) => return Ok(()),
-                Err(error) => eprintln!("error: {}", escape_field(&error.to_string())),
+                Err(error) => {
+                    eprintln!("error: {}", escape_field(&error.to_string()));
+                    ensure_session_remains_usable(session.is_dead())?;
+                }
             }
             continue;
         }
@@ -721,32 +724,40 @@ pub(super) async fn run(
                 .map_err(CliError::standard_output)?;
                 output.flush().map_err(CliError::standard_output)?;
                 let execution_started = Instant::now();
-                let cancellation = session.cancellation();
-                let execution = tokio::select! {
-                    result = session.query(&compiled.sql, compiled.columns.len()) => Some(result),
-                    signal = tokio::signal::ctrl_c() => {
-                        signal.map_err(|error| {
-                            CliError::Io("cannot listen for Ctrl-C".to_owned(), error)
-                        })?;
-                        None
-                    }
-                };
-                let Some(execution) = execution else {
-                    footer.restore()?;
-                    writeln!(output, "^C cancelling query").map_err(CliError::standard_output)?;
-                    output.flush().map_err(CliError::standard_output)?;
-                    tokio::select! {
-                        result = session.cancel_query(cancellation) => result?,
+                let execution = if interactive {
+                    let cancellation = session.cancellation();
+                    let execution = tokio::select! {
+                        result = session.query(&compiled.sql, compiled.columns.len()) => Some(result),
                         signal = tokio::signal::ctrl_c() => {
                             signal.map_err(|error| {
                                 CliError::Io("cannot listen for Ctrl-C".to_owned(), error)
                             })?;
-                            return Err(CliError::Terminal(
-                                "query cancellation interrupted by a second Ctrl-C".to_owned(),
-                            ));
+                            None
                         }
+                    };
+                    if execution.is_none() {
+                        footer.restore()?;
+                        writeln!(output, "^C cancelling query")
+                            .map_err(CliError::standard_output)?;
+                        output.flush().map_err(CliError::standard_output)?;
+                        tokio::select! {
+                            result = session.cancel_query(cancellation) => result?,
+                            signal = tokio::signal::ctrl_c() => {
+                                signal.map_err(|error| {
+                                    CliError::Io("cannot listen for Ctrl-C".to_owned(), error)
+                                })?;
+                                return Err(CliError::Terminal(
+                                    "query cancellation interrupted by a second Ctrl-C".to_owned(),
+                                ));
+                            }
+                        }
+                        writeln!(output, "query cancelled").map_err(CliError::standard_output)?;
                     }
-                    writeln!(output, "query cancelled").map_err(CliError::standard_output)?;
+                    execution
+                } else {
+                    Some(session.query(&compiled.sql, compiled.columns.len()).await)
+                };
+                let Some(execution) = execution else {
                     statement.clear();
                     continue;
                 };
@@ -768,6 +779,7 @@ pub(super) async fn run(
                                 session.execution_label(),
                                 format_duration(execution_elapsed)
                             );
+                            ensure_session_remains_usable(session.is_dead())?;
                             statement.clear();
                             continue;
                         }
@@ -789,12 +801,7 @@ pub(super) async fn run(
                             session.execution_label(),
                             format_duration(execution_elapsed)
                         );
-                        if session.is_dead() {
-                            return Err(CliError::Database(
-                                "database session is no longer usable; reconnect required"
-                                    .to_owned(),
-                            ));
-                        }
+                        ensure_session_remains_usable(session.is_dead())?;
                     }
                 }
             }
@@ -807,6 +814,16 @@ pub(super) async fn run(
             }
         }
         statement.clear();
+    }
+}
+
+fn ensure_session_remains_usable(dead: bool) -> Result<(), CliError> {
+    if dead {
+        Err(CliError::Database(
+            "database session is no longer usable; reconnect required".to_owned(),
+        ))
+    } else {
+        Ok(())
     }
 }
 
@@ -1378,10 +1395,13 @@ fn print_table_with_width<R: TableRow>(
                 .min(MAX_CELL_WIDTH);
         }
     }
-    if let Some(terminal_width) = terminal_width {
-        fit_table_widths(&mut widths, terminal_width);
-    }
+    let omitted_columns = terminal_width.map_or(0, |terminal_width| {
+        fit_table_widths(&mut widths, terminal_width)
+    });
     if widths.is_empty() {
+        if omitted_columns != 0 {
+            writeln!(output, "({omitted_columns} columns omitted)")?;
+        }
         return Ok(());
     }
 
@@ -1396,6 +1416,9 @@ fn print_table_with_width<R: TableRow>(
     for row in rows.iter().take(MAX_PRINTED_ROWS) {
         write_table_row(output, row, &widths)?;
     }
+    if omitted_columns != 0 {
+        writeln!(output, "({omitted_columns} columns omitted)")?;
+    }
     let omitted = rows.len().saturating_sub(MAX_PRINTED_ROWS);
     if omitted != 0 {
         writeln!(output, "({omitted} rows omitted)")?;
@@ -1403,10 +1426,11 @@ fn print_table_with_width<R: TableRow>(
     Ok(())
 }
 
-fn fit_table_widths(widths: &mut Vec<usize>, terminal_width: usize) {
+fn fit_table_widths(widths: &mut Vec<usize>, terminal_width: usize) -> usize {
+    let original_columns = widths.len();
     if terminal_width == 0 {
         widths.clear();
-        return;
+        return original_columns;
     }
     while widths.len() > 1 && widths.len() * 4 - 3 > terminal_width {
         widths.pop();
@@ -1424,6 +1448,7 @@ fn fit_table_widths(widths: &mut Vec<usize>, terminal_width: usize) {
         };
         widths[index] -= 1;
     }
+    original_columns - widths.len()
 }
 
 fn write_table_row(
@@ -1660,6 +1685,10 @@ impl PinnedFooter {
     fn redraw(&mut self) -> Result<(), CliError> {
         Ok(())
     }
+
+    fn restore(&mut self) -> Result<(), CliError> {
+        Ok(())
+    }
 }
 
 #[cfg(target_os = "linux")]
@@ -1745,9 +1774,9 @@ mod tests {
     use super::{
         BoundedLine, CompletionPath, ConsoleHelper, UNRESOLVED_REFERENCE, completion_start,
         decode_hex_array, decode_input_line, default_presentation_template, display_width,
-        footer_text, format_duration, presentation_plan, print_table_with_width, push_unique,
-        push_virtual_table_candidates, read_bounded_line, resolved_presentation,
-        statement_is_complete, timing_line,
+        ensure_session_remains_usable, footer_text, format_duration, presentation_plan,
+        print_table_with_width, push_unique, push_virtual_table_candidates, read_bounded_line,
+        resolved_presentation, statement_is_complete, timing_line,
     };
     use crate::{MAX_CELL_WIDTH, MAX_PRINTED_ROWS};
 
@@ -1789,6 +1818,12 @@ mod tests {
             BoundedLine::Read(5)
         );
         assert_eq!(line, b"next\n");
+    }
+
+    #[test]
+    fn exits_after_an_error_when_the_database_session_is_dead() {
+        assert!(ensure_session_remains_usable(true).is_err());
+        assert!(ensure_session_remains_usable(false).is_ok());
     }
 
     #[test]
@@ -1841,6 +1876,15 @@ mod tests {
         for line in output.lines().take(MAX_PRINTED_ROWS + 2) {
             assert!(UnicodeWidthStr::width(line) <= 24, "{line:?}");
         }
+
+        let headers = ["A", "B", "C", "D", "E", "F"];
+        let mut output = Vec::new();
+        print_table_with_width(&mut output, &headers, &[vec!["x".to_owned(); 6]], Some(8)).unwrap();
+        assert!(
+            String::from_utf8(output)
+                .unwrap()
+                .contains("(4 columns omitted)")
+        );
     }
 
     #[test]

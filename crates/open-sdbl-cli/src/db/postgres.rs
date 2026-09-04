@@ -7,6 +7,7 @@ use open_sdbl::metadata::{
 };
 use rustls::client::danger::{HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier};
 use rustls::client::{WebPkiServerVerifier, verify_server_cert_signed_by_trust_anchor};
+use rustls::pki_types::pem::PemObject;
 use rustls::pki_types::{CertificateDer, ServerName, UnixTime};
 use rustls::server::ParsedCertificate;
 use rustls::{ClientConfig as RustlsClientConfig, DigitallySignedStruct, RootCertStore};
@@ -88,7 +89,10 @@ impl ServerCertVerifier for PostgresServerCertVerifier {
     }
 }
 
-fn postgres_tls_connector(mode: PostgresSslMode) -> Result<MakeRustlsConnect, CliError> {
+fn postgres_tls_connector(
+    mode: PostgresSslMode,
+    trust_ca_file: Option<&str>,
+) -> Result<MakeRustlsConnect, CliError> {
     let signature_roots = Arc::new(RootCertStore {
         roots: webpki_roots::TLS_SERVER_ROOTS.to_vec(),
     });
@@ -99,16 +103,51 @@ fn postgres_tls_connector(mode: PostgresSslMode) -> Result<MakeRustlsConnect, Cl
     let certificate_roots = match mode {
         PostgresSslMode::Require => None,
         PostgresSslMode::VerifyCa | PostgresSslMode::VerifyFull => {
-            let native_certificates = rustls_native_certs::load_native_certs();
             let mut roots = RootCertStore::empty();
-            let (accepted, _) = roots.add_parsable_certificates(native_certificates.certs);
+            let (accepted, details) = if let Some(path) = trust_ca_file {
+                let bytes = std::fs::read(path).map_err(|error| {
+                    CliError::Io(
+                        format!("cannot read PostgreSQL CA certificate file {path:?}"),
+                        error,
+                    )
+                })?;
+                let pem_certificates = CertificateDer::pem_slice_iter(&bytes)
+                    .collect::<Result<Vec<_>, _>>()
+                    .map_err(|error| {
+                        CliError::Data(format!(
+                            "cannot parse PostgreSQL CA certificate file {path:?}: {error}"
+                        ))
+                    })?;
+                let certificates = if pem_certificates.is_empty() {
+                    vec![CertificateDer::from(bytes)]
+                } else {
+                    pem_certificates
+                };
+                let (accepted, rejected) = roots.add_parsable_certificates(certificates);
+                (
+                    accepted,
+                    (rejected != 0).then(|| format!(": {rejected} certificate(s) were invalid")),
+                )
+            } else {
+                let native_certificates = rustls_native_certs::load_native_certs();
+                let (accepted, rejected) =
+                    roots.add_parsable_certificates(native_certificates.certs);
+                (
+                    accepted,
+                    native_certificates
+                        .errors
+                        .first()
+                        .map(|error| format!(": {error}"))
+                        .or_else(|| {
+                            (rejected != 0)
+                                .then(|| format!(": {rejected} certificate(s) were invalid"))
+                        }),
+                )
+            };
             if accepted == 0 {
-                let details = native_certificates
-                    .errors
-                    .first()
-                    .map_or_else(String::new, |error| format!(": {error}"));
                 return Err(CliError::Data(format!(
-                    "cannot load any native CA certificates for PostgreSQL TLS{details}"
+                    "cannot load any CA certificates for PostgreSQL TLS{}",
+                    details.unwrap_or_default()
                 )));
             }
             Some(Arc::new(roots))
@@ -209,7 +248,7 @@ impl PostgresSession {
                 connect_postgres_raw_tls(
                     &configuration,
                     stream,
-                    postgres_tls_connector(mode)?,
+                    postgres_tls_connector(mode, connection.trust_ca_file.as_deref())?,
                     &connection.host,
                     CONNECTION_TIMEOUT,
                 )
@@ -217,7 +256,10 @@ impl PostgresSession {
             }
             (mode, None) => {
                 let (client, connection_driver) = configuration
-                    .connect(postgres_tls_connector(mode)?)
+                    .connect(postgres_tls_connector(
+                        mode,
+                        connection.trust_ca_file.as_deref(),
+                    )?)
                     .await
                     .map_err(CliError::database_connection)?;
                 (client, tokio::spawn(connection_driver))
@@ -329,7 +371,8 @@ impl PostgresSession {
                         connection.port,
                     )
                     .await?;
-                    let mut tls = postgres_tls_connector(mode)?;
+                    let mut tls =
+                        postgres_tls_connector(mode, connection.trust_ca_file.as_deref())?;
                     let tls = <MakeRustlsConnect as MakeTlsConnect<TcpStream>>::make_tls_connect(
                         &mut tls,
                         &connection.host,
@@ -343,7 +386,10 @@ impl PostgresSession {
                         .map_err(CliError::database_connection)
                 }
                 (mode, None) => token
-                    .cancel_query(postgres_tls_connector(mode)?)
+                    .cancel_query(postgres_tls_connector(
+                        mode,
+                        connection.trust_ca_file.as_deref(),
+                    )?)
                     .await
                     .map_err(CliError::database_connection),
             }
@@ -494,15 +540,12 @@ impl MetadataSource for PostgresMetadataSource<'_> {
                 compressed: row.try_get(1)?,
             })
         });
-        query_timeout(
-            "PostgreSQL Config stream",
-            decode_config_stream(
-                resources,
-                CONFIG_DECODE_BATCH_SIZE,
-                config_pipeline_depth(),
-                ConfigDecodeLimits::default(),
-                progress,
-            ),
+        decode_config_stream(
+            resources,
+            CONFIG_DECODE_BATCH_SIZE,
+            config_pipeline_depth(),
+            ConfigDecodeLimits::default(),
+            progress,
         )
         .await
     }
