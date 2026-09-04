@@ -28,6 +28,23 @@ database connection.
 - **THEN** the library resolves the metadata without reading environment
   variables, files, sockets, standard streams, or child processes
 
+#### Scenario: PostgreSQL compiler
+- **WHEN** an application constructs `QueryCompiler` from a metadata snapshot
+  and `PostgresBackend`
+- **THEN** the compiler can compile, prepare, and build deferred presentation
+  lookups without provider runtime state
+
+#### Scenario: MSSQL compiler
+- **WHEN** an application constructs `QueryCompiler` with
+  `MsSqlBackend::new(year_offset)`
+- **THEN** the compiler consistently applies that immutable year offset to
+  compilation, preparation, and presentation lookup operations
+
+#### Scenario: Single public compilation model
+- **WHEN** an application compiles or prepares a query for either backend
+- **THEN** it uses `QueryCompiler<B>` rather than a parallel set of legacy free
+  functions
+
 #### Scenario: Query inspection
 - **WHEN** an application requests PostgreSQL metadata query definitions
 - **THEN** the library returns fixed SELECT-only statements without executing
