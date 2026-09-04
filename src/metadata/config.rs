@@ -2,7 +2,8 @@ use std::borrow::Cow;
 use std::str::FromStr;
 
 use super::{
-    Guid, MetadataError, Value, ensure_serialized_depth, inflate_raw_deflate, parse_serialized,
+    DEFAULT_OUTPUT_LIMIT, Guid, MetadataError, Value, ensure_serialized_depth,
+    inflate_raw_deflate_bounded, parse_serialized,
 };
 
 /// Semantic role of a custom field declared by a recognized Config collection.
@@ -95,6 +96,17 @@ pub struct ConfigPredefinedValue {
     pub name: String,
 }
 
+/// Parsed contents of one relevant Config resource plus its decoded size.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ParsedConfigResource {
+    /// Object and field descriptors found in a bare-GUID resource.
+    pub descriptors: Vec<ConfigDescriptor>,
+    /// Predefined values found in a `<catalog-guid>.1c` resource.
+    pub predefined_values: Vec<ConfigPredefinedValue>,
+    /// Number of inflated bytes charged to the caller's total budget.
+    pub decoded_bytes: usize,
+}
+
 /// Parses a bare-GUID, part-zero Config resource.
 ///
 /// Returns `Ok(None)` for suffixed slots or for a valid resource without a
@@ -125,11 +137,10 @@ pub fn parse_config_descriptors(
     file_name: &str,
     compressed: &[u8],
 ) -> Result<Vec<ConfigDescriptor>, MetadataError> {
-    let Ok(resource_guid) = Guid::from_str(file_name) else {
+    if Guid::from_str(file_name).is_err() {
         return Ok(Vec::new());
-    };
-    let decoded = inflate_raw_deflate(compressed)?;
-    parse_config_descriptors_streaming(&decoded, &resource_guid)
+    }
+    Ok(parse_config_resource_bounded(file_name, compressed, DEFAULT_OUTPUT_LIMIT)?.descriptors)
 }
 
 /// Parses catalog predefined values from a part-zero `<catalog-guid>.1c`
@@ -147,15 +158,64 @@ pub fn parse_config_predefined_values(
     file_name: &str,
     compressed: &[u8],
 ) -> Result<Vec<ConfigPredefinedValue>, MetadataError> {
-    let Some(owner) = file_name.strip_suffix(".1c") else {
+    if file_name.strip_suffix(".1c").is_none() {
         return Ok(Vec::new());
+    }
+    Ok(
+        parse_config_resource_bounded(file_name, compressed, DEFAULT_OUTPUT_LIMIT)?
+            .predefined_values,
+    )
+}
+
+/// Inflates and parses one Config resource with an explicit decoded-byte cap.
+///
+/// Irrelevant suffixed resources return an empty result without decompression.
+/// A relevant bare-GUID or `.1c` resource is inflated exactly once.
+///
+/// # Errors
+///
+/// Returns [`MetadataError`] when a relevant resource exceeds `decoded_limit`
+/// or contains malformed compressed/serialized metadata.
+pub fn parse_config_resource_bounded(
+    file_name: &str,
+    compressed: &[u8],
+    decoded_limit: usize,
+) -> Result<ParsedConfigResource, MetadataError> {
+    enum ResourceKind {
+        Descriptors(Guid),
+        Predefined(Guid),
+    }
+
+    let kind = if let Ok(resource) = Guid::from_str(file_name) {
+        ResourceKind::Descriptors(resource)
+    } else if let Some(owner) = file_name.strip_suffix(".1c") {
+        ResourceKind::Predefined(Guid::from_str(owner)?)
+    } else {
+        return Ok(ParsedConfigResource {
+            descriptors: Vec::new(),
+            predefined_values: Vec::new(),
+            decoded_bytes: 0,
+        });
     };
-    let owner_guid = Guid::from_str(owner)?;
-    let decoded = inflate_raw_deflate(compressed)?;
-    let value = parse_serialized(&decoded)?;
-    let mut predefined = Vec::new();
-    collect_predefined_values(&value, &owner_guid, &mut predefined);
-    Ok(predefined)
+    let decoded = inflate_raw_deflate_bounded(compressed, decoded_limit)?;
+    let decoded_bytes = decoded.len();
+    match kind {
+        ResourceKind::Descriptors(resource) => Ok(ParsedConfigResource {
+            descriptors: parse_config_descriptors_streaming(&decoded, &resource)?,
+            predefined_values: Vec::new(),
+            decoded_bytes,
+        }),
+        ResourceKind::Predefined(owner) => {
+            let value = parse_serialized(&decoded)?;
+            let mut predefined_values = Vec::new();
+            collect_predefined_values(&value, &owner, &mut predefined_values);
+            Ok(ParsedConfigResource {
+                descriptors: Vec::new(),
+                predefined_values,
+                decoded_bytes,
+            })
+        }
+    }
 }
 
 fn collect_predefined_values(

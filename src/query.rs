@@ -18,7 +18,7 @@ mod core;
 mod mssql;
 mod postgres;
 
-use crate::metadata::MetadataSnapshot;
+use crate::metadata::{MetadataSnapshot, SnapshotFingerprint};
 
 pub use core::{
     CompiledQuery, PresentationExpression, PresentationPlan, PresentationRequest,
@@ -84,6 +84,7 @@ impl<B: Backend> QueryCompiler<'_, B> {
             source: source.to_owned(),
             backend: self.backend,
             request,
+            snapshot_fingerprint: self.snapshot.fingerprint(),
         })
     }
 
@@ -121,6 +122,7 @@ pub struct Prepared<B: Backend> {
     source: String,
     backend: B,
     request: PresentationRequest,
+    snapshot_fingerprint: SnapshotFingerprint,
 }
 
 impl<B: Backend> Prepared<B> {
@@ -144,6 +146,9 @@ impl<B: Backend> Prepared<B> {
         snapshot: &MetadataSnapshot,
         plans: &[PresentationPlan],
     ) -> Result<CompiledQuery, QueryDiagnostic> {
+        if snapshot.fingerprint() != self.snapshot_fingerprint {
+            return Err(QueryDiagnostic::snapshot_mismatch());
+        }
         core::compile_query(&self.source, snapshot, plans, self.backend.dialect())
     }
 }

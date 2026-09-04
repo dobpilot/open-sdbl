@@ -41,7 +41,7 @@ pub(super) fn compile_branch(
         columns,
         sql: projections,
         deferred_presentations,
-    } = render_selected_projections(&selected, &context);
+    } = render_selected_projections(&selected, &context)?;
     if projections.is_empty() {
         return Err(empty_projection_diagnostic(source, join));
     }
@@ -198,7 +198,7 @@ fn compile_branch_projections(
             .fields
             .iter()
             .enumerate()
-            .map(|(index, _)| ResolvedPath::from_source(ScopeId(0), scope, index))
+            .map(|field| ResolvedPath::from_source(ScopeId(0), scope, field))
             .map(SelectedProjection::Field)
             .collect());
     }
@@ -319,7 +319,7 @@ fn compile_selected_projections(
 fn render_selected_projections(
     selected: &[SelectedProjection],
     context: &CompilationContext<'_, '_>,
-) -> RenderedProjections {
+) -> Result<RenderedProjections, QueryDiagnostic> {
     let mut columns = Vec::new();
     let mut sql = Vec::new();
     let mut deferred_presentations = Vec::new();
@@ -328,6 +328,7 @@ fn render_selected_projections(
         match selected {
             SelectedProjection::Field(resolved) => {
                 for column in &resolved.field().columns {
+                    context.catalog.charge(1, None)?;
                     let output_label = labels.allocate(&resolved.output_label(column));
                     let expression = context.sql_column(resolved, column);
                     sql.push(format!(
@@ -343,6 +344,7 @@ fn render_selected_projections(
                 label,
                 deferred,
             } => {
+                context.catalog.charge(1, None)?;
                 let output_label = labels.allocate(label);
                 sql.push(format!(
                     "{expression} AS {}",
@@ -355,11 +357,11 @@ fn render_selected_projections(
             }
         }
     }
-    RenderedProjections {
+    Ok(RenderedProjections {
         columns,
         sql,
         deferred_presentations,
-    }
+    })
 }
 
 fn compile_order_terms(
@@ -740,7 +742,7 @@ fn fixed_reference_database_type(
         )
     })?;
     let matches = snapshot
-        .schema
+        .schema()
         .tables
         .iter()
         .filter(|table| names_equal(&table.name, target))

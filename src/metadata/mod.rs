@@ -19,8 +19,9 @@ mod schema;
 mod value;
 
 pub use config::{
-    ConfigDescriptor, ConfigFieldPurpose, ConfigPredefinedValue, Synonym, parse_config_descriptor,
-    parse_config_descriptors, parse_config_predefined_values,
+    ConfigDescriptor, ConfigFieldPurpose, ConfigPredefinedValue, ParsedConfigResource, Synonym,
+    parse_config_descriptor, parse_config_descriptors, parse_config_predefined_values,
+    parse_config_resource_bounded,
 };
 pub use db_names::{DbNameEntry, DbNames, MetadataKind, parse_db_names};
 pub use deflate::{DEFAULT_OUTPUT_LIMIT, inflate_raw_deflate, inflate_raw_deflate_bounded};
@@ -31,6 +32,7 @@ pub use normalize::{
     LogicalField, collapse_logical_fields, normalize_index_key, recase_postgres_identifier,
 };
 pub use queries::{MsSqlMetadataQueries, PostgresMetadataQueries};
+pub(crate) use resolve::SnapshotFingerprint;
 pub use resolve::{
     AllowedLength, IndexComparison, LiveColumn, LiveIndex, LiveTable, MetadataField,
     MetadataObject, MetadataSnapshot, MetadataValue, ResolutionFinding, ResolutionReport,

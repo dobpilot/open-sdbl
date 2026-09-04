@@ -106,7 +106,12 @@ pub(super) struct ResolvedPath {
 }
 
 impl ResolvedPath {
-    pub(super) fn from_source(scope: ScopeId, source: &SourceScope, field_index: usize) -> Self {
+    pub(super) fn from_source(
+        scope: ScopeId,
+        source: &SourceScope,
+        field: (usize, &QueryableField),
+    ) -> Self {
+        let (field_index, _) = field;
         Self {
             scope,
             owner: source.object,
@@ -336,6 +341,10 @@ impl CompilationContext<'_, '_> {
         reference_token: &Token<'_>,
         target_token: &Token<'_>,
     ) -> Result<ResolvedPath, QueryDiagnostic> {
+        self.catalog.charge(
+            self.source(scope).fields.len().saturating_add(1),
+            Some(reference_token),
+        )?;
         let (target_table, source_field, source_column) = {
             let (_, reference_field) =
                 resolve_named_field(&self.source(scope).fields, reference_token)?;
@@ -363,7 +372,7 @@ impl CompilationContext<'_, '_> {
         );
         let target_objects = self
             .snapshot
-            .objects
+            .objects()
             .iter()
             .filter(|object| {
                 object
@@ -391,7 +400,7 @@ impl CompilationContext<'_, '_> {
         };
         let target_live_table = self
             .snapshot
-            .live_tables
+            .live_tables()
             .iter()
             .find(|table| names_equal(&table.name, &target_physical))
             .ok_or_else(|| {
@@ -507,6 +516,10 @@ impl CompilationContext<'_, '_> {
         multiple: bool,
         token: &Token<'_>,
     ) -> Result<String, QueryDiagnostic> {
+        self.catalog.charge(
+            reference.reference_targets.len().saturating_add(1),
+            Some(token),
+        )?;
         let source_column = reference_column(reference, token)?.physical_name.clone();
         let source_type_column = multiple
             .then(|| reference_type_column(reference, token))
@@ -525,7 +538,7 @@ impl CompilationContext<'_, '_> {
             .as_deref()
             .and_then(|physical| {
                 self.snapshot
-                    .live_tables
+                    .live_tables()
                     .iter()
                     .find(|table| names_equal(&table.name, physical))
             })

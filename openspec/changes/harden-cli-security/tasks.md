@@ -72,61 +72,61 @@
 
 ## 5. Library invariants
 
-- [ ] 5.1 Make `MetadataSnapshot` collections private with slice
+- [x] 5.1 Make `MetadataSnapshot` collections private with slice
   accessors; migrate all callers and tests. Test: the compiler can no
   longer be driven into out-of-bounds lookups by snapshot mutation.
-- [ ] 5.2 Add a snapshot fingerprint computed during resolution; store
+- [x] 5.2 Add a snapshot fingerprint computed during resolution; store
   it in `Prepared` and fail `Prepared::compile` with a new
   `SnapshotMismatch` diagnostic kind when it differs. Tests: same
   snapshot passes, re-resolved differing snapshot fails.
-- [ ] 5.3 Add a per-compilation work budget charged in branch
+- [x] 5.3 Add a per-compilation work budget charged in branch
   compilation, projection rendering, and dereference resolution;
   switch the tabular-section field path to the indexed catalog. Test: a
   pathological UNION × tabular-section query fails fast with a typed
   diagnostic.
-- [ ] 5.4 Tighten internal invariants: `ResolvedPath::from_source` takes
+- [x] 5.4 Tighten internal invariants: `ResolvedPath::from_source` takes
   the `(index, &field)` pair; `SchemaStorage::table` and schema-table
   keys use `names_equal`; document duplicate-GUID collapsing in
   `queryable_field_catalog`.
-- [ ] 5.5 Add `#![forbid(unsafe_code)]` to the library crate root.
-- [ ] 5.6 Add a fuzz target compiling arbitrary source against a fixed
+- [x] 5.5 Add `#![forbid(unsafe_code)]` to the library crate root.
+- [x] 5.6 Add a fuzz target compiling arbitrary source against a fixed
   synthetic snapshot.
 
 ## 6. REPL performance and correctness
 
-- [ ] 6.1 Fix the presentation cache to compute inside the cache lookup
+- [x] 6.1 Fix the presentation cache to compute inside the cache lookup
   (or replace moka with a session-local map cleared on `\refresh`);
   drop the generation counter from the key; rewrite the cache test to
   exercise the production path.
-- [ ] 6.2 Build completion candidates lazily from the typed prefix
+- [x] 6.2 Build completion candidates lazily from the typed prefix
   instead of materializing the alias cartesian product; store
   precomputed lowercase keys and filter without per-keystroke
   allocation. Test: candidate count for a reference field stays linear
   in its own aliases.
-- [ ] 6.3 History write failures log and continue; unresolved deferred
+- [x] 6.3 History write failures log and continue; unresolved deferred
   presentations render a visible marker; cap `read_until` line length
   in non-interactive mode.
 
 ## 7. CLI structure
 
-- [ ] 7.1 Split `main.rs` into `args`, `progress`, `net/socks5`,
+- [x] 7.1 Split `main.rs` into `args`, `progress`, `net/socks5`,
   `db/postgres`, `db/mssql`, `pipeline`, `auth/pgpass`, `output`, and
   `error` modules with their tests.
-- [ ] 7.2 Unify the two metadata pipelines behind a `MetadataSource`
+- [x] 7.2 Unify the two metadata pipelines behind a `MetadataSource`
   trait whose `begin_readonly()` hosts provider verification; the
   pipeline exists once.
-- [ ] 7.3 Bound Config decoding by in-flight bytes and total decoded
+- [x] 7.3 Bound Config decoding by in-flight bytes and total decoded
   size; append descriptors incrementally instead of accumulating all
   decoded resources.
-- [ ] 7.4 Harden argument parsing: reject option-like values after
+- [x] 7.4 Harden argument parsing: reject option-like values after
   value-taking flags, support `--opt=value` and `lex --help` (or adopt
   `clap`, documenting the dependency decision).
 
 ## 8. Verification
 
-- [ ] 8.1 `cargo fmt --check`, `cargo clippy --all-targets --
+- [x] 8.1 `cargo fmt --check`, `cargo clippy --all-targets --
   -D warnings`, `cargo test --workspace`, rustdoc with warnings denied,
   and `cargo audit` all pass.
-- [ ] 8.2 `openspec validate harden-cli-security --strict` passes.
-- [ ] 8.3 README and HELP updated: TLS flags, read-only requirements,
+- [x] 8.2 `openspec validate harden-cli-security --strict` passes.
+- [x] 8.3 README and HELP updated: TLS flags, read-only requirements,
   credential guidance, and the new library invariants.

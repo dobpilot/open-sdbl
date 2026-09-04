@@ -4,7 +4,6 @@ use std::io::{self, IsTerminal, Write};
 use std::mem::MaybeUninit;
 use std::time::{Duration, Instant};
 
-use moka::future::Cache;
 use open_sdbl::metadata::{MetadataKind, MetadataObject, MetadataSnapshot, ObjectId};
 use open_sdbl::query::{
     CompiledQuery, MsSqlBackend, PostgresBackend, Prepared, PresentationExpression,
@@ -19,7 +18,7 @@ use rustyline::hint::Hinter;
 use rustyline::history::DefaultHistory;
 use rustyline::validate::Validator;
 use rustyline::{Context, Editor, Helper};
-use tokio::io::{AsyncBufReadExt, BufReader};
+use tokio::io::{AsyncBufRead, AsyncBufReadExt, BufReader};
 use unicode_width::UnicodeWidthStr;
 
 use super::{
@@ -137,19 +136,58 @@ const COMPLETION_KEYWORDS: &[&str] = &[
 ];
 
 const PRESENTATION_POLICY_VERSION: u32 = 2;
+const MAX_INPUT_LINE_BYTES: usize = 1024 * 1024;
+const UNRESOLVED_REFERENCE: &str = "<unresolved reference>";
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 struct PresentationPlanKey {
-    metadata_generation: u64,
     object: ObjectId,
     language: &'static str,
     policy_version: u32,
 }
 
 #[derive(Debug, Clone)]
+struct CompletionName {
+    value: String,
+    key: String,
+    dots: usize,
+}
+
+impl CompletionName {
+    fn new(value: String) -> Self {
+        Self {
+            key: value.to_lowercase(),
+            dots: value.bytes().filter(|byte| *byte == b'.').count(),
+            value,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+struct CompletionPath {
+    prefixes: Vec<CompletionName>,
+    suffixes: Vec<CompletionName>,
+}
+
+impl CompletionPath {
+    fn new(prefixes: Vec<String>, suffixes: Vec<String>) -> Self {
+        Self {
+            prefixes: prefixes.into_iter().map(CompletionName::new).collect(),
+            suffixes: suffixes.into_iter().map(CompletionName::new).collect(),
+        }
+    }
+
+    #[cfg(test)]
+    fn stored_names(&self) -> usize {
+        self.prefixes.len() + self.suffixes.len()
+    }
+}
+
+#[derive(Debug, Clone)]
 struct ConsoleHelper {
-    candidates: Vec<String>,
-    source_candidates: Vec<String>,
+    candidates: Vec<CompletionName>,
+    source_candidates: Vec<CompletionName>,
+    paths: Vec<CompletionPath>,
     known_identifiers: HashSet<String>,
 }
 
@@ -166,10 +204,11 @@ impl ConsoleHelper {
             .collect::<HashSet<_>>();
         let mut source_candidates = Vec::new();
         let mut source_candidate_keys = HashSet::new();
+        let mut paths = Vec::new();
 
         let fields_by_object = queryable_field_catalog(snapshot);
         let mut object_by_table = HashMap::new();
-        for object in &snapshot.objects {
+        for object in snapshot.objects() {
             let object_id = ObjectId::from(&object.guid);
             if let Some(table) = object.physical_table.as_deref() {
                 object_by_table
@@ -178,7 +217,7 @@ impl ConsoleHelper {
             }
         }
 
-        for object in &snapshot.objects {
+        for object in snapshot.objects() {
             let (Some(kind), Some(name)) = (object.kind, object.name.as_deref()) else {
                 continue;
             };
@@ -217,19 +256,13 @@ impl ConsoleHelper {
             let Some(fields) = fields_by_object.get(&ObjectId::from(&object.guid)) else {
                 continue;
             };
+            let mut object_fields = Vec::new();
+            let mut object_field_keys = HashSet::new();
             for field in fields {
                 push_unique(&mut candidates, &mut candidate_keys, &field.name);
                 for alias in &field.aliases {
                     push_unique(&mut candidates, &mut candidate_keys, alias);
-                }
-                for object_name in &object_names {
-                    for alias in &field.aliases {
-                        push_unique(
-                            &mut candidates,
-                            &mut candidate_keys,
-                            &format!("{object_name}.{alias}"),
-                        );
-                    }
+                    push_unique(&mut object_fields, &mut object_field_keys, alias);
                 }
 
                 let Some(target) = field.reference_target.as_deref() else {
@@ -242,17 +275,17 @@ impl ConsoleHelper {
                 let Some(target_fields) = fields_by_object.get(target_object) else {
                     continue;
                 };
-                for source_alias in &field.aliases {
-                    for target_field in target_fields {
-                        for target_alias in &target_field.aliases {
-                            push_unique(
-                                &mut candidates,
-                                &mut candidate_keys,
-                                &format!("{source_alias}.{target_alias}"),
-                            );
-                        }
+                let mut target_aliases = Vec::new();
+                let mut target_alias_keys = HashSet::new();
+                for target_field in target_fields {
+                    for target_alias in &target_field.aliases {
+                        push_unique(&mut target_aliases, &mut target_alias_keys, target_alias);
                     }
                 }
+                paths.push(CompletionPath::new(field.aliases.clone(), target_aliases));
+            }
+            if !object_fields.is_empty() {
+                paths.push(CompletionPath::new(object_names.to_vec(), object_fields));
             }
         }
 
@@ -263,10 +296,37 @@ impl ConsoleHelper {
             .flat_map(|candidate| candidate.split('.'))
             .filter(|part| !part.starts_with('\\'))
             .map(str::to_lowercase)
+            .chain(paths.iter().flat_map(|path| {
+                path.prefixes
+                    .iter()
+                    .chain(&path.suffixes)
+                    .map(|name| name.key.clone())
+            }))
             .collect();
         Self {
-            candidates,
-            source_candidates,
+            candidates: candidates.into_iter().map(CompletionName::new).collect(),
+            source_candidates: source_candidates
+                .into_iter()
+                .map(CompletionName::new)
+                .collect(),
+            paths,
+            known_identifiers,
+        }
+    }
+
+    #[cfg(test)]
+    fn for_test(
+        candidates: Vec<String>,
+        source_candidates: Vec<String>,
+        known_identifiers: HashSet<String>,
+    ) -> Self {
+        Self {
+            candidates: candidates.into_iter().map(CompletionName::new).collect(),
+            source_candidates: source_candidates
+                .into_iter()
+                .map(CompletionName::new)
+                .collect(),
+            paths: Vec::new(),
             known_identifiers,
         }
     }
@@ -281,20 +341,53 @@ impl ConsoleHelper {
             &self.candidates
         };
         let complete_virtual_source = prefix.bytes().filter(|byte| *byte == b'.').count() >= 2;
-        let values = candidates
+        let mut values = candidates
             .iter()
-            .filter(|candidate| {
-                !source_context
-                    || complete_virtual_source
-                    || candidate.bytes().filter(|byte| *byte == b'.').count() == 1
+            .filter(|candidate| !source_context || complete_virtual_source || candidate.dots == 1)
+            .filter(|candidate| candidate.key.starts_with(&prefix))
+            .map(|candidate| {
+                (
+                    candidate.key.clone(),
+                    Pair {
+                        display: candidate.value.clone(),
+                        replacement: candidate.value.clone(),
+                    },
+                )
             })
-            .filter(|candidate| candidate.to_lowercase().starts_with(&prefix))
-            .map(|candidate| Pair {
-                display: candidate.clone(),
-                replacement: candidate.clone(),
-            })
-            .collect();
-        (start, values)
+            .collect::<Vec<_>>();
+        if !source_context && let Some((typed_prefix, typed_suffix)) = prefix.rsplit_once('.') {
+            let mut emitted = values
+                .iter()
+                .map(|(key, _)| key.clone())
+                .collect::<HashSet<_>>();
+            for path in &self.paths {
+                for path_prefix in path
+                    .prefixes
+                    .iter()
+                    .filter(|candidate| candidate.key == typed_prefix)
+                {
+                    for suffix in path
+                        .suffixes
+                        .iter()
+                        .filter(|candidate| candidate.key.starts_with(typed_suffix))
+                    {
+                        let key = format!("{}.{}", path_prefix.key, suffix.key);
+                        if emitted.insert(key.clone()) {
+                            let value = format!("{}.{}", path_prefix.value, suffix.value);
+                            values.push((
+                                key,
+                                Pair {
+                                    display: value.clone(),
+                                    replacement: value,
+                                },
+                            ));
+                        }
+                    }
+                }
+            }
+        }
+        values.sort_by(|left, right| left.0.cmp(&right.0));
+        (start, values.into_iter().map(|(_, pair)| pair).collect())
     }
 }
 
@@ -506,12 +599,7 @@ pub(super) async fn run(
     let mut input = BufReader::new(tokio::io::stdin());
     let mut line = Vec::new();
     let mut statement = String::new();
-    let presentation_cache = Cache::builder()
-        .max_capacity(1_024)
-        .time_to_idle(Duration::from_secs(30 * 60))
-        .time_to_live(Duration::from_secs(6 * 60 * 60))
-        .build();
-    let mut metadata_generation = 0_u64;
+    let mut presentation_cache = HashMap::new();
 
     if interactive {
         writeln!(output, "open-sdbl 1C query console. Type \\help for help.")
@@ -546,10 +634,19 @@ pub(super) async fn run(
                 }
             }
         } else {
-            input
-                .read_until(b'\n', &mut line)
+            match read_bounded_line(&mut input, &mut line, MAX_INPUT_LINE_BYTES)
                 .await
                 .map_err(|error| CliError::Io("cannot read standard input".to_owned(), error))?
+            {
+                BoundedLine::Read(bytes) => bytes,
+                BoundedLine::TooLong => {
+                    eprintln!(
+                        "error: input line exceeds {MAX_INPUT_LINE_BYTES} bytes; current statement discarded"
+                    );
+                    statement.clear();
+                    continue;
+                }
+            }
         };
         if bytes == 0 {
             if !statement.trim().is_empty() {
@@ -571,11 +668,11 @@ pub(super) async fn run(
         };
 
         if statement.is_empty() && line.trim_start().starts_with('\\') {
-            add_history(&mut editor, line.trim())?;
+            add_history(&mut editor, line.trim());
             match execute_meta_command(session, &mut snapshot, line.trim(), output).await {
                 Ok(MetaOutcome::Continue) => {}
                 Ok(MetaOutcome::Refreshed) => {
-                    metadata_generation = metadata_generation.wrapping_add(1);
+                    presentation_cache.clear();
                     if let Some(helper) = editor.as_mut().and_then(Editor::helper_mut) {
                         *helper = ConsoleHelper::from_snapshot(&snapshot);
                     }
@@ -591,7 +688,7 @@ pub(super) async fn run(
             continue;
         }
 
-        add_history(&mut editor, statement.trim())?;
+        add_history(&mut editor, statement.trim());
         let generation_started = Instant::now();
         let prepared = match session.dialect() {
             DatabaseDialect::Postgres => QueryCompiler::new(&snapshot, PostgresBackend)
@@ -604,12 +701,10 @@ pub(super) async fn run(
         let compilation = match prepared {
             Ok(prepared) => {
                 let plans = presentation_plans(
-                    &presentation_cache,
-                    metadata_generation,
+                    &mut presentation_cache,
                     &snapshot,
                     prepared.presentation_request(),
-                )
-                .await;
+                );
                 prepared.compile(&snapshot, &plans)
             }
             Err(error) => Err(error),
@@ -660,8 +755,7 @@ pub(super) async fn run(
                         let resolution = resolve_deferred_presentations(
                             session,
                             &snapshot,
-                            &presentation_cache,
-                            metadata_generation,
+                            &mut presentation_cache,
                             &compiled,
                             &mut rows,
                         )
@@ -716,40 +810,38 @@ pub(super) async fn run(
     }
 }
 
-async fn presentation_plans(
-    cache: &Cache<PresentationPlanKey, PresentationPlan>,
-    metadata_generation: u64,
+fn presentation_plans(
+    cache: &mut HashMap<PresentationPlanKey, PresentationPlan>,
     snapshot: &MetadataSnapshot,
     request: &PresentationRequest,
 ) -> Vec<PresentationPlan> {
     let mut plans = Vec::with_capacity(request.targets.len());
     for target in &request.targets {
-        plans.push(presentation_plan(cache, metadata_generation, snapshot, target.object).await);
+        plans.push(presentation_plan(cache, snapshot, target.object));
     }
     plans
 }
 
-async fn presentation_plan(
-    cache: &Cache<PresentationPlanKey, PresentationPlan>,
-    metadata_generation: u64,
+fn presentation_plan(
+    cache: &mut HashMap<PresentationPlanKey, PresentationPlan>,
     snapshot: &MetadataSnapshot,
     object: ObjectId,
 ) -> PresentationPlan {
     let key = PresentationPlanKey {
-        metadata_generation,
         object,
         language: "ru",
         policy_version: PRESENTATION_POLICY_VERSION,
     };
-    let fallback = default_presentation_plan(snapshot, object);
-    cache.get_with(key, async move { fallback }).await
+    cache
+        .entry(key)
+        .or_insert_with(|| default_presentation_plan(snapshot, object))
+        .clone()
 }
 
 async fn resolve_deferred_presentations(
     session: &mut DatabaseSession,
     snapshot: &MetadataSnapshot,
-    cache: &Cache<PresentationPlanKey, PresentationPlan>,
-    metadata_generation: u64,
+    cache: &mut HashMap<PresentationPlanKey, PresentationPlan>,
     compiled: &CompiledQuery,
     rows: &mut QueryRows,
 ) -> Result<(), CliError> {
@@ -767,7 +859,7 @@ async fn resolve_deferred_presentations(
                 ))
             })?;
             let Some(payload) = cell.as_deref() else {
-                *cell = Some(String::new());
+                *cell = Some(UNRESOLVED_REFERENCE.to_owned());
                 continue;
             };
             let Some((object, reference)) = decode_deferred_reference(payload, snapshot)? else {
@@ -782,7 +874,7 @@ async fn resolve_deferred_presentations(
     let dialect = session.dialect();
     let mut presentations = HashMap::<(ObjectId, [u8; 16]), String>::new();
     for (object, object_references) in references {
-        let plan = presentation_plan(cache, metadata_generation, snapshot, object).await;
+        let plan = presentation_plan(cache, snapshot, object);
         let object_references = object_references.into_iter().collect::<Vec<_>>();
         for chunk in object_references.chunks(512) {
             let lookup = match dialect {
@@ -812,13 +904,21 @@ async fn resolve_deferred_presentations(
     }
 
     for (row_index, column_index, object, reference) in cells {
-        let presentation = presentations
-            .get(&(object, reference))
-            .cloned()
-            .unwrap_or_default();
+        let presentation = resolved_presentation(&presentations, object, reference);
         rows[row_index][column_index] = Some(presentation);
     }
     Ok(())
+}
+
+fn resolved_presentation(
+    presentations: &HashMap<(ObjectId, [u8; 16]), String>,
+    object: ObjectId,
+    reference: [u8; 16],
+) -> String {
+    presentations
+        .get(&(object, reference))
+        .cloned()
+        .unwrap_or_else(|| UNRESOLVED_REFERENCE.to_owned())
 }
 
 fn decode_deferred_reference(
@@ -870,7 +970,7 @@ fn default_presentation_plan(snapshot: &MetadataSnapshot, object: ObjectId) -> P
         || "Документ".to_owned(),
         |metadata_object| {
             snapshot
-                .descriptors
+                .descriptors()
                 .iter()
                 .find(|descriptor| descriptor.object_guid == metadata_object.guid)
                 .and_then(|descriptor| {
@@ -1026,15 +1126,17 @@ async fn execute_meta_command(
     }
 }
 
-fn add_history(editor: &mut Option<ConsoleEditor>, entry: &str) -> Result<(), CliError> {
+fn add_history(editor: &mut Option<ConsoleEditor>, entry: &str) {
     if let Some(editor) = editor
         && !entry.is_empty()
     {
-        editor
-            .add_history_entry(entry)
-            .map_err(|error| terminal_error("cannot update console history", error))?;
+        if let Err(error) = editor.add_history_entry(entry) {
+            eprintln!(
+                "warning: {}",
+                escape_field(&terminal_error("cannot update console history", error).to_string())
+            );
+        }
     }
-    Ok(())
 }
 
 fn terminal_error(context: &str, error: ReadlineError) -> CliError {
@@ -1057,7 +1159,7 @@ fn timing_line(phase: &str, duration: Duration) -> String {
 
 fn print_tables(output: &mut impl Write, snapshot: &MetadataSnapshot) -> io::Result<()> {
     let mut rows: Vec<Vec<String>> = snapshot
-        .objects
+        .objects()
         .iter()
         .filter_map(|object| {
             Some(vec![
@@ -1081,7 +1183,7 @@ fn print_tables(output: &mut impl Write, snapshot: &MetadataSnapshot) -> io::Res
 
 fn print_indexes(output: &mut impl Write, snapshot: &MetadataSnapshot) -> io::Result<()> {
     let mut rows: Vec<Vec<String>> = snapshot
-        .indexes
+        .indexes()
         .iter()
         .map(|index| {
             vec![
@@ -1159,7 +1261,7 @@ fn print_description(
 
     let table = object.physical_table.as_deref().unwrap_or("");
     let index_rows: Vec<Vec<String>> = snapshot
-        .indexes
+        .indexes()
         .iter()
         .filter(|index| index.table.eq_ignore_ascii_case(table))
         .map(|index| {
@@ -1181,7 +1283,7 @@ fn object_for_table<'snapshot>(
     snapshot: &'snapshot MetadataSnapshot,
     table: &str,
 ) -> Option<&'snapshot MetadataObject> {
-    snapshot.objects.iter().find(|object| {
+    snapshot.objects().iter().find(|object| {
         object
             .physical_table
             .as_deref()
@@ -1400,6 +1502,45 @@ fn decode_input_line(line: &[u8]) -> Result<&str, usize> {
     std::str::from_utf8(line).map_err(|error| error.valid_up_to())
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum BoundedLine {
+    Read(usize),
+    TooLong,
+}
+
+async fn read_bounded_line(
+    input: &mut (impl AsyncBufRead + Unpin),
+    output: &mut Vec<u8>,
+    limit: usize,
+) -> io::Result<BoundedLine> {
+    let mut too_long = false;
+    loop {
+        let buffer = input.fill_buf().await?;
+        if buffer.is_empty() {
+            return Ok(if too_long {
+                BoundedLine::TooLong
+            } else {
+                BoundedLine::Read(output.len())
+            });
+        }
+        let newline = buffer.iter().position(|byte| *byte == b'\n');
+        let consumed = newline.map_or(buffer.len(), |position| position + 1);
+        if !too_long {
+            let retained = consumed.min(limit.saturating_add(1).saturating_sub(output.len()));
+            output.extend_from_slice(&buffer[..retained]);
+            too_long = output.len() > limit;
+        }
+        input.consume(consumed);
+        if newline.is_some() {
+            return Ok(if too_long {
+                BoundedLine::TooLong
+            } else {
+                BoundedLine::Read(output.len())
+            });
+        }
+    }
+}
+
 fn footer_text(columns: u16) -> String {
     let available = usize::from(columns.saturating_sub(1));
     if COMMAND_HINT.len() <= available {
@@ -1590,22 +1731,23 @@ impl TerminalUtf8Guard {
 #[cfg(test)]
 mod tests {
     use std::borrow::Cow;
-    use std::collections::HashSet;
-    use std::sync::Arc;
-    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::collections::{HashMap, HashSet};
     use std::time::Duration;
 
-    use moka::future::Cache;
-    use open_sdbl::metadata::{FieldId, MetadataKind, ObjectId, StandardFieldId};
-    use open_sdbl::query::{PresentationExpression, PresentationPlan};
+    use open_sdbl::metadata::{
+        FieldId, LiveTable, MetadataKind, ObjectId, SchemaStorage, StandardFieldId, parse_db_names,
+        resolve_metadata,
+    };
+    use open_sdbl::query::PresentationExpression;
     use rustyline::highlight::Highlighter;
     use unicode_width::UnicodeWidthStr;
 
     use super::{
-        ConsoleHelper, PRESENTATION_POLICY_VERSION, PresentationPlanKey, completion_start,
+        BoundedLine, CompletionPath, ConsoleHelper, UNRESOLVED_REFERENCE, completion_start,
         decode_hex_array, decode_input_line, default_presentation_template, display_width,
-        footer_text, format_duration, print_table_with_width, push_unique,
-        push_virtual_table_candidates, statement_is_complete, timing_line,
+        footer_text, format_duration, presentation_plan, print_table_with_width, push_unique,
+        push_virtual_table_candidates, read_bounded_line, resolved_presentation,
+        statement_is_complete, timing_line,
     };
     use crate::{MAX_CELL_WIDTH, MAX_PRINTED_ROWS};
 
@@ -1629,6 +1771,24 @@ mod tests {
         damaged.pop();
         damaged.extend_from_slice(b";\n");
         assert_eq!(decode_input_line(&damaged), Err(damaged.len() - 3));
+    }
+
+    #[tokio::test]
+    async fn bounds_non_interactive_input_lines_and_drains_the_remainder() {
+        let source = b"123456789\nnext\n";
+        let mut input = tokio::io::BufReader::new(&source[..]);
+        let mut line = Vec::new();
+        assert_eq!(
+            read_bounded_line(&mut input, &mut line, 4).await.unwrap(),
+            BoundedLine::TooLong
+        );
+        assert_eq!(line.len(), 5);
+        line.clear();
+        assert_eq!(
+            read_bounded_line(&mut input, &mut line, 8).await.unwrap(),
+            BoundedLine::Read(5)
+        );
+        assert_eq!(line, b"next\n");
     }
 
     #[test]
@@ -1685,16 +1845,16 @@ mod tests {
 
     #[test]
     fn completes_commands_keywords_and_cyrillic_metadata_case_insensitively() {
-        let helper = ConsoleHelper {
-            candidates: vec![
+        let helper = ConsoleHelper::for_test(
+            vec![
                 "\\refresh".to_owned(),
                 "ВЫБРАТЬ".to_owned(),
                 "Справочник.Договоры".to_owned(),
                 "Организация.Код".to_owned(),
             ],
-            source_candidates: vec!["Справочник.Договоры".to_owned()],
-            known_identifiers: HashSet::new(),
-        };
+            vec!["Справочник.Договоры".to_owned()],
+            HashSet::new(),
+        );
 
         let (_, commands) = helper.complete_values("\\REF", "\\REF".len());
         assert_eq!(commands[0].replacement, "\\refresh");
@@ -1712,6 +1872,38 @@ mod tests {
         push_unique(&mut candidates, &mut keys, "Description");
         push_unique(&mut candidates, &mut keys, "description");
         assert_eq!(candidates, ["Код", "Description"]);
+    }
+
+    #[test]
+    fn stores_reference_completion_aliases_linearly_and_expands_only_a_typed_path() {
+        let path = CompletionPath::new(
+            vec!["Организация".to_owned(), "Organization".to_owned()],
+            vec![
+                "Код".to_owned(),
+                "Code".to_owned(),
+                "Description".to_owned(),
+            ],
+        );
+        assert_eq!(path.stored_names(), 2 + 3);
+        assert_ne!(path.stored_names(), 2 * 3);
+        let mut helper = ConsoleHelper::for_test(Vec::new(), Vec::new(), HashSet::new());
+        helper.paths.push(path);
+
+        let (_, empty) = helper.complete_values("SELECT ", "SELECT ".len());
+        assert!(empty.is_empty());
+        let source = "SELECT Организация.к";
+        let (_, values) = helper.complete_values(source, source.len());
+        assert_eq!(values.len(), 1);
+        assert_eq!(values[0].replacement, "Организация.Код");
+    }
+
+    #[test]
+    fn unresolved_deferred_presentations_are_visible() {
+        let object = ObjectId::from_bytes([7; 16]);
+        assert_eq!(
+            resolved_presentation(&HashMap::new(), object, [9; 16]),
+            UNRESOLVED_REFERENCE
+        );
     }
 
     #[test]
@@ -1740,11 +1932,7 @@ mod tests {
             MetadataKind::InformationRegister,
             &information_names,
         );
-        let helper = ConsoleHelper {
-            source_candidates: candidates.clone(),
-            candidates,
-            known_identifiers: HashSet::new(),
-        };
+        let helper = ConsoleHelper::for_test(candidates.clone(), candidates, HashSet::new());
 
         let russian = "из регистрнакопления.остатки.ос";
         let (_, values) = helper.complete_values(russian, russian.len());
@@ -1772,22 +1960,22 @@ mod tests {
 
     #[test]
     fn restricts_source_completion_to_the_qualified_metadata_hierarchy() {
-        let helper = ConsoleHelper {
-            candidates: vec![
+        let helper = ConsoleHelper::for_test(
+            vec![
                 "Код".to_owned(),
                 "Договоры".to_owned(),
                 "_Референс42".to_owned(),
                 "Организация.Код".to_owned(),
             ],
-            source_candidates: vec![
+            vec![
                 "Catalog.Contracts".to_owned(),
                 "Document.Sale".to_owned(),
                 "РегистрНакопления.Остатки".to_owned(),
                 "РегистрНакопления.Остатки.Остатки()".to_owned(),
                 "Справочник.Договоры".to_owned(),
             ],
-            known_identifiers: HashSet::new(),
-        };
+            HashSet::new(),
+        );
 
         let (_, empty_source) = helper.complete_values("FROM ", "FROM ".len());
         assert_eq!(empty_source.len(), 4);
@@ -1842,11 +2030,11 @@ mod tests {
 
     #[test]
     fn highlights_lexer_tokens_without_changing_display_text() {
-        let helper = ConsoleHelper {
-            candidates: Vec::new(),
-            source_candidates: Vec::new(),
-            known_identifiers: HashSet::from(["договоры".to_owned()]),
-        };
+        let helper = ConsoleHelper::for_test(
+            Vec::new(),
+            Vec::new(),
+            HashSet::from(["договоры".to_owned()]),
+        );
         let line = "ВЫБРАТЬ Договоры // test";
         let Cow::Owned(highlighted) = helper.highlight(line, line.len()) else {
             panic!("expected styled output");
@@ -1921,30 +2109,33 @@ mod tests {
         );
     }
 
-    #[tokio::test]
-    async fn presentation_cache_reuses_a_generation_and_separates_refreshes() {
-        let cache = Cache::builder().max_capacity(8).build();
+    #[test]
+    fn presentation_cache_uses_the_production_lookup_and_clears_on_refresh() {
+        let serialized = b"{1,{b8bac76b-c91b-4d78-8a70-ffa39f8de694,\"Reference\",53}}";
+        let length = u16::try_from(serialized.len()).unwrap();
+        let mut compressed = vec![1];
+        compressed.extend_from_slice(&length.to_le_bytes());
+        compressed.extend_from_slice(&(!length).to_le_bytes());
+        compressed.extend_from_slice(serialized);
+        let snapshot = resolve_metadata(
+            parse_db_names(&compressed).unwrap(),
+            Vec::new(),
+            SchemaStorage {
+                tables: Vec::new(),
+                anomalies: Vec::new(),
+            },
+            Vec::<LiveTable>::new(),
+        )
+        .snapshot;
+        let mut cache = HashMap::new();
         let object = ObjectId::from_bytes([7; 16]);
-        let calls = Arc::new(AtomicUsize::new(0));
-        for generation in [0, 0, 1] {
-            let calls = Arc::clone(&calls);
-            let key = PresentationPlanKey {
-                metadata_generation: generation,
-                object,
-                language: "ru",
-                policy_version: PRESENTATION_POLICY_VERSION,
-            };
-            cache
-                .get_with(key, async move {
-                    calls.fetch_add(1, Ordering::SeqCst);
-                    PresentationPlan {
-                        object,
-                        fields: Vec::new(),
-                        expression: PresentationExpression::Literal(String::new()),
-                    }
-                })
-                .await;
-        }
-        assert_eq!(calls.load(Ordering::SeqCst), 2);
+        let first = presentation_plan(&mut cache, &snapshot, object);
+        let second = presentation_plan(&mut cache, &snapshot, object);
+        assert_eq!(first, second);
+        assert_eq!(cache.len(), 1);
+        cache.clear();
+        let refreshed = presentation_plan(&mut cache, &snapshot, object);
+        assert_eq!(refreshed, first);
+        assert_eq!(cache.len(), 1);
     }
 }

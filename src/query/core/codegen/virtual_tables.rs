@@ -43,7 +43,7 @@ pub(super) fn compile_accumulation_relation(
         .as_deref()
         .expect("a live accumulation register has a physical table");
     let owned_fields = snapshot
-        .fields
+        .fields()
         .iter()
         .filter(|field| {
             field
@@ -362,7 +362,7 @@ fn resolve_balance_totals<'snapshot>(
     token: &Token<'_>,
 ) -> Result<BalanceTotals<'snapshot>, QueryDiagnostic> {
     let entries = snapshot
-        .db_names
+        .db_names()
         .entries()
         .iter()
         .filter(|entry| entry.guid == object.guid && entry.alias == "AccumRgT")
@@ -385,7 +385,7 @@ fn resolve_balance_totals<'snapshot>(
         }
     };
     let physical_name = format!("_AccumRgT{}", entry.number);
-    let schema_table = snapshot.schema.table(&physical_name).ok_or_else(|| {
+    let schema_table = snapshot.schema().table(&physical_name).ok_or_else(|| {
         QueryDiagnostic::at(
             QueryDiagnosticKind::Metadata,
             Some(token),
@@ -393,7 +393,7 @@ fn resolve_balance_totals<'snapshot>(
         )
     })?;
     let live_table = snapshot
-        .live_tables
+        .live_tables()
         .iter()
         .find(|table| names_equal(&table.name, &physical_name))
         .ok_or_else(|| {

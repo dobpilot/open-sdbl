@@ -2,6 +2,8 @@ use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::ops::Deref;
 
+use crate::names::folded_name;
+
 use super::normalize::{normalize_logical_name, normalize_standard_field_name};
 use super::{
     AttributeId, ConfigDescriptor, ConfigFieldPurpose, ConfigPredefinedValue, DbNames, FieldId,
@@ -290,29 +292,95 @@ impl Deref for ResolvedMetadata {
     }
 }
 
-/// Source records and the resulting metadata resolution.
+/// Query-ready metadata whose indexed collections cannot be mutated.
+///
+/// Collections are intentionally exposed only through shared slice accessors,
+/// so safe application code cannot invalidate identity indexes by removing or
+/// reordering resolved entries.
+///
+/// ```compile_fail
+/// # fn mutate(snapshot: &mut open_sdbl::metadata::MetadataSnapshot) {
+/// snapshot.objects.clear();
+/// # }
+/// ```
 #[derive(Debug, Clone)]
 pub struct MetadataSnapshot {
     /// Authoritative DBNames mapping.
-    pub db_names: DbNames,
+    db_names: DbNames,
     /// Bare-GUID Config descriptors.
-    pub descriptors: Vec<ConfigDescriptor>,
+    descriptors: Vec<ConfigDescriptor>,
     /// Authoritative current physical schema.
-    pub schema: SchemaStorage,
+    schema: SchemaStorage,
     /// Observed PostgreSQL catalog tables.
-    pub live_tables: Vec<LiveTable>,
+    live_tables: Vec<LiveTable>,
     /// Resolved metadata objects.
-    pub objects: Vec<MetadataObject>,
+    objects: Vec<MetadataObject>,
     /// Resolved custom fields.
-    pub fields: Vec<MetadataField>,
+    fields: Vec<MetadataField>,
     /// Resolved enumeration and catalog predefined values.
-    pub values: Vec<MetadataValue>,
+    values: Vec<MetadataValue>,
     /// SchemaStorage indexes compared with the live catalog.
-    pub indexes: Vec<IndexComparison>,
+    indexes: Vec<IndexComparison>,
     index: MetadataIndex,
+    fingerprint: SnapshotFingerprint,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct SnapshotFingerprint([u64; 2]);
+
 impl MetadataSnapshot {
+    /// Returns the authoritative DBNames mapping.
+    #[must_use]
+    pub const fn db_names(&self) -> &DbNames {
+        &self.db_names
+    }
+
+    /// Returns Config descriptors in resolution source order.
+    #[must_use]
+    pub fn descriptors(&self) -> &[ConfigDescriptor] {
+        &self.descriptors
+    }
+
+    /// Returns the authoritative physical schema declaration.
+    #[must_use]
+    pub const fn schema(&self) -> &SchemaStorage {
+        &self.schema
+    }
+
+    /// Returns observed live tables in catalog order.
+    #[must_use]
+    pub fn live_tables(&self) -> &[LiveTable] {
+        &self.live_tables
+    }
+
+    /// Returns resolved metadata objects in deterministic source order.
+    #[must_use]
+    pub fn objects(&self) -> &[MetadataObject] {
+        &self.objects
+    }
+
+    /// Returns resolved custom fields in deterministic source order.
+    #[must_use]
+    pub fn fields(&self) -> &[MetadataField] {
+        &self.fields
+    }
+
+    /// Returns resolved predefined values in deterministic source order.
+    #[must_use]
+    pub fn values(&self) -> &[MetadataValue] {
+        &self.values
+    }
+
+    /// Returns SchemaStorage/live index comparisons.
+    #[must_use]
+    pub fn indexes(&self) -> &[IndexComparison] {
+        &self.indexes
+    }
+
+    pub(crate) const fn fingerprint(&self) -> SnapshotFingerprint {
+        self.fingerprint
+    }
+
     /// Looks up a tabular object GUID by kind and Config name in expected O(1)
     /// time after name normalization.
     ///
@@ -468,10 +536,10 @@ pub fn resolve_metadata_with_predefined_values(
     let live_table_by_name = index_live_tables(&live_tables);
     let indexes = compare_indexes(&schema, &live_tables, &live_table_by_name, &db_names);
     let report = build_resolution_report(&db_names, &descriptors, &schema, &live_tables, &indexes);
-    let schema_tables: HashSet<&str> = schema
+    let schema_tables: HashSet<String> = schema
         .tables
         .iter()
-        .map(|table| table.name.as_str())
+        .map(|table| folded_name(&table.name))
         .collect();
     let schema_field_owners = index_schema_field_owners(&schema);
     let live_fields = index_live_fields(&live_tables);
@@ -497,8 +565,9 @@ pub fn resolve_metadata_with_predefined_values(
             name: descriptor.map(|value| value.name.clone()),
             marker: descriptor.map(|value| value.marker.clone()),
             number: Some(entry.number),
-            declared: schema_tables
-                .contains(physical_table.strip_prefix('_').unwrap_or(&physical_table)),
+            declared: schema_tables.contains(&folded_name(
+                physical_table.strip_prefix('_').unwrap_or(&physical_table),
+            )),
             live: live_table.is_some(),
             code_allowed_length: infer_allowed_length(live_table, "_code"),
             number_allowed_length: infer_allowed_length(live_table, "_number"),
@@ -601,6 +670,16 @@ pub fn resolve_metadata_with_predefined_values(
         &live_table_by_name,
     );
 
+    let fingerprint = snapshot_fingerprint(
+        &db_names,
+        &descriptors,
+        &schema,
+        &live_tables,
+        &objects,
+        &fields,
+        &values,
+        &indexes,
+    );
     ResolvedMetadata {
         snapshot: MetadataSnapshot {
             db_names,
@@ -612,9 +691,54 @@ pub fn resolve_metadata_with_predefined_values(
             values,
             indexes,
             index,
+            fingerprint,
         },
         report,
     }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn snapshot_fingerprint(
+    db_names: &DbNames,
+    descriptors: &[ConfigDescriptor],
+    schema: &SchemaStorage,
+    live_tables: &[LiveTable],
+    objects: &[MetadataObject],
+    fields: &[MetadataField],
+    values: &[MetadataValue],
+    indexes: &[IndexComparison],
+) -> SnapshotFingerprint {
+    struct Fingerprint([u64; 2]);
+
+    impl Fingerprint {
+        fn write(&mut self, bytes: &[u8]) {
+            for &byte in bytes {
+                self.0[0] = (self.0[0] ^ u64::from(byte)).wrapping_mul(0x0000_0100_0000_01b3);
+                self.0[1] = (self.0[1] ^ u64::from(byte))
+                    .rotate_left(7)
+                    .wrapping_mul(0x9e37_79b1_85eb_ca87);
+            }
+            self.0[0] ^= 0xff;
+            self.0[1] ^= 0x9d;
+        }
+    }
+
+    let mut state = Fingerprint([0xcbf2_9ce4_8422_2325, 0x6a09_e667_f3bc_c909]);
+    for entry in db_names.entries() {
+        state.write(entry.guid.as_str().as_bytes());
+        state.write(entry.alias.as_bytes());
+        state.write(&entry.number.to_le_bytes());
+    }
+    for descriptor in descriptors {
+        state.write(format!("{descriptor:?}").as_bytes());
+    }
+    state.write(format!("{schema:?}").as_bytes());
+    state.write(format!("{live_tables:?}").as_bytes());
+    state.write(format!("{objects:?}").as_bytes());
+    state.write(format!("{fields:?}").as_bytes());
+    state.write(format!("{values:?}").as_bytes());
+    state.write(format!("{indexes:?}").as_bytes());
+    SnapshotFingerprint(state.0)
 }
 
 fn build_resolution_report(

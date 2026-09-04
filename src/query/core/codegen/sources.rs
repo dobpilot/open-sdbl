@@ -279,7 +279,7 @@ pub(super) fn compile_metadata_value(
         )
     })?;
     let table = snapshot
-        .live_tables
+        .live_tables()
         .iter()
         .find(|table| names_equal(&table.name, physical_table))
         .ok_or_else(|| {
@@ -384,7 +384,7 @@ pub(super) fn presentation_targets(
     for target in &field.reference_targets {
         let physical = format!("_{}", target.strip_prefix('_').unwrap_or(target));
         let matches = snapshot
-            .objects
+            .objects()
             .iter()
             .filter(|object| {
                 object
@@ -477,7 +477,7 @@ pub(super) fn compile_live_relation(
 ) -> String {
     let canonical_name = extension_table_base(&canonical.name).unwrap_or(&canonical.name);
     let mut tables = snapshot
-        .live_tables
+        .live_tables()
         .iter()
         .filter(|table| {
             names_equal(&table.name, canonical_name)
@@ -592,7 +592,7 @@ pub(super) fn compile_source_relation(
         .as_deref()
         .expect("a live information register has a physical table");
     let owned_fields = snapshot
-        .fields
+        .fields()
         .iter()
         .filter(|field| {
             field

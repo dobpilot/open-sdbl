@@ -60,10 +60,10 @@ fn exercises_every_lookup_error_variant() {
         .unwrap();
     let missing_value = values.predefined_value(value_owner, "Missing").unwrap_err();
 
-    let owner_guid = base.objects[0].guid.clone();
+    let owner_guid = base.objects()[0].guid.clone();
     let ambiguous_values = resolve_metadata_with_predefined_values(
-        base.db_names.clone(),
-        base.descriptors.clone(),
+        base.db_names().clone(),
+        base.descriptors().to_vec(),
         vec![
             ConfigPredefinedValue {
                 owner_guid: owner_guid.clone(),
@@ -76,8 +76,8 @@ fn exercises_every_lookup_error_variant() {
                 name: "DuplicateValue".to_owned(),
             },
         ],
-        base.schema.clone(),
-        base.live_tables.clone(),
+        base.schema().clone(),
+        base.live_tables().to_vec(),
     )
     .snapshot;
     let ambiguous_owner = ambiguous_values

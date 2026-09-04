@@ -11,7 +11,7 @@ use open_sdbl::metadata::{AllowedLength, MetadataKind};
 fn resolves_the_catalog_and_attribute_verified_in_the_test_infobase() {
     let snapshot = snapshot();
     let object = snapshot
-        .objects
+        .objects()
         .iter()
         .find(|object| object.name.as_deref() == Some("OpenSdblMetadataProbe"))
         .unwrap();
@@ -20,16 +20,16 @@ fn resolves_the_catalog_and_attribute_verified_in_the_test_infobase() {
     assert!(object.declared && object.live);
     assert_eq!(object.code_allowed_length, Some(AllowedLength::Variable));
 
-    let field = &snapshot.fields[0];
+    let field = &snapshot.fields()[0];
     assert_eq!(field.name.as_deref(), Some("ProbeAttribute"));
     assert_eq!(field.physical_name, "_Fld54");
     assert_eq!(field.owner_tables, ["_Reference53"]);
     assert!(field.declared && field.live);
 
-    assert_eq!(snapshot.indexes[0].logical_key, ["Code", "ID"]);
+    assert_eq!(snapshot.indexes()[0].logical_key, ["Code", "ID"]);
     assert_eq!(
-        snapshot.indexes[0].live_name.as_deref(),
+        snapshot.indexes()[0].live_name.as_deref(),
         Some("_reference53_2")
     );
-    assert!(snapshot.indexes[0].unique_matches);
+    assert!(snapshot.indexes()[0].unique_matches);
 }

@@ -18,6 +18,13 @@ test = false
 doc = false
 bench = false
 
+[[bin]]
+name = "compile_query"
+path = "fuzz_targets/compile_query.rs"
+test = false
+doc = false
+bench = false
+
 # Keep fuzz-only dependencies and targets outside the production workspace.
 [workspace]
 members = ["."]

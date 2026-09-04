@@ -1,5 +1,6 @@
 //! Metadata lookup and queryable-field projection.
 
+use std::cell::{Cell, OnceCell, RefCell};
 use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
 
@@ -185,7 +186,7 @@ pub(super) fn custom_field_name(
 ) -> Option<String> {
     let number = schema_name.strip_prefix("Fld")?.parse::<u32>().ok()?;
     snapshot
-        .fields
+        .fields()
         .iter()
         .find(|field| {
             field.number == number
@@ -236,17 +237,47 @@ pub(super) fn is_extension_table_name(canonical: &str, candidate: &str) -> bool 
 /// the resolver without scanning every object to detect such duplicates.
 pub(super) struct CompilationCatalog<'snapshot> {
     snapshot: &'snapshot MetadataSnapshot,
-    custom_names: std::cell::OnceCell<CustomFieldNameIndex>,
-    fields: std::cell::RefCell<HashMap<String, Arc<[QueryableField]>>>,
+    custom_names: OnceCell<CustomFieldNameIndex>,
+    fields: RefCell<HashMap<String, Arc<[QueryableField]>>>,
+    work: Cell<usize>,
 }
 
 impl<'snapshot> CompilationCatalog<'snapshot> {
+    const WORK_LIMIT: usize = 16_384;
+
     pub(super) fn new(snapshot: &'snapshot MetadataSnapshot) -> Self {
         Self {
             snapshot,
-            custom_names: std::cell::OnceCell::new(),
-            fields: std::cell::RefCell::new(HashMap::new()),
+            custom_names: OnceCell::new(),
+            fields: RefCell::new(HashMap::new()),
+            work: Cell::new(0),
         }
+    }
+
+    pub(super) fn charge(
+        &self,
+        units: usize,
+        token: Option<&Token<'_>>,
+    ) -> Result<(), QueryDiagnostic> {
+        let next = self.work.get().checked_add(units).ok_or_else(|| {
+            QueryDiagnostic::at_or_unpositioned(
+                QueryDiagnosticKind::WorkBudgetExceeded,
+                token,
+                "query compilation work budget exceeded",
+            )
+        })?;
+        if next > Self::WORK_LIMIT {
+            return Err(QueryDiagnostic::at_or_unpositioned(
+                QueryDiagnosticKind::WorkBudgetExceeded,
+                token,
+                format!(
+                    "query compilation work budget exceeds limit of {} units",
+                    Self::WORK_LIMIT
+                ),
+            ));
+        }
+        self.work.set(next);
+        Ok(())
     }
 
     pub(super) fn fields(
@@ -261,13 +292,9 @@ impl<'snapshot> CompilationCatalog<'snapshot> {
                 "metadata object has no physical table",
             )
         })?;
-        let key = folded_name(physical_table);
-        if let Some(fields) = self.fields.borrow().get(&key) {
-            return Ok(Arc::clone(fields));
-        }
         let table = self
             .snapshot
-            .live_tables
+            .live_tables()
             .iter()
             .find(|table| names_equal(&table.name, physical_table))
             .ok_or_else(|| {
@@ -277,7 +304,22 @@ impl<'snapshot> CompilationCatalog<'snapshot> {
                     format!("physical table {physical_table:?} is not live"),
                 )
             })?;
-        let schema_table = self.snapshot.schema.table(physical_table);
+        let schema_table = self.snapshot.schema().table(physical_table);
+        self.fields_for_table(physical_table, table, schema_table, token)
+    }
+
+    pub(super) fn fields_for_table(
+        &self,
+        physical_table: &str,
+        table: &LiveTable,
+        schema_table: Option<&crate::metadata::SchemaTable>,
+        token: Option<&Token<'_>>,
+    ) -> Result<Arc<[QueryableField]>, QueryDiagnostic> {
+        let key = folded_name(physical_table);
+        if let Some(fields) = self.fields.borrow().get(&key) {
+            return Ok(Arc::clone(fields));
+        }
+        self.charge(table.columns.len().max(1), token)?;
         let custom_names = self
             .custom_names
             .get_or_init(|| index_custom_field_names(self.snapshot));
@@ -383,7 +425,7 @@ pub(super) fn find_metadata_object_at<'snapshot>(
     };
 
     let matches: Vec<&MetadataObject> = snapshot
-        .objects
+        .objects()
         .iter()
         .filter(|object| object.kind.is_some() && object.physical_table.is_some())
         .filter(|object| kind.is_none_or(|kind| object.kind == Some(kind)))
@@ -431,7 +473,7 @@ pub fn queryable_fields(
         )
     })?;
     let table = snapshot
-        .live_tables
+        .live_tables()
         .iter()
         .find(|table| names_equal(&table.name, physical_table))
         .ok_or_else(|| {
@@ -440,7 +482,7 @@ pub fn queryable_fields(
                 format!("physical table {physical_table} is not live"),
             )
         })?;
-    let schema_table = snapshot.schema.table(physical_table);
+    let schema_table = snapshot.schema().table(physical_table);
 
     Ok(project_queryable_fields(
         physical_table,
@@ -471,7 +513,7 @@ pub(super) fn resolve_source_metadata<'snapshot>(
             .as_deref()
             .and_then(|physical| {
                 snapshot
-                    .live_tables
+                    .live_tables()
                     .iter()
                     .find(|table| names_equal(&table.name, physical))
             })
@@ -502,7 +544,7 @@ pub(super) fn resolve_source_metadata<'snapshot>(
         ));
     }
     let descriptors = snapshot
-        .descriptors
+        .descriptors()
         .iter()
         .filter(|descriptor| {
             descriptor.resource_guid == object.guid
@@ -530,7 +572,7 @@ pub(super) fn resolve_source_metadata<'snapshot>(
         ));
     }
     let mut mappings = snapshot
-        .db_names
+        .db_names()
         .entries()
         .iter()
         .filter(|entry| entry.alias == "VT" && entry.guid == descriptors[0].object_guid)
@@ -569,7 +611,7 @@ pub(super) fn resolve_source_metadata<'snapshot>(
     })?;
     let physical_table = format!("{parent_physical}_VT{}", mapping.number);
     let mut live_variants = snapshot
-        .live_tables
+        .live_tables()
         .iter()
         .filter(|table| {
             names_equal(&table.name, &physical_table)
@@ -587,7 +629,7 @@ pub(super) fn resolve_source_metadata<'snapshot>(
         ));
     }
     let mut schema_variants = snapshot
-        .schema
+        .schema()
         .tables
         .iter()
         .filter(|table| {
@@ -630,12 +672,14 @@ pub(super) fn resolve_source_metadata<'snapshot>(
                 ),
             )
         })?;
-    let mut fields = project_queryable_fields(
-        &live_table.name,
-        live_table,
-        Some(schema_table),
-        &CustomFieldNames::Scan(snapshot),
-    );
+    let mut fields = catalog
+        .fields_for_table(
+            &live_table.name,
+            live_table,
+            Some(schema_table),
+            Some(table_part),
+        )?
+        .to_vec();
     normalize_table_part_standard_fields(&mut fields, parent_physical);
     Ok(ResolvedSourceMetadata {
         object,
@@ -691,24 +735,28 @@ fn normalize_table_part_standard_fields(fields: &mut [QueryableField], parent_ph
 }
 
 /// Builds queryable fields for every currently live object in one indexed
-/// pass over the snapshot's current public vectors.
+/// pass over the immutable snapshot.
 ///
-/// Objects without a live physical table are omitted. Rebuilding the catalog
-/// after changing the snapshot reflects those changes.
+/// Objects without a live physical table are omitted. If malformed source
+/// metadata resolves the same GUID more than once, the first live object in
+/// deterministic snapshot order owns the catalog entry; later duplicates are
+/// deliberately collapsed by [`HashMap::entry`].
 #[must_use]
 pub fn queryable_field_catalog(snapshot: &MetadataSnapshot) -> QueryableFieldCatalog {
     let custom_names = index_custom_field_names(snapshot);
-    let mut live_tables = HashMap::with_capacity(snapshot.live_tables.len());
-    for table in &snapshot.live_tables {
+    let mut live_tables = HashMap::with_capacity(snapshot.live_tables().len());
+    for table in snapshot.live_tables() {
         live_tables.entry(folded_name(&table.name)).or_insert(table);
     }
-    let mut schema_tables = HashMap::with_capacity(snapshot.schema.tables.len());
-    for table in &snapshot.schema.tables {
-        schema_tables.entry(table.name.as_str()).or_insert(table);
+    let mut schema_tables = HashMap::with_capacity(snapshot.schema().tables.len());
+    for table in &snapshot.schema().tables {
+        schema_tables
+            .entry(folded_name(&table.name))
+            .or_insert(table);
     }
 
     let mut catalog = HashMap::new();
-    for object in &snapshot.objects {
+    for object in snapshot.objects() {
         let Some(physical_table) = object.physical_table.as_deref() else {
             continue;
         };
@@ -716,7 +764,9 @@ pub fn queryable_field_catalog(snapshot: &MetadataSnapshot) -> QueryableFieldCat
             continue;
         };
         let schema_table = schema_tables
-            .get(physical_table.strip_prefix('_').unwrap_or(physical_table))
+            .get(&folded_name(
+                physical_table.strip_prefix('_').unwrap_or(physical_table),
+            ))
             .copied();
         catalog
             .entry(ObjectId::from(&object.guid))
@@ -741,7 +791,7 @@ enum CustomFieldNames<'snapshot> {
 
 fn index_custom_field_names(snapshot: &MetadataSnapshot) -> CustomFieldNameIndex {
     let mut names = HashMap::new();
-    for field in &snapshot.fields {
+    for field in snapshot.fields() {
         for owner in &field.owner_tables {
             names
                 .entry((folded_name(owner), field.number))

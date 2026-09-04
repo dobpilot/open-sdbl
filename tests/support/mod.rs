@@ -8,8 +8,8 @@ pub(crate) use hex::hex;
 
 use open_sdbl::metadata::{
     ColumnType, ConfigDescriptor, ConfigFieldPurpose, ConfigPredefinedValue, Guid, LiveColumn,
-    LiveIndex, LiveTable, MetadataKind, SchemaColumn, SchemaStorage, SchemaTable,
-    parse_config_descriptors, parse_db_names, parse_schema_storage, resolve_metadata,
+    LiveIndex, LiveTable, SchemaColumn, SchemaStorage, SchemaTable, parse_config_descriptors,
+    parse_db_names, parse_schema_storage, resolve_metadata,
     resolve_metadata_with_predefined_values,
 };
 
@@ -176,9 +176,9 @@ pub(crate) fn tabular_section_snapshot() -> open_sdbl::metadata::MetadataSnapsho
 }
 
 pub(crate) fn dereferenced_presentation_snapshot() -> open_sdbl::metadata::MetadataSnapshot {
-    let mut snapshot = tabular_section_snapshot();
-    let business_region = snapshot
-        .schema
+    let base = tabular_section_snapshot();
+    let mut schema = base.schema().clone();
+    let business_region = schema
         .tables
         .iter_mut()
         .find(|table| table.name == "Reference62")
@@ -191,14 +191,20 @@ pub(crate) fn dereferenced_presentation_snapshot() -> open_sdbl::metadata::Metad
         tag: "R".to_owned(),
         reference_target: Some("Reference62".to_owned()),
     }];
-    snapshot
+    resolve_metadata(
+        base.db_names().clone(),
+        base.descriptors().to_vec(),
+        schema,
+        base.live_tables().to_vec(),
+    )
+    .snapshot
 }
 
 pub(crate) fn universal_dereferenced_presentation_snapshot() -> open_sdbl::metadata::MetadataSnapshot
 {
-    let mut snapshot = tabular_section_snapshot();
-    let agreement = snapshot
-        .schema
+    let base = tabular_section_snapshot();
+    let mut schema = base.schema().clone();
+    let agreement = schema
         .tables
         .iter_mut()
         .find(|table| table.name == "Document53")
@@ -211,8 +217,8 @@ pub(crate) fn universal_dereferenced_presentation_snapshot() -> open_sdbl::metad
         tag: "R".to_owned(),
         reference_target: Some(String::new()),
     }];
-    let document = snapshot
-        .live_tables
+    let mut live_tables = base.live_tables().to_vec();
+    let document = live_tables
         .iter_mut()
         .find(|table| table.name == "_document53")
         .unwrap();
@@ -225,7 +231,13 @@ pub(crate) fn universal_dereferenced_presentation_snapshot() -> open_sdbl::metad
                 data_type: "bytea".to_owned(),
             }),
     );
-    snapshot
+    resolve_metadata(
+        base.db_names().clone(),
+        base.descriptors().to_vec(),
+        schema,
+        live_tables,
+    )
+    .snapshot
 }
 
 pub(crate) fn enumeration_value_snapshot() -> open_sdbl::metadata::MetadataSnapshot {
@@ -255,14 +267,14 @@ pub(crate) fn enumeration_value_snapshot() -> open_sdbl::metadata::MetadataSnaps
 pub(crate) fn catalog_value_snapshot() -> open_sdbl::metadata::MetadataSnapshot {
     let base = snapshot();
     let owner = guid("b8bac76b-c91b-4d78-8a70-ffa39f8de694");
-    let mut live_tables = base.live_tables.clone();
+    let mut live_tables = base.live_tables().to_vec();
     live_tables[0].columns.push(LiveColumn {
         name: "_predefinedid".to_owned(),
         data_type: "bytea".to_owned(),
     });
     resolve_metadata_with_predefined_values(
-        base.db_names.clone(),
-        base.descriptors.clone(),
+        base.db_names().clone(),
+        base.descriptors().to_vec(),
         vec![
             ConfigPredefinedValue {
                 owner_guid: owner.clone(),
@@ -275,7 +287,7 @@ pub(crate) fn catalog_value_snapshot() -> open_sdbl::metadata::MetadataSnapshot 
                 name: "ДополнительныеУсловияПоДоговору_Проверен".to_owned(),
             },
         ],
-        base.schema.clone(),
+        base.schema().clone(),
         live_tables,
     )
     .snapshot
@@ -331,9 +343,55 @@ pub(crate) fn live_table(name: &str, columns: &[&str]) -> LiveTable {
     }
 }
 
+pub(crate) fn with_live_tables(
+    base: open_sdbl::metadata::MetadataSnapshot,
+    edit: impl FnOnce(&mut Vec<LiveTable>),
+) -> open_sdbl::metadata::MetadataSnapshot {
+    let mut live_tables = base.live_tables().to_vec();
+    edit(&mut live_tables);
+    resolve_metadata(
+        base.db_names().clone(),
+        base.descriptors().to_vec(),
+        base.schema().clone(),
+        live_tables,
+    )
+    .snapshot
+}
+
+pub(crate) fn with_schema(
+    base: open_sdbl::metadata::MetadataSnapshot,
+    edit: impl FnOnce(&mut SchemaStorage),
+) -> open_sdbl::metadata::MetadataSnapshot {
+    let mut schema = base.schema().clone();
+    edit(&mut schema);
+    resolve_metadata(
+        base.db_names().clone(),
+        base.descriptors().to_vec(),
+        schema,
+        base.live_tables().to_vec(),
+    )
+    .snapshot
+}
+
+pub(crate) fn with_descriptors(
+    base: open_sdbl::metadata::MetadataSnapshot,
+    edit: impl FnOnce(&mut Vec<ConfigDescriptor>),
+) -> open_sdbl::metadata::MetadataSnapshot {
+    let mut descriptors = base.descriptors().to_vec();
+    edit(&mut descriptors);
+    resolve_metadata(
+        base.db_names().clone(),
+        descriptors,
+        base.schema().clone(),
+        base.live_tables().to_vec(),
+    )
+    .snapshot
+}
+
 pub(crate) fn mssql_snapshot() -> open_sdbl::metadata::MetadataSnapshot {
-    let mut snapshot = snapshot();
-    for table in &mut snapshot.live_tables {
+    let base = snapshot();
+    let mut live_tables = base.live_tables().to_vec();
+    for table in &mut live_tables {
         for column in &mut table.columns {
             column.data_type = match column.data_type.as_str() {
                 "bytea" => "binary(16)".to_owned(),
@@ -343,13 +401,33 @@ pub(crate) fn mssql_snapshot() -> open_sdbl::metadata::MetadataSnapshot {
             };
         }
     }
-    snapshot
+    resolve_metadata(
+        base.db_names().clone(),
+        base.descriptors().to_vec(),
+        base.schema().clone(),
+        live_tables,
+    )
+    .snapshot
 }
 
 pub(crate) fn reference_snapshot() -> open_sdbl::metadata::MetadataSnapshot {
-    let mut snapshot = snapshot();
-    snapshot.fields[0].name = Some("Организация".to_owned());
-    let source_field = snapshot.schema.tables[0]
+    let base = snapshot();
+    let source_guid = base.objects()[0].guid.clone();
+    let field_guid = base.fields()[0].guid.clone();
+    let target_guid = guid("11111111-1111-4111-8111-111111111111");
+    let serialized = format!(
+        "{{3,{{{source_guid},\"Reference\",53}},{{{field_guid},\"Fld\",54}},{{{target_guid},\"Reference\",57}}}}"
+    );
+    let db_names = parse_db_names(&stored_deflate(serialized.as_bytes())).unwrap();
+    let mut descriptors = base.descriptors().to_vec();
+    descriptors
+        .iter_mut()
+        .find(|descriptor| descriptor.resource_guid != descriptor.object_guid)
+        .unwrap()
+        .name = "Организация".to_owned();
+    descriptors.push(descriptor(&target_guid, &target_guid, "Организации"));
+    let mut schema = base.schema().clone();
+    let source_field = schema.tables[0]
         .columns
         .iter_mut()
         .find(|column| column.name == "Fld54")
@@ -358,45 +436,51 @@ pub(crate) fn reference_snapshot() -> open_sdbl::metadata::MetadataSnapshot {
         tag: "R".to_owned(),
         reference_target: Some("Reference57".to_owned()),
     }];
-
-    let mut target_object = snapshot.objects[0].clone();
-    target_object.name = Some("Организации".to_owned());
-    target_object.number = Some(57);
-    target_object.physical_table = Some("_Reference57".to_owned());
-    snapshot.objects.push(target_object);
-
-    let mut target_schema = snapshot.schema.tables[0].clone();
+    let mut target_schema = schema.tables[0].clone();
     target_schema.name = "Reference57".to_owned();
     target_schema.number = 57;
     target_schema
         .columns
         .retain(|column| column.name != "Fld54");
-    snapshot.schema.tables.push(target_schema);
-
-    let mut target_live = snapshot.live_tables[0].clone();
+    schema.tables.push(target_schema);
+    let mut live_tables = base.live_tables().to_vec();
+    let mut target_live = live_tables[0].clone();
     target_live.name = "_reference57".to_owned();
     target_live.columns.retain(|column| column.name != "_fld54");
-    snapshot.live_tables.push(target_live);
-    snapshot
+    live_tables.push(target_live);
+
+    resolve_metadata(db_names, descriptors, schema, live_tables).snapshot
 }
 
 pub(crate) fn information_register_snapshot() -> open_sdbl::metadata::MetadataSnapshot {
-    let mut snapshot = snapshot();
-    let object = &mut snapshot.objects[0];
-    object.kind = Some(MetadataKind::InformationRegister);
-    object.name = Some("Prices".to_owned());
-    object.physical_table = Some("_InfoRg53".to_owned());
-
-    let schema = &mut snapshot.schema.tables[0];
-    schema.name = "InfoRg53".to_owned();
-    let date = schema
+    let base = snapshot();
+    let object_guid = base.objects()[0].guid.clone();
+    let field_guid = base.fields()[0].guid.clone();
+    let serialized = format!("{{2,{{{object_guid},\"InfoRg\",53}},{{{field_guid},\"Fld\",54}}}}");
+    let db_names = parse_db_names(&stored_deflate(serialized.as_bytes())).unwrap();
+    let mut descriptors = base.descriptors().to_vec();
+    descriptors
+        .iter_mut()
+        .find(|descriptor| descriptor.resource_guid == descriptor.object_guid)
+        .unwrap()
+        .name = "Prices".to_owned();
+    let field = descriptors
+        .iter_mut()
+        .find(|descriptor| descriptor.object_guid == field_guid)
+        .unwrap();
+    field.field_purpose = Some(ConfigFieldPurpose::InformationRegisterDimension);
+    let mut schema = base.schema().clone();
+    let table = &mut schema.tables[0];
+    table.name = "InfoRg53".to_owned();
+    let date = table
         .columns
         .iter_mut()
         .find(|column| column.name == "Date_Time")
         .unwrap();
     date.name = "Period".to_owned();
 
-    let live = &mut snapshot.live_tables[0];
+    let mut live_tables = base.live_tables().to_vec();
+    let live = &mut live_tables[0];
     live.name = "_inforg53".to_owned();
     let date = live
         .columns
@@ -405,24 +489,46 @@ pub(crate) fn information_register_snapshot() -> open_sdbl::metadata::MetadataSn
         .unwrap();
     date.name = "_period".to_owned();
 
-    let field = &mut snapshot.fields[0];
-    field.owner_tables = vec!["_InfoRg53".to_owned()];
-    field.purpose = Some(ConfigFieldPurpose::InformationRegisterDimension);
-    snapshot
+    resolve_metadata(db_names, descriptors, schema, live_tables).snapshot
 }
 
 pub(crate) fn accumulation_register_snapshot() -> open_sdbl::metadata::MetadataSnapshot {
-    let mut snapshot = snapshot();
-    snapshot.db_names = parse_db_names(&hex(
+    let base = snapshot();
+    let db_names = parse_db_names(&hex(
         "95cbb11142210c00d05da8933bf9249094360ee0b94012c0464b2b8edd3d0b07f8fd7b8b60b9b845ab8ea1d9917a13146b179cd38a4ee9a32a41ba467cdef767022efbe47924e0ba611d1c5abd179c1684748c895e95b151a84d2a2cea906eaf9e8069c36a5d8af33170fe12556ba8ae8c212377b1c12de7bfe7bdbf",
     ))
     .unwrap();
-    let object = &mut snapshot.objects[0];
-    object.kind = Some(MetadataKind::AccumulationRegister);
-    object.name = Some("Остатки".to_owned());
-    object.physical_table = Some("_AccumRg53".to_owned());
+    let object_guid = db_names.objects().next().unwrap().0.guid.clone();
+    let mut descriptors = base.descriptors().to_vec();
+    let object = descriptors
+        .iter_mut()
+        .find(|descriptor| descriptor.resource_guid == descriptor.object_guid)
+        .unwrap();
+    object.resource_guid = object_guid.clone();
+    object.object_guid = object_guid.clone();
+    object.name = "Остатки".to_owned();
+    let dimension_guid = db_names.field_guid(54).unwrap().clone();
+    let dimension = descriptors
+        .iter_mut()
+        .find(|descriptor| descriptor.resource_guid != descriptor.object_guid)
+        .unwrap();
+    dimension.resource_guid = object_guid.clone();
+    dimension.object_guid = dimension_guid;
+    dimension.name = "Номенклатура".to_owned();
+    dimension.field_purpose = Some(ConfigFieldPurpose::AccumulationRegisterDimension);
+    descriptors.push(ConfigDescriptor {
+        resource_guid: object_guid,
+        object_guid: db_names.field_guid(55).unwrap().clone(),
+        marker: "1".to_owned(),
+        name: "Количество".to_owned(),
+        synonyms: Vec::new(),
+        comment: None,
+        field_purpose: Some(ConfigFieldPurpose::AccumulationRegisterResource),
+        enumeration_value: false,
+    });
 
-    let schema = &mut snapshot.schema.tables[0];
+    let mut schema_storage = base.schema().clone();
+    let schema = &mut schema_storage.tables[0];
     schema.name = "AccumRg53".to_owned();
     schema
         .columns
@@ -457,7 +563,8 @@ pub(crate) fn accumulation_register_snapshot() -> open_sdbl::metadata::MetadataS
         },
     ]);
 
-    let live = &mut snapshot.live_tables[0];
+    let mut live_tables = base.live_tables().to_vec();
+    let live = &mut live_tables[0];
     live.name = "_accumrg53".to_owned();
     live.columns
         .retain(|column| !matches!(column.name.as_str(), "_idrref" | "_code"));
@@ -482,18 +589,7 @@ pub(crate) fn accumulation_register_snapshot() -> open_sdbl::metadata::MetadataS
         },
     ]);
 
-    let dimension = &mut snapshot.fields[0];
-    dimension.name = Some("Номенклатура".to_owned());
-    dimension.owner_tables = vec!["_AccumRg53".to_owned()];
-    dimension.purpose = Some(ConfigFieldPurpose::AccumulationRegisterDimension);
-    let mut resource = dimension.clone();
-    resource.name = Some("Количество".to_owned());
-    resource.number = 55;
-    resource.physical_name = "_Fld55".to_owned();
-    resource.purpose = Some(ConfigFieldPurpose::AccumulationRegisterResource);
-    snapshot.fields.push(resource);
-
-    let mut totals_schema = snapshot.schema.tables[0].clone();
+    let mut totals_schema = schema_storage.tables[0].clone();
     totals_schema.name = "AccumRgT56".to_owned();
     totals_schema.number = 56;
     totals_schema
@@ -507,9 +603,9 @@ pub(crate) fn accumulation_register_snapshot() -> open_sdbl::metadata::MetadataS
         }],
     });
     totals_schema.indexes.clear();
-    snapshot.schema.tables.push(totals_schema);
+    schema_storage.tables.push(totals_schema);
 
-    let mut totals_live = snapshot.live_tables[0].clone();
+    let mut totals_live = live_tables[0].clone();
     totals_live.name = "_accumrgt56".to_owned();
     totals_live
         .columns
@@ -519,8 +615,8 @@ pub(crate) fn accumulation_register_snapshot() -> open_sdbl::metadata::MetadataS
         data_type: "numeric(10,0)".to_owned(),
     });
     totals_live.indexes.clear();
-    snapshot.live_tables.push(totals_live);
-    snapshot
+    live_tables.push(totals_live);
+    resolve_metadata(db_names, descriptors, schema_storage, live_tables).snapshot
 }
 
 pub(crate) fn presentation_reference_snapshot(

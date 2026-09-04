@@ -67,7 +67,7 @@ pub(crate) fn compile_presentation_lookup(
         .as_deref()
         .and_then(|physical| {
             snapshot
-                .live_tables
+                .live_tables()
                 .iter()
                 .find(|table| names_equal(&table.name, physical))
         })

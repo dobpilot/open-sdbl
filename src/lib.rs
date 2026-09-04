@@ -1,3 +1,4 @@
+#![forbid(unsafe_code)]
 #![warn(missing_docs, rustdoc::all)]
 
 //! Dependency-free foundations for the 1C query language and metadata.
@@ -34,6 +35,7 @@
 //! callers must retain a fallback match arm.
 
 mod lexer;
+mod names;
 
 #[cfg(test)]
 #[path = "../tests/support/hex.rs"]

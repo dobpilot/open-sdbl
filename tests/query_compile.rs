@@ -5,7 +5,7 @@ use support::*;
 use open_sdbl::metadata::{
     ColumnType, ConfigFieldPurpose, FieldId, LiveColumn, LiveTable, LookupError, MetadataKind,
     MetadataSnapshot, ResolutionFinding, SchemaAnomaly, SchemaColumn, StandardFieldId,
-    parse_config_descriptors, resolve_metadata,
+    parse_config_descriptors, parse_db_names, resolve_metadata,
 };
 use open_sdbl::query::{
     Backend, MsSqlBackend, PostgresBackend, Prepared, PresentationExpression, PresentationPlan,
@@ -421,25 +421,25 @@ fn compiles_native_mssql_projection_filter_and_limit() {
 }
 
 #[test]
-fn quotes_mssql_live_catalog_identifiers_without_a_textual_rewrite() {
-    let mut snapshot = mssql_snapshot();
-    snapshot.objects[0].physical_table = Some("_Reference]53".to_owned());
-    snapshot.schema.tables[0].name = "Reference]53".to_owned();
-    snapshot.live_tables[0].name = "_reference]53".to_owned();
+fn resolves_mssql_schema_table_names_with_the_shared_case_rule() {
+    let snapshot = with_schema(mssql_snapshot(), |schema| {
+        schema.tables[0].name = "rEfErEnCe53".to_owned();
+    });
 
     let compiled =
         mssql_compile!("SELECT Code FROM Catalog.OpenSdblMetadataProbe;", &snapshot,).unwrap();
-    assert!(compiled.sql.contains("FROM [_reference]]53] AS [__src]"));
+    assert!(compiled.sql.contains("FROM [_reference53] AS [__src]"));
     assert!(!compiled.sql.contains('"'));
 }
 
 #[test]
 fn preserves_native_mssql_rowversion_projection() {
     for data_type in ["timestamp", "rowversion"] {
-        let mut snapshot = mssql_snapshot();
-        snapshot.live_tables[0].columns.push(LiveColumn {
-            name: "_version".to_owned(),
-            data_type: data_type.to_owned(),
+        let snapshot = with_live_tables(mssql_snapshot(), |tables| {
+            tables[0].columns.push(LiveColumn {
+                name: "_version".to_owned(),
+                data_type: data_type.to_owned(),
+            });
         });
 
         let compiled = mssql_compile!(
@@ -458,10 +458,11 @@ fn preserves_native_mssql_rowversion_projection() {
 
 #[test]
 fn compiles_binary_literals_for_each_sql_dialect() {
-    let mut mssql = mssql_snapshot();
-    mssql.live_tables[0].columns.push(LiveColumn {
-        name: "_version".to_owned(),
-        data_type: "timestamp".to_owned(),
+    let mssql = with_live_tables(mssql_snapshot(), |tables| {
+        tables[0].columns.push(LiveColumn {
+            name: "_version".to_owned(),
+            data_type: "timestamp".to_owned(),
+        });
     });
     let compiled = mssql_compile!(
         "SELECT Version FROM Catalog.OpenSdblMetadataProbe WHERE Version > 0x00000000000007D6;",
@@ -649,20 +650,21 @@ fn diagnoses_invalid_value_kinds_paths_and_names() {
 
 #[test]
 fn compiles_mssql_extension_tables_as_one_source_relation() {
-    let mut snapshot = mssql_snapshot();
-    let mut extension = snapshot.live_tables[0].clone();
-    extension.name = "_reference53X1".to_owned();
-    extension
-        .columns
-        .retain(|column| column.name != "_date_time");
-    extension.columns.push(LiveColumn {
-        name: "_extension_only".to_owned(),
-        data_type: "nvarchar(10)".to_owned(),
+    let snapshot = with_live_tables(mssql_snapshot(), |tables| {
+        let mut extension = tables[0].clone();
+        extension.name = "_reference53X1".to_owned();
+        extension
+            .columns
+            .retain(|column| column.name != "_date_time");
+        extension.columns.push(LiveColumn {
+            name: "_extension_only".to_owned(),
+            data_type: "nvarchar(10)".to_owned(),
+        });
+        tables.push(extension);
+        let mut unrelated = tables[0].clone();
+        unrelated.name = "_reference53Xother".to_owned();
+        tables.push(unrelated);
     });
-    snapshot.live_tables.push(extension);
-    let mut unrelated = snapshot.live_tables[0].clone();
-    unrelated.name = "_reference53Xother".to_owned();
-    snapshot.live_tables.push(unrelated);
 
     let compiled = mssql_compile!(
         "SELECT Code, Date FROM Catalog.OpenSdblMetadataProbe;",
@@ -683,11 +685,12 @@ fn compiles_mssql_extension_tables_as_one_source_relation() {
 }
 
 #[test]
-fn compiles_mssql_presentation_join_over_extension_tables() {
-    let mut snapshot = reference_snapshot();
-    let mut extension = snapshot.live_tables[0].clone();
-    extension.name = "_reference53X1".to_owned();
-    snapshot.live_tables.push(extension);
+fn compiles_mssql_presentation_from_a_source_with_extension_tables() {
+    let snapshot = with_live_tables(reference_snapshot(), |tables| {
+        let mut extension = tables[0].clone();
+        extension.name = "_reference53X1".to_owned();
+        tables.push(extension);
+    });
     let prepared = mssql_prepare!(
         "SELECT Presentation(Организация) FROM Catalog.OpenSdblMetadataProbe;",
         &snapshot,
@@ -707,11 +710,7 @@ fn compiles_mssql_presentation_join_over_extension_tables() {
 
     let compiled = prepared.compile(&snapshot, &[plan]).unwrap();
 
-    assert!(
-        compiled.sql.contains("LEFT JOIN (SELECT"),
-        "{}",
-        compiled.sql
-    );
+    assert!(compiled.sql.contains("LEFT JOIN [_reference57]"));
     assert!(
         compiled
             .sql
@@ -723,14 +722,15 @@ fn compiles_mssql_presentation_join_over_extension_tables() {
 
 #[test]
 fn compiles_mssql_historical_balance_without_postgres_aggregate_syntax() {
-    let mut snapshot = accumulation_register_snapshot();
-    for table in &mut snapshot.live_tables {
-        for column in &mut table.columns {
-            if column.name == "_active" {
-                column.data_type = "binary(1)".to_owned();
+    let snapshot = with_live_tables(accumulation_register_snapshot(), |tables| {
+        for table in tables {
+            for column in &mut table.columns {
+                if column.name == "_active" {
+                    column.data_type = "binary(1)".to_owned();
+                }
             }
         }
-    }
+    });
     let compiled = mssql_compile_with_offset!(
         "SELECT TOP 5 \u{41a}\u{43e}\u{43b}\u{438}\u{447}\u{435}\u{441}\u{442}\u{432}\u{43e}\u{41e}\u{441}\u{442}\u{430}\u{442}\u{43e}\u{43a} FROM AccumulationRegister.\u{41e}\u{441}\u{442}\u{430}\u{442}\u{43a}\u{438}.Balance(\"2026-09-01\");",
         &snapshot,
@@ -1139,13 +1139,13 @@ fn resolves_information_register_field_purpose_from_config() {
     )
     .unwrap();
     let resolved = resolve_metadata(
-        base.db_names.clone(),
+        base.db_names().clone(),
         descriptors,
-        base.schema.clone(),
-        base.live_tables.clone(),
+        base.schema().clone(),
+        base.live_tables().to_vec(),
     );
     assert_eq!(
-        resolved.fields[0].purpose,
+        resolved.fields()[0].purpose,
         Some(ConfigFieldPurpose::InformationRegisterDimension)
     );
 }
@@ -1161,13 +1161,13 @@ fn resolves_accumulation_register_field_purpose_from_config() {
     )
     .unwrap();
     let resolved = resolve_metadata(
-        base.db_names.clone(),
+        base.db_names().clone(),
         descriptors,
-        base.schema.clone(),
-        base.live_tables.clone(),
+        base.schema().clone(),
+        base.live_tables().to_vec(),
     );
     assert_eq!(
-        resolved.fields[0].purpose,
+        resolved.fields()[0].purpose,
         Some(ConfigFieldPurpose::AccumulationRegisterDimension)
     );
 }
@@ -1326,10 +1326,9 @@ fn rejects_slice_first_for_invalid_sources_and_arguments() {
             .contains("SliceFirst is supported only for information registers")
     );
 
-    let mut register = information_register_snapshot();
-    register.live_tables[0]
-        .columns
-        .retain(|column| column.name != "_period");
+    let register = with_live_tables(information_register_snapshot(), |tables| {
+        tables[0].columns.retain(|column| column.name != "_period");
+    });
     let missing_period = postgres_compile!(
         "SELECT ProbeAttribute FROM InformationRegister.Prices.SliceFirst();",
         &register,
@@ -1495,10 +1494,11 @@ fn rejects_invalid_accumulation_virtual_table_shapes() {
     .unwrap_err();
     assert!(resource_condition.message().contains("was not found"));
 
-    let mut turnover_only = accumulation_register_snapshot();
-    turnover_only.live_tables[0]
-        .columns
-        .retain(|column| column.name != "_recordkind");
+    let turnover_only = with_live_tables(accumulation_register_snapshot(), |tables| {
+        tables[0]
+            .columns
+            .retain(|column| column.name != "_recordkind");
+    });
     let balance = postgres_compile!(
         "SELECT КоличествоОстаток FROM AccumulationRegister.Остатки.Balance();",
         &turnover_only,
@@ -1506,8 +1506,23 @@ fn rejects_invalid_accumulation_virtual_table_shapes() {
     .unwrap_err();
     assert!(balance.message().contains("turnover-only"));
 
-    let mut missing_mapping = accumulation_register_snapshot();
-    missing_mapping.db_names = snapshot().db_names;
+    let base = accumulation_register_snapshot();
+    let entries = base
+        .db_names()
+        .entries()
+        .iter()
+        .filter(|entry| entry.alias != "AccumRgT")
+        .map(|entry| format!("{{{},\"{}\",{}}}", entry.guid, entry.alias, entry.number))
+        .collect::<Vec<_>>();
+    let serialized = format!("{{{},{} }}", entries.len(), entries.join(","));
+    let db_names = parse_db_names(&stored_deflate(serialized.as_bytes())).unwrap();
+    let missing_mapping = resolve_metadata(
+        db_names,
+        base.descriptors().to_vec(),
+        base.schema().clone(),
+        base.live_tables().to_vec(),
+    )
+    .snapshot;
     let balance = postgres_compile!(
         "SELECT КоличествоОстаток FROM AccumulationRegister.Остатки.Balance();",
         &missing_mapping,
@@ -1522,10 +1537,9 @@ fn rejects_invalid_accumulation_virtual_table_shapes() {
     assert!(turnovers.sql.contains("_accumrg53"));
     assert!(!turnovers.sql.contains("_accumrgt56"));
 
-    let mut missing_live_totals = accumulation_register_snapshot();
-    missing_live_totals
-        .live_tables
-        .retain(|table| table.name != "_accumrgt56");
+    let missing_live_totals = with_live_tables(accumulation_register_snapshot(), |tables| {
+        tables.retain(|table| table.name != "_accumrgt56");
+    });
     let balance = postgres_compile!(
         "SELECT КоличествоОстаток FROM AccumulationRegister.Остатки.Balance();",
         &missing_live_totals,
@@ -1533,10 +1547,11 @@ fn rejects_invalid_accumulation_virtual_table_shapes() {
     .unwrap_err();
     assert!(balance.message().contains("is not live"));
 
-    let mut missing_totals_resource = accumulation_register_snapshot();
-    missing_totals_resource.schema.tables[1]
-        .columns
-        .retain(|column| column.name != "Fld55");
+    let missing_totals_resource = with_schema(accumulation_register_snapshot(), |schema| {
+        schema.tables[1]
+            .columns
+            .retain(|column| column.name != "Fld55");
+    });
     let balance = postgres_compile!(
         "SELECT КоличествоОстаток FROM AccumulationRegister.Остатки.Balance();",
         &missing_totals_resource,
@@ -1726,10 +1741,15 @@ fn exposes_standard_and_custom_fields_for_description() {
 }
 
 #[test]
-fn queryable_field_catalog_reflects_current_mutable_snapshot_vectors() {
-    let mut snapshot = snapshot();
-    snapshot.fields[0].name = Some("RenamedAttribute".to_owned());
-    let object = &snapshot.objects[0];
+fn queryable_field_catalog_reflects_each_immutable_resolved_snapshot() {
+    let snapshot = with_descriptors(snapshot(), |descriptors| {
+        descriptors
+            .iter_mut()
+            .find(|descriptor| descriptor.resource_guid != descriptor.object_guid)
+            .unwrap()
+            .name = "RenamedAttribute".to_owned();
+    });
+    let object = &snapshot.objects()[0];
     let object_id = open_sdbl::metadata::ObjectId::from(&object.guid);
     let expected = queryable_fields(&snapshot, object).unwrap();
     let catalog = queryable_field_catalog(&snapshot);
@@ -1740,8 +1760,38 @@ fn queryable_field_catalog_reflects_current_mutable_snapshot_vectors() {
             .any(|field| field.name == "RenamedAttribute")
     );
 
-    snapshot.live_tables.clear();
-    assert!(!queryable_field_catalog(&snapshot).contains_key(&object_id));
+    let without_live = with_live_tables(snapshot, Vec::clear);
+    assert!(!queryable_field_catalog(&without_live).contains_key(&object_id));
+}
+
+#[test]
+fn prepared_queries_are_bound_to_their_resolved_snapshot() {
+    let snapshot = snapshot();
+    let prepared = QueryCompiler::new(&snapshot, PostgresBackend)
+        .prepare("SELECT Code FROM Catalog.OpenSdblMetadataProbe;")
+        .unwrap();
+    assert!(prepared.compile(&snapshot, &[]).is_ok());
+
+    let changed = with_live_tables(snapshot.clone(), |tables| {
+        tables[0].columns.push(LiveColumn {
+            name: "_later_column".to_owned(),
+            data_type: "bytea".to_owned(),
+        });
+    });
+    let error = prepared.compile(&changed, &[]).unwrap_err();
+    assert_eq!(error.kind(), QueryDiagnosticKind::SnapshotMismatch);
+}
+
+#[test]
+fn bounds_total_work_for_repeated_tabular_section_union_branches() {
+    let branch = "SELECT Сумма FROM Документ.бит_ДополнительныеУсловияПоДоговору.ГрафикНачислений";
+    let source = std::iter::repeat_n(branch, 8_200)
+        .collect::<Vec<_>>()
+        .join(" UNION ");
+    let error = QueryCompiler::new(&tabular_section_snapshot(), PostgresBackend)
+        .compile(&source)
+        .unwrap_err();
+    assert_eq!(error.kind(), QueryDiagnosticKind::WorkBudgetExceeded);
 }
 
 #[test]
@@ -1803,7 +1853,7 @@ fn compiles_russian_descending_order() {
 
 #[test]
 fn diagnoses_missing_fields_and_ambiguous_bare_objects() {
-    let mut snapshot = snapshot();
+    let snapshot = snapshot();
     let missing = postgres_compile!(
         "SELECT Missing FROM Catalog.OpenSdblMetadataProbe;",
         &snapshot,
@@ -1814,8 +1864,7 @@ fn diagnoses_missing_fields_and_ambiguous_bare_objects() {
     assert_eq!(missing.kind(), QueryDiagnosticKind::UnknownField);
     assert!(missing.message().contains("was not found"));
 
-    snapshot.objects.push(snapshot.objects[0].clone());
-    let ambiguous = find_metadata_object(&snapshot, "OpenSdblMetadataProbe").unwrap_err();
+    let ambiguous = find_metadata_object(&ambiguous_object_snapshot(), "Duplicate").unwrap_err();
     assert_eq!(ambiguous.kind(), QueryDiagnosticKind::AmbiguousObject);
     assert!(ambiguous.message().contains("ambiguous"));
 }
@@ -1892,8 +1941,7 @@ fn covers_syntax_ambiguity_liveness_and_presentation_diagnostic_kinds() {
     .unwrap_err();
     assert_eq!(ambiguous_field.kind(), QueryDiagnosticKind::AmbiguousField);
 
-    let mut not_live_snapshot = snapshot();
-    not_live_snapshot.live_tables.clear();
+    let not_live_snapshot = with_live_tables(snapshot(), Vec::clear);
     let not_live = postgres_compile!(
         "SELECT Code FROM Catalog.OpenSdblMetadataProbe;",
         &not_live_snapshot,
@@ -1926,14 +1974,14 @@ fn covers_syntax_ambiguity_liveness_and_presentation_diagnostic_kinds() {
 fn reports_resolution_mismatches_without_dropping_unknown_columns() {
     let base = snapshot();
     let clean = resolve_metadata(
-        base.db_names.clone(),
-        base.descriptors.clone(),
-        base.schema.clone(),
-        base.live_tables.clone(),
+        base.db_names().clone(),
+        base.descriptors().to_vec(),
+        base.schema().clone(),
+        base.live_tables().to_vec(),
     );
     assert!(clean.report.is_empty());
 
-    let mut schema = base.schema.clone();
+    let mut schema = base.schema().clone();
     schema.anomalies.push(SchemaAnomaly {
         table: "Reference53".to_owned(),
         detail: "columns count is not an unsigned integer".to_owned(),
@@ -1945,7 +1993,7 @@ fn reports_resolution_mismatches_without_dropping_unknown_columns() {
             reference_target: None,
         }],
     });
-    let mut live_tables = base.live_tables.clone();
+    let mut live_tables = base.live_tables().to_vec();
     live_tables[0].columns.push(LiveColumn {
         name: "_futurecolumn".to_owned(),
         data_type: "bytea".to_owned(),
@@ -1957,8 +2005,8 @@ fn reports_resolution_mismatches_without_dropping_unknown_columns() {
     });
     live_tables[0].indexes.clear();
     let resolved = resolve_metadata(
-        base.db_names.clone(),
-        base.descriptors.clone(),
+        base.db_names().clone(),
+        base.descriptors().to_vec(),
         schema,
         live_tables,
     );
@@ -1990,16 +2038,16 @@ fn reports_resolution_mismatches_without_dropping_unknown_columns() {
     .unwrap();
     assert_eq!(compiled.columns, ["Code"]);
     assert!(
-        queryable_fields(&resolved.snapshot, &resolved.snapshot.objects[0])
+        queryable_fields(&resolved.snapshot, &resolved.snapshot.objects()[0])
             .unwrap()
             .iter()
             .any(|field| field.schema_name == "FutureColumn")
     );
 
     let without_live = resolve_metadata(
-        base.db_names.clone(),
-        base.descriptors.clone(),
-        base.schema.clone(),
+        base.db_names().clone(),
+        base.descriptors().to_vec(),
+        base.schema().clone(),
         Vec::new(),
     );
     assert!(
@@ -2014,10 +2062,10 @@ fn reports_resolution_mismatches_without_dropping_unknown_columns() {
     );
 
     let without_descriptor = resolve_metadata(
-        base.db_names.clone(),
+        base.db_names().clone(),
         Vec::new(),
-        base.schema.clone(),
-        base.live_tables.clone(),
+        base.schema().clone(),
+        base.live_tables().to_vec(),
     );
     assert!(
         without_descriptor
@@ -2030,18 +2078,18 @@ fn reports_resolution_mismatches_without_dropping_unknown_columns() {
             ))
     );
 
-    let mut duplicated_descriptors = base.descriptors.clone();
-    duplicated_descriptors.push(base.descriptors[0].clone());
+    let mut duplicated_descriptors = base.descriptors().to_vec();
+    duplicated_descriptors.push(base.descriptors()[0].clone());
     let duplicated = resolve_metadata(
-        base.db_names.clone(),
+        base.db_names().clone(),
         duplicated_descriptors,
-        base.schema.clone(),
-        base.live_tables.clone(),
+        base.schema().clone(),
+        base.live_tables().to_vec(),
     );
     assert!(duplicated.report.findings().iter().any(|finding| matches!(
         finding,
         ResolutionFinding::DuplicateGuid { guid }
-            if guid == &base.descriptors[0].object_guid
+            if guid == &base.descriptors()[0].object_guid
     )));
 }
 
@@ -2092,41 +2140,47 @@ fn emits_unique_utf8_safe_output_labels_at_each_dialect_limit() {
 fn resolves_only_authoritative_enumeration_value_descriptors() {
     let base = enumeration_value_snapshot();
     let owner = base
-        .objects
+        .objects()
         .iter()
         .find(|object| object.kind == Some(MetadataKind::Enumeration))
         .unwrap()
         .guid
         .clone();
     let form_guid = guid("03bd775a-e0a1-4205-82ce-6068e73ad134");
-    let mut descriptors = base.descriptors.clone();
+    let mut descriptors = base.descriptors().to_vec();
     descriptors.push(descriptor(&owner, &form_guid, "ListForm"));
     let resolved = resolve_metadata(
-        base.db_names.clone(),
+        base.db_names().clone(),
         descriptors,
-        base.schema.clone(),
-        base.live_tables.clone(),
+        base.schema().clone(),
+        base.live_tables().to_vec(),
     );
 
-    assert!(resolved.values.iter().any(|value| value.name == "Статус"));
-    assert!(!resolved.values.iter().any(|value| value.name == "ListForm"));
+    assert!(resolved.values().iter().any(|value| value.name == "Статус"));
+    assert!(
+        !resolved
+            .values()
+            .iter()
+            .any(|value| value.name == "ListForm")
+    );
 }
 
 #[test]
 fn expands_a_compound_projection_and_rejects_it_in_predicates() {
-    let mut snapshot = snapshot();
-    let table = &mut snapshot.live_tables[0];
-    table.columns.retain(|column| column.name != "_fld54");
-    table.columns.extend([
-        LiveColumn {
-            name: "_fld54_tref".to_owned(),
-            data_type: "bytea".to_owned(),
-        },
-        LiveColumn {
-            name: "_fld54_rrref".to_owned(),
-            data_type: "bytea".to_owned(),
-        },
-    ]);
+    let snapshot = with_live_tables(snapshot(), |tables| {
+        let table = &mut tables[0];
+        table.columns.retain(|column| column.name != "_fld54");
+        table.columns.extend([
+            LiveColumn {
+                name: "_fld54_tref".to_owned(),
+                data_type: "bytea".to_owned(),
+            },
+            LiveColumn {
+                name: "_fld54_rrref".to_owned(),
+                data_type: "bytea".to_owned(),
+            },
+        ]);
+    });
 
     let compiled = postgres_compile!(
         "SELECT ProbeAttribute FROM Catalog.OpenSdblMetadataProbe;",
@@ -2319,19 +2373,20 @@ fn rejects_incompatible_union_projections_and_branch_local_ordering() {
 
 #[test]
 fn rejects_union_branches_with_different_compound_expansion_widths() {
-    let mut snapshot = snapshot();
-    let table = &mut snapshot.live_tables[0];
-    table.columns.retain(|column| column.name != "_fld54");
-    table.columns.extend([
-        LiveColumn {
-            name: "_fld54_tref".to_owned(),
-            data_type: "bytea".to_owned(),
-        },
-        LiveColumn {
-            name: "_fld54_rrref".to_owned(),
-            data_type: "bytea".to_owned(),
-        },
-    ]);
+    let snapshot = with_live_tables(snapshot(), |tables| {
+        let table = &mut tables[0];
+        table.columns.retain(|column| column.name != "_fld54");
+        table.columns.extend([
+            LiveColumn {
+                name: "_fld54_tref".to_owned(),
+                data_type: "bytea".to_owned(),
+            },
+            LiveColumn {
+                name: "_fld54_rrref".to_owned(),
+                data_type: "bytea".to_owned(),
+            },
+        ]);
+    });
 
     let mismatch = postgres_compile!(
         "SELECT ProbeAttribute FROM Catalog.OpenSdblMetadataProbe
@@ -2562,15 +2617,16 @@ fn rejects_unsafe_or_ambiguous_join_shapes() {
 
 #[test]
 fn rejects_an_ambiguous_schema_reference_target() {
-    let mut snapshot = reference_snapshot();
-    let source_field = snapshot.schema.tables[0]
-        .columns
-        .iter_mut()
-        .find(|column| column.name == "Fld54")
-        .unwrap();
-    source_field.types.push(ColumnType {
-        tag: "R".to_owned(),
-        reference_target: Some("Reference58".to_owned()),
+    let snapshot = with_schema(reference_snapshot(), |schema| {
+        let source_field = schema.tables[0]
+            .columns
+            .iter_mut()
+            .find(|column| column.name == "Fld54")
+            .unwrap();
+        source_field.types.push(ColumnType {
+            tag: "R".to_owned(),
+            reference_target: Some("Reference58".to_owned()),
+        });
     });
 
     let error = postgres_compile!(
@@ -2855,11 +2911,11 @@ fn assert_dereferenced_presentation_joins(sql: &str) {
 
 #[test]
 fn diagnoses_a_tabular_section_missing_from_schema_storage() {
-    let mut snapshot = tabular_section_snapshot();
-    snapshot
-        .schema
-        .tables
-        .retain(|table| table.name != "Document53_VT54X1");
+    let snapshot = with_schema(tabular_section_snapshot(), |schema| {
+        schema
+            .tables
+            .retain(|table| table.name != "Document53_VT54X1");
+    });
 
     let error = postgres_compile!(
         "SELECT Сумма

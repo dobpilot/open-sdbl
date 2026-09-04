@@ -55,6 +55,10 @@ pub enum QueryDiagnosticKind {
     PresentationBatch,
     /// Metadata is inconsistent or incomplete.
     Metadata,
+    /// A prepared query was compiled against a different metadata snapshot.
+    SnapshotMismatch,
+    /// The total compilation work budget was exhausted.
+    WorkBudgetExceeded,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -64,6 +68,13 @@ enum QueryDiagnosticSource {
 }
 
 impl QueryDiagnostic {
+    pub(crate) fn snapshot_mismatch() -> Self {
+        Self::unpositioned(
+            QueryDiagnosticKind::SnapshotMismatch,
+            "prepared query belongs to a different metadata snapshot",
+        )
+    }
+
     pub(super) fn at(
         kind: QueryDiagnosticKind,
         token: Option<&Token<'_>>,

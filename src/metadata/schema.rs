@@ -1,4 +1,5 @@
 use super::{MetadataError, MetadataErrorKind, Value, parse_serialized};
+use crate::names::names_equal;
 
 /// A physical column type declaration from SchemaStorage.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -81,7 +82,9 @@ impl SchemaStorage {
     #[must_use]
     pub fn table(&self, physical_name: &str) -> Option<&SchemaTable> {
         let name = physical_name.strip_prefix('_').unwrap_or(physical_name);
-        self.tables.iter().find(|table| table.name == name)
+        self.tables
+            .iter()
+            .find(|table| names_equal(&table.name, name))
     }
 }
 

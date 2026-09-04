@@ -68,6 +68,10 @@ pub(super) fn compile(
     let unioned = !ast.unions.is_empty();
     let mut branches = Vec::with_capacity(ast.branches.len());
     for (index, branch) in ast.branches.iter().enumerate() {
+        catalog.charge(
+            1usize.saturating_add(branch.projection.len()),
+            branch.source.as_ref().map(|source| source.object),
+        )?;
         let order: &[OrderTerm<'_, '_>] = if index == 0 { &ast.order } else { &[] };
         branches.push(compile_branch(
             branch,
