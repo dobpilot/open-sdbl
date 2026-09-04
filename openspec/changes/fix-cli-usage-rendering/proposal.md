@@ -8,6 +8,8 @@ argument errors unreadable.
 ## What Changes
 
 - Render trusted `CliError::Usage` layout with its real line breaks.
+- Give the PostgreSQL plaintext opt-in failure a stable diagnostic code,
+  concise cause, and actionable help instead of appending the complete manual.
 - Continue escaping every other top-level error as untrusted terminal text.
 - Add an executable-level regression test for the plaintext opt-in error.
 
@@ -25,4 +27,6 @@ None.
 ## Impact
 
 Only top-level CLI error presentation changes. Exit codes, accepted arguments,
-and the `--insecure-plaintext` requirement are unchanged.
+and the `--insecure-plaintext` requirement are unchanged. Diagnostic output is
+plain text without terminal-dependent color, so terminals, logs, and automation
+observe the same content.

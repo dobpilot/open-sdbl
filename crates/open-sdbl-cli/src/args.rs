@@ -176,9 +176,7 @@ pub(crate) fn parse_connection(
     Ok(Some(if provider == "postgres" {
         let sslmode = resolve_postgres_sslmode(postgres_sslmode)?;
         if sslmode == PostgresSslMode::Disable && !insecure_plaintext {
-            return Err(CliError::Usage(format!(
-                "--sslmode disable requires --insecure-plaintext\n\n{HELP}"
-            )));
+            return Err(CliError::PostgresPlaintextOptInRequired);
         }
         if sslmode != PostgresSslMode::Disable && insecure_plaintext {
             return Err(CliError::Usage(format!(

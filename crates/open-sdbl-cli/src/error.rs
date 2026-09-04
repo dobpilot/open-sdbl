@@ -13,6 +13,7 @@ pub(crate) enum CliError {
     Metadata(MetadataError),
     Data(String),
     Database(String),
+    PostgresPlaintextOptInRequired,
     DatabaseTimeout {
         operation: String,
         duration: Duration,
@@ -31,6 +32,7 @@ impl CliError {
             Self::Usage(_)
             | Self::Io(_, _)
             | Self::Database(_)
+            | Self::PostgresPlaintextOptInRequired
             | Self::DatabaseTimeout { .. }
             | Self::MsSql { .. }
             | Self::Terminal(_) => 2,
@@ -95,6 +97,12 @@ impl fmt::Display for CliError {
             Self::Io(context, error) => write!(formatter, "{context}: {error}"),
             Self::Lexical(error) => error.fmt(formatter),
             Self::Metadata(error) => error.fmt(formatter),
+            Self::PostgresPlaintextOptInRequired => formatter.write_str(
+                "error[OPEN_SDBL_CLI_PG_PLAINTEXT_OPT_IN_REQUIRED]: plaintext PostgreSQL transport requires explicit confirmation\n\
+cause: --sslmode disable turns off encryption and certificate verification\n\
+help: add --insecure-plaintext to accept plaintext, or remove --sslmode disable to use verify-full\n\
+note: --socks5-proxy routes traffic but does not provide PostgreSQL transport security",
+            ),
             Self::MsSql { operation, source } => {
                 write!(formatter, "MSSQL {operation} failed: {source}")
             }

@@ -644,7 +644,7 @@ mod tests {
         ];
         let mut refused = base.into_iter().map(str::to_owned);
         let error = parse_connection(&mut refused, "console", &mut Vec::new()).unwrap_err();
-        assert!(error.to_string().contains("requires --insecure-plaintext"));
+        assert!(matches!(error, CliError::PostgresPlaintextOptInRequired));
 
         let mut accepted = base
             .into_iter()

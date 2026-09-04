@@ -12,7 +12,9 @@ pub(crate) const MAX_CELL_WIDTH: usize = 256;
 
 pub(crate) fn write_top_level_error(output: &mut impl Write, error: &CliError) -> io::Result<()> {
     match error {
-        CliError::Usage(message) => writeln!(output, "{message}"),
+        CliError::Usage(_) | CliError::PostgresPlaintextOptInRequired => {
+            writeln!(output, "{error}")
+        }
         _ => writeln!(output, "{}", escape_field(&error.to_string())),
     }
 }
@@ -209,6 +211,11 @@ mod tests {
         let mut usage = Vec::new();
         write_top_level_error(&mut usage, &CliError::Usage("error\n\nhelp".to_owned())).unwrap();
         assert_eq!(usage, b"error\n\nhelp\n");
+
+        let mut structured = Vec::new();
+        write_top_level_error(&mut structured, &CliError::PostgresPlaintextOptInRequired).unwrap();
+        assert!(structured.starts_with(b"error[OPEN_SDBL_CLI_PG_PLAINTEXT_OPT_IN_REQUIRED]:"));
+        assert!(structured.ends_with(b"transport security\n"));
 
         let mut external = Vec::new();
         write_top_level_error(&mut external, &CliError::Data("bad\n\x1b[2J".to_owned())).unwrap();

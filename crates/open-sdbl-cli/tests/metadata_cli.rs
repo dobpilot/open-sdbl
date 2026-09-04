@@ -95,6 +95,11 @@ fn plaintext_opt_in_error_preserves_help_line_breaks() {
 
     assert!(!output.status.success());
     let stderr = String::from_utf8(output.stderr).unwrap();
-    assert!(stderr.contains("--insecure-plaintext\n\nopen-sdbl — tooling"));
-    assert!(!stderr.contains(r"\n"));
+    assert_eq!(
+        stderr,
+        "error[OPEN_SDBL_CLI_PG_PLAINTEXT_OPT_IN_REQUIRED]: plaintext PostgreSQL transport requires explicit confirmation\n\
+cause: --sslmode disable turns off encryption and certificate verification\n\
+help: add --insecure-plaintext to accept plaintext, or remove --sslmode disable to use verify-full\n\
+note: --socks5-proxy routes traffic but does not provide PostgreSQL transport security\n"
+    );
 }
