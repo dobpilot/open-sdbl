@@ -550,6 +550,27 @@ impl MetadataSource for PostgresMetadataSource<'_> {
         .await
     }
 
+    async fn read_extension_resources(&mut self) -> Result<Vec<ConfigResource>, CliError> {
+        let parameters = std::iter::empty::<&(dyn ToSql + Sync)>();
+        let rows = query_timeout("PostgreSQL ConfigCAS query", async {
+            self.transaction()?
+                .query_raw(PostgresMetadataQueries::EXTENSION_RESOURCES, parameters)
+                .await
+                .map_err(CliError::from)
+        })
+        .await?;
+        tokio::pin!(rows);
+        let mut resources = Vec::new();
+        while let Some(row) = rows.next().await {
+            let row = row?;
+            resources.push(ConfigResource {
+                file_name: row.try_get(0)?,
+                compressed: row.try_get(1)?,
+            });
+        }
+        Ok(resources)
+    }
+
     async fn read_schema(&mut self) -> Result<open_sdbl::metadata::SchemaStorage, CliError> {
         let rows = postgres_rows(
             self.transaction()?,

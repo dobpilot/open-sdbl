@@ -34,9 +34,11 @@ pub use normalize::{
 pub use queries::{MsSqlMetadataQueries, PostgresMetadataQueries};
 pub(crate) use resolve::SnapshotFingerprint;
 pub use resolve::{
-    AllowedLength, IndexComparison, LiveColumn, LiveIndex, LiveTable, MetadataField,
-    MetadataObject, MetadataSnapshot, MetadataValue, ResolutionFinding, ResolutionReport,
-    ResolvedMetadata, resolve_metadata, resolve_metadata_with_predefined_values,
+    AllowedLength, ExtensionMetadata, IndexComparison, LiveColumn, LiveIndex, LiveTable,
+    MetadataField, MetadataObject, MetadataSnapshot, MetadataValue, ResolutionFinding,
+    ResolutionReport, ResolvedMetadata, resolve_metadata, resolve_metadata_with_extensions,
+    resolve_metadata_with_predefined_values,
+    resolve_metadata_with_predefined_values_and_extensions,
 };
 pub use schema::{
     ColumnType, SchemaAnomaly, SchemaColumn, SchemaIndex, SchemaStorage, SchemaTable,

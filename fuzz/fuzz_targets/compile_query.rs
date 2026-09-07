@@ -28,6 +28,8 @@ fn snapshot() -> &'static MetadataSnapshot {
                 tables: vec![SchemaTable {
                     name: "Reference53".to_owned(),
                     number: 53,
+                    owner: None,
+                    inline_name: None,
                     columns: vec![SchemaColumn {
                         name: "Fld54".to_owned(),
                         types: Vec::new(),

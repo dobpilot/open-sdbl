@@ -60,6 +60,11 @@ opaque text payload containing the type discriminator and reference bytes for
 that logical projection. `CompiledQuery` marks the corresponding output column
 as deferred, so ordinary scalar text can never be mistaken for a payload.
 
+The SchemaStorage parser therefore preserves an explicitly present empty
+target as `Some("")`. `None` remains reserved for a missing or malformed target,
+so metadata diagnostics can distinguish invalid declarations from valid
+universal references.
+
 The application groups the bounded result's payloads by resolved object ID and
 asks the core to compile one safe batch lookup per object. Lookup SQL is built
 from `MetadataSnapshot`, validated `PresentationPlan`, and caller-provided

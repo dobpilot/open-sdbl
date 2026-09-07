@@ -236,6 +236,16 @@ impl ConsoleHelper {
                 kind,
                 &object_names,
             );
+            push_service_table_candidates(
+                &mut candidates,
+                &mut candidate_keys,
+                kind,
+                &object_names,
+                snapshot.objects().iter().any(|candidate| {
+                    candidate.kind == Some(MetadataKind::ChangeRegistration)
+                        && candidate.owner == Some(ObjectId::from(&object.guid))
+                }),
+            );
             for object_name in qualified_object_names {
                 push_unique(
                     &mut source_candidates,
@@ -248,6 +258,16 @@ impl ConsoleHelper {
                 &mut source_candidate_keys,
                 kind,
                 qualified_object_names,
+            );
+            push_service_table_candidates(
+                &mut source_candidates,
+                &mut source_candidate_keys,
+                kind,
+                qualified_object_names,
+                snapshot.objects().iter().any(|candidate| {
+                    candidate.kind == Some(MetadataKind::ChangeRegistration)
+                        && candidate.owner == Some(ObjectId::from(&object.guid))
+                }),
             );
             if let Some(table) = object.physical_table.as_deref() {
                 push_unique(&mut candidates, &mut candidate_keys, table);
@@ -532,6 +552,45 @@ fn push_virtual_table_candidates(
     }
 }
 
+fn push_service_table_candidates(
+    candidates: &mut Vec<String>,
+    candidate_keys: &mut HashSet<String>,
+    kind: MetadataKind,
+    object_names: &[String],
+    has_change_registration: bool,
+) {
+    let suffixes: &[&str] = match kind {
+        MetadataKind::ChartOfCalculationTypes => &[
+            "БазовыеВидыРасчета",
+            "BaseCalculationKinds",
+            "ВедущиеВидыРасчета",
+            "LeadingCalculationKinds",
+            "ВытесняющиеВидыРасчета",
+            "DisplacedCalculationKinds",
+        ],
+        MetadataKind::ChartOfAccounts => &["ВидыСубконто", "ExtraDimensions"],
+        _ => &[],
+    };
+    for object_name in object_names {
+        if has_change_registration {
+            for suffix in ["Изменения", "Changes"] {
+                push_unique(
+                    candidates,
+                    candidate_keys,
+                    &format!("{object_name}.{suffix}"),
+                );
+            }
+        }
+        for suffix in suffixes {
+            push_unique(
+                candidates,
+                candidate_keys,
+                &format!("{object_name}.{suffix}"),
+            );
+        }
+    }
+}
+
 fn normalize_physical_table(table: &str) -> String {
     table.strip_prefix('_').unwrap_or(table).to_lowercase()
 }
@@ -553,6 +612,12 @@ const fn russian_metadata_kind(kind: MetadataKind) -> &'static str {
         MetadataKind::BusinessProcess => "БизнесПроцесс",
         MetadataKind::Task => "Задача",
         MetadataKind::Sequence => "Последовательность",
+        MetadataKind::ChangeRegistration => "РегистрацияИзменений",
+        MetadataKind::Recalculation => "Перерасчет",
+        MetadataKind::CalculationKindDependency => "ЗависимостьВидовРасчета",
+        MetadataKind::ExtraDimension => "ВидСубконто",
+        MetadataKind::ResolveOnlyService => "СлужебнаяТаблица",
+        _ => "Метаданные",
     }
 }
 
@@ -1248,6 +1313,18 @@ fn print_description(
     let field_rows: Vec<Vec<String>> = fields
         .into_iter()
         .map(|field| {
+            let origin = field
+                .schema_name
+                .strip_prefix("Fld")
+                .and_then(|number| number.parse::<u32>().ok())
+                .and_then(|number| {
+                    snapshot
+                        .fields()
+                        .iter()
+                        .find(|metadata| metadata.number == number)
+                })
+                .and_then(|metadata| metadata.extension_origin.clone())
+                .unwrap_or_default();
             vec![
                 field.name,
                 field.schema_name,
@@ -1259,6 +1336,7 @@ fn print_description(
                     .collect::<Vec<_>>()
                     .join(", "),
                 field.reference_target.unwrap_or_default(),
+                origin,
             ]
         })
         .collect();
@@ -1271,6 +1349,7 @@ fn print_description(
             "Aliases",
             "Physical members",
             "Reference target",
+            "Extension",
         ],
         &field_rows,
     )
@@ -1775,8 +1854,9 @@ mod tests {
         BoundedLine, CompletionPath, ConsoleHelper, UNRESOLVED_REFERENCE, completion_start,
         decode_hex_array, decode_input_line, default_presentation_template, display_width,
         ensure_session_remains_usable, footer_text, format_duration, presentation_plan,
-        print_table_with_width, push_unique, push_virtual_table_candidates, read_bounded_line,
-        resolved_presentation, statement_is_complete, timing_line,
+        print_table_with_width, push_service_table_candidates, push_unique,
+        push_virtual_table_candidates, read_bounded_line, resolved_presentation,
+        statement_is_complete, timing_line,
     };
     use crate::{MAX_CELL_WIDTH, MAX_PRINTED_ROWS};
 
@@ -2000,6 +2080,40 @@ mod tests {
                 .iter()
                 .any(|value| value.replacement.ends_with("СрезПоследних()"))
         );
+    }
+
+    #[test]
+    fn completes_service_sources_under_their_owners() {
+        let mut candidates = Vec::new();
+        let mut keys = HashSet::new();
+        push_service_table_candidates(
+            &mut candidates,
+            &mut keys,
+            MetadataKind::AccumulationRegister,
+            &["РегистрНакопления.RegisteredTotals".to_owned()],
+            true,
+        );
+        push_service_table_candidates(
+            &mut candidates,
+            &mut keys,
+            MetadataKind::ChartOfCalculationTypes,
+            &["ChartOfCalculationTypes.Payroll".to_owned()],
+            false,
+        );
+        push_service_table_candidates(
+            &mut candidates,
+            &mut keys,
+            MetadataKind::ChartOfAccounts,
+            &["ChartOfAccounts.Main".to_owned()],
+            false,
+        );
+
+        assert!(candidates.contains(&"РегистрНакопления.RegisteredTotals.Изменения".to_owned()));
+        assert!(
+            candidates
+                .contains(&"ChartOfCalculationTypes.Payroll.LeadingCalculationKinds".to_owned())
+        );
+        assert!(candidates.contains(&"ChartOfAccounts.Main.ExtraDimensions".to_owned()));
     }
 
     #[test]

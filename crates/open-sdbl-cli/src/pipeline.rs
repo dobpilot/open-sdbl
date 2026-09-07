@@ -4,8 +4,8 @@ use std::time::Duration;
 
 use futures_util::{Stream, StreamExt};
 use open_sdbl::metadata::{
-    LiveColumn, LiveIndex, LiveTable, MetadataSnapshot, parse_config_resource_bounded,
-    resolve_metadata_with_predefined_values,
+    ExtensionMetadata, LiveColumn, LiveIndex, LiveTable, MetadataSnapshot,
+    parse_config_resource_bounded, resolve_metadata_with_predefined_values_and_extensions,
 };
 use tokio::sync::Semaphore;
 use tokio::time::timeout;
@@ -68,6 +68,15 @@ pub(crate) trait MetadataSource {
         &mut self,
         progress: &mut MetadataProgress,
     ) -> Result<ConfigMetadata, CliError>;
+    async fn read_extension_resources(&mut self) -> Result<Vec<ConfigResource>, CliError> {
+        Ok(Vec::new())
+    }
+    async fn read_extensions(
+        &mut self,
+        _resources: Vec<ConfigResource>,
+    ) -> Result<Vec<ExtensionMetadata>, CliError> {
+        Ok(Vec::new())
+    }
     async fn read_schema(&mut self) -> Result<open_sdbl::metadata::SchemaStorage, CliError>;
     async fn read_live_tables(&mut self) -> Result<Vec<LiveTable>, CliError>;
     async fn commit_readonly(&mut self) -> Result<(), CliError>;
@@ -86,6 +95,10 @@ pub(crate) async fn acquire_metadata(
         let db_names = source.read_db_names().await?;
         let (descriptors, predefined_values) = source.read_config(&mut progress).await?;
 
+        progress.phase("extensions");
+        let extension_resources = source.read_extension_resources().await?;
+        let extensions = source.read_extensions(extension_resources).await?;
+
         progress.phase("SchemaStorage");
         let schema = source.read_schema().await?;
 
@@ -94,10 +107,11 @@ pub(crate) async fn acquire_metadata(
 
         progress.phase("resolve");
         let resolved = run_metadata_blocking("metadata resolution", move || {
-            Ok(resolve_metadata_with_predefined_values(
+            Ok(resolve_metadata_with_predefined_values_and_extensions(
                 db_names,
                 descriptors,
                 predefined_values,
+                extensions,
                 schema,
                 live_tables,
             ))

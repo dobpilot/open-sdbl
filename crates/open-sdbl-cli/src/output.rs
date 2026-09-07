@@ -53,7 +53,7 @@ pub(crate) fn print_snapshot(
         }
         writeln!(
             output,
-            "OBJECT\t{}\t{}\t{}\t{}\t\t{}\t{}\t{}",
+            "OBJECT\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
             object.guid,
             object.kind.map_or("NonTabular", |kind| kind.as_str()),
             bounded_field(object.name.as_deref().unwrap_or(""), MAX_CELL_WIDTH),
@@ -61,6 +61,9 @@ pub(crate) fn print_snapshot(
                 object.physical_table.as_deref().unwrap_or(""),
                 MAX_CELL_WIDTH
             ),
+            object
+                .owner
+                .map_or_else(String::new, |owner| owner.to_string()),
             yes_no(object.declared),
             yes_no(object.live),
             bounded_field(&details.join(","), MAX_CELL_WIDTH),
@@ -74,7 +77,7 @@ pub(crate) fn print_snapshot(
     {
         writeln!(
             output,
-            "FIELD\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t",
+            "FIELD\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
             field.guid,
             if field.data_separator {
                 "DataSeparator"
@@ -86,6 +89,10 @@ pub(crate) fn print_snapshot(
             bounded_field(&field.owner_tables.join(","), MAX_CELL_WIDTH),
             yes_no(field.declared),
             yes_no(field.live),
+            bounded_field(
+                field.extension_origin.as_deref().unwrap_or(""),
+                MAX_CELL_WIDTH
+            ),
         )?;
         printed_rows += 1;
     }

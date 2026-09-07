@@ -28,6 +28,8 @@ None.
 ### Modified Capabilities
 
 - `query-repl`: present one-hop dereferenced reference fields through joins.
+- `onec-metadata`: preserve the empty SchemaStorage target that identifies a
+  universal reference.
 
 ## Impact
 

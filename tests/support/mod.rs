@@ -204,6 +204,10 @@ pub(crate) fn universal_dereferenced_presentation_snapshot() -> open_sdbl::metad
 {
     let base = tabular_section_snapshot();
     let mut schema = base.schema().clone();
+    let parsed = parse_schema_storage(
+        br#"{0,{1,{"Document53","N",53,"",{1,{"Fld59",0,{1,{"R",0,0,"",0}},"",0}},{0},{0},1,"R",{0},{0},"",0}}}"#,
+    )
+    .unwrap();
     let agreement = schema
         .tables
         .iter_mut()
@@ -213,10 +217,7 @@ pub(crate) fn universal_dereferenced_presentation_snapshot() -> open_sdbl::metad
         .iter_mut()
         .find(|column| column.name == "Fld59")
         .unwrap();
-    agreement.types = vec![ColumnType {
-        tag: "R".to_owned(),
-        reference_target: Some(String::new()),
-    }];
+    agreement.types = parsed.tables[0].columns[0].types.clone();
     let mut live_tables = base.live_tables().to_vec();
     let document = live_tables
         .iter_mut()
@@ -314,6 +315,8 @@ pub(crate) fn schema_table(name: &str, number: u32, columns: Vec<SchemaColumn>) 
     SchemaTable {
         name: name.to_owned(),
         number,
+        owner: None,
+        inline_name: None,
         columns,
         indexes: Vec::new(),
     }

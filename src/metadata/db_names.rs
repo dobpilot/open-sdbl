@@ -19,6 +19,7 @@ pub struct DbNameEntry {
 }
 
 /// A supported tabular 1C metadata kind.
+#[non_exhaustive]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum MetadataKind {
     /// Catalog (`Справочник`).
@@ -51,6 +52,16 @@ pub enum MetadataKind {
     Task,
     /// Sequence (`Последовательность`).
     Sequence,
+    /// Change-registration table (`*СhngR`, exposed as `Changes`).
+    ChangeRegistration,
+    /// Calculation-register recalculation table (`CRgRecalc`).
+    Recalculation,
+    /// Calculation-kind dependency inline table.
+    CalculationKindDependency,
+    /// Chart-of-accounts extra-dimension inline table (`ExtDim`).
+    ExtraDimension,
+    /// Platform table available to metadata discovery but without SDBL syntax.
+    ResolveOnlyService,
 }
 
 impl MetadataKind {
@@ -73,6 +84,20 @@ impl MetadataKind {
             "BPr" => Some(Self::BusinessProcess),
             "Task" => Some(Self::Task),
             "Seq" => Some(Self::Sequence),
+            "ExtDim" => Some(Self::ExtraDimension),
+            "CRgRecalc" => Some(Self::Recalculation),
+            "BaseCK" | "LeadingCK" | "DisplacedCK" => Some(Self::CalculationKindDependency),
+            alias if alias.ends_with("ChngR") => Some(Self::ChangeRegistration),
+            alias
+                if alias.starts_with("DataHistory")
+                    || alias.starts_with("DbSegments")
+                    || alias.starts_with("DbCopies")
+                    || alias.ends_with("Settings")
+                    || alias.starts_with("STT")
+                    || matches!(alias, "LangModel" | "Acoustic" | "Bots") =>
+            {
+                Some(Self::ResolveOnlyService)
+            }
             _ => None,
         }
     }
@@ -96,6 +121,11 @@ impl MetadataKind {
             Self::BusinessProcess => "BPr",
             Self::Task => "Task",
             Self::Sequence => "Seq",
+            Self::ChangeRegistration => "ChngR",
+            Self::Recalculation => "CRgRecalc",
+            Self::CalculationKindDependency => "BaseCK",
+            Self::ExtraDimension => "ExtDim",
+            Self::ResolveOnlyService => "Service",
         }
     }
 
@@ -118,6 +148,11 @@ impl MetadataKind {
             Self::BusinessProcess => "_BPr",
             Self::Task => "_Task",
             Self::Sequence => "_Seq",
+            Self::ChangeRegistration
+            | Self::CalculationKindDependency
+            | Self::ResolveOnlyService => "_",
+            Self::Recalculation => "_CRgRecalc",
+            Self::ExtraDimension => "_ExtDim",
         }
     }
 
@@ -140,7 +175,25 @@ impl MetadataKind {
             Self::BusinessProcess => "BusinessProcess",
             Self::Task => "Task",
             Self::Sequence => "Sequence",
+            Self::ChangeRegistration => "ChangeRegistration",
+            Self::Recalculation => "Recalculation",
+            Self::CalculationKindDependency => "CalculationKindDependency",
+            Self::ExtraDimension => "ExtraDimension",
+            Self::ResolveOnlyService => "ResolveOnlyService",
         }
+    }
+
+    /// Returns whether this kind describes a platform-owned service table.
+    #[must_use]
+    pub const fn is_service(self) -> bool {
+        matches!(
+            self,
+            Self::ChangeRegistration
+                | Self::Recalculation
+                | Self::CalculationKindDependency
+                | Self::ExtraDimension
+                | Self::ResolveOnlyService
+        )
     }
 }
 
@@ -156,6 +209,13 @@ pub struct DbNames {
     entries: Vec<DbNameEntry>,
     fields: HashMap<u32, Guid>,
     separators: HashSet<u32>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct DbNameFieldConflict {
+    pub(crate) number: u32,
+    pub(crate) base_guid: Guid,
+    pub(crate) extension_guid: Guid,
 }
 
 impl DbNames {
@@ -182,6 +242,37 @@ impl DbNames {
         self.entries
             .iter()
             .filter_map(|entry| MetadataKind::from_alias(&entry.alias).map(|kind| (entry, kind)))
+    }
+
+    pub(crate) fn extend_from(&mut self, other: Self) -> Vec<DbNameFieldConflict> {
+        let Self {
+            entries,
+            fields: _,
+            separators,
+        } = other;
+        let mut conflicts = Vec::new();
+        for entry in entries {
+            if entry.alias != "Fld" {
+                self.entries.push(entry);
+                continue;
+            }
+            if let Some(base_guid) = self.fields.get(&entry.number) {
+                if base_guid != &entry.guid {
+                    conflicts.push(DbNameFieldConflict {
+                        number: entry.number,
+                        base_guid: base_guid.clone(),
+                        extension_guid: entry.guid,
+                    });
+                }
+                continue;
+            }
+            self.fields.insert(entry.number, entry.guid.clone());
+            if separators.contains(&entry.number) {
+                self.separators.insert(entry.number);
+            }
+            self.entries.push(entry);
+        }
+        conflicts
     }
 }
 

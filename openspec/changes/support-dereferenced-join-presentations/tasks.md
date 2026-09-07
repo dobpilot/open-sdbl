@@ -3,6 +3,8 @@
 - [x] 1.1 Store an explicit source alias in auxiliary join plans.
 - [x] 1.2 Carry owner identity and base-identity state in resolved joined paths.
 - [x] 1.3 Include source alias and target relation in join deduplication.
+- [x] 1.4 Preserve an empty SchemaStorage `R` target as a universal-reference
+  marker instead of collapsing it to an absent target.
 
 ## 2. Presentation compilation
 
@@ -28,3 +30,5 @@
 - [x] 4.2 Verify the reported query against PostgreSQL `erp_ur`.
 - [x] 4.3 Run formatting, Clippy with warnings denied, workspace tests, rustdoc
   with warnings denied, and strict OpenSpec validation.
+- [x] 4.4 Cover a dereferenced universal-reference presentation with metadata
+  parsed from serialized SchemaStorage rather than a manually built schema.

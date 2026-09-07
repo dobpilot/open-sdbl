@@ -7,7 +7,7 @@ use std::sync::Arc;
 use crate::Token;
 use crate::metadata::{
     FieldId, LiveColumn, LiveTable, MetadataKind, MetadataObject, MetadataSnapshot, ObjectId,
-    SchemaColumn, normalize_standard_field_name, recase_postgres_identifier,
+    SchemaColumn, SchemaTable, normalize_standard_field_name, recase_postgres_identifier,
 };
 use crate::query::core::ast::SourceAst;
 use crate::query::core::names::{folded_name, names_equal};
@@ -170,6 +170,30 @@ pub(super) fn kind_from_query_name(name: &str) -> Option<MetadataKind> {
             MetadataKind::Sequence,
             ["Sequence", "Seq", "Последовательность"],
         ),
+        (
+            MetadataKind::ChangeRegistration,
+            ["ChangeRegistration", "ChngR", "РегистрацияИзменений"],
+        ),
+        (
+            MetadataKind::Recalculation,
+            ["Recalculation", "CRgRecalc", "Перерасчет"],
+        ),
+        (
+            MetadataKind::CalculationKindDependency,
+            [
+                "CalculationKindDependency",
+                "CKDependency",
+                "ЗависимостьВидовРасчета",
+            ],
+        ),
+        (
+            MetadataKind::ExtraDimension,
+            ["ExtraDimension", "ExtDim", "ВидСубконто"],
+        ),
+        (
+            MetadataKind::ResolveOnlyService,
+            ["ResolveOnlyService", "Service", "СлужебнаяТаблица"],
+        ),
     ];
     names.into_iter().find_map(|(kind, aliases)| {
         aliases
@@ -227,7 +251,20 @@ pub(super) fn is_extension_table_name(canonical: &str, candidate: &str) -> bool 
     else {
         return false;
     };
-    number.chars().all(|digit| digit.is_ascii_digit())
+    !number.is_empty() && number.chars().all(|digit| digit.is_ascii_digit())
+}
+
+#[cfg(test)]
+mod extension_table_name_tests {
+    use super::is_extension_table_name;
+
+    #[test]
+    fn requires_a_non_empty_numeric_extension_suffix() {
+        assert!(is_extension_table_name("_Reference53", "_Reference53X1"));
+        assert!(is_extension_table_name("_Reference53", "_reference53x12"));
+        assert!(!is_extension_table_name("_Reference53", "_Reference53X"));
+        assert!(!is_extension_table_name("_Reference53", "_Reference53Xone"));
+    }
 }
 
 /// Per-compilation, demand-populated field catalog.
@@ -294,6 +331,11 @@ impl<'snapshot> CompilationCatalog<'snapshot> {
                 "metadata object has no physical table",
             )
         })?;
+        let key = folded_name(physical_table);
+        if let Some(fields) = self.fields.borrow().get(&key) {
+            return Ok(Arc::clone(fields));
+        }
+        self.charge(self.snapshot.live_tables().len().max(1), token)?;
         let table = self
             .snapshot
             .live_tables()
@@ -306,8 +348,42 @@ impl<'snapshot> CompilationCatalog<'snapshot> {
                     format!("physical table {physical_table:?} is not live"),
                 )
             })?;
-        let schema_table = self.snapshot.schema().table(physical_table);
-        self.fields_for_table(physical_table, table, schema_table, token)
+        self.charge(self.snapshot.live_tables().len().max(1), token)?;
+        let extension_live_count = self
+            .snapshot
+            .live_tables()
+            .iter()
+            .filter(|candidate| is_extension_table_name(physical_table, &candidate.name))
+            .count();
+        let schema_passes = extension_live_count.saturating_add(2);
+        self.charge(
+            self.snapshot
+                .schema()
+                .tables
+                .len()
+                .max(1)
+                .saturating_mul(schema_passes),
+            token,
+        )?;
+        let (merged_live, merged_schema) = merged_extension_projection(
+            self.snapshot,
+            physical_table,
+            table,
+            self.snapshot.schema().table(physical_table),
+        );
+        self.charge(merged_live.columns.len().max(1), token)?;
+        let custom_names = self
+            .custom_names
+            .get_or_init(|| index_custom_field_names(self.snapshot));
+        let fields: Arc<[QueryableField]> = project_queryable_fields(
+            physical_table,
+            &merged_live,
+            merged_schema.as_ref(),
+            &CustomFieldNames::Indexed(custom_names),
+        )
+        .into();
+        self.fields.borrow_mut().insert(key, Arc::clone(&fields));
+        Ok(fields)
     }
 
     pub(super) fn fields_for_table(
@@ -485,13 +561,76 @@ pub fn queryable_fields(
             )
         })?;
     let schema_table = snapshot.schema().table(physical_table);
+    let (merged_live, merged_schema) =
+        merged_extension_projection(snapshot, physical_table, table, schema_table);
 
     Ok(project_queryable_fields(
         physical_table,
-        table,
-        schema_table,
+        &merged_live,
+        merged_schema.as_ref(),
         &CustomFieldNames::Scan(snapshot),
     ))
+}
+
+fn merged_extension_projection(
+    snapshot: &MetadataSnapshot,
+    physical_table: &str,
+    canonical_live: &LiveTable,
+    canonical_schema: Option<&SchemaTable>,
+) -> (LiveTable, Option<SchemaTable>) {
+    let mut live = canonical_live.clone();
+    for variant in snapshot
+        .live_tables()
+        .iter()
+        .filter(|candidate| is_extension_table_name(physical_table, &candidate.name))
+    {
+        let Some(variant_schema) = snapshot
+            .schema()
+            .tables
+            .iter()
+            .find(|schema| names_equal(&schema.physical_name(), &variant.name))
+        else {
+            continue;
+        };
+        for column in &variant.columns {
+            let logical = logical_column_name(&column.name);
+            if variant_schema.columns.iter().any(|declared| {
+                names_equal(&logical_column_name(&declared.physical_name()), &logical)
+            }) && !live
+                .columns
+                .iter()
+                .any(|existing| names_equal(&existing.name, &column.name))
+            {
+                live.columns.push(column.clone());
+            }
+        }
+    }
+    let mut schema = canonical_schema.cloned();
+    for variant in snapshot
+        .schema()
+        .tables
+        .iter()
+        .filter(|candidate| is_extension_table_name(physical_table, &candidate.physical_name()))
+    {
+        let merged = schema.get_or_insert_with(|| SchemaTable {
+            name: physical_table.trim_start_matches('_').to_owned(),
+            number: variant.number,
+            owner: None,
+            inline_name: None,
+            columns: Vec::new(),
+            indexes: Vec::new(),
+        });
+        for column in &variant.columns {
+            if !merged
+                .columns
+                .iter()
+                .any(|existing| names_equal(&existing.name, &column.name))
+            {
+                merged.columns.push(column.clone());
+            }
+        }
+    }
+    (live, schema)
 }
 
 pub(super) struct ResolvedSourceMetadata<'snapshot> {
@@ -510,6 +649,19 @@ pub(super) fn resolve_source_metadata<'snapshot>(
     let qualified_name = format!("{}.{}", source.kind.lexeme, source.object.lexeme);
     let object = find_metadata_object_at(snapshot, &qualified_name, Some(source.object))?;
     let Some(table_part) = source.table_part else {
+        if object.kind.is_some_and(MetadataKind::is_service) {
+            return Err(QueryDiagnostic::at(
+                QueryDiagnosticKind::UnsupportedFeature,
+                Some(source.object),
+                format!(
+                    "service source {:?} is available for metadata discovery but has no direct FROM spelling",
+                    object
+                        .physical_table
+                        .as_deref()
+                        .unwrap_or(source.object.lexeme)
+                ),
+            ));
+        }
         let live_table = object
             .physical_table
             .as_deref()
@@ -534,6 +686,10 @@ pub(super) fn resolve_source_metadata<'snapshot>(
             identity_is_base: true,
         });
     };
+
+    if let Some(service) = service_table_part(table_part.lexeme) {
+        return resolve_service_table_part(service, table_part, object, snapshot, catalog);
+    }
 
     if !matches!(
         object.kind,
@@ -692,6 +848,179 @@ pub(super) fn resolve_source_metadata<'snapshot>(
     })
 }
 
+#[derive(Clone, Copy)]
+enum ServiceTablePart {
+    Changes,
+    BaseCalculationKinds,
+    LeadingCalculationKinds,
+    DisplacedCalculationKinds,
+    ExtraDimensions,
+}
+
+fn service_table_part(name: &str) -> Option<ServiceTablePart> {
+    let choices: &[(ServiceTablePart, &[&str])] = &[
+        (ServiceTablePart::Changes, &["Changes", "Изменения"]),
+        (
+            ServiceTablePart::BaseCalculationKinds,
+            &[
+                "BaseCalculationKinds",
+                "BaseCalculationTypes",
+                "БазовыеВидыРасчета",
+            ],
+        ),
+        (
+            ServiceTablePart::LeadingCalculationKinds,
+            &[
+                "LeadingCalculationKinds",
+                "LeadingCalculationTypes",
+                "ВедущиеВидыРасчета",
+            ],
+        ),
+        (
+            ServiceTablePart::DisplacedCalculationKinds,
+            &[
+                "DisplacedCalculationKinds",
+                "DisplacingCalculationTypes",
+                "ВытесняющиеВидыРасчета",
+            ],
+        ),
+        (
+            ServiceTablePart::ExtraDimensions,
+            &["ExtraDimensions", "ВидыСубконто"],
+        ),
+    ];
+    choices.iter().find_map(|(kind, aliases)| {
+        aliases
+            .iter()
+            .any(|alias| names_equal(alias, name))
+            .then_some(*kind)
+    })
+}
+
+fn resolve_service_table_part<'snapshot>(
+    service: ServiceTablePart,
+    token: &Token<'_>,
+    object: &'snapshot MetadataObject,
+    snapshot: &'snapshot MetadataSnapshot,
+    catalog: &CompilationCatalog<'_>,
+) -> Result<ResolvedSourceMetadata<'snapshot>, QueryDiagnostic> {
+    let parent = object.physical_table.as_deref().ok_or_else(|| {
+        QueryDiagnostic::at(
+            QueryDiagnosticKind::Metadata,
+            Some(token),
+            "service-table owner has no physical table",
+        )
+    })?;
+    let physical = match service {
+        ServiceTablePart::Changes => {
+            let owner_id = ObjectId::from(&object.guid);
+            let mut candidates = snapshot.objects().iter().filter(|candidate| {
+                candidate.kind == Some(MetadataKind::ChangeRegistration)
+                    && candidate.owner == Some(owner_id)
+            });
+            let first = candidates.next().ok_or_else(|| {
+                QueryDiagnostic::at(
+                    QueryDiagnosticKind::UnknownObject,
+                    Some(token),
+                    "no change-registration table is linked to this source",
+                )
+            })?;
+            if candidates.next().is_some() {
+                return Err(QueryDiagnostic::at(
+                    QueryDiagnosticKind::AmbiguousObject,
+                    Some(token),
+                    "more than one change-registration table matches this source",
+                ));
+            }
+            first.physical_table.clone().ok_or_else(|| {
+                QueryDiagnostic::at(
+                    QueryDiagnosticKind::Metadata,
+                    Some(token),
+                    "change-registration metadata has no physical table",
+                )
+            })?
+        }
+        ServiceTablePart::BaseCalculationKinds => {
+            inline_service_physical(snapshot, parent, |name| names_equal(name, "BaseCK"), token)?
+        }
+        ServiceTablePart::LeadingCalculationKinds => inline_service_physical(
+            snapshot,
+            parent,
+            |name| names_equal(name, "LeadingCK"),
+            token,
+        )?,
+        ServiceTablePart::DisplacedCalculationKinds => inline_service_physical(
+            snapshot,
+            parent,
+            |name| names_equal(name, "DisplacedCK"),
+            token,
+        )?,
+        ServiceTablePart::ExtraDimensions => {
+            inline_service_physical(snapshot, parent, |name| name.starts_with("ExtDim"), token)?
+        }
+    };
+    let live_table = snapshot
+        .live_tables()
+        .iter()
+        .find(|table| names_equal(&table.name, &physical))
+        .ok_or_else(|| {
+            QueryDiagnostic::at(
+                QueryDiagnosticKind::NotLive,
+                Some(token),
+                format!("service table {physical:?} is not live"),
+            )
+        })?;
+    let schema_table = snapshot.schema().table(&physical).ok_or_else(|| {
+        QueryDiagnostic::at(
+            QueryDiagnosticKind::Metadata,
+            Some(token),
+            format!("service table {physical:?} is absent from SchemaStorage"),
+        )
+    })?;
+    let mut fields = catalog
+        .fields_for_table(&physical, live_table, Some(schema_table), Some(token))?
+        .to_vec();
+    normalize_table_part_standard_fields(&mut fields, parent);
+    Ok(ResolvedSourceMetadata {
+        object,
+        live_table,
+        fields: fields.into(),
+        qualifier_name: token.lexeme.to_owned(),
+        identity_is_base: false,
+    })
+}
+
+fn inline_service_physical(
+    snapshot: &MetadataSnapshot,
+    parent: &str,
+    accepts: impl Fn(&str) -> bool,
+    token: &Token<'_>,
+) -> Result<String, QueryDiagnostic> {
+    let owner = parent.strip_prefix('_').unwrap_or(parent);
+    let mut matches = snapshot.schema().tables.iter().filter(|table| {
+        table
+            .owner
+            .as_deref()
+            .is_some_and(|candidate| names_equal(candidate, owner))
+            && table.inline_name.as_deref().is_some_and(&accepts)
+    });
+    let first = matches.next().ok_or_else(|| {
+        QueryDiagnostic::at(
+            QueryDiagnosticKind::UnknownObject,
+            Some(token),
+            "the metadata object has no matching service table",
+        )
+    })?;
+    if matches.next().is_some() {
+        return Err(QueryDiagnostic::at(
+            QueryDiagnosticKind::AmbiguousObject,
+            Some(token),
+            "the metadata object has multiple matching service tables",
+        ));
+    }
+    Ok(first.physical_name())
+}
+
 fn normalize_table_part_standard_fields(fields: &mut [QueryableField], parent_physical: &str) {
     let parent = parent_physical.strip_prefix('_').unwrap_or(parent_physical);
     let owner_reference = format!("_{parent}_IDRRef");
@@ -702,12 +1031,14 @@ fn normalize_table_part_standard_fields(fields: &mut [QueryableField], parent_ph
             .any(|column| names_equal(&column.physical_name, &owner_reference))
         {
             Some("ID")
-        } else if field
-            .schema_name
-            .strip_prefix("LineNo")
-            .is_some_and(|number| {
-                !number.is_empty() && number.bytes().all(|digit| digit.is_ascii_digit())
-            })
+        } else if field.schema_name == "LineNo"
+            || field.schema_name.ends_with("LineNo")
+            || field
+                .schema_name
+                .strip_prefix("LineNo")
+                .is_some_and(|number| {
+                    !number.is_empty() && number.bytes().all(|digit| digit.is_ascii_digit())
+                })
         {
             Some("LineNo")
         } else {
@@ -841,8 +1172,10 @@ fn project_queryable_fields(
                 .map(|(_, column)| *column)
                 .map(reference_targets)
                 .unwrap_or_default();
-            let reference_target =
-                (reference_targets.len() == 1).then(|| reference_targets[0].clone());
+            let reference_target = match reference_targets.as_slice() {
+                [target] if !target.is_empty() => Some(target.clone()),
+                _ => None,
+            };
             let query_schema_name = normalize_standard_field_name(&schema_name).to_owned();
             let custom_name = match custom_names {
                 CustomFieldNames::Scan(snapshot) => {

@@ -466,6 +466,28 @@ impl MetadataSource for MsSqlMetadataSource<'_> {
         .await
     }
 
+    async fn read_extension_resources(&mut self) -> Result<Vec<ConfigResource>, CliError> {
+        let rows = query_timeout("MSSQL ConfigCAS query", async {
+            self.session
+                .client_mut()?
+                .simple_query(MsSqlMetadataQueries::EXTENSION_RESOURCES)
+                .await
+                .map_err(CliError::mssql_query)
+        })
+        .await?
+        .into_row_stream();
+        tokio::pin!(rows);
+        let mut resources = Vec::new();
+        while let Some(row) = rows.next().await {
+            let row = row.map_err(CliError::mssql_query)?;
+            resources.push(ConfigResource {
+                file_name: required_mssql_string(&row, 0, "ConfigCAS file name")?,
+                compressed: required_mssql_bytes(&row, 1, "ConfigCAS payload")?,
+            });
+        }
+        Ok(resources)
+    }
+
     async fn read_schema(&mut self) -> Result<open_sdbl::metadata::SchemaStorage, CliError> {
         let rows = mssql_rows(
             self.session.client_mut()?,

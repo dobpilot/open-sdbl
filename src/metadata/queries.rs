@@ -20,6 +20,13 @@ impl PostgresMetadataQueries {
     /// Counts the resources and compressed bytes returned by [`Self::CONFIG`].
     pub const CONFIG_TOTALS: &'static str = "SELECT count(*), COALESCE(sum(octet_length(binarydata)), 0) FROM config WHERE partno = 0 AND filename::text ~ '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}(\\.1c)?$'";
 
+    /// Reads opaque part-zero configuration-extension resources.
+    ///
+    /// Their content-addressed graph is decoded by the application-side
+    /// extension boundary, not by the database adapter.
+    pub const EXTENSION_RESOURCES: &'static str =
+        "SELECT filename::text, binarydata FROM configcas WHERE partno = 0 ORDER BY filename";
+
     /// Reads the current authoritative physical schema.
     pub const SCHEMA: &'static str = "SELECT currentschema FROM schemastorage WHERE schemaid = 0";
 
@@ -28,12 +35,13 @@ impl PostgresMetadataQueries {
 
     /// Returns all acquisition statements in execution order.
     #[must_use]
-    pub const fn all() -> [&'static str; 6] {
+    pub const fn all() -> [&'static str; 7] {
         [
             Self::VERIFY_TRANSACTION,
             Self::DB_NAMES,
             Self::CONFIG_TOTALS,
             Self::CONFIG,
+            Self::EXTENSION_RESOURCES,
             Self::SCHEMA,
             Self::CATALOG,
         ]
@@ -67,6 +75,12 @@ impl MsSqlMetadataQueries {
     /// Counts the resources and compressed bytes returned by [`Self::CONFIG`].
     pub const CONFIG_TOTALS: &'static str = "SELECT COUNT_BIG(*), COALESCE(SUM(CONVERT(bigint, DATALENGTH([BinaryData]))), CONVERT(bigint, 0)) FROM [dbo].[Config] WHERE [PartNo] = 0 AND ((LEN([FileName]) = 36 AND TRY_CONVERT(uniqueidentifier, [FileName]) IS NOT NULL) OR (LEN([FileName]) = 39 AND RIGHT([FileName], 3) = N'.1c' AND TRY_CONVERT(uniqueidentifier, LEFT([FileName], 36)) IS NOT NULL))";
 
+    /// Reads opaque part-zero configuration-extension resources.
+    ///
+    /// Their content-addressed graph is decoded by the application-side
+    /// extension boundary, not by the database adapter.
+    pub const EXTENSION_RESOURCES: &'static str = "SELECT CONVERT(nvarchar(128), [FileName]), [BinaryData] FROM [dbo].[ConfigCAS] WHERE [PartNo] = 0 ORDER BY [FileName]";
+
     /// Reads the current authoritative physical schema.
     pub const SCHEMA: &'static str =
         "SELECT [CurrentSchema] FROM [dbo].[SchemaStorage] WHERE [SchemaID] = 0";
@@ -76,13 +90,14 @@ impl MsSqlMetadataQueries {
 
     /// Returns all acquisition statements in execution order.
     #[must_use]
-    pub const fn all() -> [&'static str; 7] {
+    pub const fn all() -> [&'static str; 8] {
         [
             Self::VERIFY_DATABASE,
             Self::YEAR_OFFSET,
             Self::DB_NAMES,
             Self::CONFIG_TOTALS,
             Self::CONFIG,
+            Self::EXTENSION_RESOURCES,
             Self::SCHEMA,
             Self::CATALOG,
         ]
@@ -104,6 +119,20 @@ mod tests {
             for mutating in ["INSERT ", "UPDATE ", "DELETE ", "ALTER ", "DROP "] {
                 assert!(!normalized.contains(mutating));
             }
+        }
+    }
+
+    #[test]
+    fn extension_queries_use_the_captured_config_cas_shape() {
+        for query in [
+            PostgresMetadataQueries::EXTENSION_RESOURCES,
+            MsSqlMetadataQueries::EXTENSION_RESOURCES,
+        ] {
+            let normalized = query.to_ascii_uppercase();
+            for token in ["CONFIGCAS", "FILENAME", "BINARYDATA", "PARTNO"] {
+                assert!(normalized.contains(token), "{token}: {query}");
+            }
+            assert!(normalized.contains("PARTNO] = 0") || normalized.contains("PARTNO = 0"));
         }
     }
 }

@@ -45,6 +45,10 @@ pub struct SchemaTable {
     pub name: String,
     /// Numeric platform identifier from the table header.
     pub number: u32,
+    /// Canonical owning table for an inline declaration.
+    pub owner: Option<String>,
+    /// Original inline declaration name such as `VT42` or `BaseCK`.
+    pub inline_name: Option<String>,
     /// Declared columns.
     pub columns: Vec<SchemaColumn>,
     /// Declared indexes.
@@ -137,6 +141,8 @@ fn project_table(values: &[Value], anomalies: &mut Vec<SchemaAnomaly>) -> Option
     Some(SchemaTable {
         name,
         number,
+        owner: None,
+        inline_name: None,
         columns,
         indexes,
     })
@@ -150,11 +156,20 @@ fn project_inline_table(
         return None;
     }
     let inline_name = values.first()?.as_string()?;
-    let number = inline_name.strip_prefix("VT")?.parse::<u32>().ok()?;
     let parent = values.get(3)?.as_string()?;
     if parent.is_empty() {
         return None;
     }
+    let number = match inline_table_number(inline_name) {
+        Some(number) => number,
+        None => {
+            anomalies.push(SchemaAnomaly {
+                table: format!("{parent}_{inline_name}"),
+                detail: format!("unknown inline table kind {inline_name:?}"),
+            });
+            return None;
+        }
+    };
     let table_name = format!("{parent}_{inline_name}");
     let mut columns = project_counted(
         values.get(4)?,
@@ -189,9 +204,27 @@ fn project_inline_table(
     Some(SchemaTable {
         name: table_name,
         number,
+        owner: Some(parent.to_owned()),
+        inline_name: Some(inline_name.to_owned()),
         columns,
         indexes,
     })
+}
+
+fn inline_table_number(name: &str) -> Option<u32> {
+    for prefix in ["VT", "ExtDim"] {
+        if let Some(number) = name.strip_prefix(prefix)
+            && !number.is_empty()
+            && number.bytes().all(|digit| digit.is_ascii_digit())
+        {
+            return number.parse().ok();
+        }
+    }
+    matches!(
+        name,
+        "BaseCK" | "LeadingCK" | "DisplacedCK" | "ExtProps" | "Descr" | "Acoustic" | "LangModel"
+    )
+    .then_some(0)
 }
 
 fn project_counted<T>(
@@ -265,11 +298,16 @@ fn project_column(values: &[Value]) -> Option<SchemaColumn> {
     for declaration in type_collection.iter().skip(1).take(count) {
         let declaration = declaration.as_list()?;
         let tag = declaration.first()?.as_string()?.to_owned();
+        // `E` denotes the empty/undefined member of a composite 1C value.
+        // It has no physical column of its own, so it is not part of the
+        // storage type alphabet exposed by the projection.
+        if tag == "E" {
+            continue;
+        }
         let reference_target = if tag == "R" {
             declaration
                 .get(3)
                 .and_then(Value::as_string)
-                .filter(|target| !target.is_empty())
                 .map(str::to_owned)
         } else {
             None
@@ -328,6 +366,34 @@ mod tests {
     }
 
     #[test]
+    fn preserves_an_explicitly_empty_universal_reference_target() {
+        let source = br#"{0,{1,{"Document53","N",53,"",{1,{"Fld59",0,{1,{"R",0,0,"",0}},"",0}},{0},{0},1,"R",{0},{0},"",0}}}"#;
+        let schema = parse_schema_storage(source).unwrap();
+
+        assert_eq!(
+            schema.tables[0].columns[0].types[0]
+                .reference_target
+                .as_deref(),
+            Some("")
+        );
+    }
+
+    #[test]
+    fn projects_known_service_inline_tables_and_reports_unknown_kinds() {
+        let source = br#"{0,{2,{"Acc3930","N",3930,"",{0},{1,{"ExtDim3937","I",0,"Acc3930",{1,{"LineNo",0,{1,{"N",5,0,"",0}},"",0}},{0},{0},0,"R",{0},{0},"",0}},{0},1,"R",{0},{0},"",0},{"Acc3931","N",3931,"",{0},{1,{"FutureInline","I",0,"Acc3931",{0},{0},{0},0,"R",{0},{0},"",0}},{0},1,"R",{0},{0},"",0}}}"#;
+        let schema = parse_schema_storage(source).unwrap();
+
+        let inline = schema.table("_Acc3930_ExtDim3937").unwrap();
+        assert_eq!(inline.number, 3937);
+        assert_eq!(inline.columns[0].name, "Acc3930_IDRRef");
+        assert!(schema.table("_Acc3931_FutureInline").is_none());
+        assert!(schema.anomalies.iter().any(|anomaly| {
+            anomaly.table == "Acc3931_FutureInline"
+                && anomaly.detail.contains("unknown inline table kind")
+        }));
+    }
+
+    #[test]
     fn preserves_a_table_when_one_column_has_an_unknown_type_tag() {
         let source = br#"{0,{1,{"Reference35","N",35,"",{2,{"Code",0,{1,{"S",10,0,"",0}},"",0},{"Future",0,{1,{"NEW",0,0,"",0}},"",0}},{0},{0},1,"R",{0},{0},"",0}}}"#;
         let schema = parse_schema_storage(source).unwrap();
@@ -336,6 +402,15 @@ mod tests {
         assert_eq!(schema.tables[0].columns.len(), 2);
         assert_eq!(schema.tables[0].columns[0].types[0].tag, "S");
         assert_eq!(schema.tables[0].columns[1].types[0].tag, "NEW");
+    }
+
+    #[test]
+    fn omits_the_non_physical_empty_composite_member() {
+        let source = br#"{0,{1,{"Reference35","N",35,"",{1,{"Fld36",0,{2,{"E",0,0,"",0},{"R",0,0,"",4}},"",0}},{0},{0},1,"R",{0},{0},"",0}}}"#;
+        let schema = parse_schema_storage(source).unwrap();
+
+        assert_eq!(schema.tables[0].columns[0].types.len(), 1);
+        assert_eq!(schema.tables[0].columns[0].types[0].tag, "R");
     }
 
     #[test]

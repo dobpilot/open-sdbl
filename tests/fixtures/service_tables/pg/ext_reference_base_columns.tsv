@@ -1,0 +1,13 @@
+_reference14574|_idrref|bytea
+_reference14574|_version|integer
+_reference14574|_marked|boolean
+_reference14574|_predefinedid|bytea
+_reference14574|_description|USER-DEFINED
+_reference14574|_fld14575|timestamp without time zone
+_reference14574|_fld14576|timestamp without time zone
+_reference14574|_fld14577|boolean
+_reference14574|_fld14578|numeric
+_reference14574|_fld14579rref|bytea
+_reference14574|_fld11922|USER-DEFINED
+_reference14574|_fld11923|USER-DEFINED
+_reference14574|_fld731|numeric

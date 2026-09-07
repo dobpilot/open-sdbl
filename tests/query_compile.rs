@@ -1795,6 +1795,43 @@ fn bounds_total_work_for_repeated_tabular_section_union_branches() {
 }
 
 #[test]
+fn extension_projection_scans_are_budgeted_once_after_the_field_cache_miss() {
+    let snapshot = with_schema(snapshot(), |schema| {
+        schema.tables.extend(
+            (0..6_000).map(|index| schema_table(&format!("Unrelated{index}"), 0, Vec::new())),
+        );
+    });
+    let snapshot = with_live_tables(snapshot, |tables| {
+        tables.extend((0..6_000).map(|index| live_table(&format!("_unrelated{index}"), &[])));
+    });
+    let branch = "SELECT Code FROM Catalog.OpenSdblMetadataProbe";
+    let source = std::iter::repeat_n(branch, 50)
+        .collect::<Vec<_>>()
+        .join(" UNION ALL ");
+
+    QueryCompiler::new(&snapshot, PostgresBackend)
+        .compile(&source)
+        .unwrap();
+}
+
+#[test]
+fn extension_projection_catalog_scans_cannot_escape_the_work_budget() {
+    let snapshot = with_schema(snapshot(), |schema| {
+        schema.tables.extend(
+            (0..9_000).map(|index| schema_table(&format!("Unrelated{index}"), 0, Vec::new())),
+        );
+    });
+    let snapshot = with_live_tables(snapshot, |tables| {
+        tables.extend((0..9_000).map(|index| live_table(&format!("_unrelated{index}"), &[])));
+    });
+
+    let error = QueryCompiler::new(&snapshot, PostgresBackend)
+        .compile("SELECT Code FROM Catalog.OpenSdblMetadataProbe;")
+        .unwrap_err();
+    assert_eq!(error.kind(), QueryDiagnosticKind::WorkBudgetExceeded);
+}
+
+#[test]
 fn accepts_a_wide_legitimate_union_within_the_work_budget() {
     let snapshot = with_live_tables(snapshot(), |tables| {
         tables[0].columns.extend((0..160).map(|index| LiveColumn {

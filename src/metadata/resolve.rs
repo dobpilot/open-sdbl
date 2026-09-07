@@ -2,12 +2,13 @@ use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::ops::Deref;
 
-use crate::names::folded_name;
+use crate::names::{folded_name, names_equal};
 
+use super::db_names::DbNameFieldConflict;
 use super::normalize::{normalize_logical_name, normalize_standard_field_name};
 use super::{
-    AttributeId, ConfigDescriptor, ConfigFieldPurpose, ConfigPredefinedValue, DbNames, FieldId,
-    Guid, LookupError, MetadataKind, ObjectId, SchemaStorage, StandardFieldId,
+    AttributeId, ConfigDescriptor, ConfigFieldPurpose, ConfigPredefinedValue, DbNameEntry, DbNames,
+    FieldId, Guid, LookupError, MetadataKind, ObjectId, SchemaStorage, StandardFieldId,
     collapse_logical_fields, normalize_index_key, recase_postgres_identifier,
 };
 
@@ -74,6 +75,8 @@ pub struct MetadataObject {
     pub number: Option<u32>,
     /// Canonical main physical table, when tabular.
     pub physical_table: Option<String>,
+    /// Owning metadata object for a service table, when resolved.
+    pub owner: Option<ObjectId>,
     /// Whether the table is declared by SchemaStorage.
     pub declared: bool,
     /// Whether the table exists in the live PostgreSQL catalog.
@@ -105,6 +108,24 @@ pub struct MetadataField {
     pub declared: bool,
     /// Whether at least one matching physical column exists in PostgreSQL.
     pub live: bool,
+    /// Configuration-extension origin for an extension-added field.
+    pub extension_origin: Option<String>,
+}
+
+/// Caller-provided, already decoded resources belonging to one extension.
+///
+/// ConfigCAS acquisition stays in the application layer; this dependency-free
+/// value is the explicit boundary consumed by metadata resolution.
+#[derive(Debug, Clone)]
+pub struct ExtensionMetadata {
+    /// Stable identifier shown by metadata discovery.
+    pub origin: String,
+    /// Extension-side DBNames mapping.
+    pub db_names: DbNames,
+    /// Extension-side Config descriptors.
+    pub descriptors: Vec<ConfigDescriptor>,
+    /// Extension-side SchemaStorage projection, including `Xn` tables.
+    pub schema: SchemaStorage,
 }
 
 /// One resolved enumeration value or catalog predefined value.
@@ -185,6 +206,26 @@ pub enum ResolutionFinding {
         /// Expected physical table.
         table: String,
     },
+    /// A service DBNames entry has no matching SchemaStorage declaration.
+    ServiceTableMappingMissing {
+        /// Service owner GUID from DBNames.
+        guid: Guid,
+        /// Exact service alias from DBNames.
+        alias: String,
+        /// Numeric DBNames code that failed to match the declaration.
+        number: u32,
+    },
+    /// An extension reused a base DBNames field number for a different GUID.
+    ExtensionFieldNumberConflict {
+        /// Configuration-extension origin supplied by the caller.
+        extension: String,
+        /// Colliding `Fld` number.
+        number: u32,
+        /// GUID retained from the base DBNames mapping.
+        base_guid: Guid,
+        /// Conflicting GUID rejected from the extension mapping.
+        extension_guid: Guid,
+    },
     /// SchemaStorage declares a physical table absent from the live catalog.
     TableNotLive {
         /// Canonical physical table name.
@@ -231,6 +272,23 @@ impl fmt::Display for ResolutionFinding {
             Self::DescriptorMissing { guid, table } => {
                 write!(formatter, "descriptor missing for {guid} ({table})")
             }
+            Self::ServiceTableMappingMissing {
+                guid,
+                alias,
+                number,
+            } => write!(
+                formatter,
+                "service DBNames entry {alias}{number} for {guid} has no matching SchemaStorage declaration"
+            ),
+            Self::ExtensionFieldNumberConflict {
+                extension,
+                number,
+                base_guid,
+                extension_guid,
+            } => write!(
+                formatter,
+                "extension {extension:?} maps Fld{number} to {extension_guid}, but the base mapping {base_guid} was retained"
+            ),
             Self::TableNotLive { table } => write!(formatter, "table {table} is not live"),
             Self::TableNotDeclared { table } => {
                 write!(formatter, "live table {table} is absent from SchemaStorage")
@@ -524,6 +582,25 @@ pub fn resolve_metadata(
     resolve_metadata_with_predefined_values(db_names, descriptors, Vec::new(), schema, live_tables)
 }
 
+/// Resolves base metadata together with caller-provided extension resources.
+#[must_use]
+pub fn resolve_metadata_with_extensions(
+    db_names: DbNames,
+    descriptors: Vec<ConfigDescriptor>,
+    extensions: Vec<ExtensionMetadata>,
+    schema: SchemaStorage,
+    live_tables: Vec<LiveTable>,
+) -> ResolvedMetadata {
+    resolve_metadata_with_predefined_values_and_extensions(
+        db_names,
+        descriptors,
+        Vec::new(),
+        extensions,
+        schema,
+        live_tables,
+    )
+}
+
 /// Resolves authoritative 1C resources including catalog predefined values.
 #[must_use]
 pub fn resolve_metadata_with_predefined_values(
@@ -533,9 +610,70 @@ pub fn resolve_metadata_with_predefined_values(
     schema: SchemaStorage,
     live_tables: Vec<LiveTable>,
 ) -> ResolvedMetadata {
+    resolve_metadata_with_predefined_values_and_extensions(
+        db_names,
+        descriptors,
+        predefined_values,
+        Vec::new(),
+        schema,
+        live_tables,
+    )
+}
+
+/// Resolves predefined values and caller-provided extension resources.
+#[must_use]
+pub fn resolve_metadata_with_predefined_values_and_extensions(
+    mut db_names: DbNames,
+    mut descriptors: Vec<ConfigDescriptor>,
+    predefined_values: Vec<ConfigPredefinedValue>,
+    extensions: Vec<ExtensionMetadata>,
+    mut schema: SchemaStorage,
+    live_tables: Vec<LiveTable>,
+) -> ResolvedMetadata {
+    let mut extension_origins = HashMap::<u32, String>::new();
+    let mut extension_field_conflicts = Vec::<(String, DbNameFieldConflict)>::new();
+    let mut descriptor_guids = descriptors
+        .iter()
+        .map(|descriptor| descriptor.object_guid.clone())
+        .collect::<HashSet<_>>();
+    for extension in extensions {
+        let added_field_numbers = extension
+            .db_names
+            .entries()
+            .iter()
+            .filter(|entry| entry.alias == "Fld")
+            .filter(|entry| db_names.field_guid(entry.number).is_none())
+            .map(|entry| entry.number)
+            .collect::<Vec<_>>();
+        let conflicts = db_names.extend_from(extension.db_names);
+        for number in added_field_numbers {
+            extension_origins
+                .entry(number)
+                .or_insert_with(|| extension.origin.clone());
+        }
+        extension_field_conflicts.extend(
+            conflicts
+                .into_iter()
+                .map(|conflict| (extension.origin.clone(), conflict)),
+        );
+        for descriptor in extension.descriptors {
+            if descriptor_guids.insert(descriptor.object_guid.clone()) {
+                descriptors.push(descriptor);
+            }
+        }
+        schema.tables.extend(extension.schema.tables);
+        schema.anomalies.extend(extension.schema.anomalies);
+    }
     let live_table_by_name = index_live_tables(&live_tables);
     let indexes = compare_indexes(&schema, &live_tables, &live_table_by_name, &db_names);
-    let report = build_resolution_report(&db_names, &descriptors, &schema, &live_tables, &indexes);
+    let report = build_resolution_report(
+        &db_names,
+        &descriptors,
+        &schema,
+        &live_tables,
+        &indexes,
+        &extension_field_conflicts,
+    );
     let schema_tables: HashSet<String> = schema
         .tables
         .iter()
@@ -547,14 +685,20 @@ pub fn resolve_metadata_with_predefined_values(
         .iter()
         .map(|descriptor| (&descriptor.object_guid, descriptor))
         .collect();
-    let mut seen = HashSet::new();
+    let mut seen_primary = HashSet::new();
+    let mut seen_entries = HashSet::new();
     let mut objects = Vec::new();
 
     for (entry, kind) in db_names.objects() {
-        if !seen.insert(entry.guid.clone()) {
+        if entry.guid.is_nil()
+            || !seen_entries.insert((kind, entry.guid.clone(), entry.number, entry.alias.clone()))
+            || (!kind.is_service() && !seen_primary.insert(entry.guid.clone()))
+        {
             continue;
         }
-        let physical_table = format!("{}{}", kind.physical_prefix(), entry.number);
+        let Some(physical_table) = physical_table_for_entry(entry, kind, &schema) else {
+            continue;
+        };
         let descriptor = descriptor_by_guid.get(&entry.guid).copied();
         let live_table = live_table_by_name
             .get(&physical_table.to_ascii_lowercase())
@@ -562,7 +706,9 @@ pub fn resolve_metadata_with_predefined_values(
         objects.push(MetadataObject {
             guid: entry.guid.clone(),
             kind: Some(kind),
-            name: descriptor.map(|value| value.name.clone()),
+            name: descriptor
+                .map(|value| value.name.clone())
+                .or_else(|| kind.is_service().then(|| entry.alias.clone())),
             marker: descriptor.map(|value| value.marker.clone()),
             number: Some(entry.number),
             declared: schema_tables.contains(&folded_name(
@@ -572,12 +718,88 @@ pub fn resolve_metadata_with_predefined_values(
             code_allowed_length: infer_allowed_length(live_table, "_code"),
             number_allowed_length: infer_allowed_length(live_table, "_number"),
             physical_table: Some(physical_table),
+            owner: None,
         });
     }
 
+    let primary_owners = objects
+        .iter()
+        .filter(|object| object.kind.is_some_and(|kind| !kind.is_service()))
+        .filter_map(|object| {
+            object
+                .physical_table
+                .as_deref()
+                .map(|table| (folded_name(table), ObjectId::from(&object.guid)))
+        })
+        .collect::<HashMap<_, _>>();
+    let primary_by_guid = objects
+        .iter()
+        .filter(|object| object.kind.is_some_and(|kind| !kind.is_service()))
+        .map(|object| (object.guid.clone(), ObjectId::from(&object.guid)))
+        .collect::<HashMap<_, _>>();
+    for object in &mut objects {
+        if object.kind.is_some_and(MetadataKind::is_service) {
+            object.owner = primary_by_guid.get(&object.guid).copied().or_else(|| {
+                object.physical_table.as_deref().and_then(|table| {
+                    schema.table(table).and_then(|declaration| {
+                        declaration.owner.as_deref().and_then(|owner| {
+                            primary_owners
+                                .get(&folded_name(&format!("_{owner}")))
+                                .copied()
+                        })
+                    })
+                })
+            });
+        }
+    }
+    let dependency_objects = schema
+        .tables
+        .iter()
+        .filter_map(|table| {
+            let physical = table.physical_name();
+            let name = table
+                .inline_name
+                .as_deref()
+                .filter(|name| matches!(*name, "BaseCK" | "LeadingCK" | "DisplacedCK"))?;
+            let owner_table = format!("_{}", table.owner.as_deref()?);
+            if objects.iter().any(|object| {
+                object
+                    .physical_table
+                    .as_deref()
+                    .is_some_and(|candidate| names_equal(candidate, &physical))
+            }) {
+                return None;
+            }
+            let owner = objects.iter().find(|object| {
+                object.kind.is_some_and(|kind| !kind.is_service())
+                    && object
+                        .physical_table
+                        .as_deref()
+                        .is_some_and(|candidate| names_equal(candidate, &owner_table))
+            })?;
+            let live_table = live_table_by_name
+                .get(&physical.to_ascii_lowercase())
+                .map(|position| &live_tables[*position]);
+            Some(MetadataObject {
+                guid: owner.guid.clone(),
+                kind: Some(MetadataKind::CalculationKindDependency),
+                name: Some(name.to_owned()),
+                marker: None,
+                number: Some(table.number),
+                physical_table: Some(physical),
+                owner: Some(ObjectId::from(&owner.guid)),
+                declared: true,
+                live: live_table.is_some(),
+                code_allowed_length: None,
+                number_allowed_length: None,
+            })
+        })
+        .collect::<Vec<_>>();
+    objects.extend(dependency_objects);
+
     for descriptor in &descriptors {
         if descriptor.resource_guid == descriptor.object_guid
-            && seen.insert(descriptor.object_guid.clone())
+            && seen_primary.insert(descriptor.object_guid.clone())
         {
             objects.push(MetadataObject {
                 guid: descriptor.object_guid.clone(),
@@ -590,6 +812,7 @@ pub fn resolve_metadata_with_predefined_values(
                 live: false,
                 code_allowed_length: None,
                 number_allowed_length: None,
+                owner: None,
             });
         }
     }
@@ -621,11 +844,13 @@ pub fn resolve_metadata_with_predefined_values(
             live,
             owner_tables,
             data_separator: db_names.is_data_separator(entry.number),
+            extension_origin: extension_origins.get(&entry.number).cloned(),
         });
     }
 
     let object_ids = objects
         .iter()
+        .filter(|object| object.kind.is_none_or(|kind| !kind.is_service()))
         .map(|object| {
             (
                 object.guid.clone(),
@@ -769,27 +994,55 @@ fn build_resolution_report(
     schema: &SchemaStorage,
     live_tables: &[LiveTable],
     indexes: &[IndexComparison],
+    extension_field_conflicts: &[(String, DbNameFieldConflict)],
 ) -> ResolutionReport {
-    const KNOWN_COLUMN_TAGS: [&str; 8] = ["S", "N", "T", "B", "L", "R", "V", "E"];
+    const KNOWN_COLUMN_TAGS: [&str; 7] = ["S", "N", "T", "B", "L", "R", "V"];
     let mut findings = Vec::new();
+    findings.extend(
+        extension_field_conflicts
+            .iter()
+            .map(
+                |(extension, conflict)| ResolutionFinding::ExtensionFieldNumberConflict {
+                    extension: extension.clone(),
+                    number: conflict.number,
+                    base_guid: conflict.base_guid.clone(),
+                    extension_guid: conflict.extension_guid.clone(),
+                },
+            ),
+    );
     let descriptor_guids = descriptors
         .iter()
         .map(|descriptor| &descriptor.object_guid)
         .collect::<HashSet<_>>();
     let mut reported_missing = HashSet::new();
     for (entry, kind) in db_names.objects() {
-        if !descriptor_guids.contains(&entry.guid) && reported_missing.insert(entry.guid.clone()) {
+        if !entry.guid.is_nil()
+            && !kind.is_service()
+            && !descriptor_guids.contains(&entry.guid)
+            && reported_missing.insert(entry.guid.clone())
+        {
             findings.push(ResolutionFinding::DescriptorMissing {
                 guid: entry.guid.clone(),
-                table: format!("{}{}", kind.physical_prefix(), entry.number),
+                table: physical_table_for_entry(entry, kind, schema)
+                    .unwrap_or_else(|| format!("{}{}", kind.physical_prefix(), entry.number)),
+            });
+        }
+        if !entry.guid.is_nil()
+            && kind.is_service()
+            && physical_table_for_entry(entry, kind, schema).is_none()
+        {
+            findings.push(ResolutionFinding::ServiceTableMappingMissing {
+                guid: entry.guid.clone(),
+                alias: entry.alias.clone(),
+                number: entry.number,
             });
         }
     }
 
     let mut duplicate_guids = Vec::new();
     let mut seen_db_names = HashSet::new();
-    for (entry, _) in db_names.objects() {
-        if !seen_db_names.insert(&entry.guid) {
+    for (entry, kind) in db_names.objects() {
+        if !entry.guid.is_nil() && !kind.is_service() && !seen_db_names.insert(&entry.guid) {
             duplicate_guids.push(entry.guid.clone());
         }
     }
@@ -888,14 +1141,34 @@ fn index_schema_field_owners(schema: &SchemaStorage) -> HashMap<String, Vec<Stri
                 continue;
             };
             if fields_in_table.insert(field) {
-                owners
-                    .entry(field.to_owned())
-                    .or_default()
-                    .push(table.physical_name());
+                let physical = table.physical_name();
+                let field_owners = owners.entry(field.to_owned()).or_default();
+                field_owners.push(physical.clone());
+                if let Some(base) = extension_table_base(&physical)
+                    && !field_owners.iter().any(|owner| names_equal(owner, base))
+                {
+                    field_owners.push(base.to_owned());
+                }
             }
         }
     }
     owners
+}
+
+fn extension_table_base(candidate: &str) -> Option<&str> {
+    let position = candidate.rfind(['X', 'x'])?;
+    let (prefix, suffix) = candidate.split_at(position);
+    let extension_number = &suffix[1..];
+    prefix
+        .as_bytes()
+        .last()
+        .is_some_and(u8::is_ascii_digit)
+        .then_some(())
+        .filter(|()| {
+            !extension_number.is_empty()
+                && extension_number.bytes().all(|digit| digit.is_ascii_digit())
+        })
+        .map(|()| prefix)
 }
 
 fn index_live_fields(live_tables: &[LiveTable]) -> HashSet<String> {
@@ -931,7 +1204,9 @@ fn build_metadata_index(
     let mut owners_by_table = HashMap::<String, ObjectId>::new();
     for (position, object) in objects.iter().enumerate() {
         let id = ObjectId::from(&object.guid);
-        index.objects_by_id.insert(id, position);
+        if object.kind.is_none_or(|kind| !kind.is_service()) {
+            index.objects_by_id.insert(id, position);
+        }
         if let (Some(kind), Some(name)) = (object.kind, object.name.as_deref()) {
             insert_slot(
                 &mut index.objects_by_name,
@@ -939,7 +1214,10 @@ fn build_metadata_index(
                 position,
             );
         }
-        if let Some(number) = object.number {
+        if let Some(number) = object
+            .number
+            .filter(|_| object.kind.is_none_or(|kind| !kind.is_service()))
+        {
             insert_slot(&mut index.objects_by_database_type, number, id);
         }
         if let Some(table) = object.physical_table.as_deref() {
@@ -1014,6 +1292,32 @@ fn infer_allowed_length(table: Option<&LiveTable>, column_name: &str) -> Option<
         .iter()
         .find(|column| column.name.eq_ignore_ascii_case(column_name))
         .and_then(|column| AllowedLength::from_postgres_type(&column.data_type))
+}
+
+fn physical_table_for_entry(
+    entry: &DbNameEntry,
+    kind: MetadataKind,
+    schema: &SchemaStorage,
+) -> Option<String> {
+    if !kind.is_service() {
+        return Some(format!("{}{}", kind.physical_prefix(), entry.number));
+    }
+    let numbered = format!("{}{}", entry.alias, entry.number);
+    let ext_dim_name = format!("ExtDim{}", entry.number);
+    schema
+        .tables
+        .iter()
+        .find(|table| {
+            names_equal(&table.name, &entry.alias)
+                || names_equal(&table.name, &numbered)
+                || (kind == MetadataKind::ExtraDimension
+                    && table.number == entry.number
+                    && table
+                        .inline_name
+                        .as_deref()
+                        .is_some_and(|name| names_equal(name, &ext_dim_name)))
+        })
+        .map(|table| table.physical_name())
 }
 
 fn compare_indexes(
@@ -1141,6 +1445,8 @@ mod tests {
         SchemaTable {
             name: name.to_owned(),
             number: 0,
+            owner: None,
+            inline_name: None,
             columns: columns
                 .iter()
                 .map(|name| SchemaColumn {
