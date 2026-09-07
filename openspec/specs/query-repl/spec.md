@@ -227,7 +227,10 @@ the core SHALL return one deduplicated batch containing every possible
 reference target object ID needed by the query. The application SHALL answer
 with fields and a structured presentation template for each target. The core
 SHALL validate those plans and compile them to PostgreSQL without accepting raw
-SQL or metadata names from the application.
+SQL or metadata names from the application. In a joined branch, a presentation
+MAY consume a supported one-hop dereferenced field; its presentation join SHALL
+use the dereference alias as its source and SHALL reuse compatible ancestor
+joins.
 
 #### Scenario: Source reference presentation
 - **WHEN** a query applies `ПРЕДСТАВЛЕНИЕССЫЛКИ` to the source `Ссылка`
@@ -236,13 +239,30 @@ SQL or metadata names from the application.
 
 #### Scenario: Fixed reference field presentation
 - **WHEN** a reference field has one SchemaStorage target
-- **THEN** the request contains that target object GUID and generated SQL uses
-  one reusable LEFT JOIN to evaluate the target's returned template
+- **THEN** the request contains that target GUID and generated SQL uses one
+  reusable LEFT JOIN to evaluate the target's returned template
 
 #### Scenario: Multiple possible reference targets
 - **WHEN** a pure reference field can contain more than one target type
 - **THEN** the request contains every target GUID and generated SQL selects the
   corresponding template by the physical RTRef type discriminator
+
+#### Scenario: Universal reference target
+- **WHEN** SchemaStorage declares an empty `R` target and a bounded query
+  presents that reference
+- **THEN** the main SQL returns a typed deferred payload for the projected
+  value and retains its predicates and `TOP`/`LIMIT`
+
+#### Scenario: Bounded deferred lookup
+- **WHEN** the application resolves deferred payloads from returned rows
+- **THEN** it groups them by runtime RTRef object type and uses core-generated
+  batch lookup SQL with the validated presentation plan for that object only
+
+#### Scenario: Unknown runtime reference type
+- **WHEN** a deferred payload contains an RTRef discriminator absent from the
+  metadata snapshot
+- **THEN** resolution fails explicitly instead of choosing a table by name or
+  rendering the raw binary reference as a presentation
 
 #### Scenario: Scalar REFPRESENTATION
 - **WHEN** `ПРЕДСТАВЛЕНИЕССЫЛКИ` receives a non-reference expression
@@ -268,6 +288,18 @@ SQL or metadata names from the application.
 - **WHEN** a plan is missing, references a field outside its target object, or
   has an invalid expression shape
 - **THEN** compilation fails with a typed diagnostic before database execution
+
+#### Scenario: Presentation of a dereferenced JOIN field
+- **WHEN** a joined projection presents `Ссылка.ДоговорКонтрагента` or
+  `ЦФО.Сам_БизнесРегион`
+- **THEN** generated SQL first joins the owner of the selected property and
+  then joins the property's presentation target from that owner alias
+
+#### Scenario: Reused dereference ancestor
+- **WHEN** ordinary projection and presentation require the same first-hop
+  dereference
+- **THEN** generated SQL contains one shared ancestor join followed by only the
+  required presentation joins
 
 #### Scenario: Presentation through joins and unions
 - **WHEN** presentation projections occur in supported JOIN, transposed FULL
