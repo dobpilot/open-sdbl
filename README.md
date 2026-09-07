@@ -42,10 +42,14 @@ SchemaStorage. Если данные конфигурации находятся
 расширений через `resolve_metadata_with_extensions`. Реквизиты,
 добавленные расширением, доступны в проекции, фильтрах,
 сортировке и разыменовании ссылок; discovery сохраняет имя
-расширения. CLI SELECT-only читает part-zero ресурсы `ConfigCAS`
-по проверенной на опорной базе схеме и передаёт их в extension-decoder
-boundary. Разбор внутреннего content-addressed графа и автоматическое
-сопоставление `X1` пока остаются caller-provided.
+расширения. `parse_extension_restructure` декодирует ресурс
+`_ExtensionsRestruct._restructData` (авторитетный маппинг
+`GUID → Fld<N> → тип → имя реквизита`), а
+`extension_metadata_from_restructure` превращает его в
+`ExtensionMetadata`, поэтому реквизит, физически живущий только в
+таблице `X1`, становится queryable под своим именем. CLI SELECT-only
+читает `ConfigCAS` и `_ExtensionsRestruct`. Разбор внутреннего
+content-addressed графа `ConfigCAS` остаётся caller-provided.
 
 Служебные таблицы платформы из `SchemaStorage` проецируются как
 типизированные метаданные. PostgreSQL и MSSQL поддерживают новые

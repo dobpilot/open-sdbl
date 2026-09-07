@@ -218,6 +218,14 @@ pub(super) fn custom_field_name(
                     .owner_tables
                     .iter()
                     .any(|owner| names_equal(owner, physical_table))
+        })
+        .or_else(|| {
+            // Extension attributes are addressed by their globally unique
+            // field number rather than a base-declared owner table.
+            snapshot
+                .fields()
+                .iter()
+                .find(|field| field.number == number && field.extension_origin.is_some())
         })?
         .name
         .clone()
@@ -231,6 +239,7 @@ pub(super) fn indexed_custom_field_name(
     let number = schema_name.strip_prefix("Fld")?.parse::<u32>().ok()?;
     names
         .get(&(folded_name(physical_table), number))
+        .or_else(|| names.get(&(String::new(), number)))
         .cloned()
         .flatten()
 }
@@ -584,22 +593,27 @@ fn merged_extension_projection(
         .iter()
         .filter(|candidate| is_extension_table_name(physical_table, &candidate.name))
     {
-        let Some(variant_schema) = snapshot
+        let variant_schema = snapshot
             .schema()
             .tables
             .iter()
-            .find(|schema| names_equal(&schema.physical_name(), &variant.name))
-        else {
-            continue;
-        };
+            .find(|schema| names_equal(&schema.physical_name(), &variant.name));
         for column in &variant.columns {
             let logical = logical_column_name(&column.name);
-            if variant_schema.columns.iter().any(|declared| {
-                names_equal(&logical_column_name(&declared.physical_name()), &logical)
-            }) && !live
-                .columns
-                .iter()
-                .any(|existing| names_equal(&existing.name, &column.name))
+            let declared_in_variant = variant_schema.is_some_and(|variant_schema| {
+                variant_schema.columns.iter().any(|declared| {
+                    names_equal(&logical_column_name(&declared.physical_name()), &logical)
+                })
+            });
+            let is_extension_field = snapshot.fields().iter().any(|field| {
+                field.extension_origin.is_some()
+                    && names_equal(&logical_column_name(&field.physical_name), &logical)
+            });
+            if (declared_in_variant || is_extension_field)
+                && !live
+                    .columns
+                    .iter()
+                    .any(|existing| names_equal(&existing.name, &column.name))
             {
                 live.columns.push(column.clone());
             }
@@ -1128,6 +1142,14 @@ fn index_custom_field_names(snapshot: &MetadataSnapshot) -> CustomFieldNameIndex
         for owner in &field.owner_tables {
             names
                 .entry((folded_name(owner), field.number))
+                .or_insert_with(|| field.name.clone());
+        }
+        // Extension attributes are addressed by their globally unique field
+        // number: the physical `…x1` column that carries them belongs to the
+        // extended object, not to a base-declared owner table.
+        if field.extension_origin.is_some() {
+            names
+                .entry((String::new(), field.number))
                 .or_insert_with(|| field.name.clone());
         }
     }

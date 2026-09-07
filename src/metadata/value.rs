@@ -36,6 +36,13 @@ impl Value {
         }
     }
 
+    pub(crate) fn as_scalar(&self) -> Option<&str> {
+        match self {
+            Self::String(value) | Self::Atom(value) => Some(value),
+            Self::List(_) | Self::Null => None,
+        }
+    }
+
     pub(crate) fn as_u32(&self) -> Option<u32> {
         match self {
             Self::Atom(value) => value.parse().ok(),

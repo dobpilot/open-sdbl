@@ -10,6 +10,7 @@
 mod config;
 mod db_names;
 mod deflate;
+mod extension;
 mod guid;
 mod identity;
 mod normalize;
@@ -25,6 +26,9 @@ pub use config::{
 };
 pub use db_names::{DbNameEntry, DbNames, MetadataKind, parse_db_names};
 pub use deflate::{DEFAULT_OUTPUT_LIMIT, inflate_raw_deflate, inflate_raw_deflate_bounded};
+pub use extension::{
+    ExtensionFieldRestructure, extension_metadata_from_restructure, parse_extension_restructure,
+};
 pub use guid::Guid;
 pub use identity::{AttributeId, FieldId, LookupError, ObjectId, StandardFieldId};
 pub(crate) use normalize::normalize_standard_field_name;

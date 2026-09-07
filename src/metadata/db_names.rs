@@ -219,6 +219,29 @@ pub(crate) struct DbNameFieldConflict {
 }
 
 impl DbNames {
+    /// Builds a mapping from programmatically produced entries.
+    ///
+    /// Used to lift a decoded extension restructure into the same shape as a
+    /// parsed `DBNames` resource. `Fld` numbers and data-separator flags are
+    /// indexed exactly as [`parse_db_names`] would.
+    #[must_use]
+    pub fn from_entries(entries: Vec<DbNameEntry>) -> Self {
+        let mut fields = HashMap::new();
+        let separators = HashSet::new();
+        for entry in &entries {
+            if entry.alias == "Fld" {
+                fields
+                    .entry(entry.number)
+                    .or_insert_with(|| entry.guid.clone());
+            }
+        }
+        Self {
+            entries,
+            fields,
+            separators,
+        }
+    }
+
     /// Returns every valid entry in source order, including platform-owned ones.
     #[must_use]
     pub fn entries(&self) -> &[DbNameEntry] {

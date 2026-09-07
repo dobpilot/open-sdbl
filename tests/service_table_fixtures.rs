@@ -10,7 +10,8 @@ mod support;
 
 use open_sdbl::metadata::{
     ConfigDescriptor, ExtensionMetadata, LiveColumn, LiveTable, MetadataKind, ResolutionFinding,
-    SchemaStorage, Synonym, parse_db_names, parse_schema_storage, resolve_metadata,
+    SchemaStorage, Synonym, extension_metadata_from_restructure, parse_db_names,
+    parse_extension_restructure, parse_schema_storage, resolve_metadata,
     resolve_metadata_with_extensions,
 };
 use open_sdbl::query::queryable_fields;
@@ -624,4 +625,89 @@ fn change_registration_resolves_by_registered_object_ownership() {
         !second_sql.contains("\"_AccumRgChngR1273\""),
         "{second_sql}"
     );
+}
+
+#[test]
+fn extension_restructure_makes_attributes_queryable() {
+    // End-to-end for the СтавкиНДС extension case captured from the live
+    // PostgreSQL demo base: the extension restructure yields the field
+    // mapping (Fld16536/16537/16538) that base metadata never declares.
+    let owner = "e1945025-1979-4ad7-8f06-3cf53c99530a";
+    let base_decl = fixture("pg/reference14574_base_decl.txt");
+    let schema = parse_schema_storage(&schema_envelope(&[&base_decl])).unwrap();
+    let db_names = parse_db_names(&stored_deflate(
+        format!("{{1,{{{owner},\"Reference\",14574}}}}").as_bytes(),
+    ))
+    .unwrap();
+    let descriptors = vec![descriptor(owner, owner, "СтавкиНДС")];
+    let live_tables = vec![
+        live_table_from_pg_fixture("pg/ext_reference_base_columns.tsv"),
+        live_table_from_pg_fixture("pg/ext_reference_x1_columns.tsv"),
+    ];
+
+    // Base-only resolution cannot see the extension attribute.
+    let base_only = resolve_metadata(
+        db_names.clone(),
+        descriptors.clone(),
+        schema.clone(),
+        live_tables.clone(),
+    );
+    let base_object_id = base_only
+        .snapshot
+        .object_id(MetadataKind::Catalog, "СтавкиНДС")
+        .unwrap();
+    let base_object = base_only.snapshot.object_by_id(base_object_id).unwrap();
+    assert!(
+        queryable_fields(&base_only.snapshot, base_object)
+            .unwrap()
+            .iter()
+            .all(|field| field.name != "Расш1_Реквизит1")
+    );
+
+    // Resolving with the parsed restructure exposes the attributes.
+    let restructure =
+        std::fs::read("tests/fixtures/service_tables/extension_attrs/restruct_reference14574.txt")
+            .unwrap();
+    let fields = parse_extension_restructure(&restructure).unwrap();
+    let extension = extension_metadata_from_restructure("Расширение1", fields);
+    let resolved = resolve_metadata_with_extensions(
+        db_names,
+        descriptors,
+        vec![extension],
+        schema,
+        live_tables,
+    );
+    let object_id = resolved
+        .snapshot
+        .object_id(MetadataKind::Catalog, "СтавкиНДС")
+        .unwrap();
+    let object = resolved.snapshot.object_by_id(object_id).unwrap();
+    let resolved_fields = queryable_fields(&resolved.snapshot, object).unwrap();
+    let field_names: Vec<&str> = resolved_fields
+        .iter()
+        .map(|field| field.name.as_str())
+        .collect();
+    for expected in ["Расш1_Реквизит1", "Расш1_Реквизит2", "Расш1_Реквизит3"]
+    {
+        assert!(
+            field_names.iter().any(|name| *name == expected),
+            "{field_names:?}"
+        );
+    }
+
+    let query = "SELECT Расш1_Реквизит1, Расш1_Реквизит2 FROM Catalog.СтавкиНДС;";
+    let postgres = QueryCompiler::new(&resolved.snapshot, PostgresBackend)
+        .compile(query)
+        .unwrap();
+    let mssql = QueryCompiler::new(&resolved.snapshot, MsSqlBackend::default())
+        .compile(query)
+        .unwrap();
+    assert!(postgres.sql.contains("_fld16536"), "{}", postgres.sql);
+    assert!(
+        postgres.sql.contains("_reference14574x1"),
+        "{}",
+        postgres.sql
+    );
+    assert!(mssql.sql.contains("_fld16536"), "{}", mssql.sql);
+    assert_eq!(postgres.columns, mssql.columns);
 }

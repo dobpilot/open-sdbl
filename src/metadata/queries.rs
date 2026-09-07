@@ -27,6 +27,11 @@ impl PostgresMetadataQueries {
     pub const EXTENSION_RESOURCES: &'static str =
         "SELECT filename::text, binarydata FROM configcas WHERE partno = 0 ORDER BY filename";
 
+    /// Reads extension restructure records mapping extension attributes to
+    /// their physical `Fld` columns.
+    pub const EXTENSION_RESTRUCTURE: &'static str =
+        "SELECT restructdata FROM _extensionsrestruct WHERE restructdata IS NOT NULL";
+
     /// Reads the current authoritative physical schema.
     pub const SCHEMA: &'static str = "SELECT currentschema FROM schemastorage WHERE schemaid = 0";
 
@@ -35,13 +40,14 @@ impl PostgresMetadataQueries {
 
     /// Returns all acquisition statements in execution order.
     #[must_use]
-    pub const fn all() -> [&'static str; 7] {
+    pub const fn all() -> [&'static str; 8] {
         [
             Self::VERIFY_TRANSACTION,
             Self::DB_NAMES,
             Self::CONFIG_TOTALS,
             Self::CONFIG,
             Self::EXTENSION_RESOURCES,
+            Self::EXTENSION_RESTRUCTURE,
             Self::SCHEMA,
             Self::CATALOG,
         ]
@@ -81,6 +87,11 @@ impl MsSqlMetadataQueries {
     /// extension boundary, not by the database adapter.
     pub const EXTENSION_RESOURCES: &'static str = "SELECT CONVERT(nvarchar(128), [FileName]), [BinaryData] FROM [dbo].[ConfigCAS] WHERE [PartNo] = 0 ORDER BY [FileName]";
 
+    /// Reads extension restructure records mapping extension attributes to
+    /// their physical `Fld` columns.
+    pub const EXTENSION_RESTRUCTURE: &'static str =
+        "SELECT [_RestructData] FROM [dbo].[_ExtensionsRestruct] WHERE [_RestructData] IS NOT NULL";
+
     /// Reads the current authoritative physical schema.
     pub const SCHEMA: &'static str =
         "SELECT [CurrentSchema] FROM [dbo].[SchemaStorage] WHERE [SchemaID] = 0";
@@ -90,7 +101,7 @@ impl MsSqlMetadataQueries {
 
     /// Returns all acquisition statements in execution order.
     #[must_use]
-    pub const fn all() -> [&'static str; 8] {
+    pub const fn all() -> [&'static str; 9] {
         [
             Self::VERIFY_DATABASE,
             Self::YEAR_OFFSET,
@@ -98,6 +109,7 @@ impl MsSqlMetadataQueries {
             Self::CONFIG_TOTALS,
             Self::CONFIG,
             Self::EXTENSION_RESOURCES,
+            Self::EXTENSION_RESTRUCTURE,
             Self::SCHEMA,
             Self::CATALOG,
         ]
