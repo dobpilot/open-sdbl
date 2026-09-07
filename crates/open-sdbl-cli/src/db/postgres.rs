@@ -571,6 +571,18 @@ impl MetadataSource for PostgresMetadataSource<'_> {
         Ok(resources)
     }
 
+    async fn read_extension_restructures(&mut self) -> Result<Vec<Vec<u8>>, CliError> {
+        let rows = postgres_rows(
+            self.transaction()?,
+            "PostgreSQL extension restructure query",
+            PostgresMetadataQueries::EXTENSION_RESTRUCTURE,
+        )
+        .await?;
+        rows.iter()
+            .map(|row| row.try_get::<_, Vec<u8>>(0).map_err(CliError::from))
+            .collect()
+    }
+
     async fn read_schema(&mut self) -> Result<open_sdbl::metadata::SchemaStorage, CliError> {
         let rows = postgres_rows(
             self.transaction()?,

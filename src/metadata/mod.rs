@@ -27,7 +27,8 @@ pub use config::{
 pub use db_names::{DbNameEntry, DbNames, MetadataKind, parse_db_names};
 pub use deflate::{DEFAULT_OUTPUT_LIMIT, inflate_raw_deflate, inflate_raw_deflate_bounded};
 pub use extension::{
-    ExtensionFieldRestructure, extension_metadata_from_restructure, parse_extension_restructure,
+    ExtensionFieldRestructure, ExtensionRestructure, extension_metadata_from_restructure,
+    parse_extension_restructure,
 };
 pub use guid::Guid;
 pub use identity::{AttributeId, FieldId, LookupError, ObjectId, StandardFieldId};

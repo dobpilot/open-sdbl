@@ -14,9 +14,11 @@
   descriptors) that `resolve_metadata_with_extensions` merges into the
   owning object with `extension_origin` set; owner linkage by physical
   `…x1` column. Base-only resolution stays byte-identical (tested).
-- [ ] 2.2 Emit a typed finding for malformed restructure records (parser
-  currently skips them silently). Keep the existing
-  `ExtensionFieldNumberConflict` for colliding numbers.
+- [x] 2.2 `parse_extension_restructure` returns `ExtensionRestructure`
+  with a separate `anomalies` list; a `Fld`-named record that fails to
+  decode becomes `ResolutionFinding::MalformedExtensionRestructure`
+  through the resolver. The existing `ExtensionFieldNumberConflict` for
+  colliding numbers is retained.
 
 ## 3. Compilation
 
@@ -25,20 +27,24 @@
   matches a registered extension field, and both custom-name resolvers
   address extension fields by their globally unique number. Explicit
   selection and `SELECT *` return extension data.
-- [ ] 3.2 Reference-typed extension attributes (`Расш1_Реквизит3` →
-  `REF(Reference16531)`) need their `reference_target` carried into the
-  merged schema so dereference through an extension reference compiles.
-  Scalar attributes are covered by golden SQL on both dialects.
+- [x] 3.2 Reference-typed extension attributes carry their
+  `reference_target` (via `MetadataField.reference_target`, sourced from
+  the restructure) into `merged_extension_projection`, so a dereference
+  through an extension reference compiles. Verified end to end.
 
 ## 4. CLI integration
 
 - [x] 4.1 Add SELECT-only `EXTENSION_RESTRUCTURE` queries for PostgreSQL
   and MSSQL (`_ExtensionsRestruct`), included in `all()` and covered by
   the SELECT-only test.
-- [ ] 4.2 Pipeline decodes the restructure (via
-  `parse_extension_restructure` + `extension_metadata_from_restructure`)
-  and passes it to `resolve_metadata_with_extensions`, replacing the
-  empty `read_extensions` stub.
+- [x] 4.2 The unified pipeline reads `_ExtensionsRestruct` (new trait
+  method on both providers), decodes each blob via
+  `parse_extension_restructure` + `extension_metadata_from_restructure`
+  in `decode_extension_restructures`, and merges the result into
+  `resolve_metadata_with_extensions`. A blob that fails to decode is
+  skipped with a warning. Verified live against the `demo` base:
+  `SELECT Расш1_Реквизит1, Расш1_Реквизит2 FROM Справочник.СтавкиНДС`
+  returns extension data.
 
 ## 5. Verification
 

@@ -6,6 +6,16 @@ use super::schema::SchemaStorage;
 use super::value::{Value, parse_serialized};
 use super::{ExtensionMetadata, Guid, MetadataError, MetadataErrorKind, inflate_raw_deflate};
 
+/// The decoded extension restructure: recognized fields plus malformed
+/// records that resemble a field declaration but could not be interpreted.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ExtensionRestructure {
+    /// Successfully decoded extension attribute records.
+    pub fields: Vec<ExtensionFieldRestructure>,
+    /// Human-readable descriptions of malformed field-like records.
+    pub anomalies: Vec<String>,
+}
+
 /// One extension-added attribute as recorded by the restructure resource.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ExtensionFieldRestructure {
@@ -32,15 +42,13 @@ pub struct ExtensionFieldRestructure {
 ///
 /// Returns [`MetadataError`] when the resource cannot be decoded as the
 /// brace-serialized restructure format.
-pub fn parse_extension_restructure(
-    resource: &[u8],
-) -> Result<Vec<ExtensionFieldRestructure>, MetadataError> {
+pub fn parse_extension_restructure(resource: &[u8]) -> Result<ExtensionRestructure, MetadataError> {
     let text = decode_restructure_text(resource)?;
     let wrapped = format!("{{{}}}", text.trim_start_matches('\u{feff}'));
     let value = parse_serialized(wrapped.as_bytes())?;
-    let mut fields = Vec::new();
-    collect_fields(&value, &mut fields);
-    Ok(fields)
+    let mut restructure = ExtensionRestructure::default();
+    collect_fields(&value, &mut restructure);
+    Ok(restructure)
 }
 
 /// Builds caller-ready [`ExtensionMetadata`] from a decoded restructure.
@@ -52,11 +60,13 @@ pub fn parse_extension_restructure(
 #[must_use]
 pub fn extension_metadata_from_restructure(
     origin: impl Into<String>,
-    fields: Vec<ExtensionFieldRestructure>,
+    restructure: ExtensionRestructure,
 ) -> ExtensionMetadata {
     let origin = origin.into();
+    let ExtensionRestructure { fields, anomalies } = restructure;
     let mut entries = Vec::with_capacity(fields.len());
     let mut descriptors = Vec::with_capacity(fields.len());
+    let mut field_reference_targets = Vec::new();
     for field in &fields {
         entries.push(DbNameEntry {
             guid: field.guid.clone(),
@@ -73,6 +83,9 @@ pub fn extension_metadata_from_restructure(
             field_purpose: None,
             enumeration_value: false,
         });
+        if let Some(target) = &field.reference_target {
+            field_reference_targets.push((field.number, target.clone()));
+        }
     }
     ExtensionMetadata {
         origin,
@@ -82,6 +95,8 @@ pub fn extension_metadata_from_restructure(
             tables: Vec::new(),
             anomalies: Vec::new(),
         },
+        field_reference_targets,
+        restructure_anomalies: anomalies,
     }
 }
 
@@ -105,19 +120,45 @@ fn decode_restructure_text(resource: &[u8]) -> Result<String, MetadataError> {
     })
 }
 
-fn collect_fields(value: &Value, fields: &mut Vec<ExtensionFieldRestructure>) {
+fn collect_fields(value: &Value, restructure: &mut ExtensionRestructure) {
     let Value::List(items) = value else {
         return;
     };
-    if let Some(field) = field_record(items) {
-        fields.push(field);
+    match field_record(items) {
+        FieldRecord::Field(field) => restructure.fields.push(field),
+        FieldRecord::Malformed(detail) => restructure.anomalies.push(detail),
+        FieldRecord::NotAField => {}
     }
     for item in items {
-        collect_fields(item, fields);
+        collect_fields(item, restructure);
     }
 }
 
-fn field_record(items: &[Value]) -> Option<ExtensionFieldRestructure> {
+enum FieldRecord {
+    Field(ExtensionFieldRestructure),
+    Malformed(String),
+    NotAField,
+}
+
+/// Classifies a list node. A record is treated as a field declaration when its
+/// second element is a `Fld*` name string; only then is a decode failure a
+/// reportable anomaly rather than an unrelated node.
+fn field_record(items: &[Value]) -> FieldRecord {
+    let Some(physical) = items.get(1).and_then(Value::as_string) else {
+        return FieldRecord::NotAField;
+    };
+    if !physical.starts_with("Fld") {
+        return FieldRecord::NotAField;
+    }
+    let Some(field) = decode_field_record(items) else {
+        return FieldRecord::Malformed(format!(
+            "malformed extension restructure record for {physical:?}"
+        ));
+    };
+    FieldRecord::Field(field)
+}
+
+fn decode_field_record(items: &[Value]) -> Option<ExtensionFieldRestructure> {
     let guid = Guid::from_str(items.first()?.as_scalar()?).ok()?;
     let physical = items.get(1)?.as_string()?;
     let number = physical.strip_prefix("Fld")?.parse::<u32>().ok()?;
@@ -151,7 +192,9 @@ mod tests {
 
     #[test]
     fn parses_the_three_extension_attributes() {
-        let fields = parse_extension_restructure(&fixture()).unwrap();
+        let restructure = parse_extension_restructure(&fixture()).unwrap();
+        let fields = restructure.fields;
+        assert!(restructure.anomalies.is_empty());
         assert_eq!(fields.len(), 3);
         assert_eq!(fields[0].number, 16536);
         assert_eq!(fields[0].name, "Расш1_Реквизит1");
@@ -167,11 +210,25 @@ mod tests {
 
     #[test]
     fn builds_extension_metadata_with_field_mapping() {
-        let fields = parse_extension_restructure(&fixture()).unwrap();
-        let metadata = extension_metadata_from_restructure("Расширение1", fields);
+        let restructure = parse_extension_restructure(&fixture()).unwrap();
+        let metadata = extension_metadata_from_restructure("Расширение1", restructure);
         assert_eq!(metadata.origin, "Расширение1");
         assert!(metadata.db_names.field_guid(16536).is_some());
         assert_eq!(metadata.descriptors.len(), 3);
         assert_eq!(metadata.descriptors[0].name, "Расш1_Реквизит1");
+    }
+
+    #[test]
+    fn reports_a_malformed_field_record_and_keeps_valid_ones() {
+        // A `Fld`-named record whose GUID is invalid is a reportable anomaly,
+        // while a non-`Fld` sibling node is ignored silently.
+        let text = r#"{root,{ {bad-guid,"Fld9001","STRING(1)","Broken"},
+            {7d8d7de3-4c7c-45da-82fa-7f097d38a173,"Fld16536","STRING(10)","Good"},
+            {something,"NotAField","x","y"} }}"#;
+        let restructure = parse_extension_restructure(text.as_bytes()).unwrap();
+        assert_eq!(restructure.fields.len(), 1);
+        assert_eq!(restructure.fields[0].number, 16536);
+        assert_eq!(restructure.anomalies.len(), 1);
+        assert!(restructure.anomalies[0].contains("Fld9001"));
     }
 }

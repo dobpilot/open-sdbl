@@ -488,6 +488,18 @@ impl MetadataSource for MsSqlMetadataSource<'_> {
         Ok(resources)
     }
 
+    async fn read_extension_restructures(&mut self) -> Result<Vec<Vec<u8>>, CliError> {
+        let rows = mssql_rows(
+            self.session.client_mut()?,
+            "MSSQL extension restructure query",
+            MsSqlMetadataQueries::EXTENSION_RESTRUCTURE,
+        )
+        .await?;
+        rows.iter()
+            .map(|row| required_mssql_bytes(row, 0, "extension restructure payload"))
+            .collect()
+    }
+
     async fn read_schema(&mut self) -> Result<open_sdbl::metadata::SchemaStorage, CliError> {
         let rows = mssql_rows(
             self.session.client_mut()?,

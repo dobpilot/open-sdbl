@@ -110,6 +110,8 @@ pub struct MetadataField {
     pub live: bool,
     /// Configuration-extension origin for an extension-added field.
     pub extension_origin: Option<String>,
+    /// Canonical reference target for a reference-typed extension attribute.
+    pub reference_target: Option<String>,
 }
 
 /// Caller-provided, already decoded resources belonging to one extension.
@@ -126,6 +128,11 @@ pub struct ExtensionMetadata {
     pub descriptors: Vec<ConfigDescriptor>,
     /// Extension-side SchemaStorage projection, including `Xn` tables.
     pub schema: SchemaStorage,
+    /// Reference targets for reference-typed extension attributes, keyed by
+    /// physical `Fld` number.
+    pub field_reference_targets: Vec<(u32, String)>,
+    /// Malformed restructure records surfaced as resolution findings.
+    pub restructure_anomalies: Vec<String>,
 }
 
 /// One resolved enumeration value or catalog predefined value.
@@ -226,6 +233,13 @@ pub enum ResolutionFinding {
         /// Conflicting GUID rejected from the extension mapping.
         extension_guid: Guid,
     },
+    /// A malformed record in an extension restructure resource.
+    MalformedExtensionRestructure {
+        /// Configuration-extension origin supplied by the caller.
+        extension: String,
+        /// Human-readable description of the malformed record.
+        detail: String,
+    },
     /// SchemaStorage declares a physical table absent from the live catalog.
     TableNotLive {
         /// Canonical physical table name.
@@ -288,6 +302,10 @@ impl fmt::Display for ResolutionFinding {
             } => write!(
                 formatter,
                 "extension {extension:?} maps Fld{number} to {extension_guid}, but the base mapping {base_guid} was retained"
+            ),
+            Self::MalformedExtensionRestructure { extension, detail } => write!(
+                formatter,
+                "extension {extension:?} restructure record is malformed: {detail}"
             ),
             Self::TableNotLive { table } => write!(formatter, "table {table} is not live"),
             Self::TableNotDeclared { table } => {
@@ -631,7 +649,9 @@ pub fn resolve_metadata_with_predefined_values_and_extensions(
     live_tables: Vec<LiveTable>,
 ) -> ResolvedMetadata {
     let mut extension_origins = HashMap::<u32, String>::new();
+    let mut extension_targets = HashMap::<u32, String>::new();
     let mut extension_field_conflicts = Vec::<(String, DbNameFieldConflict)>::new();
+    let mut extension_restructure_anomalies = Vec::<(String, String)>::new();
     let mut descriptor_guids = descriptors
         .iter()
         .map(|descriptor| descriptor.object_guid.clone())
@@ -661,8 +681,17 @@ pub fn resolve_metadata_with_predefined_values_and_extensions(
                 descriptors.push(descriptor);
             }
         }
+        for (number, target) in extension.field_reference_targets {
+            extension_targets.entry(number).or_insert(target);
+        }
         schema.tables.extend(extension.schema.tables);
         schema.anomalies.extend(extension.schema.anomalies);
+        extension_restructure_anomalies.extend(
+            extension
+                .restructure_anomalies
+                .into_iter()
+                .map(|detail| (extension.origin.clone(), detail)),
+        );
     }
     let live_table_by_name = index_live_tables(&live_tables);
     let indexes = compare_indexes(&schema, &live_tables, &live_table_by_name, &db_names);
@@ -673,6 +702,7 @@ pub fn resolve_metadata_with_predefined_values_and_extensions(
         &live_tables,
         &indexes,
         &extension_field_conflicts,
+        &extension_restructure_anomalies,
     );
     let schema_tables: HashSet<String> = schema
         .tables
@@ -680,6 +710,7 @@ pub fn resolve_metadata_with_predefined_values_and_extensions(
         .map(|table| folded_name(&table.name))
         .collect();
     let schema_field_owners = index_schema_field_owners(&schema);
+    let schema_field_targets = index_schema_field_targets(&schema);
     let live_fields = index_live_fields(&live_tables);
     let descriptor_by_guid: HashMap<&Guid, &ConfigDescriptor> = descriptors
         .iter()
@@ -845,6 +876,10 @@ pub fn resolve_metadata_with_predefined_values_and_extensions(
             owner_tables,
             data_separator: db_names.is_data_separator(entry.number),
             extension_origin: extension_origins.get(&entry.number).cloned(),
+            reference_target: schema_field_targets
+                .get(&logical_name)
+                .or_else(|| extension_targets.get(&entry.number))
+                .cloned(),
         });
     }
 
@@ -995,9 +1030,20 @@ fn build_resolution_report(
     live_tables: &[LiveTable],
     indexes: &[IndexComparison],
     extension_field_conflicts: &[(String, DbNameFieldConflict)],
+    extension_restructure_anomalies: &[(String, String)],
 ) -> ResolutionReport {
     const KNOWN_COLUMN_TAGS: [&str; 7] = ["S", "N", "T", "B", "L", "R", "V"];
     let mut findings = Vec::new();
+    findings.extend(
+        extension_restructure_anomalies
+            .iter()
+            .map(
+                |(extension, detail)| ResolutionFinding::MalformedExtensionRestructure {
+                    extension: extension.clone(),
+                    detail: detail.clone(),
+                },
+            ),
+    );
     findings.extend(
         extension_field_conflicts
             .iter()
@@ -1130,6 +1176,25 @@ fn index_live_tables(live_tables: &[LiveTable]) -> HashMap<String, usize> {
             .or_insert(position);
     }
     by_name
+}
+
+fn index_schema_field_targets(schema: &SchemaStorage) -> HashMap<String, String> {
+    let mut targets = HashMap::<String, String>::new();
+    for table in &schema.tables {
+        for column in &table.columns {
+            let Some(field) = canonical_field_base(&column.name) else {
+                continue;
+            };
+            if let Some(target) = column
+                .types
+                .iter()
+                .find_map(|column_type| column_type.reference_target.clone())
+            {
+                targets.entry(field.to_owned()).or_insert(target);
+            }
+        }
+    }
+    targets
 }
 
 fn index_schema_field_owners(schema: &SchemaStorage) -> HashMap<String, Vec<String>> {

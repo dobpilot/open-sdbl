@@ -644,6 +644,48 @@ fn merged_extension_projection(
             }
         }
     }
+    // Reference targets of extension attributes live only in the extension's
+    // carrier declaration, keyed by field number rather than by this table.
+    // Surface them so a reference-typed extension attribute dereferences.
+    for column in &live.columns {
+        let logical = logical_column_name(&column.name);
+        let Some(number) = logical
+            .strip_prefix("Fld")
+            .and_then(|n| n.parse::<u32>().ok())
+        else {
+            continue;
+        };
+        let Some(target) = snapshot.fields().iter().find_map(|field| {
+            (field.extension_origin.is_some()
+                && field.number == number
+                && field.reference_target.is_some())
+            .then(|| field.reference_target.clone())
+            .flatten()
+        }) else {
+            continue;
+        };
+        let merged = schema.get_or_insert_with(|| SchemaTable {
+            name: physical_table.trim_start_matches('_').to_owned(),
+            number: 0,
+            owner: None,
+            inline_name: None,
+            columns: Vec::new(),
+            indexes: Vec::new(),
+        });
+        if !merged
+            .columns
+            .iter()
+            .any(|existing| names_equal(&logical_column_name(&existing.name), &logical))
+        {
+            merged.columns.push(SchemaColumn {
+                name: logical.clone(),
+                types: vec![crate::metadata::ColumnType {
+                    tag: "R".to_owned(),
+                    reference_target: Some(target),
+                }],
+            });
+        }
+    }
     (live, schema)
 }
 

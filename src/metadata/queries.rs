@@ -30,7 +30,7 @@ impl PostgresMetadataQueries {
     /// Reads extension restructure records mapping extension attributes to
     /// their physical `Fld` columns.
     pub const EXTENSION_RESTRUCTURE: &'static str =
-        "SELECT restructdata FROM _extensionsrestruct WHERE restructdata IS NOT NULL";
+        "SELECT _restructdata FROM _extensionsrestruct WHERE _restructdata IS NOT NULL";
 
     /// Reads the current authoritative physical schema.
     pub const SCHEMA: &'static str = "SELECT currentschema FROM schemastorage WHERE schemaid = 0";

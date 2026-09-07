@@ -5,7 +5,8 @@ use std::time::Duration;
 use futures_util::{Stream, StreamExt};
 use open_sdbl::metadata::{
     ExtensionMetadata, LiveColumn, LiveIndex, LiveTable, MetadataSnapshot,
-    parse_config_resource_bounded, resolve_metadata_with_predefined_values_and_extensions,
+    extension_metadata_from_restructure, parse_config_resource_bounded,
+    parse_extension_restructure, resolve_metadata_with_predefined_values_and_extensions,
 };
 use tokio::sync::Semaphore;
 use tokio::time::timeout;
@@ -56,6 +57,32 @@ pub(crate) fn decode_catalog_values(rows: Vec<[String; 5]>) -> Result<Vec<LiveTa
     Ok(tables.into_values().collect())
 }
 
+/// Decodes `_ExtensionsRestruct._restructData` blobs into extension metadata.
+///
+/// One `ExtensionMetadata` is produced per blob that yields recognized fields
+/// or anomalies. A blob that fails to decode is skipped with a stderr warning
+/// rather than aborting acquisition; a poisoned extension resource must not
+/// prevent reading the base configuration.
+fn decode_extension_restructures(blobs: Vec<Vec<u8>>) -> Vec<ExtensionMetadata> {
+    let mut extensions = Vec::new();
+    for blob in blobs {
+        match parse_extension_restructure(&blob) {
+            Ok(restructure) => {
+                if !restructure.fields.is_empty() || !restructure.anomalies.is_empty() {
+                    extensions.push(extension_metadata_from_restructure(
+                        "configuration extension",
+                        restructure,
+                    ));
+                }
+            }
+            Err(error) => {
+                eprintln!("warning: skipping malformed extension restructure: {error}");
+            }
+        }
+    }
+    extensions
+}
+
 pub(crate) type ConfigMetadata = (
     Vec<open_sdbl::metadata::ConfigDescriptor>,
     Vec<open_sdbl::metadata::ConfigPredefinedValue>,
@@ -75,6 +102,9 @@ pub(crate) trait MetadataSource {
         &mut self,
         _resources: Vec<ConfigResource>,
     ) -> Result<Vec<ExtensionMetadata>, CliError> {
+        Ok(Vec::new())
+    }
+    async fn read_extension_restructures(&mut self) -> Result<Vec<Vec<u8>>, CliError> {
         Ok(Vec::new())
     }
     async fn read_schema(&mut self) -> Result<open_sdbl::metadata::SchemaStorage, CliError>;
@@ -97,7 +127,15 @@ pub(crate) async fn acquire_metadata(
 
         progress.phase("extensions");
         let extension_resources = source.read_extension_resources().await?;
-        let extensions = source.read_extensions(extension_resources).await?;
+        let mut extensions = source.read_extensions(extension_resources).await?;
+        let restructure_blobs = source.read_extension_restructures().await?;
+        if !restructure_blobs.is_empty() {
+            let decoded = run_metadata_blocking("extension restructure", move || {
+                Ok(decode_extension_restructures(restructure_blobs))
+            })
+            .await?;
+            extensions.extend(decoded);
+        }
 
         progress.phase("SchemaStorage");
         let schema = source.read_schema().await?;

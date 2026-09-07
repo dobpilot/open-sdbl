@@ -311,6 +311,8 @@ fn extension_adds_columns_absent_from_the_base_declaration() {
             descriptor(owner, field_guids[2], "ExtensionReference"),
         ],
         schema: extension_schema,
+        field_reference_targets: Vec::new(),
+        restructure_anomalies: Vec::new(),
     };
     let resolved = resolve_metadata_with_extensions(
         base_db_names,
@@ -391,6 +393,8 @@ fn extension_field_number_collision_retains_the_base_mapping_and_reports_it() {
             db_names: extension_db_names,
             descriptors: vec![descriptor(base_guid, extension_guid, "ExtensionField")],
             schema: empty_schema(),
+            field_reference_targets: Vec::new(),
+            restructure_anomalies: Vec::new(),
         }],
         empty_schema(),
         Vec::new(),
@@ -710,4 +714,98 @@ fn extension_restructure_makes_attributes_queryable() {
     );
     assert!(mssql.sql.contains("_fld16536"), "{}", mssql.sql);
     assert_eq!(postgres.columns, mssql.columns);
+}
+
+#[test]
+fn extension_reference_attribute_dereferences() {
+    // Fld16538 is a REF(...) extension attribute: its reference target must
+    // reach the resolved field so a dereference through it compiles.
+    let owner = "e1945025-1979-4ad7-8f06-3cf53c99530a";
+    let target = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee";
+    let field_guids = [
+        "22222222-2222-4222-8222-222222222222",
+        "33333333-3333-4333-8333-333333333333",
+        "44444444-4444-4444-8444-444444444444",
+    ];
+    let base_decl = fixture("pg/reference14574_base_decl.txt");
+    let target_decl = r#"{"Reference16531","N",16531,"",{2,{"ID",0,{1,{"R",0,0,"Reference16531",2}},"",0},{"Description",0,{1,{"S",50,0,"",0}},"",0}},{0},{0},1,"R",{0},{0},"",0}"#;
+    let schema = parse_schema_storage(&schema_envelope(&[&base_decl, target_decl])).unwrap();
+    let db_names = parse_db_names(&stored_deflate(
+        format!("{{2,{{{owner},\"Reference\",14574}},{{{target},\"Reference\",16531}}}}")
+            .as_bytes(),
+    ))
+    .unwrap();
+    let descriptors = vec![
+        descriptor(owner, owner, "СтавкиНДС"),
+        descriptor(target, target, "ВалютаУчета"),
+    ];
+    let live_tables = vec![
+        live_table_from_pg_fixture("pg/ext_reference_base_columns.tsv"),
+        live_table_from_pg_fixture("pg/ext_reference_x1_columns.tsv"),
+        LiveTable {
+            name: "_reference16531".to_owned(),
+            columns: [("_idrref", "bytea"), ("_description", "mvarchar(50)")]
+                .into_iter()
+                .map(|(name, data_type)| LiveColumn {
+                    name: name.to_owned(),
+                    data_type: data_type.to_owned(),
+                })
+                .collect(),
+            indexes: Vec::new(),
+        },
+    ];
+    // Restructure declares Fld16538 as REF(Reference16531).
+    let restructure = open_sdbl::metadata::ExtensionRestructure {
+        fields: vec![open_sdbl::metadata::ExtensionFieldRestructure {
+            guid: field_guids[2].parse().unwrap(),
+            number: 16538,
+            name: "Расш1_Реквизит3".to_owned(),
+            sql_type: "REF(Reference16531)".to_owned(),
+            reference_target: Some("Reference16531".to_owned()),
+        }],
+        anomalies: Vec::new(),
+    };
+    let extension = extension_metadata_from_restructure("Расширение1", restructure);
+    let resolved = resolve_metadata_with_extensions(
+        db_names,
+        descriptors,
+        vec![extension],
+        schema,
+        live_tables,
+    );
+
+    let query = "SELECT Расш1_Реквизит3.Description FROM Catalog.СтавкиНДС;";
+    let postgres = QueryCompiler::new(&resolved.snapshot, PostgresBackend)
+        .compile(query)
+        .unwrap();
+    assert!(postgres.sql.contains("_reference16531"), "{}", postgres.sql);
+    let _ = field_guids;
+}
+
+#[test]
+fn resolve_reports_malformed_extension_restructure() {
+    let owner = "e1945025-1979-4ad7-8f06-3cf53c99530a";
+    let base_decl = fixture("pg/reference14574_base_decl.txt");
+    let schema = parse_schema_storage(&schema_envelope(&[&base_decl])).unwrap();
+    let db_names = parse_db_names(&stored_deflate(
+        format!("{{1,{{{owner},\"Reference\",14574}}}}").as_bytes(),
+    ))
+    .unwrap();
+    let restructure = open_sdbl::metadata::ExtensionRestructure {
+        fields: Vec::new(),
+        anomalies: vec!["malformed extension restructure record for \"Fld9001\"".to_owned()],
+    };
+    let extension = extension_metadata_from_restructure("Расширение1", restructure);
+    let resolved = resolve_metadata_with_extensions(
+        db_names,
+        vec![descriptor(owner, owner, "СтавкиНДС")],
+        vec![extension],
+        schema,
+        Vec::new(),
+    );
+    assert!(resolved.report.findings().iter().any(|finding| matches!(
+        finding,
+        ResolutionFinding::MalformedExtensionRestructure { extension, detail }
+            if extension == "Расширение1" && detail.contains("Fld9001")
+    )));
 }
