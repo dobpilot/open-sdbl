@@ -693,10 +693,7 @@ fn extension_restructure_makes_attributes_queryable() {
         .collect();
     for expected in ["Расш1_Реквизит1", "Расш1_Реквизит2", "Расш1_Реквизит3"]
     {
-        assert!(
-            field_names.iter().any(|name| *name == expected),
-            "{field_names:?}"
-        );
+        assert!(field_names.contains(&expected), "{field_names:?}");
     }
 
     let query = "SELECT Расш1_Реквизит1, Расш1_Реквизит2 FROM Catalog.СтавкиНДС;";
