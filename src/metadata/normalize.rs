@@ -146,7 +146,15 @@ where
 
 pub(crate) fn normalize_logical_name(canonical: &str) -> String {
     let logical = logical_base(canonical);
-    logical.strip_prefix('_').unwrap_or(logical).to_owned()
+    let trimmed = logical.strip_prefix('_').unwrap_or(logical);
+    if trimmed.is_empty() {
+        // A bare type member (`_Type`, `_RTRef`, `_RRRef`) has no base name;
+        // it is the standalone value-type field of a chart of characteristic
+        // types. Collapse its members into one logical `Type` field so the
+        // projection never emits an empty column alias.
+        return "Type".to_owned();
+    }
+    trimmed.to_owned()
 }
 
 pub(crate) fn normalize_standard_field_name(logical: &str) -> &str {
@@ -252,5 +260,18 @@ mod tests {
         assert_eq!(normalize_logical_name("__Date_Time"), "_Date_Time");
         assert_eq!(normalize_standard_field_name("Date_Time"), "Date");
         assert_eq!(normalize_standard_field_name("Period"), "Period");
+    }
+
+    #[test]
+    fn collapses_a_bare_value_type_field_without_an_empty_name() {
+        // Chart-of-characteristic-types value field: bare type members with
+        // no base name must not produce an empty logical/output name.
+        assert_eq!(normalize_logical_name("_Type"), "Type");
+        assert_eq!(normalize_logical_name("_RTRef"), "Type");
+        assert_eq!(normalize_logical_name("_RRRef"), "Type");
+        let fields = collapse_logical_fields(["_Type", "_RTRef", "_RRRef"]);
+        assert_eq!(fields.len(), 1);
+        assert_eq!(fields[0].name, "Type");
+        assert_eq!(fields[0].physical_columns.len(), 3);
     }
 }
