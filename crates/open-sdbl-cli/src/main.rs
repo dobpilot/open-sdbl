@@ -11,6 +11,7 @@ use tokio::time::timeout;
 
 mod args;
 mod auth;
+mod cells;
 mod db;
 mod error;
 mod net;
@@ -32,7 +33,7 @@ use auth::pgpass::reject_password_file_owner;
 use auth::pgpass::{EnvironmentSecret, parse_password_line, read_password_file};
 use db::mssql::MsSqlSession;
 #[cfg(test)]
-use db::mssql::{apply_mssql_cleanup, format_mssql_binary};
+use db::mssql::apply_mssql_cleanup;
 use db::postgres::PostgresSession;
 #[cfg(test)]
 use db::postgres::{await_postgres_driver, connect_postgres_raw};
@@ -201,7 +202,7 @@ async fn query_timeout<T>(
     bounded_database_call(label, QUERY_TIMEOUT, future).await
 }
 
-pub(crate) type QueryRows = Vec<Vec<Option<String>>>;
+pub(crate) type QueryRows = Vec<Vec<cells::Cell>>;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum DatabaseDialect {
@@ -325,10 +326,9 @@ mod tests {
         MAX_CELL_WIDTH, MAX_PRINTED_ROWS, MSSQL_VERIFY_READONLY, MetadataProgress, MsSqlConnection,
         MsSqlSession, PostgresConnection, PostgresSslMode, Socks5Proxy, apply_mssql_cleanup,
         await_postgres_driver, bounded_database_call, bounded_field, connect_postgres_raw,
-        connect_socks5, decode_catalog_values, decode_config_stream, escape_field,
-        format_mssql_binary, lex, parse_connection, parse_password_line, parse_socks5_proxy,
-        read_password_file, render_metadata_progress, run_lex, select_postgres_sslmode,
-        socks5_connect_request,
+        connect_socks5, decode_catalog_values, decode_config_stream, escape_field, lex,
+        parse_connection, parse_password_line, parse_socks5_proxy, read_password_file,
+        render_metadata_progress, run_lex, select_postgres_sslmode, socks5_connect_request,
     };
     use open_sdbl::metadata::{FieldId, MetadataSnapshot, StandardFieldId};
     use open_sdbl::query::{
@@ -445,8 +445,8 @@ mod tests {
             .unwrap();
         assert!(!rows.is_empty());
         for row in rows {
-            let version = row[0].as_deref().unwrap();
-            assert!(version > "0x00000000000007D6");
+            let version = row[0].render();
+            assert!(version.as_ref() > "0x00000000000007D6");
             assert_eq!(version.len(), 18);
         }
         session.close().await.unwrap();
@@ -473,7 +473,7 @@ mod tests {
         assert_eq!(direct_rows.len(), 3);
         assert!(direct_rows.iter().all(|row| {
             row[2]
-                .as_deref()
+                .as_text()
                 .is_some_and(|description| !description.trim().is_empty())
         }));
 
@@ -490,7 +490,7 @@ mod tests {
         assert_eq!(dereference_rows.len(), 3);
         assert!(dereference_rows.iter().all(|row| {
             row[0]
-                .as_deref()
+                .as_text()
                 .is_some_and(|description| !description.trim().is_empty())
         }));
 
@@ -506,19 +506,14 @@ mod tests {
             .unwrap();
         assert!(!presentation_rows.is_empty());
         assert!(presentation_rows.iter().all(|row| {
-            let reference = row[1].as_deref();
-            let value = row[2].as_deref();
+            let reference = row[1].as_text();
+            let value = row[2].as_text();
             reference == value
                 && reference.is_some_and(|presentation| {
                     !presentation.trim().is_empty() && presentation != " ()"
                 })
         }));
         session.close().await.unwrap();
-    }
-
-    #[test]
-    fn renders_mssql_binary_as_hexadecimal_text() {
-        assert_eq!(format_mssql_binary(&[0x00, 0x7d, 0xd6]), "0x007DD6");
     }
 
     #[test]

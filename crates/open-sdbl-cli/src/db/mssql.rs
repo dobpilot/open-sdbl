@@ -3,9 +3,7 @@ use open_sdbl::metadata::{
     LiveTable, MetadataSnapshot, MsSqlMetadataQueries, parse_db_names, parse_schema_storage,
 };
 use open_sdbl::query::MsSqlBackend;
-use tiberius::{
-    AuthMethod, Client as MsSqlClient, ColumnType as MsSqlColumnType, Config as MsSqlConfig,
-};
+use tiberius::{AuthMethod, Client as MsSqlClient, ColumnData, Config as MsSqlConfig};
 use tokio::net::TcpStream;
 use tokio::time::timeout;
 use tokio_util::compat::{Compat, TokioAsyncWriteCompatExt};
@@ -13,6 +11,10 @@ use zeroize::Zeroizing;
 
 use crate::args::MsSqlConnection;
 use crate::auth::pgpass::Credentials;
+use crate::cells::{
+    Cell, DAYS_FROM_1900_TO_UNIX_EPOCH, DAYS_FROM_YEAR_ONE_TO_UNIX_EPOCH, DateTimeParts,
+    format_scaled_integer,
+};
 use crate::error::CliError;
 use crate::net::socks5::{connect_socks5, socks5_password};
 use crate::pipeline::{
@@ -317,11 +319,7 @@ impl MsSqlSession {
                 .await
                 .map_err(CliError::mssql_query)?;
             rows.iter()
-                .map(|row| {
-                    (0..column_count)
-                        .map(|index| mssql_cell_text(row, index))
-                        .collect()
-                })
+                .map(|row| mssql_row(row, column_count))
                 .collect()
         })
         .await;
@@ -354,34 +352,85 @@ fn should_disconnect_after_mssql_error(error: &CliError) -> bool {
     error.requires_mssql_disconnect()
 }
 
-fn mssql_cell_text(row: &tiberius::Row, index: usize) -> Result<Option<String>, CliError> {
-    let column = row.columns().get(index).ok_or_else(|| {
-        CliError::Data(format!(
-            "MSSQL returned {} columns, but column {index} was requested",
+fn mssql_row(row: &tiberius::Row, column_count: usize) -> Result<Vec<Cell>, CliError> {
+    if row.columns().len() < column_count {
+        return Err(CliError::Data(format!(
+            "MSSQL returned {} columns, but {column_count} were expected",
             row.columns().len()
-        ))
-    })?;
-    match column.column_type() {
-        MsSqlColumnType::BigVarBin | MsSqlColumnType::BigBinary | MsSqlColumnType::Image => row
-            .try_get::<&[u8], _>(index)
-            .map(|value| value.map(format_mssql_binary))
-            .map_err(CliError::mssql_query),
-        _ => row
-            .try_get::<&str, _>(index)
-            .map(|value| value.map(str::to_owned))
-            .map_err(CliError::mssql_query),
+        )));
+    }
+    row.cells()
+        .take(column_count)
+        .map(|(_, data)| Ok(decode_mssql_cell(data)))
+        .collect()
+}
+
+/// Decodes one TDS value into a typed [`Cell`].
+fn decode_mssql_cell(data: &ColumnData<'_>) -> Cell {
+    fn nullable<T>(value: Option<T>, convert: impl FnOnce(T) -> Cell) -> Cell {
+        value.map_or(Cell::Null, convert)
+    }
+
+    match data {
+        ColumnData::U8(value) => nullable(*value, |value| Cell::Number(value.to_string())),
+        ColumnData::I16(value) => nullable(*value, |value| Cell::Number(value.to_string())),
+        ColumnData::I32(value) => nullable(*value, |value| Cell::Number(value.to_string())),
+        ColumnData::I64(value) => nullable(*value, |value| Cell::Number(value.to_string())),
+        ColumnData::F32(value) => nullable(*value, |value| Cell::Number(value.to_string())),
+        ColumnData::F64(value) => nullable(*value, |value| Cell::Number(value.to_string())),
+        ColumnData::Bit(value) => nullable(*value, Cell::Bool),
+        ColumnData::String(value) => {
+            nullable(value.as_deref(), |value| Cell::Text(value.to_owned()))
+        }
+        ColumnData::Guid(value) => nullable(*value, |guid| Cell::Uuid(*guid.as_bytes())),
+        ColumnData::Binary(value) => {
+            nullable(value.as_deref(), |value| Cell::Bytes(value.to_vec()))
+        }
+        ColumnData::Numeric(value) => nullable(*value, |value| {
+            Cell::Number(format_scaled_integer(
+                value.value(),
+                u32::from(value.scale()),
+            ))
+        }),
+        ColumnData::Xml(value) => nullable(value.as_deref(), |value| Cell::Text(value.to_string())),
+        ColumnData::DateTime(value) => nullable(*value, |value| {
+            Cell::DateTime(DateTimeParts::from_unix_days(
+                i64::from(value.days()) - DAYS_FROM_1900_TO_UNIX_EPOCH,
+                value.seconds_fragments() / 300,
+            ))
+        }),
+        ColumnData::SmallDateTime(value) => nullable(*value, |value| {
+            Cell::DateTime(DateTimeParts::from_unix_days(
+                i64::from(value.days()) - DAYS_FROM_1900_TO_UNIX_EPOCH,
+                u32::from(value.seconds_fragments()) * 60,
+            ))
+        }),
+        ColumnData::Date(value) => nullable(*value, |value| {
+            Cell::DateTime(DateTimeParts::from_unix_days(
+                i64::from(value.days()) - DAYS_FROM_YEAR_ONE_TO_UNIX_EPOCH,
+                0,
+            ))
+        }),
+        ColumnData::Time(value) => nullable(*value, |value| {
+            Cell::DateTime(DateTimeParts::from_unix_days(0, mssql_time_seconds(value)))
+        }),
+        ColumnData::DateTime2(value) => nullable(*value, mssql_datetime2),
+        ColumnData::DateTimeOffset(value) => {
+            nullable(*value, |value| mssql_datetime2(value.datetime2()))
+        }
     }
 }
 
-pub(crate) fn format_mssql_binary(value: &[u8]) -> String {
-    use std::fmt::Write as _;
+fn mssql_time_seconds(time: tiberius::time::Time) -> u32 {
+    let divisor = 10_u64.pow(u32::from(time.scale()));
+    u32::try_from(time.increments() / divisor.max(1)).unwrap_or(0)
+}
 
-    let mut output = String::with_capacity(2 + value.len() * 2);
-    output.push_str("0x");
-    for byte in value {
-        write!(output, "{byte:02X}").expect("writing to String cannot fail");
-    }
-    output
+fn mssql_datetime2(value: tiberius::time::DateTime2) -> Cell {
+    Cell::DateTime(DateTimeParts::from_unix_days(
+        i64::from(value.date().days()) - DAYS_FROM_YEAR_ONE_TO_UNIX_EPOCH,
+        mssql_time_seconds(value.time()),
+    ))
 }
 
 struct MsSqlMetadataSource<'session> {
@@ -650,12 +699,65 @@ impl MsSqlSession {
 mod tests {
     use std::time::Duration;
 
-    use super::{format_mssql_binary, should_disconnect_after_mssql_error};
+    use super::{decode_mssql_cell, should_disconnect_after_mssql_error};
+    use crate::cells::{Cell, DateTimeParts};
     use crate::error::CliError;
+    use tiberius::ColumnData;
+    use tiberius::numeric::Numeric;
+    use tiberius::time::{Date, DateTime, DateTime2, SmallDateTime, Time};
 
     #[test]
-    fn formats_binary_as_tsql_hex() {
-        assert_eq!(format_mssql_binary(&[0, 0x7d, 0xd6]), "0x007DD6");
+    fn decodes_tds_values_into_typed_cells() {
+        assert_eq!(
+            decode_mssql_cell(&ColumnData::Binary(Some(vec![0, 0x7d, 0xd6].into()))),
+            Cell::Bytes(vec![0, 0x7d, 0xd6])
+        );
+        assert_eq!(
+            decode_mssql_cell(&ColumnData::Numeric(Some(Numeric::new_with_scale(1550, 2)))),
+            Cell::Number("15.50".to_owned())
+        );
+        assert_eq!(
+            decode_mssql_cell(&ColumnData::Numeric(Some(Numeric::new_with_scale(15, 0)))),
+            Cell::Number("15".to_owned())
+        );
+        assert_eq!(
+            decode_mssql_cell(&ColumnData::Bit(Some(true))),
+            Cell::Bool(true)
+        );
+        assert_eq!(decode_mssql_cell(&ColumnData::I32(None)), Cell::Null);
+        let expected = DateTimeParts {
+            year: 2024,
+            month: 2,
+            day: 29,
+            hour: 12,
+            minute: 34,
+            second: 56,
+        };
+        // 2024-02-29 is 738_944 days after 0001-01-01 and 45_349 days after 1900-01-01.
+        assert_eq!(
+            decode_mssql_cell(&ColumnData::DateTime2(Some(DateTime2::new(
+                Date::new(738_944),
+                Time::new(452_961_234_567, 7),
+            )))),
+            Cell::DateTime(expected)
+        );
+        assert_eq!(
+            decode_mssql_cell(&ColumnData::DateTime(Some(DateTime::new(
+                45_349,
+                45_296 * 300 + 150
+            )))),
+            Cell::DateTime(expected)
+        );
+        assert_eq!(
+            decode_mssql_cell(&ColumnData::SmallDateTime(Some(SmallDateTime::new(
+                45_349,
+                12 * 60 + 34
+            )))),
+            Cell::DateTime(DateTimeParts {
+                second: 0,
+                ..expected
+            })
+        );
     }
 
     #[test]

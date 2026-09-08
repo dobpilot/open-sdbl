@@ -21,6 +21,7 @@ use rustyline::{Context, Editor, Helper};
 use tokio::io::{AsyncBufRead, AsyncBufReadExt, BufReader};
 use unicode_width::UnicodeWidthStr;
 
+use super::cells::Cell;
 use super::{
     CliError, DatabaseDialect, DatabaseSession, MAX_CELL_WIDTH, MAX_PRINTED_ROWS, QueryRows,
     bounded_field, escape_field, yes_no,
@@ -940,12 +941,17 @@ async fn resolve_deferred_presentations(
                     "database row has no deferred presentation column {column_index}"
                 ))
             })?;
-            let Some(payload) = cell.as_deref() else {
-                *cell = Some(UNRESOLVED_REFERENCE.to_owned());
+            if cell.is_null() {
+                *cell = Cell::Text(UNRESOLVED_REFERENCE.to_owned());
                 continue;
-            };
+            }
+            let payload = cell.as_bytes().ok_or_else(|| {
+                CliError::Data(
+                    "database returned a non-binary deferred presentation payload".to_owned(),
+                )
+            })?;
             let Some((object, reference)) = decode_deferred_reference(payload, snapshot)? else {
-                *cell = Some(String::new());
+                *cell = Cell::Text(String::new());
                 continue;
             };
             references.entry(object).or_default().insert(reference);
@@ -973,13 +979,22 @@ async fn resolve_deferred_presentations(
             })?;
             let lookup_rows = session.query(&lookup.sql, lookup.columns.len()).await?;
             for row in lookup_rows {
-                let key = row.first().and_then(Option::as_deref).ok_or_else(|| {
+                let key = row.first().and_then(Cell::as_bytes).ok_or_else(|| {
                     CliError::Data(
                         "presentation lookup returned a row without a reference".to_owned(),
                     )
                 })?;
-                let reference = decode_hex_array::<16>(key, "presentation lookup reference")?;
-                let presentation = row.get(1).and_then(Clone::clone).unwrap_or_default();
+                let reference = <[u8; 16]>::try_from(key).map_err(|_| {
+                    CliError::Data(format!(
+                        "presentation lookup reference has {} bytes, expected 16",
+                        key.len()
+                    ))
+                })?;
+                let presentation = row
+                    .get(1)
+                    .and_then(Cell::as_text)
+                    .map(str::to_owned)
+                    .unwrap_or_default();
                 presentations.insert((object, reference), presentation);
             }
         }
@@ -987,7 +1002,7 @@ async fn resolve_deferred_presentations(
 
     for (row_index, column_index, object, reference) in cells {
         let presentation = resolved_presentation(&presentations, object, reference);
-        rows[row_index][column_index] = Some(presentation);
+        rows[row_index][column_index] = Cell::Text(presentation);
     }
     Ok(())
 }
@@ -1003,22 +1018,38 @@ fn resolved_presentation(
         .unwrap_or_else(|| UNRESOLVED_REFERENCE.to_owned())
 }
 
-fn decode_deferred_reference(
-    payload: &str,
-    snapshot: &MetadataSnapshot,
-) -> Result<Option<(ObjectId, [u8; 16])>, CliError> {
-    if payload.is_empty() {
-        return Ok(None);
-    }
-    let (database_type, reference) = payload.split_once(':').ok_or_else(|| {
-        CliError::Data("database returned a malformed deferred presentation payload".to_owned())
-    })?;
-    let database_type = decode_hex_array::<4>(database_type, "reference RTRef")?;
-    let reference = decode_hex_array::<16>(reference, "reference RRRef")?;
+/// Splits the 20-byte `RTRef ‖ RRRef` payload into the big-endian table
+/// number and the reference; an all-zero reference is the empty 1C reference.
+fn split_deferred_payload(payload: &[u8]) -> Result<Option<(u32, [u8; 16])>, CliError> {
+    let (database_type, reference) = match (
+        payload
+            .get(..4)
+            .and_then(|bytes| <[u8; 4]>::try_from(bytes).ok()),
+        payload
+            .get(4..)
+            .and_then(|bytes| <[u8; 16]>::try_from(bytes).ok()),
+    ) {
+        (Some(database_type), Some(reference)) => (database_type, reference),
+        _ => {
+            return Err(CliError::Data(format!(
+                "deferred presentation payload has {} bytes, expected 20",
+                payload.len()
+            )));
+        }
+    };
     if reference.iter().all(|byte| *byte == 0) {
         return Ok(None);
     }
-    let database_type = u32::from_be_bytes(database_type);
+    Ok(Some((u32::from_be_bytes(database_type), reference)))
+}
+
+fn decode_deferred_reference(
+    payload: &[u8],
+    snapshot: &MetadataSnapshot,
+) -> Result<Option<(ObjectId, [u8; 16])>, CliError> {
+    let Some((database_type, reference)) = split_deferred_payload(payload)? else {
+        return Ok(None);
+    };
     let object = snapshot
         .object_id_by_database_type(database_type)
         .map_err(|error| {
@@ -1027,22 +1058,6 @@ fn decode_deferred_reference(
             ))
         })?;
     Ok(Some((object, reference)))
-}
-
-fn decode_hex_array<const N: usize>(value: &str, label: &str) -> Result<[u8; N], CliError> {
-    if value.len() != N * 2 || !value.bytes().all(|byte| byte.is_ascii_hexdigit()) {
-        return Err(CliError::Data(format!(
-            "database returned malformed {label} {value:?}"
-        )));
-    }
-    let mut decoded = [0_u8; N];
-    for (index, byte) in decoded.iter_mut().enumerate() {
-        let offset = index * 2;
-        *byte = u8::from_str_radix(&value[offset..offset + 2], 16).map_err(|_| {
-            CliError::Data(format!("database returned malformed {label} {value:?}"))
-        })?;
-    }
-    Ok(decoded)
 }
 
 fn default_presentation_plan(snapshot: &MetadataSnapshot, object: ObjectId) -> PresentationPlan {
@@ -1426,30 +1441,26 @@ fn print_query_rows(
 }
 
 trait TableRow {
-    fn cell(&self, index: usize) -> &str;
+    fn cell(&self, index: usize) -> Cow<'_, str>;
 }
 
 impl TableRow for Vec<String> {
-    fn cell(&self, index: usize) -> &str {
-        self.get(index).map_or("", String::as_str)
+    fn cell(&self, index: usize) -> Cow<'_, str> {
+        Cow::Borrowed(self.get(index).map_or("", String::as_str))
     }
 }
 
-impl TableRow for Vec<Option<String>> {
-    fn cell(&self, index: usize) -> &str {
-        match self.get(index) {
-            Some(Some(value)) => value,
-            Some(None) => "NULL",
-            None => "",
-        }
+impl TableRow for Vec<Cell> {
+    fn cell(&self, index: usize) -> Cow<'_, str> {
+        self.get(index).map_or(Cow::Borrowed(""), Cell::render)
     }
 }
 
 struct HeaderRow<'a>(&'a [&'a str]);
 
 impl TableRow for HeaderRow<'_> {
-    fn cell(&self, index: usize) -> &str {
-        self.0.get(index).copied().unwrap_or("")
+    fn cell(&self, index: usize) -> Cow<'_, str> {
+        Cow::Borrowed(self.0.get(index).copied().unwrap_or(""))
     }
 }
 
@@ -1474,7 +1485,7 @@ fn print_table_with_width<R: TableRow>(
     for row in rows.iter().take(MAX_PRINTED_ROWS) {
         for (index, width) in widths.iter_mut().enumerate() {
             *width = (*width)
-                .max(display_width(row.cell(index)))
+                .max(display_width(&row.cell(index)))
                 .min(MAX_CELL_WIDTH);
         }
     }
@@ -1543,7 +1554,7 @@ fn write_table_row(
         if index != 0 {
             output.write_all(b" | ")?;
         }
-        let value = bounded_field(values.cell(index), *width);
+        let value = bounded_field(&values.cell(index), *width);
         let padding = width.saturating_sub(UnicodeWidthStr::width(value.as_str()));
         output.write_all(value.as_bytes())?;
         output.write_all(" ".repeat(padding).as_bytes())?;
@@ -1856,11 +1867,11 @@ mod tests {
 
     use super::{
         BoundedLine, CompletionPath, ConsoleHelper, UNRESOLVED_REFERENCE, completion_start,
-        decode_hex_array, decode_input_line, default_presentation_template, display_width,
+        decode_input_line, default_presentation_template, display_width,
         ensure_session_remains_usable, footer_text, format_duration, presentation_plan,
         print_table_with_width, push_service_table_candidates, push_unique,
         push_virtual_table_candidates, read_bounded_line, resolved_presentation,
-        statement_is_complete, timing_line,
+        split_deferred_payload, statement_is_complete, timing_line,
     };
     use crate::{MAX_CELL_WIDTH, MAX_PRINTED_ROWS};
 
@@ -1911,13 +1922,16 @@ mod tests {
     }
 
     #[test]
-    fn decodes_fixed_width_reference_hex() {
+    fn splits_binary_deferred_payloads() {
+        let mut payload = vec![0, 0, 0, 0xea];
+        payload.extend_from_slice(&[7; 16]);
         assert_eq!(
-            decode_hex_array::<4>("000000EA", "RTRef").unwrap(),
-            [0, 0, 0, 0xea]
+            split_deferred_payload(&payload).unwrap(),
+            Some((0xea, [7; 16]))
         );
-        assert!(decode_hex_array::<4>("0000", "RTRef").is_err());
-        assert!(decode_hex_array::<4>("000000xz", "RTRef").is_err());
+        assert_eq!(split_deferred_payload(&[0; 20]).unwrap(), None);
+        assert!(split_deferred_payload(&[0; 16]).is_err());
+        assert!(split_deferred_payload(&[]).is_err());
     }
 
     #[test]

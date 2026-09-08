@@ -15,13 +15,14 @@ use tokio::net::TcpStream;
 use tokio::time::timeout;
 use tokio_postgres::config::SslMode;
 use tokio_postgres::tls::MakeTlsConnect;
-use tokio_postgres::types::ToSql;
+use tokio_postgres::types::{FromSql, ToSql, Type};
 use tokio_postgres::{IsolationLevel, NoTls, Row, Transaction};
 use tokio_postgres_rustls::MakeRustlsConnect;
 use zeroize::Zeroizing;
 
 use crate::args::{PostgresConnection, PostgresSslMode};
 use crate::auth::pgpass::{Credentials, postgres_password};
+use crate::cells::{Cell, DAYS_FROM_UNIX_EPOCH_TO_2000, DateTimeParts, decode_postgres_numeric};
 use crate::error::CliError;
 use crate::net::socks5::{connect_socks5, socks5_password};
 use crate::pipeline::{
@@ -319,7 +320,11 @@ impl PostgresSession {
                     .iter()
                     .map(|row| {
                         (0..column_count)
-                            .map(|index| row.try_get(index).map_err(CliError::from))
+                            .map(|index| {
+                                row.try_get::<_, PostgresCell>(index)
+                                    .map(|cell| cell.0)
+                                    .map_err(CliError::from)
+                            })
                             .collect()
                     })
                     .collect::<Result<Vec<_>, _>>()?;
@@ -693,11 +698,145 @@ impl PostgresSession {
     }
 }
 
+/// Decodes one binary-protocol PostgreSQL value into a typed [`Cell`].
+///
+/// Only the types the compiler can emit are decoded; anything else is a data
+/// error naming the type, so undocumented wire formats never print as garbage.
+struct PostgresCell(Cell);
+
+impl<'a> FromSql<'a> for PostgresCell {
+    fn from_sql(
+        ty: &Type,
+        raw: &'a [u8],
+    ) -> Result<Self, Box<dyn std::error::Error + Sync + Send>> {
+        decode_postgres_cell(ty, raw).map(Self).map_err(Into::into)
+    }
+
+    fn from_sql_null(_: &Type) -> Result<Self, Box<dyn std::error::Error + Sync + Send>> {
+        Ok(Self(Cell::Null))
+    }
+
+    fn accepts(_: &Type) -> bool {
+        true
+    }
+}
+
+fn decode_postgres_cell(ty: &Type, raw: &[u8]) -> Result<Cell, String> {
+    fn array<const N: usize>(raw: &[u8], ty: &Type) -> Result<[u8; N], String> {
+        <[u8; N]>::try_from(raw).map_err(|_| {
+            format!(
+                "PostgreSQL {} value has {} bytes, expected {N}",
+                ty.name(),
+                raw.len()
+            )
+        })
+    }
+
+    Ok(match *ty {
+        Type::BYTEA => Cell::Bytes(raw.to_vec()),
+        Type::UUID => Cell::Uuid(array(raw, ty)?),
+        Type::BOOL => Cell::Bool(array::<1>(raw, ty)?[0] != 0),
+        Type::INT2 => Cell::Number(i16::from_be_bytes(array(raw, ty)?).to_string()),
+        Type::INT4 => Cell::Number(i32::from_be_bytes(array(raw, ty)?).to_string()),
+        Type::INT8 => Cell::Number(i64::from_be_bytes(array(raw, ty)?).to_string()),
+        Type::FLOAT4 => Cell::Number(f32::from_be_bytes(array(raw, ty)?).to_string()),
+        Type::FLOAT8 => Cell::Number(f64::from_be_bytes(array(raw, ty)?).to_string()),
+        Type::NUMERIC => Cell::Number(decode_postgres_numeric(raw)?),
+        Type::TIMESTAMP => {
+            let microseconds = i64::from_be_bytes(array(raw, ty)?);
+            let seconds = microseconds.div_euclid(1_000_000);
+            Cell::DateTime(DateTimeParts::from_unix_days(
+                seconds.div_euclid(86_400) + DAYS_FROM_UNIX_EPOCH_TO_2000,
+                u32::try_from(seconds.rem_euclid(86_400)).unwrap_or(0),
+            ))
+        }
+        Type::DATE => {
+            let days = i64::from(i32::from_be_bytes(array(raw, ty)?));
+            Cell::DateTime(DateTimeParts::from_unix_days(
+                days + DAYS_FROM_UNIX_EPOCH_TO_2000,
+                0,
+            ))
+        }
+        Type::TEXT | Type::VARCHAR | Type::BPCHAR | Type::NAME | Type::UNKNOWN => Cell::Text(
+            std::str::from_utf8(raw)
+                .map_err(|error| format!("PostgreSQL {} value is not UTF-8: {error}", ty.name()))?
+                .to_owned(),
+        ),
+        _ => {
+            return Err(format!(
+                "unsupported PostgreSQL column type {}; the compiler should have cast it",
+                ty.name()
+            ));
+        }
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use std::time::Duration;
 
-    use super::await_postgres_driver;
+    use tokio_postgres::types::Type;
+
+    use super::{await_postgres_driver, decode_postgres_cell};
+    use crate::cells::{Cell, DateTimeParts};
+
+    #[test]
+    fn decodes_binary_protocol_values_into_typed_cells() {
+        assert_eq!(
+            decode_postgres_cell(&Type::BYTEA, &[0, 0x7d, 0xd6]).unwrap(),
+            Cell::Bytes(vec![0, 0x7d, 0xd6])
+        );
+        assert_eq!(
+            decode_postgres_cell(&Type::UUID, &[9; 16]).unwrap(),
+            Cell::Uuid([9; 16])
+        );
+        assert_eq!(
+            decode_postgres_cell(&Type::BOOL, &[1]).unwrap(),
+            Cell::Bool(true)
+        );
+        assert_eq!(
+            decode_postgres_cell(&Type::INT8, &(-42_i64).to_be_bytes()).unwrap(),
+            Cell::Number("-42".to_owned())
+        );
+        assert_eq!(
+            decode_postgres_cell(&Type::FLOAT8, &1.5_f64.to_be_bytes()).unwrap(),
+            Cell::Number("1.5".to_owned())
+        );
+        // 2024-02-29 12:34:56 is 762_525_296 seconds after 2000-01-01.
+        assert_eq!(
+            decode_postgres_cell(&Type::TIMESTAMP, &(762_525_296_000_000_i64).to_be_bytes())
+                .unwrap(),
+            Cell::DateTime(DateTimeParts {
+                year: 2024,
+                month: 2,
+                day: 29,
+                hour: 12,
+                minute: 34,
+                second: 56,
+            })
+        );
+        assert_eq!(
+            decode_postgres_cell(&Type::DATE, &(-1_i32).to_be_bytes()).unwrap(),
+            Cell::DateTime(DateTimeParts {
+                year: 1999,
+                month: 12,
+                day: 31,
+                hour: 0,
+                minute: 0,
+                second: 0,
+            })
+        );
+        assert_eq!(
+            decode_postgres_cell(&Type::TEXT, "Код".as_bytes()).unwrap(),
+            Cell::Text("Код".to_owned())
+        );
+        assert!(
+            decode_postgres_cell(&Type::JSON, b"{}")
+                .unwrap_err()
+                .contains("json")
+        );
+        assert!(decode_postgres_cell(&Type::INT4, &[1, 2]).is_err());
+    }
 
     #[tokio::test]
     async fn aborts_a_stalled_driver_on_close() {

@@ -230,7 +230,8 @@ SHALL validate those plans and compile them to PostgreSQL without accepting raw
 SQL or metadata names from the application. In a joined branch, a presentation
 MAY consume a supported one-hop dereferenced field; its presentation join SHALL
 use the dereference alias as its source and SHALL reuse compatible ancestor
-joins.
+joins. Deferred payloads and batch lookup keys SHALL be raw reference bytes
+rather than hex text.
 
 #### Scenario: Source reference presentation
 - **WHEN** a query applies `ПРЕДСТАВЛЕНИЕССЫЛКИ` to the source `Ссылка`
@@ -250,13 +251,15 @@ joins.
 #### Scenario: Universal reference target
 - **WHEN** SchemaStorage declares an empty `R` target and a bounded query
   presents that reference
-- **THEN** the main SQL returns a typed deferred payload for the projected
-  value and retains its predicates and `TOP`/`LIMIT`
+- **THEN** the main SQL returns the 20-byte `RTRef ‖ RRRef` binary payload as
+  a runtime-typed reference column for the projected value and retains its
+  predicates and `TOP`/`LIMIT`
 
 #### Scenario: Bounded deferred lookup
 - **WHEN** the application resolves deferred payloads from returned rows
 - **THEN** it groups them by runtime RTRef object type and uses core-generated
-  batch lookup SQL with the validated presentation plan for that object only
+  batch lookup SQL with the validated presentation plan for that object only,
+  and the lookup returns the raw 16-byte reference as its key column
 
 #### Scenario: Unknown runtime reference type
 - **WHEN** a deferred payload contains an RTRef discriminator absent from the
@@ -354,19 +357,21 @@ authoritative resolved metadata. A branch MAY omit `ИЗ`/`FROM` when every
 projection is a source-independent bounded scalar expression. Such projections
 SHALL support literals, parentheses, unary operators, bounded arithmetic and
 logical operators, and literal calls to `ПРЕДСТАВЛЕНИЕ`/`PRESENTATION` or
-`ПРЕДСТАВЛЕНИЕССЫЛКИ`/`REFPRESENTATION`. Their PostgreSQL output SHALL be cast
-to text for stable CLI transport. A source-free branch SHALL reject fields,
-wildcards, joins, and source-dependent clauses before execution. Source-backed
-branches SHALL retain all previously specified projection, source, JOIN,
-UNION, filtering, ordering, and diagnostic behavior.
+`ПРЕДСТАВЛЕНИЕССЫЛКИ`/`REFPRESENTATION`. Their output SHALL keep the native
+type of the expression and report it as the column kind; only presentation
+calls convert their argument to text. A source-free branch SHALL reject
+fields, wildcards, joins, and source-dependent clauses before execution.
+Source-backed branches SHALL retain all previously specified projection,
+source, JOIN, UNION, filtering, ordering, and diagnostic behavior.
 
 #### Scenario: Source-free numeric literal
 - **WHEN** the query is `SELECT 4;`
-- **THEN** generated PostgreSQL selects textual value `4` without a FROM clause
+- **THEN** generated SQL selects the numeric value `4` without a FROM clause
+  and the column kind is number
 
 #### Scenario: Source-free scalar presentation
 - **WHEN** the query is `SELECT ПРЕДСТАВЛЕНИЕ(4);`
-- **THEN** generated PostgreSQL selects textual value `4` without requesting a
+- **THEN** generated SQL selects textual value `4` without requesting a
   reference presentation plan
 
 #### Scenario: Source-free field rejection
@@ -376,14 +381,14 @@ UNION, filtering, ordering, and diagnostic behavior.
 ### Requirement: Compile bounded COUNT projections
 The compiler SHALL accept bilingual `COUNT`/`КОЛИЧЕСТВО` projections with
 `*`, one resolved field, or `DISTINCT`/`РАЗЛИЧНЫЕ` followed by one resolved
-field. It SHALL compile PostgreSQL COUNT and cast the result to text. A pure
+field. It SHALL compile a native COUNT whose column kind is number. A pure
 compound reference SHALL count its RRef value member. Other compound fields
 and COUNT over a transposed FULL JOIN SHALL fail before execution.
 
 #### Scenario: Count all catalog rows
 - **WHEN** a query selects `COUNT(*)` from a resolved catalog
-- **THEN** PostgreSQL counts all filtered source rows and the CLI receives one
-  textual aggregate value
+- **THEN** generated SQL counts all filtered source rows and the CLI receives
+  one numeric aggregate value
 
 #### Scenario: Count distinct field values
 - **WHEN** a query selects `КОЛИЧЕСТВО(РАЗЛИЧНЫЕ Код)`
@@ -397,18 +402,21 @@ and COUNT over a transposed FULL JOIN SHALL fail before execution.
 ### Requirement: Compile SUM, MIN, and MAX projections
 The compiler SHALL accept bilingual `SUM`/`СУММА`, `MIN`/`МИНИМУМ`, and
 `MAX`/`МАКСИМУМ` with one resolved field argument and compile the corresponding
-PostgreSQL aggregate cast to text. `COUNT(DISTINCT field)` and its Russian form
-SHALL remain supported. Wildcard and DISTINCT SHALL be accepted only for COUNT.
-All aggregates SHALL share the existing compound-field, projection-mixing, and
-transposed FULL JOIN safety checks.
+native aggregate. `SUM` SHALL report a number kind and `MIN`/`MAX` SHALL
+report the kind of their argument column. `COUNT(DISTINCT field)` and its
+Russian form SHALL remain supported. Wildcard and DISTINCT SHALL be accepted
+only for COUNT. All aggregates SHALL share the existing compound-field,
+projection-mixing, and transposed FULL JOIN safety checks.
 
 #### Scenario: Numeric sum
 - **WHEN** a query selects `СУММА(<numeric-field>)`
-- **THEN** generated PostgreSQL applies SUM to the resolved physical column
+- **THEN** generated SQL applies SUM to the resolved physical column without a
+  text conversion
 
 #### Scenario: Minimum and maximum
 - **WHEN** a query selects `MIN(field)` and `МАКСИМУМ(field)`
-- **THEN** generated PostgreSQL returns both aggregate values as text
+- **THEN** generated SQL returns both aggregate values in the field's native
+  type
 
 #### Scenario: Distinct count remains supported
 - **WHEN** a query selects `COUNT(DISTINCT field)`
@@ -869,3 +877,30 @@ attributes of the extended object.
   extension
 - **THEN** the output lists extension-added attributes with their
   extension origin
+
+### Requirement: Render typed cells client-side
+The CLI SHALL read query results as typed cells on both providers instead of
+requesting textual conversion from the database, SHALL resolve deferred
+presentations from raw reference bytes, and SHALL render cells with one
+provider-independent policy: binary values as `0x` followed by upper-case
+hexadecimal digits, booleans as `true`/`false`, date-times as
+`YYYY-MM-DD HH:MM:SS` without fractional seconds, numbers with their declared
+scale, UUIDs in canonical lower-case form, and `NULL` for absent values. The
+CLI SHALL NOT add production dependencies for this decoding.
+
+#### Scenario: PostgreSQL reference cell
+- **WHEN** a PostgreSQL query returns a `bytea` reference column
+- **THEN** the CLI prints the bytes as `0x…` in upper-case hexadecimal
+
+#### Scenario: MSSQL numeric cell
+- **WHEN** an MSSQL query returns a `numeric(15,2)` value `15.5`
+- **THEN** the CLI prints `15.50`
+
+#### Scenario: Timestamp cell
+- **WHEN** either provider returns a date-time value
+- **THEN** the CLI prints it as `YYYY-MM-DD HH:MM:SS`
+
+#### Scenario: Unsupported PostgreSQL wire type
+- **WHEN** a PostgreSQL result contains a column type the CLI cannot decode
+- **THEN** the CLI reports a data error naming the type instead of printing
+  garbage
