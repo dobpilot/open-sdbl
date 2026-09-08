@@ -219,6 +219,11 @@ pub(super) enum Expression<'tokens, 'source> {
         object: &'tokens Token<'source>,
         value: &'tokens Token<'source>,
     },
+    /// `УНИКАЛЬНЫЙИДЕНТИФИКАТОР(<reference field>)`.
+    Uuid {
+        token: &'tokens Token<'source>,
+        argument: FieldReference<'tokens, 'source>,
+    },
     Unary {
         operator: &'tokens Token<'source>,
         value: Box<Self>,

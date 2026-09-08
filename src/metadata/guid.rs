@@ -105,6 +105,21 @@ mod tests {
     }
 
     #[test]
+    fn sql_uuid_permutation_inverts_physical_byte_order() {
+        // The query function reassembles canonical bytes as
+        // `[12..16] ++ [10..12] ++ [8..10] ++ [0..8]` of the physical value;
+        // the same index arithmetic is emitted as SQL by the compiler.
+        let guid = Guid::from_str("d2f8bde9-fadd-4be8-9022-249e3a1ac4b9").unwrap();
+        let physical = guid.to_1c_bytes();
+        let mut canonical = Vec::with_capacity(16);
+        canonical.extend_from_slice(&physical[12..16]);
+        canonical.extend_from_slice(&physical[10..12]);
+        canonical.extend_from_slice(&physical[8..10]);
+        canonical.extend_from_slice(&physical[0..8]);
+        assert_eq!(canonical, guid.to_bytes());
+    }
+
+    #[test]
     fn converts_to_physical_one_c_byte_order() {
         let guid = Guid::from_str("d2f8bde9-fadd-4be8-9022-249e3a1ac4b9").unwrap();
         assert_eq!(

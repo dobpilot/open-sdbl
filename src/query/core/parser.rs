@@ -41,6 +41,7 @@ fn is_contextual_identifier(kind: TokenKind) -> bool {
                     | Keyword::DateTime
                     | Keyword::BeginOfPeriod
                     | Keyword::Value
+                    | Keyword::Uuid
             )
         )
 }
@@ -642,6 +643,9 @@ impl<'tokens, 'source> Parser<'tokens, 'source> {
             if let Some(token) = self.consume_keyword_token(Keyword::Value) {
                 return self.parse_metadata_value(token);
             }
+            if let Some(token) = self.consume_keyword_token(Keyword::Uuid) {
+                return self.parse_uuid(token);
+            }
         }
         let Some(token) = self.peek() else {
             return Err(self.diagnostic(QueryDiagnosticKind::Syntax, None, "expected expression"));
@@ -752,6 +756,23 @@ impl<'tokens, 'source> Parser<'tokens, 'source> {
             object,
             value,
         })
+    }
+
+    fn parse_uuid(
+        &mut self,
+        token: &'tokens Token<'source>,
+    ) -> Result<Expression<'tokens, 'source>, QueryDiagnostic> {
+        self.expect_lexeme("(")?;
+        let argument = self.parse_field_reference()?;
+        if self.peek().is_some_and(|next| next.lexeme == ",") {
+            return Err(self.diagnostic(
+                QueryDiagnosticKind::Syntax,
+                Some(token),
+                "UUID expects exactly one reference field",
+            ));
+        }
+        self.expect_lexeme(")")?;
+        Ok(Expression::Uuid { token, argument })
     }
 
     fn parse_field_reference(

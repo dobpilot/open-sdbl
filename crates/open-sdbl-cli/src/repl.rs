@@ -134,6 +134,8 @@ const COMPLETION_KEYWORDS: &[&str] = &[
     "BEGINOFPERIOD",
     "ЗНАЧЕНИЕ",
     "VALUE",
+    "УНИКАЛЬНЫЙИДЕНТИФИКАТОР",
+    "UUID",
 ];
 
 const PRESENTATION_POLICY_VERSION: u32 = 2;

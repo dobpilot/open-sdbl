@@ -165,6 +165,11 @@ fn compile_source_free_expression(
             object,
             value,
         } => compile_metadata_value(token, kind, object, value, snapshot, dialect),
+        Expression::Uuid { token, .. } => Err(QueryDiagnostic::at(
+            QueryDiagnosticKind::UnsupportedFeature,
+            Some(token),
+            "UUID requires FROM",
+        )),
         Expression::Unary { operator, value } => {
             let operator = match operator.kind {
                 TokenKind::Keyword(Keyword::Not) => "NOT ",

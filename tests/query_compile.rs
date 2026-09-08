@@ -3111,3 +3111,113 @@ fn diagnoses_union_kind_mismatches_and_accepts_null_branches() {
         ColumnKind::Reference { .. }
     ));
 }
+
+#[test]
+fn compiles_reference_uuid_in_both_dialects() {
+    let snapshot = reference_snapshot();
+    let (postgres, mssql) = for_each_backend!(
+        "ВЫБРАТЬ УНИКАЛЬНЫЙИДЕНТИФИКАТОР(Ссылка) КАК Идентификатор, UUID(Организация) AS Owner
+         ИЗ Справочник.OpenSdblMetadataProbe
+         ГДЕ UUID(Ссылка) = \"d2f8bde9-fadd-4be8-9022-249e3a1ac4b9\";",
+        &snapshot,
+    );
+    let postgres = postgres.unwrap();
+    assert_eq!(labels(&postgres), ["Идентификатор", "Owner"]);
+    assert_eq!(kinds(&postgres), [&ColumnKind::Uuid, &ColumnKind::Uuid]);
+    assert!(postgres.sql.contains(
+        "encode(substring(\"__src\".\"_idrref\" from 13 for 4) || substring(\"__src\".\"_idrref\" from 11 for 2) || substring(\"__src\".\"_idrref\" from 9 for 2) || substring(\"__src\".\"_idrref\" from 1 for 8), 'hex')::uuid AS \"Идентификатор\""
+    ));
+    assert!(
+        postgres
+            .sql
+            .contains("substring(\"__src\".\"_fld54\" from 13 for 4)")
+    );
+    assert!(
+        postgres
+            .sql
+            .contains("'hex')::uuid = 'd2f8bde9-fadd-4be8-9022-249e3a1ac4b9')")
+    );
+
+    let mssql = mssql.unwrap();
+    assert!(mssql.sql.contains(
+        "CAST(SUBSTRING([__src].[_idrref], 16, 1) + SUBSTRING([__src].[_idrref], 15, 1) + SUBSTRING([__src].[_idrref], 14, 1) + SUBSTRING([__src].[_idrref], 13, 1) + SUBSTRING([__src].[_idrref], 12, 1) + SUBSTRING([__src].[_idrref], 11, 1) + SUBSTRING([__src].[_idrref], 10, 1) + SUBSTRING([__src].[_idrref], 9, 1) + SUBSTRING([__src].[_idrref], 1, 8) AS uniqueidentifier) AS [Идентификатор]"
+    ));
+    assert!(!mssql.sql.contains("::"));
+}
+
+#[test]
+fn decodes_uuid_of_dereferenced_and_compound_references() {
+    let dereferenced = postgres_compile!(
+        "SELECT UUID(Организация.Ссылка), Организация.Код FROM Catalog.OpenSdblMetadataProbe;",
+        &reference_snapshot(),
+    )
+    .unwrap();
+    assert_eq!(dereferenced.sql.matches(" LEFT JOIN ").count(), 1);
+    assert!(
+        dereferenced
+            .sql
+            .contains("substring(\"__ref1\".\"_idrref\" from 13 for 4)")
+    );
+    assert_eq!(dereferenced.columns[0].kind, ColumnKind::Uuid);
+
+    let compound_snapshot = with_live_tables(snapshot(), |tables| {
+        let table = &mut tables[0];
+        table.columns.retain(|column| column.name != "_fld54");
+        table
+            .columns
+            .extend(["_fld54_rtref", "_fld54_rrref"].map(|name| LiveColumn {
+                name: name.to_owned(),
+                data_type: "bytea".to_owned(),
+            }));
+    });
+    let compound = postgres_compile!(
+        "SELECT UUID(ProbeAttribute) FROM Catalog.OpenSdblMetadataProbe;",
+        &compound_snapshot,
+    )
+    .unwrap();
+    assert!(
+        compound
+            .sql
+            .contains("substring(\"__src\".\"_fld54_rrref\" from 13 for 4)")
+    );
+    assert!(!compound.sql.contains("_fld54_rtref"));
+}
+
+#[test]
+fn diagnoses_invalid_uuid_arguments() {
+    let snapshot = snapshot();
+    let non_reference = postgres_compile!(
+        "SELECT UUID(Code) FROM Catalog.OpenSdblMetadataProbe;",
+        &snapshot,
+    )
+    .unwrap_err();
+    assert_eq!(non_reference.kind(), QueryDiagnosticKind::Syntax);
+    assert_eq!((non_reference.line(), non_reference.column()), (1, 8));
+    assert!(non_reference.message().contains("reference field"));
+
+    let literal = postgres_compile!(
+        "SELECT UUID(4) FROM Catalog.OpenSdblMetadataProbe;",
+        &snapshot,
+    )
+    .unwrap_err();
+    assert_eq!(literal.kind(), QueryDiagnosticKind::Syntax);
+
+    let two_arguments = postgres_compile!(
+        "SELECT UUID(Ссылка, Code) FROM Catalog.OpenSdblMetadataProbe;",
+        &snapshot,
+    )
+    .unwrap_err();
+    assert_eq!(two_arguments.kind(), QueryDiagnosticKind::Syntax);
+
+    let source_free = postgres_compile!("SELECT UUID(Ссылка);", &snapshot).unwrap_err();
+    assert_eq!(source_free.kind(), QueryDiagnosticKind::UnsupportedFeature);
+    assert!(source_free.message().contains("requires FROM"));
+
+    // The keyword still works as an ordinary alias.
+    let alias = postgres_compile!(
+        "SELECT Code AS UUID FROM Catalog.OpenSdblMetadataProbe;",
+        &snapshot,
+    )
+    .unwrap();
+    assert_eq!(labels(&alias), ["UUID"]);
+}

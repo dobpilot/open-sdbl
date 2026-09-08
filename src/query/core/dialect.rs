@@ -221,6 +221,27 @@ impl SqlDialect {
         }
     }
 
+    /// Decodes a 16-byte 1C reference (`d + e + c + b + a` field order) into
+    /// a native UUID in canonical `a-b-c-d-e` order. `NULL` propagates.
+    ///
+    /// MSSQL `CAST(binary AS uniqueidentifier)` reads the first three groups
+    /// little-endian, so those bytes are reversed before the cast.
+    pub(super) fn reference_uuid(self, reference: &str) -> String {
+        match self {
+            Self::Postgres => format!(
+                "encode(substring({reference} from 13 for 4) || substring({reference} from 11 for 2) || substring({reference} from 9 for 2) || substring({reference} from 1 for 8), 'hex')::uuid"
+            ),
+            Self::MsSql { .. } => {
+                let bytes = [16, 15, 14, 13, 12, 11, 10, 9]
+                    .iter()
+                    .map(|position| format!("SUBSTRING({reference}, {position}, 1)"))
+                    .collect::<Vec<_>>()
+                    .join(" + ");
+                format!("CAST({bytes} + SUBSTRING({reference}, 1, 8) AS uniqueidentifier)")
+            }
+        }
+    }
+
     /// Concatenates the `RTRef` discriminator and the `RRRef` value into the
     /// 20-byte runtime-typed reference payload.
     pub(super) fn reference_payload(self, type_value: &str, reference: &str) -> String {

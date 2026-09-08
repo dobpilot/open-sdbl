@@ -42,6 +42,7 @@ pub(super) fn source_free_expression_kind(
         },
         Expression::Literal(token) => literal_kind(token),
         Expression::DateTime { .. } | Expression::BeginOfPeriod { .. } => ColumnKind::DateTime,
+        Expression::Uuid { .. } => ColumnKind::Uuid,
         Expression::MetadataValue { kind, object, .. } => ColumnKind::Reference {
             targets: kind_from_query_name(kind.lexeme)
                 .and_then(|kind| snapshot.object_id(kind, object.lexeme).ok())
@@ -118,6 +119,29 @@ pub(super) fn compile_expression(
             context.snapshot,
             context.dialect,
         ),
+        Expression::Uuid { token, argument } => {
+            let resolved = context.resolve(argument)?;
+            let field = resolved.field();
+            let is_reference = !field.reference_targets.is_empty()
+                || field
+                    .columns
+                    .iter()
+                    .any(QueryableColumn::is_reference_value_member);
+            if !is_reference {
+                return Err(QueryDiagnostic::at(
+                    QueryDiagnosticKind::Syntax,
+                    Some(token),
+                    format!(
+                        "UUID argument {:?} must be a reference field",
+                        argument.last().lexeme
+                    ),
+                ));
+            }
+            let column = reference_column(field, argument.last())?;
+            Ok(context
+                .dialect
+                .reference_uuid(&context.sql_column(&resolved, column)))
+        }
         Expression::Unary { operator, value } => {
             let operator = match operator.kind {
                 TokenKind::Keyword(Keyword::Not) => "NOT ",

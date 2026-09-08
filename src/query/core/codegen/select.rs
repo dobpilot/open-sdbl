@@ -656,6 +656,9 @@ fn validate_direct_join_condition_fields(
             Expression::Field(reference) => {
                 context.resolve_direct(reference)?;
             }
+            Expression::Uuid { argument, .. } => {
+                context.resolve_direct(argument)?;
+            }
             Expression::BeginOfPeriod { value, .. }
             | Expression::Unary { value, .. }
             | Expression::IsNull { value, .. } => pending.push(value),
