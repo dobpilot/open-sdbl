@@ -893,7 +893,7 @@ fn compile_presentation_expression(
             let column = single_column_at(field, token)?;
             Ok(format!(
                 "COALESCE({}, {})",
-                dialect.column_text(
+                dialect.presentation_field_text(
                     &dialect.qualified_column(Some(alias), &column.physical_name),
                     &column.data_type
                 ),

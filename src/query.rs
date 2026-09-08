@@ -21,9 +21,10 @@ mod postgres;
 use crate::metadata::{MetadataSnapshot, SnapshotFingerprint};
 
 pub use core::{
-    CompiledQuery, PresentationExpression, PresentationPlan, PresentationRequest,
-    PresentationTarget, QueryDiagnostic, QueryDiagnosticKind, QueryableColumn, QueryableField,
-    QueryableFieldCatalog, find_metadata_object, queryable_field_catalog, queryable_fields,
+    ColumnKind, CompiledColumn, CompiledQuery, PresentationExpression, PresentationPlan,
+    PresentationRequest, PresentationTarget, QueryDiagnostic, QueryDiagnosticKind, QueryableColumn,
+    QueryableField, QueryableFieldCatalog, find_metadata_object, queryable_field_catalog,
+    queryable_fields,
 };
 pub use mssql::{InvalidMsSqlYearOffset, MsSqlBackend};
 pub use postgres::PostgresBackend;

@@ -1,9 +1,10 @@
 use super::context::{
-    CompilationContext, CompiledBranch, JoinPlan, ResolvedPath, ScopeId, SelectedProjection,
-    SourceScope, compile_presentation,
+    CompilationContext, CompiledBranch, JoinPlan, ProjectedMember, ResolvedPath, ScopeId,
+    SelectedProjection, SourceScope, compile_presentation, projected_members,
 };
 use super::expression::{
-    compile_aggregate, compile_expression, reference_column, reference_type_column, single_column,
+    compile_aggregate, compile_expression, expression_kind, reference_column,
+    reference_type_column, single_column,
 };
 use super::orchestrate::PresentationCompilation;
 use super::sources::{
@@ -15,7 +16,9 @@ use crate::query::core::ast::{
 };
 use crate::query::core::dialect::{OutputLabelAllocator, SqlDialect};
 use crate::query::core::names::names_equal;
-use crate::query::core::resolve::{CompilationCatalog, QueryableField, resolve_source_metadata};
+use crate::query::core::resolve::{
+    ColumnKind, CompilationCatalog, CompiledColumn, QueryableField, resolve_source_metadata,
+};
 use crate::query::core::{QueryDiagnostic, QueryDiagnosticKind};
 use crate::{Keyword, Token, TokenKind};
 
@@ -244,7 +247,7 @@ struct FullJoinCondition {
 }
 
 struct RenderedProjections {
-    columns: Vec<String>,
+    columns: Vec<CompiledColumn>,
     sql: Vec<String>,
     deferred_presentations: Vec<usize>,
 }
@@ -277,22 +280,32 @@ fn compile_selected_projections(
                         .alias
                         .map_or(label, |alias| alias.lexeme.to_owned()),
                     deferred,
+                    kind: if deferred {
+                        ColumnKind::Reference {
+                            targets: Vec::new(),
+                            runtime_typed: true,
+                        }
+                    } else {
+                        ColumnKind::String { length: None }
+                    },
                 });
             }
             Projection::Scalar(expression) => {
                 let number = selected.len() + 1;
                 let sql = compile_expression(expression, context)?;
+                let kind = expression_kind(expression, context)?;
                 selected.push(SelectedProjection::Generated {
                     sql: if expression.is_date() {
-                        context.dialect.date_scalar_text(&sql)
+                        context.dialect.date_scalar(&sql)
                     } else {
-                        context.dialect.scalar_text(&sql)
+                        sql
                     },
                     label: projection.alias.map_or_else(
                         || format!("column{number}"),
                         |alias| alias.lexeme.to_owned(),
                     ),
                     deferred: false,
+                    kind,
                 });
             }
             Projection::Aggregate {
@@ -301,13 +314,14 @@ fn compile_selected_projections(
                 distinct,
                 argument,
             } => {
-                let sql = compile_aggregate(context, *kind, *distinct, argument)?;
+                let (sql, output_kind) = compile_aggregate(context, *kind, *distinct, argument)?;
                 selected.push(SelectedProjection::Generated {
                     sql,
                     label: projection
                         .alias
                         .map_or_else(|| token.lexeme.to_owned(), |alias| alias.lexeme.to_owned()),
                     deferred: false,
+                    kind: output_kind,
                 });
             }
             Projection::All => unreachable!("wildcard projections are handled by the caller"),
@@ -327,22 +341,43 @@ fn render_selected_projections(
     for selected in selected {
         match selected {
             SelectedProjection::Field(resolved) => {
-                for column in &resolved.field().columns {
+                for member in projected_members(resolved.field()) {
                     context.catalog.charge(1, None)?;
-                    let output_label = labels.allocate(&resolved.output_label(column));
-                    let expression = context.sql_column(resolved, column);
+                    let (expression, requested_label, kind) = match member {
+                        ProjectedMember::Single(column) => (
+                            context.dialect.column_projection(
+                                &context.sql_column(resolved, column),
+                                &column.kind,
+                                &column.data_type,
+                            ),
+                            resolved.output_label(column),
+                            column.kind.clone(),
+                        ),
+                        ProjectedMember::Reference {
+                            type_member,
+                            value_member,
+                        } => (
+                            context.dialect.reference_payload(
+                                &context.sql_column(resolved, type_member),
+                                &context.sql_column(resolved, value_member),
+                            ),
+                            resolved.field_label(),
+                            value_member.kind.clone(),
+                        ),
+                    };
+                    let output_label = labels.allocate(&requested_label);
                     sql.push(format!(
-                        "{} AS {}",
-                        context.dialect.column_text(&expression, &column.data_type),
+                        "{expression} AS {}",
                         context.dialect.quote_identifier(&output_label)
                     ));
-                    columns.push(output_label);
+                    columns.push(CompiledColumn::new(output_label, kind));
                 }
             }
             SelectedProjection::Generated {
                 sql: expression,
                 label,
                 deferred,
+                kind,
             } => {
                 context.catalog.charge(1, None)?;
                 let output_label = labels.allocate(label);
@@ -353,7 +388,7 @@ fn render_selected_projections(
                 if *deferred {
                     deferred_presentations.push(columns.len());
                 }
-                columns.push(output_label);
+                columns.push(CompiledColumn::new(output_label, kind.clone()));
             }
         }
     }
@@ -881,7 +916,11 @@ fn selected_column_position(
     for selected in selected {
         match selected {
             SelectedProjection::Field(resolved) => {
-                for column in &resolved.field().columns {
+                for member in projected_members(resolved.field()) {
+                    let column = match member {
+                        ProjectedMember::Single(column) => column,
+                        ProjectedMember::Reference { value_member, .. } => value_member,
+                    };
                     if resolved.scope == ordered.scope
                         && names_equal(&resolved.sql_alias, &ordered.sql_alias)
                         && names_equal(&column.physical_name, ordered_column)

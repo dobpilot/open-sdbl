@@ -14,12 +14,14 @@ use crate::metadata::{MetadataSnapshot, ObjectId};
 use crate::query::core::ast::{FieldReference, PresentationArgument, PresentationOperation};
 use crate::query::core::dialect::{SqlDialect, compile_literal};
 use crate::query::core::names::names_equal;
-use crate::query::core::resolve::{CompilationCatalog, QueryableColumn, QueryableField};
+use crate::query::core::resolve::{
+    ColumnKind, CompilationCatalog, CompiledColumn, QueryableColumn, QueryableField,
+};
 use crate::query::core::{QueryDiagnostic, QueryDiagnosticKind};
 
 pub(super) struct CompiledBranch {
     pub(super) sql: String,
-    pub(super) columns: Vec<String>,
+    pub(super) columns: Vec<CompiledColumn>,
     pub(super) deferred_presentations: Vec<usize>,
     pub(super) logical_width: usize,
     pub(super) order: Vec<String>,
@@ -31,7 +33,50 @@ pub(super) enum SelectedProjection {
         sql: String,
         label: String,
         deferred: bool,
+        kind: ColumnKind,
     },
+}
+
+/// One SQL column rendered for a projected logical field.
+pub(super) enum ProjectedMember<'field> {
+    /// A physical member projected as-is.
+    Single(&'field QueryableColumn),
+    /// The `RTRef`/`RRRef` pair collapsed into one runtime-typed reference.
+    Reference {
+        type_member: &'field QueryableColumn,
+        value_member: &'field QueryableColumn,
+    },
+}
+
+/// Groups the physical members of a field into rendered SQL columns: a
+/// reference pair becomes one column, every other member stays separate.
+pub(super) fn projected_members(field: &QueryableField) -> Vec<ProjectedMember<'_>> {
+    let type_member = field
+        .columns
+        .iter()
+        .find(|column| column.is_reference_type_member());
+    let value_member = field
+        .columns
+        .iter()
+        .find(|column| column.is_reference_value_member());
+    let (Some(type_member), Some(value_member)) = (type_member, value_member) else {
+        return field.columns.iter().map(ProjectedMember::Single).collect();
+    };
+    let mut members = Vec::with_capacity(field.columns.len());
+    for column in &field.columns {
+        if std::ptr::eq(column, type_member) {
+            continue;
+        }
+        if std::ptr::eq(column, value_member) {
+            members.push(ProjectedMember::Reference {
+                type_member,
+                value_member,
+            });
+        } else {
+            members.push(ProjectedMember::Single(column));
+        }
+    }
+    members
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -125,6 +170,14 @@ impl ResolvedPath {
 
     pub(super) fn field(&self) -> &QueryableField {
         &self.fields[self.field_index]
+    }
+
+    /// Label of the whole logical field: the alias or path label when one
+    /// was given, otherwise the field name.
+    pub(super) fn field_label(&self) -> String {
+        self.path_label
+            .clone()
+            .unwrap_or_else(|| self.field().name.clone())
     }
 
     pub(super) fn output_label(&self, column: &QueryableColumn) -> String {

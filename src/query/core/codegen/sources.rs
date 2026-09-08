@@ -4,7 +4,7 @@ use std::sync::Arc;
 use super::context::{CompilationContext, CompiledBranch, SourceScope};
 use super::expression::{
     binary_operator_sql, compile_expression, left_binary_spine, reference_column,
-    reference_type_column, single_column,
+    reference_type_column, single_column, source_free_expression_kind,
 };
 use super::virtual_tables::{compile_accumulation_relation, compile_constant_date_expression};
 use crate::metadata::{
@@ -17,7 +17,8 @@ use crate::query::core::ast::{
 use crate::query::core::dialect::{OutputLabelAllocator, SqlDialect, compile_literal};
 use crate::query::core::names::names_equal;
 use crate::query::core::resolve::{
-    CompilationCatalog, QueryableField, is_extension_table_name, kind_from_query_name,
+    ColumnKind, CompilationCatalog, CompiledColumn, QueryableField, is_extension_table_name,
+    kind_from_query_name,
 };
 use crate::query::core::{QueryDiagnostic, QueryDiagnosticKind};
 use crate::{Keyword, Token, TokenKind};
@@ -52,13 +53,20 @@ pub(super) fn compile_source_free_branch(
     let mut columns = Vec::with_capacity(ast.projection.len());
     let mut labels = OutputLabelAllocator::new(dialect);
     for (index, projection) in ast.projection.iter().enumerate() {
-        let (sql, default_label) = match &projection.expression {
+        let (sql, default_label, kind) = match &projection.expression {
             Projection::Aggregate {
                 token,
                 kind: AggregateKind::Count,
                 distinct: false,
                 argument: AggregateArgument::All,
-            } => (dialect.text("COUNT(*)"), token.lexeme.to_owned()),
+            } => (
+                "COUNT(*)".to_owned(),
+                token.lexeme.to_owned(),
+                ColumnKind::Number {
+                    precision: None,
+                    scale: None,
+                },
+            ),
             Projection::Aggregate { token, .. } => {
                 return Err(QueryDiagnostic::at(
                     QueryDiagnosticKind::UnsupportedFeature,
@@ -67,10 +75,11 @@ pub(super) fn compile_source_free_branch(
                 ));
             }
             Projection::Scalar(expression) => {
-                let expression = compile_source_free_expression(expression, snapshot, dialect)?;
+                let sql = compile_source_free_expression(expression, snapshot, dialect)?;
                 (
-                    dialect.scalar_text(&expression),
+                    sql,
                     format!("column{}", index + 1),
+                    source_free_expression_kind(expression, snapshot),
                 )
             }
             Projection::Presentation {
@@ -80,6 +89,7 @@ pub(super) fn compile_source_free_branch(
             } => (
                 dialect.scalar_text(&compile_literal(literal, dialect)?),
                 token.lexeme.to_owned(),
+                ColumnKind::String { length: None },
             ),
             Projection::Presentation { token, .. } => {
                 return Err(QueryDiagnostic::at(
@@ -107,7 +117,7 @@ pub(super) fn compile_source_free_branch(
             .map_or(default_label, |alias| alias.lexeme.to_owned());
         let label = labels.allocate(&requested_label);
         projections.push(format!("{sql} AS {}", dialect.quote_identifier(&label)));
-        columns.push(label);
+        columns.push(CompiledColumn::new(label, kind));
     }
     let mut sql = dialect.select_prefix(ast.distinct, ast.top);
     sql.push_str(&projections.join(", "));
@@ -426,7 +436,7 @@ pub(super) fn compile_deferred_reference_presentation(
 ) -> Result<String, QueryDiagnostic> {
     let reference = reference_column(field, token)?;
     let type_column = reference_type_column(field, token)?;
-    Ok(dialect.deferred_reference_payload(
+    Ok(dialect.reference_payload(
         &dialect.qualified_column(Some(source_alias), &type_column.physical_name),
         &dialect.qualified_column(Some(source_alias), &reference.physical_name),
     ))

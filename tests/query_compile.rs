@@ -8,10 +8,22 @@ use open_sdbl::metadata::{
     parse_config_descriptors, parse_db_names, resolve_metadata,
 };
 use open_sdbl::query::{
-    Backend, MsSqlBackend, PostgresBackend, Prepared, PresentationExpression, PresentationPlan,
-    QueryCompiler, QueryDiagnosticKind, find_metadata_object, queryable_field_catalog,
-    queryable_fields,
+    Backend, ColumnKind, MsSqlBackend, PostgresBackend, Prepared, PresentationExpression,
+    PresentationPlan, QueryCompiler, QueryDiagnosticKind, find_metadata_object,
+    queryable_field_catalog, queryable_fields,
 };
+
+fn labels(compiled: &open_sdbl::query::CompiledQuery) -> Vec<&str> {
+    compiled
+        .columns
+        .iter()
+        .map(|column| column.label.as_str())
+        .collect()
+}
+
+fn kinds(compiled: &open_sdbl::query::CompiledQuery) -> Vec<&ColumnKind> {
+    compiled.columns.iter().map(|column| &column.kind).collect()
+}
 
 fn compile_backend_generic<B: Backend>(
     snapshot: &MetadataSnapshot,
@@ -40,6 +52,11 @@ fn assert_backend_outcomes_match(
             assert_eq!(
                 postgres.deferred_presentations, mssql.deferred_presentations,
                 "backend deferred presentations differ for {source}"
+            );
+            assert_eq!(
+                kinds(postgres),
+                kinds(mssql),
+                "backend column kinds differ for {source}"
             );
         }
         (Err(postgres), Err(mssql)) => {
@@ -230,7 +247,7 @@ fn preserves_mssql_goldens_for_dialect_sensitive_features() {
             )
             .unwrap()
             .sql,
-            "SELECT CONVERT(nvarchar(max), [l].[_period]) AS [Period], CONVERT(nvarchar(max), [r].[_period]) AS [Period_2] FROM (SELECT [__slice_ranked].* FROM (SELECT [__slice_base].*, DENSE_RANK() OVER (PARTITION BY [__slice_base].[_fld54] ORDER BY [__slice_base].[_period] ASC) AS [__open_sdbl_slice_rank] FROM [_inforg53] AS [__slice_base]) AS [__slice_ranked] WHERE [__slice_ranked].[__open_sdbl_slice_rank] = 1) AS [l] INNER JOIN (SELECT [__slice_ranked].* FROM (SELECT [__slice_base].*, DENSE_RANK() OVER (PARTITION BY [__slice_base].[_fld54] ORDER BY [__slice_base].[_period] DESC) AS [__open_sdbl_slice_rank] FROM [_inforg53] AS [__slice_base]) AS [__slice_ranked] WHERE [__slice_ranked].[__open_sdbl_slice_rank] = 1) AS [r] ON [l].[_fld54] = [r].[_fld54]",
+            "SELECT [l].[_period] AS [Period], [r].[_period] AS [Period_2] FROM (SELECT [__slice_ranked].* FROM (SELECT [__slice_base].*, DENSE_RANK() OVER (PARTITION BY [__slice_base].[_fld54] ORDER BY [__slice_base].[_period] ASC) AS [__open_sdbl_slice_rank] FROM [_inforg53] AS [__slice_base]) AS [__slice_ranked] WHERE [__slice_ranked].[__open_sdbl_slice_rank] = 1) AS [l] INNER JOIN (SELECT [__slice_ranked].* FROM (SELECT [__slice_base].*, DENSE_RANK() OVER (PARTITION BY [__slice_base].[_fld54] ORDER BY [__slice_base].[_period] DESC) AS [__open_sdbl_slice_rank] FROM [_inforg53] AS [__slice_base]) AS [__slice_ranked] WHERE [__slice_ranked].[__open_sdbl_slice_rank] = 1) AS [r] ON [l].[_fld54] = [r].[_fld54]",
         ),
         (
             "turnovers",
@@ -240,17 +257,17 @@ fn preserves_mssql_goldens_for_dialect_sensitive_features() {
             )
             .unwrap()
             .sql,
-            "SELECT CONVERT(nvarchar(max), [__src].[_fld54]) AS [Номенклатура], CONVERT(nvarchar(max), [__src].[_fld55]) AS [КоличествоОборот] FROM (SELECT [__aggregate_base].[_fld54] AS [_fld54], SUM(CASE WHEN [__aggregate_base].[_recordkind] = 0 THEN [__aggregate_base].[_fld55] ELSE -[__aggregate_base].[_fld55] END) AS [_fld55] FROM [_accumrg53] AS [__aggregate_base] WHERE [__aggregate_base].[_active] = 0x01 AND ([__aggregate_base].[_period] >= N'2026-08-01') AND ([__aggregate_base].[_period] < N'2026-09-01') AND ([__aggregate_base].[_fld54] IS NOT NULL) GROUP BY [__aggregate_base].[_fld54]) AS [__src]",
+            "SELECT [__src].[_fld54] AS [Номенклатура], [__src].[_fld55] AS [КоличествоОборот] FROM (SELECT [__aggregate_base].[_fld54] AS [_fld54], SUM(CASE WHEN [__aggregate_base].[_recordkind] = 0 THEN [__aggregate_base].[_fld55] ELSE -[__aggregate_base].[_fld55] END) AS [_fld55] FROM [_accumrg53] AS [__aggregate_base] WHERE [__aggregate_base].[_active] = 0x01 AND ([__aggregate_base].[_period] >= N'2026-08-01') AND ([__aggregate_base].[_period] < N'2026-09-01') AND ([__aggregate_base].[_fld54] IS NOT NULL) GROUP BY [__aggregate_base].[_fld54]) AS [__src]",
         ),
         (
             "union",
             mssql_compile!(
-                "SELECT p.Code FROM Catalog.OpenSdblMetadataProbe p WHERE p.Code = \"A\" UNION SELECT q.Date FROM Catalog.OpenSdblMetadataProbe q UNION ALL SELECT r.ProbeAttribute FROM Catalog.OpenSdblMetadataProbe r ORDER BY Code DESC;",
+                "SELECT p.Code FROM Catalog.OpenSdblMetadataProbe p WHERE p.Code = \"A\" UNION SELECT q.Code FROM Catalog.OpenSdblMetadataProbe q UNION ALL SELECT r.Code FROM Catalog.OpenSdblMetadataProbe r ORDER BY Code DESC;",
                 &snapshot(),
             )
             .unwrap()
             .sql,
-            "SELECT CONVERT(nvarchar(max), [p].[_code]) AS [Code] FROM [_reference53] AS [p] WHERE ([p].[_code] = N'A') UNION SELECT CONVERT(nvarchar(max), [q].[_date_time]) AS [Date] FROM [_reference53] AS [q] UNION ALL SELECT CONVERT(nvarchar(max), [r].[_fld54]) AS [ProbeAttribute] FROM [_reference53] AS [r] ORDER BY 1 DESC",
+            "SELECT [p].[_code] AS [Code] FROM [_reference53] AS [p] WHERE ([p].[_code] = N'A') UNION SELECT [q].[_code] AS [Code] FROM [_reference53] AS [q] UNION ALL SELECT [r].[_code] AS [Code] FROM [_reference53] AS [r] ORDER BY 1 DESC",
         ),
         (
             "full_join",
@@ -260,7 +277,7 @@ fn preserves_mssql_goldens_for_dialect_sensitive_features() {
             )
             .unwrap()
             .sql,
-            "SELECT * FROM (SELECT CONVERT(nvarchar(max), [l].[_code]) AS [Code], CONVERT(nvarchar(max), [r].[_date_time]) AS [Date] FROM [_reference53] AS [l] LEFT JOIN [_reference53] AS [r] ON [l].[_code] = [r].[_code] UNION ALL SELECT CONVERT(nvarchar(max), [l].[_code]) AS [Code], CONVERT(nvarchar(max), [r].[_date_time]) AS [Date] FROM [_reference53] AS [r] LEFT JOIN [_reference53] AS [l] ON [l].[_code] = [r].[_code] WHERE ([l].[_code] IS NULL)) AS [__full]",
+            "SELECT * FROM (SELECT [l].[_code] AS [Code], [r].[_date_time] AS [Date] FROM [_reference53] AS [l] LEFT JOIN [_reference53] AS [r] ON [l].[_code] = [r].[_code] UNION ALL SELECT [l].[_code] AS [Code], [r].[_date_time] AS [Date] FROM [_reference53] AS [r] LEFT JOIN [_reference53] AS [l] ON [l].[_code] = [r].[_code] WHERE ([l].[_code] IS NULL)) AS [__full]",
         ),
         (
             "dereference",
@@ -270,7 +287,7 @@ fn preserves_mssql_goldens_for_dialect_sensitive_features() {
             )
             .unwrap()
             .sql,
-            "SELECT CONVERT(nvarchar(max), [__ref1].[_code]) AS [Организация.Код] FROM [_reference53] AS [p] LEFT JOIN [_reference57] AS [__ref1] ON [p].[_fld54] = [__ref1].[_idrref]",
+            "SELECT [__ref1].[_code] AS [Организация.Код] FROM [_reference53] AS [p] LEFT JOIN [_reference57] AS [__ref1] ON [p].[_fld54] = [__ref1].[_idrref]",
         ),
         (
             "tabular",
@@ -280,7 +297,7 @@ fn preserves_mssql_goldens_for_dialect_sensitive_features() {
             )
             .unwrap()
             .sql,
-            "SELECT CONVERT(nvarchar(max), [__src].[_document53_idrref]) AS [ID], CONVERT(nvarchar(max), [__src].[_lineno54]) AS [LineNo], CONVERT(nvarchar(max), [__src].[_fld57]) AS [Сумма] FROM [_document53_vt54X1] AS [__src]",
+            "SELECT [__src].[_document53_idrref] AS [ID], [__src].[_lineno54] AS [LineNo], [__src].[_fld57] AS [Сумма] FROM [_document53_vt54X1] AS [__src]",
         ),
         (
             "aggregate",
@@ -290,7 +307,7 @@ fn preserves_mssql_goldens_for_dialect_sensitive_features() {
             )
             .unwrap()
             .sql,
-            "SELECT CONVERT(nvarchar(max), COUNT(*)) AS [RowCount], CONVERT(nvarchar(max), SUM([__src].[_fld54])) AS [Total] FROM [_reference53] AS [__src]",
+            "SELECT COUNT(*) AS [RowCount], SUM([__src].[_fld54]) AS [Total] FROM [_reference53] AS [__src]",
         ),
         (
             "top_in",
@@ -300,7 +317,7 @@ fn preserves_mssql_goldens_for_dialect_sensitive_features() {
             )
             .unwrap()
             .sql,
-            "SELECT TOP (3) CONVERT(nvarchar(max), [__src].[_code]) AS [Code] FROM [_reference53] AS [__src] WHERE ([__src].[_code] IN (N'A', N'B'))",
+            "SELECT TOP (3) [__src].[_code] AS [Code] FROM [_reference53] AS [__src] WHERE ([__src].[_code] IN (N'A', N'B'))",
         ),
         (
             "value",
@@ -310,7 +327,7 @@ fn preserves_mssql_goldens_for_dialect_sensitive_features() {
             )
             .unwrap()
             .sql,
-            "SELECT CONVERT(nvarchar(max), (SELECT [__open_sdbl_value].[_idrref] FROM [_reference53] AS [__open_sdbl_value] WHERE ([__open_sdbl_value].[_predefinedid] = 0xa3dae56fa2f94623445632b52e22ad88))) AS [column1]",
+            "SELECT (SELECT [__open_sdbl_value].[_idrref] FROM [_reference53] AS [__open_sdbl_value] WHERE ([__open_sdbl_value].[_predefinedid] = 0xa3dae56fa2f94623445632b52e22ad88)) AS [column1]",
         ),
     ];
     for (name, actual, expected) in cases {
@@ -410,10 +427,10 @@ fn compiles_native_mssql_projection_filter_and_limit() {
     )
     .unwrap();
 
-    assert_eq!(compiled.columns, ["Code", "ProbeAttribute"]);
+    assert_eq!(labels(&compiled), ["Code", "ProbeAttribute"]);
     assert_eq!(
         compiled.sql,
-        "SELECT TOP (10) CONVERT(nvarchar(max), [__src].[_code]) AS [Code], CONVERT(varchar(max), [__src].[_fld54], 1) AS [ProbeAttribute] FROM [_reference53] AS [__src] WHERE ([__src].[_code] = N'\u{420}\u{430}\u{437}\u{43e}\u{432}\u{44b}\u{439}')"
+        "SELECT TOP (10) [__src].[_code] AS [Code], [__src].[_fld54] AS [ProbeAttribute] FROM [_reference53] AS [__src] WHERE ([__src].[_code] = N'\u{420}\u{430}\u{437}\u{43e}\u{432}\u{44b}\u{439}')"
     );
     assert!(!compiled.sql.contains("::"));
     assert!(!compiled.sql.contains(" LIMIT "));
@@ -448,7 +465,7 @@ fn preserves_native_mssql_rowversion_projection() {
         )
         .unwrap();
 
-        assert_eq!(compiled.columns, ["Version"]);
+        assert_eq!(labels(&compiled), ["Version"]);
         assert_eq!(
             compiled.sql,
             "SELECT [__src].[_version] AS [Version] FROM [_reference53] AS [__src]"
@@ -797,11 +814,11 @@ fn prepares_and_compiles_mssql_presentations() {
 fn compiles_source_free_literals_and_scalar_presentations() {
     let snapshot = snapshot();
     let literal = postgres_compile!("SELECT 4;", &snapshot).unwrap();
-    assert_eq!(literal.columns, ["column1"]);
-    assert_eq!(literal.sql, "SELECT (4)::text AS \"column1\"");
+    assert_eq!(labels(&literal), ["column1"]);
+    assert_eq!(literal.sql, "SELECT 4 AS \"column1\"");
 
     let presentation = postgres_compile!("select представление(4);", &snapshot).unwrap();
-    assert_eq!(presentation.columns, ["представление"]);
+    assert_eq!(labels(&presentation), ["представление"]);
     assert_eq!(presentation.sql, "SELECT (4)::text AS \"представление\"");
 
     let multiline = postgres_compile!("select\nпредставление(4);", &snapshot).unwrap();
@@ -816,20 +833,20 @@ fn applies_projection_aliases_and_diagnoses_a_missing_alias() {
         &snapshot,
     )
     .unwrap();
-    assert_eq!(field.columns, ["ResultCode"]);
+    assert_eq!(labels(&field), ["ResultCode"]);
     assert!(field.sql.contains("AS \"ResultCode\""));
 
     let scalar = postgres_compile!("SELECT 2 + 2 КАК Результат;", &snapshot).unwrap();
-    assert_eq!(scalar.columns, ["Результат"]);
-    assert_eq!(scalar.sql, "SELECT ((2 + 2))::text AS \"Результат\"");
+    assert_eq!(labels(&scalar), ["Результат"]);
+    assert_eq!(scalar.sql, "SELECT (2 + 2) AS \"Результат\"");
 
     let aggregate = postgres_compile!(
         "SELECT COUNT(*) AS RowCount FROM Catalog.OpenSdblMetadataProbe;",
         &snapshot,
     )
     .unwrap();
-    assert_eq!(aggregate.columns, ["RowCount"]);
-    assert!(aggregate.sql.contains("COUNT(*)::text AS \"RowCount\""));
+    assert_eq!(labels(&aggregate), ["RowCount"]);
+    assert!(aggregate.sql.contains("COUNT(*) AS \"RowCount\""));
 
     let error = postgres_compile!(
         "SELECT Code AS FROM Catalog.OpenSdblMetadataProbe;",
@@ -848,15 +865,17 @@ fn compiles_datetime_and_begin_of_period_for_postgres() {
         &snapshot,
     )
     .unwrap();
-    assert_eq!(source_free.columns, ["Moment", "PeriodStart"]);
+    assert_eq!(labels(&source_free), ["Moment", "PeriodStart"]);
     assert!(
         source_free
             .sql
-            .contains("(TIMESTAMP '2024-02-29 12:34:56')::text AS \"Moment\"")
+            .contains("TIMESTAMP '2024-02-29 12:34:56' AS \"Moment\"")
     );
-    assert!(source_free.sql.contains(
-        "(date_trunc('month', TIMESTAMP '2024-08-29 12:34:56'))::text AS \"PeriodStart\""
-    ));
+    assert!(
+        source_free
+            .sql
+            .contains("date_trunc('month', TIMESTAMP '2024-08-29 12:34:56') AS \"PeriodStart\"")
+    );
 
     let source_backed = postgres_compile!(
         "ВЫБРАТЬ НАЧАЛОПЕРИОДА(Дата, МЕСЯЦ) КАК НачалоМесяца
@@ -868,7 +887,7 @@ fn compiles_datetime_and_begin_of_period_for_postgres() {
     assert!(
         source_backed
             .sql
-            .contains("(date_trunc('month', \"__src\".\"_date_time\"))::text AS \"НачалоМесяца\""),
+            .contains("date_trunc('month', \"__src\".\"_date_time\") AS \"НачалоМесяца\""),
         "{}",
         source_backed.sql
     );
@@ -892,7 +911,7 @@ fn compiles_datetime_and_begin_of_period_for_mssql_year_offset() {
     .unwrap();
 
     assert!(compiled.sql.contains(
-        "CONVERT(nvarchar(max), DATEADD(year, -2000, DATETIME2FROMPARTS(YEAR([__src].[_date_time]), MONTH([__src].[_date_time]), 1, 0, 0, 0, 0, 0))) AS [MonthStart]"
+        "DATEADD(year, -2000, DATETIME2FROMPARTS(YEAR([__src].[_date_time]), MONTH([__src].[_date_time]), 1, 0, 0, 0, 0, 0)) AS [MonthStart]"
     ));
     assert!(
         compiled
@@ -929,7 +948,7 @@ fn compiles_date_functions_in_joined_projection_and_filter() {
     assert!(
         compiled
             .sql
-            .contains("(date_trunc('day', \"p\".\"_date_time\"))::text AS \"StartDay\"")
+            .contains("date_trunc('day', \"p\".\"_date_time\") AS \"StartDay\"")
     );
     assert!(
         compiled
@@ -999,10 +1018,10 @@ fn validates_datetime_components_periods_and_mssql_offset_range() {
 fn compiles_source_free_arithmetic_and_rejects_fields_without_from() {
     let snapshot = snapshot();
     let compiled = postgres_compile!("SELECT 2 + 2, \"готово\";", &snapshot).unwrap();
-    assert_eq!(compiled.columns, ["column1", "column2"]);
+    assert_eq!(labels(&compiled), ["column1", "column2"]);
     assert_eq!(
         compiled.sql,
-        "SELECT ((2 + 2))::text AS \"column1\", ('готово')::text AS \"column2\""
+        "SELECT (2 + 2) AS \"column1\", 'готово' AS \"column2\""
     );
 
     let field = postgres_compile!("SELECT Код;", &snapshot).unwrap_err();
@@ -1019,10 +1038,10 @@ fn compiles_count_all_and_distinct_field() {
         &snapshot,
     )
     .unwrap();
-    assert_eq!(all.columns, ["count"]);
+    assert_eq!(labels(&all), ["count"]);
     assert_eq!(
         all.sql,
-        "SELECT COUNT(*)::text AS \"count\" FROM \"_reference53\" AS \"__src\""
+        "SELECT COUNT(*) AS \"count\" FROM \"_reference53\" AS \"__src\""
     );
 
     let distinct = postgres_compile!(
@@ -1030,19 +1049,15 @@ fn compiles_count_all_and_distinct_field() {
         &snapshot,
     )
     .unwrap();
-    assert_eq!(distinct.columns, ["КОЛИЧЕСТВО"]);
-    assert!(
-        distinct
-            .sql
-            .contains("COUNT(DISTINCT \"__src\".\"_code\")::text")
-    );
+    assert_eq!(labels(&distinct), ["КОЛИЧЕСТВО"]);
+    assert!(distinct.sql.contains("COUNT(DISTINCT \"__src\".\"_code\")"));
 }
 
 #[test]
 fn bounds_count_aggregate_shapes() {
     let snapshot = snapshot();
     let source_free = postgres_compile!("SELECT COUNT(*);", &snapshot).unwrap();
-    assert_eq!(source_free.sql, "SELECT COUNT(*)::text AS \"COUNT\"");
+    assert_eq!(source_free.sql, "SELECT COUNT(*) AS \"COUNT\"");
 
     let mixed = postgres_compile!(
         "SELECT COUNT(*), Code FROM Catalog.OpenSdblMetadataProbe;",
@@ -1067,14 +1082,14 @@ fn compiles_sum_min_max_and_count_distinct_together() {
         &snapshot,
     )
     .unwrap();
-    assert_eq!(compiled.columns, ["SUM", "МИНИМУМ", "MAX", "КОЛИЧЕСТВО"]);
-    assert!(compiled.sql.contains("SUM(\"__src\".\"_fld54\")::text"));
-    assert!(compiled.sql.contains("MIN(\"__src\".\"_fld54\")::text"));
-    assert!(compiled.sql.contains("MAX(\"__src\".\"_fld54\")::text"));
+    assert_eq!(labels(&compiled), ["SUM", "МИНИМУМ", "MAX", "КОЛИЧЕСТВО"]);
+    assert!(compiled.sql.contains("SUM(\"__src\".\"_fld54\")"));
+    assert!(compiled.sql.contains("MIN(\"__src\".\"_fld54\")"));
+    assert!(compiled.sql.contains("MAX(\"__src\".\"_fld54\")"));
     assert!(
         compiled
             .sql
-            .contains("COUNT(DISTINCT \"__src\".\"_fld54\")::text")
+            .contains("COUNT(DISTINCT \"__src\".\"_fld54\")")
     );
 }
 
@@ -1354,7 +1369,7 @@ fn compiles_current_accumulation_register_balances() {
     )
     .unwrap();
 
-    assert_eq!(compiled.columns, ["Номенклатура", "КоличествоОстаток"]);
+    assert_eq!(labels(&compiled), ["Номенклатура", "КоличествоОстаток"]);
     assert!(
         compiled
             .sql
@@ -1431,7 +1446,7 @@ fn compiles_bounded_accumulation_register_turnovers() {
     )
     .unwrap();
 
-    assert_eq!(compiled.columns, ["Номенклатура", "КоличествоОборот"]);
+    assert_eq!(labels(&compiled), ["Номенклатура", "КоличествоОборот"]);
     assert!(compiled.sql.contains("\"_period\" >= '2026-08-01'"));
     assert!(compiled.sql.contains("\"_period\" < '2026-09-01'"));
     assert!(compiled.sql.contains("\"_fld54\" IS NOT NULL"));
@@ -1709,10 +1724,10 @@ fn compiles_a_russian_catalog_query_through_authoritative_metadata() {
     )
     .unwrap();
 
-    assert_eq!(compiled.columns, ["Code", "ProbeAttribute"]);
+    assert_eq!(labels(&compiled), ["Code", "ProbeAttribute"]);
     assert_eq!(
         compiled.sql,
-        "SELECT \"p\".\"_code\"::text AS \"Code\", \"p\".\"_fld54\"::text AS \"ProbeAttribute\" FROM \"_reference53\" AS \"p\" WHERE (\"p\".\"_code\" = 'A') ORDER BY \"p\".\"_code\" ASC LIMIT 5"
+        "SELECT \"p\".\"_code\"::text AS \"Code\", \"p\".\"_fld54\" AS \"ProbeAttribute\" FROM \"_reference53\" AS \"p\" WHERE (\"p\".\"_code\" = 'A') ORDER BY \"p\".\"_code\" ASC LIMIT 5"
     );
 }
 
@@ -1876,7 +1891,7 @@ fn compiles_english_distinct_wildcard_and_real_document_date_spelling() {
     .unwrap();
 
     assert!(compiled.sql.starts_with("SELECT DISTINCT "));
-    assert!(compiled.sql.contains("\"_date_time\"::text AS \"Date\""));
+    assert!(compiled.sql.contains("\"_date_time\" AS \"Date\""));
     assert!(
         compiled
             .sql
@@ -1886,7 +1901,7 @@ fn compiles_english_distinct_wildcard_and_real_document_date_spelling() {
         compiled
             .columns
             .iter()
-            .any(|column| column == "ProbeAttribute")
+            .any(|column| column.label == "ProbeAttribute")
     );
 }
 
@@ -2090,7 +2105,7 @@ fn reports_resolution_mismatches_without_dropping_unknown_columns() {
         &resolved.snapshot,
     )
     .unwrap();
-    assert_eq!(compiled.columns, ["Code"]);
+    assert_eq!(labels(&compiled), ["Code"]);
     assert!(
         queryable_fields(&resolved.snapshot, &resolved.snapshot.objects()[0])
             .unwrap()
@@ -2159,10 +2174,9 @@ fn emits_unique_utf8_safe_output_labels_at_each_dialect_limit() {
     )
     .unwrap();
     assert_ne!(postgres.columns[0], postgres.columns[1]);
-    assert!(postgres.columns.iter().all(|label| label.len() <= 63));
+    assert!(labels(&postgres).iter().all(|label| label.len() <= 63));
     assert!(
-        postgres
-            .columns
+        labels(&postgres)
             .iter()
             .all(|label| postgres.sql.contains(&format!("AS \"{label}\"")))
     );
@@ -2177,14 +2191,12 @@ fn emits_unique_utf8_safe_output_labels_at_each_dialect_limit() {
     .unwrap();
     assert_ne!(mssql.columns[0], mssql.columns[1]);
     assert!(
-        mssql
-            .columns
+        labels(&mssql)
             .iter()
             .all(|label| label.encode_utf16().count() <= 128)
     );
     assert!(
-        mssql
-            .columns
+        labels(&mssql)
             .iter()
             .all(|label| mssql.sql.contains(&format!("AS [{label}]")))
     );
@@ -2226,7 +2238,7 @@ fn expands_a_compound_projection_and_rejects_it_in_predicates() {
         table.columns.retain(|column| column.name != "_fld54");
         table.columns.extend([
             LiveColumn {
-                name: "_fld54_tref".to_owned(),
+                name: "_fld54_rtref".to_owned(),
                 data_type: "bytea".to_owned(),
             },
             LiveColumn {
@@ -2236,24 +2248,35 @@ fn expands_a_compound_projection_and_rejects_it_in_predicates() {
         ]);
     });
 
-    let compiled = postgres_compile!(
+    let (compiled, mssql) = for_each_backend!(
         "SELECT ProbeAttribute FROM Catalog.OpenSdblMetadataProbe;",
         &snapshot,
-    )
-    .unwrap();
-    assert_eq!(
-        compiled.columns,
-        ["ProbeAttribute_TRef", "ProbeAttribute_RRRef"]
     );
-    assert!(compiled.sql.contains("\"_fld54_tref\"::text"));
-    assert!(compiled.sql.contains("\"_fld54_rrref\"::text"));
+    let compiled = compiled.unwrap();
+    assert_eq!(labels(&compiled), ["ProbeAttribute"]);
+    assert!(compiled.sql.contains(
+        "(\"__src\".\"_fld54_rtref\" || \"__src\".\"_fld54_rrref\") AS \"ProbeAttribute\""
+    ));
+    assert!(matches!(
+        &compiled.columns[0].kind,
+        ColumnKind::Reference {
+            runtime_typed: true,
+            ..
+        }
+    ));
+    assert!(
+        mssql
+            .unwrap()
+            .sql
+            .contains("([__src].[_fld54_rtref] + [__src].[_fld54_rrref]) AS [ProbeAttribute]")
+    );
 
     let aliased = postgres_compile!(
         "SELECT ProbeAttribute AS Value FROM Catalog.OpenSdblMetadataProbe;",
         &snapshot,
     )
     .unwrap();
-    assert_eq!(aliased.columns, ["Value_TRef", "Value_RRRef"]);
+    assert_eq!(labels(&aliased), ["Value"]);
 
     let error = postgres_compile!(
         "SELECT Code FROM Catalog.OpenSdblMetadataProbe WHERE ProbeAttribute IS NULL;",
@@ -2272,7 +2295,7 @@ fn dereferences_a_reference_property_with_one_reused_left_join() {
     )
     .unwrap();
 
-    assert_eq!(compiled.columns, ["Организация.Код"]);
+    assert_eq!(labels(&compiled), ["Организация.Код"]);
     assert_eq!(compiled.sql.matches(" LEFT JOIN ").count(), 1);
     assert_eq!(
         compiled.sql,
@@ -2303,7 +2326,7 @@ fn supports_a_qualified_reference_path_and_rejects_non_references() {
             .sql
             .contains("FROM \"_reference53\" AS \"d\" LEFT JOIN")
     );
-    assert_eq!(implicit.columns, ["Организация.Code"]);
+    assert_eq!(labels(&implicit), ["Организация.Code"]);
 
     let error = postgres_compile!(
         "SELECT Code.Value FROM Catalog.OpenSdblMetadataProbe;",
@@ -2350,15 +2373,15 @@ fn compiles_mixed_union_operators_and_orders_the_combined_result() {
     let compiled = postgres_compile!(
         "SELECT p.Code FROM Catalog.OpenSdblMetadataProbe p WHERE p.Code = \"A\"
          ОБЪЕДИНИТЬ
-         ВЫБРАТЬ q.Дата ИЗ Справочник.OpenSdblMetadataProbe КАК q
+         ВЫБРАТЬ q.Код ИЗ Справочник.OpenSdblMetadataProbe КАК q
          UNION ALL
-         SELECT r.ProbeAttribute FROM Catalog.OpenSdblMetadataProbe AS r
+         SELECT r.Code FROM Catalog.OpenSdblMetadataProbe AS r
          ORDER BY Code DESC;",
         &snapshot,
     )
     .unwrap();
 
-    assert_eq!(compiled.columns, ["Code"]);
+    assert_eq!(labels(&compiled), ["Code"]);
     assert_eq!(compiled.sql.matches(" UNION (").count(), 1);
     assert_eq!(compiled.sql.matches(" UNION ALL (").count(), 1);
     assert!(
@@ -2548,7 +2571,7 @@ fn resolves_a_one_hop_reference_from_one_join_side() {
     )
     .unwrap();
 
-    assert_eq!(compiled.columns, ["Организация.Код", "Code"]);
+    assert_eq!(labels(&compiled), ["Организация.Код", "Code"]);
     assert!(
         compiled
             .sql
@@ -2715,7 +2738,7 @@ fn compiles_document_tabular_section_from_extension_table() {
     .unwrap();
 
     assert_eq!(
-        compiled.columns,
+        labels(&compiled),
         [
             "ЦФО",
             "Договор",
@@ -2745,14 +2768,10 @@ fn compiles_document_tabular_section_from_extension_table() {
         &snapshot,
     )
     .unwrap();
-    assert_eq!(direct.columns, ["ID", "LineNo", "Сумма"]);
+    assert_eq!(labels(&direct), ["ID", "LineNo", "Сумма"]);
     assert!(direct.sql.contains("FROM \"_document53_vt54X1\""));
-    assert!(
-        direct
-            .sql
-            .contains("\"_document53_idrref\"::text AS \"ID\"")
-    );
-    assert!(direct.sql.contains("\"_lineno54\"::text AS \"LineNo\""));
+    assert!(direct.sql.contains("\"_document53_idrref\" AS \"ID\""));
+    assert!(direct.sql.contains("\"_lineno54\" AS \"LineNo\""));
 }
 
 #[test]
@@ -2853,15 +2872,15 @@ fn defers_a_universal_reference_reached_through_a_join_path() {
     assert!(postgres.presentation_request().targets.is_empty());
     let postgres = postgres.compile(&snapshot, &[]).unwrap();
     assert_eq!(postgres.deferred_presentations, [0]);
-    assert!(
-        postgres
-            .sql
-            .contains("encode(\"__right_ref1\".\"_fld59_rtref\", 'hex')")
-    );
-    assert!(
-        postgres
-            .sql
-            .contains("encode(\"__right_ref1\".\"_fld59_rrref\", 'hex')")
+    assert!(postgres.sql.contains(
+        "(\"__right_ref1\".\"_fld59_rtref\" || \"__right_ref1\".\"_fld59_rrref\") AS \"Договор\""
+    ));
+    assert_eq!(
+        postgres.columns[0].kind,
+        ColumnKind::Reference {
+            targets: Vec::new(),
+            runtime_typed: true,
+        }
     );
     assert!(postgres.sql.ends_with(" LIMIT 10"));
     assert_eq!(postgres.sql.matches(" LEFT JOIN ").count(), 1);
@@ -2870,9 +2889,9 @@ fn defers_a_universal_reference_reached_through_a_join_path() {
     let mssql = mssql.compile(&snapshot, &[]).unwrap();
     assert_eq!(mssql.deferred_presentations, [0]);
     assert!(
-        mssql
-            .sql
-            .contains("CONVERT(varchar(max), [__right_ref1].[_fld59_rtref], 2)")
+        mssql.sql.contains(
+            "([__right_ref1].[_fld59_rtref] + [__right_ref1].[_fld59_rrref]) AS [Договор]"
+        )
     );
     assert!(mssql.sql.starts_with("SELECT TOP (10) "));
 }
@@ -2932,8 +2951,8 @@ fn enforces_presentation_batch_boundaries_for_both_backends() {
         let (postgres, mssql) = for_each_backend!(presentation & snapshot, &plan, &references, 0);
         let postgres = postgres.unwrap();
         let mssql = mssql.unwrap();
-        assert_eq!(postgres.columns, ["__reference", "__presentation"]);
-        assert_eq!(mssql.columns, ["__reference", "__presentation"]);
+        assert_eq!(labels(&postgres), ["__reference", "__presentation"]);
+        assert_eq!(labels(&mssql), ["__reference", "__presentation"]);
         assert_eq!(postgres.sql.matches("decode('").count(), count);
         assert_eq!(mssql.sql.matches("0x").count(), count);
     }
@@ -2981,4 +3000,114 @@ fn diagnoses_a_tabular_section_missing_from_schema_storage() {
     assert!(error.message().contains("absent from SchemaStorage"));
     assert!(error.message().contains("_Document53_VT54"));
     assert_eq!(error.kind(), QueryDiagnosticKind::Metadata);
+}
+
+#[test]
+fn reports_structured_column_kinds_for_fields_scalars_and_aggregates() {
+    let snapshot = snapshot();
+    let object = snapshot
+        .object_id(MetadataKind::Catalog, "OpenSdblMetadataProbe")
+        .unwrap();
+
+    let fields = postgres_compile!(
+        "SELECT Ссылка, Code, Date, ProbeAttribute FROM Catalog.OpenSdblMetadataProbe;",
+        &snapshot,
+    )
+    .unwrap();
+    assert_eq!(
+        kinds(&fields),
+        [
+            &ColumnKind::Reference {
+                targets: vec![object],
+                runtime_typed: false,
+            },
+            &ColumnKind::String { length: Some(9) },
+            &ColumnKind::DateTime,
+            &ColumnKind::Binary { length: None },
+        ]
+    );
+    assert!(fields.sql.contains("\"__src\".\"_idrref\" AS \"ID\""));
+    assert!(fields.sql.contains("\"__src\".\"_code\"::text AS \"Code\""));
+    assert!(fields.sql.contains("\"__src\".\"_date_time\" AS \"Date\""));
+
+    let scalars = postgres_compile!(
+        "SELECT 4, \"text\", TRUE, NULL, DATETIME(2024, 1, 1), 2 + 2, 1 < 2;",
+        &snapshot,
+    )
+    .unwrap();
+    assert_eq!(
+        kinds(&scalars),
+        [
+            &ColumnKind::Number {
+                precision: None,
+                scale: None,
+            },
+            &ColumnKind::String { length: None },
+            &ColumnKind::Boolean,
+            &ColumnKind::Null,
+            &ColumnKind::DateTime,
+            &ColumnKind::Number {
+                precision: None,
+                scale: None,
+            },
+            &ColumnKind::Boolean,
+        ]
+    );
+
+    let aggregates = postgres_compile!(
+        "SELECT COUNT(*), MIN(Date), MAX(Code), SUM(Code) FROM Catalog.OpenSdblMetadataProbe;",
+        &snapshot,
+    )
+    .unwrap();
+    assert_eq!(
+        kinds(&aggregates),
+        [
+            &ColumnKind::Number {
+                precision: None,
+                scale: None,
+            },
+            &ColumnKind::DateTime,
+            &ColumnKind::String { length: Some(9) },
+            &ColumnKind::Number {
+                precision: None,
+                scale: None,
+            },
+        ]
+    );
+    assert!(!aggregates.sql.contains("::text"));
+}
+
+#[test]
+fn diagnoses_union_kind_mismatches_and_accepts_null_branches() {
+    let snapshot = snapshot();
+    let (postgres, mssql) = for_each_backend!(
+        "SELECT Code FROM Catalog.OpenSdblMetadataProbe
+         ОБЪЕДИНИТЬ ВСЕ
+         SELECT Date FROM Catalog.OpenSdblMetadataProbe;",
+        &snapshot,
+    );
+    let error = postgres.unwrap_err();
+    assert_eq!(error.kind(), QueryDiagnosticKind::UnsupportedFeature);
+    assert_eq!((error.line(), error.column()), (2, 10));
+    assert!(error.message().contains("DateTime"));
+    assert!(mssql.is_err());
+
+    let nullable = postgres_compile!("SELECT NULL UNION ALL SELECT 4;", &snapshot).unwrap();
+    assert_eq!(
+        kinds(&nullable),
+        [&ColumnKind::Number {
+            precision: None,
+            scale: None,
+        }]
+    );
+
+    let reference_with_null = postgres_compile!(
+        "SELECT Ссылка FROM Catalog.OpenSdblMetadataProbe UNION ALL SELECT NULL;",
+        &snapshot,
+    )
+    .unwrap();
+    assert!(matches!(
+        &reference_with_null.columns[0].kind,
+        ColumnKind::Reference { .. }
+    ));
 }

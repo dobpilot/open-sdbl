@@ -9,7 +9,8 @@ use crate::query::core::dialect::SqlDialect;
 use crate::query::core::names::names_equal;
 use crate::query::core::parser::Parser;
 use crate::query::core::resolve::{
-    CompilationCatalog, CompiledQuery, PresentationPlan, PresentationRequest, PresentationTarget,
+    ColumnKind, CompilationCatalog, CompiledColumn, CompiledQuery, PresentationPlan,
+    PresentationRequest, PresentationTarget,
 };
 use crate::query::core::{QueryDiagnostic, QueryDiagnosticKind};
 use crate::{TokenKind, tokenize};
@@ -101,13 +102,24 @@ pub(crate) fn compile_presentation_lookup(
     let reference_label = dialect.quote_identifier("__reference");
     let presentation_label = dialect.quote_identifier("__presentation");
     let sql = format!(
-        "SELECT {} AS {reference_label}, {expression} AS {presentation_label} FROM {relation} AS {} WHERE {qualified_id} IN ({values})",
-        dialect.binary_hex_text(&qualified_id),
+        "SELECT {qualified_id} AS {reference_label}, {expression} AS {presentation_label} FROM {relation} AS {} WHERE {qualified_id} IN ({values})",
         dialect.quote_identifier(alias),
     );
     Ok(CompiledQuery {
         sql,
-        columns: vec!["__reference".to_owned(), "__presentation".to_owned()],
+        columns: vec![
+            CompiledColumn::new(
+                "__reference".to_owned(),
+                ColumnKind::Reference {
+                    targets: vec![plan.object],
+                    runtime_typed: false,
+                },
+            ),
+            CompiledColumn::new(
+                "__presentation".to_owned(),
+                ColumnKind::String { length: None },
+            ),
+        ],
         deferred_presentations: Vec::new(),
     })
 }

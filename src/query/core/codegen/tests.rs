@@ -66,3 +66,76 @@ fn bounds_mssql_labels_by_utf16_code_units() {
     assert!(first.encode_utf16().count() <= 128);
     assert!(second.encode_utf16().count() <= 128);
 }
+
+#[test]
+fn classifies_live_catalog_types_from_both_providers() {
+    use crate::query::core::resolve::ColumnKind;
+
+    assert_eq!(
+        ColumnKind::from_catalog_type("numeric(10,2)"),
+        ColumnKind::Number {
+            precision: Some(10),
+            scale: Some(2),
+        }
+    );
+    assert_eq!(
+        ColumnKind::from_catalog_type("mvarchar(9)"),
+        ColumnKind::String { length: Some(9) }
+    );
+    assert_eq!(
+        ColumnKind::from_catalog_type("character varying(150)"),
+        ColumnKind::String { length: Some(150) }
+    );
+    assert_eq!(
+        ColumnKind::from_catalog_type("nvarchar(max)"),
+        ColumnKind::String { length: None }
+    );
+    assert_eq!(
+        ColumnKind::from_catalog_type("timestamp without time zone"),
+        ColumnKind::DateTime
+    );
+    assert_eq!(
+        ColumnKind::from_catalog_type("datetime2"),
+        ColumnKind::DateTime
+    );
+    assert_eq!(
+        ColumnKind::from_catalog_type("timestamp"),
+        ColumnKind::Binary { length: Some(8) }
+    );
+    assert_eq!(
+        ColumnKind::from_catalog_type("binary(16)"),
+        ColumnKind::Binary { length: Some(16) }
+    );
+    assert_eq!(
+        ColumnKind::from_catalog_type("bytea"),
+        ColumnKind::Binary { length: None }
+    );
+    assert_eq!(
+        ColumnKind::from_catalog_type("int"),
+        ColumnKind::Number {
+            precision: Some(10),
+            scale: Some(0),
+        }
+    );
+    assert_eq!(ColumnKind::from_catalog_type("bit"), ColumnKind::Boolean);
+    assert_eq!(
+        ColumnKind::from_catalog_type("boolean"),
+        ColumnKind::Boolean
+    );
+    assert_eq!(
+        ColumnKind::from_catalog_type("uniqueidentifier"),
+        ColumnKind::Uuid
+    );
+    assert_eq!(
+        ColumnKind::from_catalog_type("xml"),
+        ColumnKind::Unknown {
+            data_type: "xml".to_owned()
+        }
+    );
+    assert!(ColumnKind::Null.is_compatible_with(&ColumnKind::DateTime));
+    assert!(
+        ColumnKind::String { length: Some(1) }
+            .is_compatible_with(&ColumnKind::String { length: None })
+    );
+    assert!(!ColumnKind::Boolean.is_compatible_with(&ColumnKind::DateTime));
+}

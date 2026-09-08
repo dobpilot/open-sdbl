@@ -1416,7 +1416,11 @@ fn print_query_rows(
     compiled: &CompiledQuery,
     rows: &QueryRows,
 ) -> io::Result<()> {
-    let headers: Vec<&str> = compiled.columns.iter().map(String::as_str).collect();
+    let headers: Vec<&str> = compiled
+        .columns
+        .iter()
+        .map(|column| column.label.as_str())
+        .collect();
     print_table(output, &headers, rows)?;
     writeln!(output, "({} rows)", rows.len())
 }

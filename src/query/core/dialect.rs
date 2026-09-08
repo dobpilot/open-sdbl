@@ -3,6 +3,7 @@
 use std::collections::HashSet;
 
 use crate::query::core::ast::{DateTimeValue, PeriodKind};
+use crate::query::core::resolve::ColumnKind;
 use crate::query::core::{QueryDiagnostic, QueryDiagnosticKind};
 use crate::{Keyword, Token, TokenKind};
 
@@ -169,13 +170,16 @@ impl SqlDialect {
         }
     }
 
-    pub(super) fn text(self, expression: &str) -> String {
+    /// Text conversion used only by presentation functions, whose result is
+    /// a string by definition.
+    fn text(self, expression: &str) -> String {
         match self {
             Self::Postgres => format!("{expression}::text"),
             Self::MsSql { .. } => format!("CONVERT(nvarchar(max), {expression})"),
         }
     }
 
+    /// Converts a scalar presentation argument to text.
     pub(super) fn scalar_text(self, expression: &str) -> String {
         match self {
             Self::Postgres => format!("({expression})::text"),
@@ -183,12 +187,46 @@ impl SqlDialect {
         }
     }
 
-    pub(super) fn date_scalar_text(self, expression: &str) -> String {
+    /// Returns a projected date expression in the logical 1C domain: MSSQL
+    /// subtracts `_YearOffset`, PostgreSQL passes the expression through.
+    pub(super) fn date_scalar(self, expression: &str) -> String {
         match self {
             Self::MsSql { year_offset } if year_offset != 0 => {
-                self.text(&format!("DATEADD(year, {}, {expression})", -year_offset))
+                format!("DATEADD(year, {}, {expression})", -year_offset)
             }
-            _ => self.scalar_text(expression),
+            _ => expression.to_owned(),
+        }
+    }
+
+    /// Projects one physical column in its native type. The only conversions
+    /// are the MSSQL year-offset correction for dates and a `text` cast for
+    /// the PostgreSQL 1C extension types `mchar`/`mvarchar`, whose binary
+    /// wire format is undocumented.
+    pub(super) fn column_projection(
+        self,
+        expression: &str,
+        kind: &ColumnKind,
+        data_type: &str,
+    ) -> String {
+        match (self, kind) {
+            (Self::MsSql { year_offset }, ColumnKind::DateTime) if year_offset != 0 => {
+                format!("DATEADD(year, {}, {expression})", -year_offset)
+            }
+            (Self::Postgres, ColumnKind::String { .. })
+                if matches!(base_type_name(data_type).as_str(), "mchar" | "mvarchar") =>
+            {
+                format!("{expression}::text")
+            }
+            _ => expression.to_owned(),
+        }
+    }
+
+    /// Concatenates the `RTRef` discriminator and the `RRRef` value into the
+    /// 20-byte runtime-typed reference payload.
+    pub(super) fn reference_payload(self, type_value: &str, reference: &str) -> String {
+        match self {
+            Self::Postgres => format!("({type_value} || {reference})"),
+            Self::MsSql { .. } => format!("({type_value} + {reference})"),
         }
     }
 
@@ -282,12 +320,10 @@ impl SqlDialect {
         }
     }
 
-    pub(super) fn column_text(self, expression: &str, data_type: &str) -> String {
-        let base = data_type
-            .split_once('(')
-            .map_or(data_type, |(base, _)| base)
-            .trim()
-            .to_ascii_lowercase();
+    /// Converts one presentation template field to text so that it can be
+    /// concatenated with literal template parts.
+    pub(super) fn presentation_field_text(self, expression: &str, data_type: &str) -> String {
+        let base = base_type_name(data_type);
         match self {
             Self::MsSql { .. } if matches!(base.as_str(), "timestamp" | "rowversion") => {
                 expression.to_owned()
@@ -378,22 +414,6 @@ impl SqlDialect {
         }
     }
 
-    pub(super) fn binary_hex_text(self, expression: &str) -> String {
-        match self {
-            Self::Postgres => format!("encode({expression}, 'hex')"),
-            Self::MsSql { .. } => format!("CONVERT(varchar(max), {expression}, 2)"),
-        }
-    }
-
-    pub(super) fn deferred_reference_payload(self, type_value: &str, reference: &str) -> String {
-        let encoded_type = self.binary_hex_text(type_value);
-        let encoded_reference = self.binary_hex_text(reference);
-        format!(
-            "CASE WHEN {reference} IS NULL THEN {} ELSE concat({encoded_type}, ':', {encoded_reference}) END",
-            self.string_literal("")
-        )
-    }
-
     pub(super) fn select_prefix(self, distinct: bool, top: Option<u32>) -> String {
         let mut sql = String::from("SELECT ");
         if distinct {
@@ -416,4 +436,13 @@ impl SqlDialect {
             write!(sql, " LIMIT {top}").expect("writing to String cannot fail");
         }
     }
+}
+
+/// Lower-case catalog type name without its length or precision suffix.
+pub(super) fn base_type_name(data_type: &str) -> String {
+    data_type
+        .split_once('(')
+        .map_or(data_type, |(base, _)| base)
+        .trim()
+        .to_ascii_lowercase()
 }

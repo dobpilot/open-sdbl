@@ -23,6 +23,7 @@ struct MetadataIndex {
     objects_by_id: HashMap<ObjectId, usize>,
     objects_by_name: HashMap<(MetadataKind, String), LookupSlot<usize>>,
     objects_by_database_type: HashMap<u32, LookupSlot<ObjectId>>,
+    objects_by_physical_table: HashMap<String, LookupSlot<ObjectId>>,
     attributes_by_id: HashMap<AttributeId, LookupSlot<usize>>,
     attributes_by_owner_name: HashMap<(ObjectId, String), LookupSlot<usize>>,
     values_by_owner_name: HashMap<(ObjectId, String), LookupSlot<usize>>,
@@ -558,6 +559,25 @@ impl MetadataSnapshot {
     /// Returns a typed missing or ambiguity outcome.
     pub fn object_id_by_database_type(&self, number: u32) -> Result<ObjectId, LookupError> {
         match self.index.objects_by_database_type.get(&number) {
+            Some(LookupSlot::Unique(id)) => Ok(*id),
+            Some(LookupSlot::Ambiguous) => Err(LookupError::AmbiguousObject),
+            None => Err(LookupError::ObjectNotFound),
+        }
+    }
+
+    /// Looks up the tabular object owning a physical table by its canonical
+    /// name, accepting both the live spelling (`_Reference57`) and the
+    /// SchemaStorage spelling (`Reference57`), in expected O(1) time.
+    ///
+    /// # Errors
+    ///
+    /// Returns a typed missing or ambiguity outcome.
+    pub fn object_id_by_physical_table(&self, table: &str) -> Result<ObjectId, LookupError> {
+        match self
+            .index
+            .objects_by_physical_table
+            .get(&normalize_physical_table_name(table))
+        {
             Some(LookupSlot::Unique(id)) => Ok(*id),
             Some(LookupSlot::Ambiguous) => Err(LookupError::AmbiguousObject),
             None => Err(LookupError::ObjectNotFound),
@@ -1287,6 +1307,11 @@ fn build_metadata_index(
         }
         if let Some(table) = object.physical_table.as_deref() {
             owners_by_table.insert(normalize_name(table), id);
+            insert_slot(
+                &mut index.objects_by_physical_table,
+                normalize_physical_table_name(table),
+                id,
+            );
             if let Some(live) = live_table_by_name
                 .get(&table.to_ascii_lowercase())
                 .map(|position| &live_tables[*position])
@@ -1349,6 +1374,13 @@ where
 
 fn normalize_name(name: &str) -> String {
     name.trim().to_lowercase()
+}
+
+/// Canonical key for a physical table name: SchemaStorage spells tables
+/// without the leading underscore that the live catalog uses.
+fn normalize_physical_table_name(name: &str) -> String {
+    let trimmed = name.trim();
+    normalize_name(trimmed.strip_prefix('_').unwrap_or(trimmed))
 }
 
 fn infer_allowed_length(table: Option<&LiveTable>, column_name: &str) -> Option<AllowedLength> {

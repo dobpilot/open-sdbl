@@ -1,11 +1,85 @@
 use super::context::CompilationContext;
 use super::sources::compile_metadata_value;
+use crate::metadata::MetadataSnapshot;
 use crate::query::core::ast::{AggregateArgument, AggregateKind, Expression};
 use crate::query::core::dialect::compile_literal;
 use crate::query::core::names::names_equal;
-use crate::query::core::resolve::{QueryableColumn, QueryableField};
+use crate::query::core::resolve::{
+    ColumnKind, QueryableColumn, QueryableField, kind_from_query_name,
+};
 use crate::query::core::{QueryDiagnostic, QueryDiagnosticKind};
 use crate::{Keyword, Token, TokenKind};
+
+/// Derives the output kind of a compiled scalar expression. Must be called
+/// only after [`compile_expression`] succeeded for the same expression, so
+/// every field it names resolves.
+pub(super) fn expression_kind(
+    expression: &Expression<'_, '_>,
+    context: &mut CompilationContext<'_, '_>,
+) -> Result<ColumnKind, QueryDiagnostic> {
+    match expression {
+        Expression::Field(reference) => {
+            let resolved = context.resolve(reference)?;
+            let column = single_column(resolved.field(), reference.last())?;
+            Ok(column.kind.clone())
+        }
+        Expression::Unary { operator, value } => match operator.kind {
+            TokenKind::Keyword(Keyword::Not) => Ok(ColumnKind::Boolean),
+            _ => expression_kind(value, context),
+        },
+        _ => Ok(source_free_expression_kind(expression, context.snapshot)),
+    }
+}
+
+/// Derives the output kind of an expression that names no source field.
+pub(super) fn source_free_expression_kind(
+    expression: &Expression<'_, '_>,
+    snapshot: &MetadataSnapshot,
+) -> ColumnKind {
+    match expression {
+        Expression::Field(_) => ColumnKind::Unknown {
+            data_type: String::new(),
+        },
+        Expression::Literal(token) => literal_kind(token),
+        Expression::DateTime { .. } | Expression::BeginOfPeriod { .. } => ColumnKind::DateTime,
+        Expression::MetadataValue { kind, object, .. } => ColumnKind::Reference {
+            targets: kind_from_query_name(kind.lexeme)
+                .and_then(|kind| snapshot.object_id(kind, object.lexeme).ok())
+                .into_iter()
+                .collect(),
+            runtime_typed: false,
+        },
+        Expression::Unary { operator, value } => match operator.kind {
+            TokenKind::Keyword(Keyword::Not) => ColumnKind::Boolean,
+            _ => source_free_expression_kind(value, snapshot),
+        },
+        Expression::Binary { operator, .. } => match operator.kind {
+            TokenKind::Keyword(_) => ColumnKind::Boolean,
+            _ if matches!(operator.lexeme, "+" | "-" | "*" | "/") => ColumnKind::Number {
+                precision: None,
+                scale: None,
+            },
+            _ => ColumnKind::Boolean,
+        },
+        Expression::InList { .. } | Expression::IsNull { .. } => ColumnKind::Boolean,
+    }
+}
+
+fn literal_kind(token: &Token<'_>) -> ColumnKind {
+    match token.kind {
+        TokenKind::Number => ColumnKind::Number {
+            precision: None,
+            scale: None,
+        },
+        TokenKind::String => ColumnKind::String { length: None },
+        TokenKind::Binary => ColumnKind::Binary { length: None },
+        TokenKind::Keyword(Keyword::True | Keyword::False) => ColumnKind::Boolean,
+        TokenKind::Keyword(Keyword::Null) => ColumnKind::Null,
+        _ => ColumnKind::Unknown {
+            data_type: token.lexeme.to_owned(),
+        },
+    }
+}
 
 pub(super) fn compile_expression(
     expression: &Expression<'_, '_>,
@@ -153,37 +227,49 @@ fn compile_date_operand(
 }
 
 fn is_date_sql_type(data_type: &str) -> bool {
-    let base = data_type
-        .split_once('(')
-        .map_or(data_type, |(base, _)| base)
-        .trim()
-        .to_ascii_lowercase();
-    base.starts_with("timestamp")
-        || matches!(
-            base.as_str(),
-            "date" | "datetime" | "datetime2" | "smalldatetime" | "datetimeoffset"
-        )
+    ColumnKind::from_catalog_type(data_type) == ColumnKind::DateTime
 }
 
+/// Compiles one aggregate projection and reports its output kind: `COUNT`
+/// and `SUM` are numbers, `MIN`/`MAX` keep the kind of their argument.
 pub(super) fn compile_aggregate(
     context: &mut CompilationContext<'_, '_>,
     kind: AggregateKind,
     distinct: bool,
     argument: &AggregateArgument<'_, '_>,
-) -> Result<String, QueryDiagnostic> {
-    let argument = match argument {
-        AggregateArgument::All => "*".to_owned(),
+) -> Result<(String, ColumnKind), QueryDiagnostic> {
+    let number = ColumnKind::Number {
+        precision: None,
+        scale: None,
+    };
+    let (argument, argument_kind) = match argument {
+        AggregateArgument::All => ("*".to_owned(), number.clone()),
         AggregateArgument::Field(reference) => {
             let resolved = context.resolve(reference)?;
             let column = countable_column(resolved.field(), reference.last())?;
-            context.sql_column(&resolved, column)
+            let column_kind = match &column.kind {
+                // An aggregate over the RRRef member alone returns 16 bytes.
+                ColumnKind::Reference { targets, .. } => ColumnKind::Reference {
+                    targets: targets.clone(),
+                    runtime_typed: false,
+                },
+                other => other.clone(),
+            };
+            (context.sql_column(&resolved, column), column_kind)
         }
     };
-    Ok(context.dialect.text(&format!(
-        "{}({}{argument})",
-        kind.sql_name(),
-        if distinct { "DISTINCT " } else { "" }
-    )))
+    let output_kind = match kind {
+        AggregateKind::Count | AggregateKind::Sum => number,
+        _ => argument_kind,
+    };
+    Ok((
+        format!(
+            "{}({}{argument})",
+            kind.sql_name(),
+            if distinct { "DISTINCT " } else { "" }
+        ),
+        output_kind,
+    ))
 }
 
 fn countable_column<'field>(

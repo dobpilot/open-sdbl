@@ -2,7 +2,9 @@ use super::select::compile_branch;
 use crate::Token;
 use crate::metadata::{MetadataSnapshot, ObjectId};
 use crate::query::core::ast::{OrderTerm, QueryAst};
-use crate::query::core::resolve::{CompilationCatalog, CompiledQuery, PresentationPlan};
+use crate::query::core::resolve::{
+    CompilationCatalog, CompiledColumn, CompiledQuery, PresentationPlan,
+};
 use crate::query::core::{QueryDiagnostic, QueryDiagnosticKind, SqlDialect};
 use std::collections::BTreeSet;
 
@@ -113,6 +115,23 @@ pub(super) fn compile(
                 ),
             ));
         }
+        for (position, (column, first_column)) in
+            branch.columns.iter().zip(&first.columns).enumerate()
+        {
+            if !column.kind.is_compatible_with(&first_column.kind) {
+                return Err(QueryDiagnostic::at(
+                    QueryDiagnosticKind::UnsupportedFeature,
+                    Some(ast.unions[index - 1].token),
+                    format!(
+                        "UNION branch {} projects {:?} at column {} where branch 1 projects {:?}",
+                        index + 1,
+                        column.kind,
+                        position + 1,
+                        first_column.kind,
+                    ),
+                ));
+            }
+        }
     }
 
     if !unioned {
@@ -123,6 +142,24 @@ pub(super) fn compile(
             deferred_presentations: branch.deferred_presentations,
         });
     }
+
+    // The merged kind of each column is the first non-wildcard kind across
+    // branches, so `NULL` branches do not hide the real type.
+    let columns = first
+        .columns
+        .iter()
+        .enumerate()
+        .map(|(position, column)| {
+            let kind = branches
+                .iter()
+                .filter_map(|branch| branch.columns.get(position))
+                .map(|column| &column.kind)
+                .find(|kind| !kind.is_wildcard())
+                .unwrap_or(&column.kind)
+                .clone();
+            CompiledColumn::new(column.label.clone(), kind)
+        })
+        .collect::<Vec<_>>();
 
     let mut sql = if dialect == SqlDialect::Postgres {
         format!("({})", first.sql)
@@ -148,7 +185,7 @@ pub(super) fn compile(
     }
     Ok(CompiledQuery {
         sql,
-        columns: first.columns.clone(),
+        columns,
         deferred_presentations: first.deferred_presentations.clone(),
     })
 }

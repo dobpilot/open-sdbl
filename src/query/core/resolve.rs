@@ -13,6 +13,136 @@ use crate::query::core::ast::SourceAst;
 use crate::query::core::names::{folded_name, names_equal};
 use crate::query::core::{QueryDiagnostic, QueryDiagnosticKind};
 
+/// Structured value type of one physical or compiled output column.
+///
+/// Kinds are derived from the resolved live catalog and SchemaStorage without
+/// database round trips. The enum is `#[non_exhaustive]`: callers must keep a
+/// fallback match arm.
+#[non_exhaustive]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum ColumnKind {
+    /// A 1C reference. Without `runtime_typed` the value is the 16-byte
+    /// `RRRef`; with `runtime_typed` it is the 20-byte concatenation of the
+    /// big-endian 4-byte `RTRef` table number and the 16-byte `RRRef`.
+    Reference {
+        /// Possible target objects; empty for a universal reference.
+        targets: Vec<ObjectId>,
+        /// Whether the value carries its `RTRef` discriminator.
+        runtime_typed: bool,
+    },
+    /// Raw bytes such as `RTRef` discriminators or row versions.
+    Binary {
+        /// Declared length when the catalog fixes it.
+        length: Option<u32>,
+    },
+    /// Character data.
+    String {
+        /// Declared length when the catalog fixes it.
+        length: Option<u32>,
+    },
+    /// Numeric data, including integers with scale zero.
+    Number {
+        /// Declared decimal precision when known.
+        precision: Option<u8>,
+        /// Declared decimal scale when known.
+        scale: Option<u8>,
+    },
+    /// Boolean data (`boolean` on PostgreSQL, `bit` on MSSQL).
+    Boolean,
+    /// Date and time without time zone in the logical 1C domain.
+    DateTime,
+    /// A native UUID value.
+    Uuid,
+    /// The `NULL` literal, compatible with every other kind.
+    Null,
+    /// A catalog type the compiler does not classify.
+    Unknown {
+        /// Raw catalog type name.
+        data_type: String,
+    },
+}
+
+impl ColumnKind {
+    /// Reports whether two kinds may share one UNION column position.
+    ///
+    /// Only the variant participates: lengths, precision, scale, and reference
+    /// targets are ignored. [`ColumnKind::Null`] and [`ColumnKind::Unknown`]
+    /// are compatible with every kind.
+    #[must_use]
+    pub fn is_compatible_with(&self, other: &Self) -> bool {
+        self.is_wildcard()
+            || other.is_wildcard()
+            || std::mem::discriminant(self) == std::mem::discriminant(other)
+    }
+
+    pub(crate) const fn is_wildcard(&self) -> bool {
+        matches!(self, Self::Null | Self::Unknown { .. })
+    }
+
+    /// Classifies one live catalog type name such as `numeric(15,2)`,
+    /// `character varying(150)`, `mvarchar(9)`, `timestamp without time zone`,
+    /// `binary(16)`, or `datetime2`.
+    #[must_use]
+    pub fn from_catalog_type(data_type: &str) -> Self {
+        let (base, parameters) = split_catalog_type(data_type);
+        let first = parameters.first().copied();
+        let second = parameters.get(1).copied();
+        match base.as_str() {
+            "bytea" | "image" | "varbinary" => Self::Binary { length: first },
+            "binary" => Self::Binary { length: first },
+            "timestamp" | "rowversion" => Self::Binary { length: Some(8) },
+            "numeric" | "decimal" => Self::Number {
+                precision: first.and_then(|value| u8::try_from(value).ok()),
+                scale: second.and_then(|value| u8::try_from(value).ok()),
+            },
+            "tinyint" => Self::integer(3),
+            "smallint" | "int2" => Self::integer(5),
+            "integer" | "int" | "int4" => Self::integer(10),
+            "bigint" | "int8" => Self::integer(19),
+            "real" | "float4" | "double precision" | "float8" | "float" | "money"
+            | "smallmoney" => Self::Number {
+                precision: None,
+                scale: None,
+            },
+            "boolean" | "bool" | "bit" => Self::Boolean,
+            "date" | "datetime" | "datetime2" | "smalldatetime" | "datetimeoffset" => {
+                Self::DateTime
+            }
+            _ if base.starts_with("timestamp ") || base == "timestamptz" => Self::DateTime,
+            "text" | "character varying" | "varchar" | "character" | "char" | "bpchar"
+            | "mchar" | "mvarchar" | "nvarchar" | "nchar" | "ntext" | "name" => {
+                Self::String { length: first }
+            }
+            "uuid" | "uniqueidentifier" => Self::Uuid,
+            _ => Self::Unknown {
+                data_type: data_type.to_owned(),
+            },
+        }
+    }
+
+    const fn integer(precision: u8) -> Self {
+        Self::Number {
+            precision: Some(precision),
+            scale: Some(0),
+        }
+    }
+}
+
+/// Splits `base(p,s)` into a lower-case base name and numeric parameters;
+/// `max` and other non-numeric parameters are dropped.
+fn split_catalog_type(data_type: &str) -> (String, Vec<u32>) {
+    let trimmed = data_type.trim();
+    let Some((base, rest)) = trimmed.split_once('(') else {
+        return (trimmed.to_ascii_lowercase(), Vec::new());
+    };
+    let parameters = rest
+        .trim_end_matches(')')
+        .split(',')
+        .filter_map(|parameter| parameter.trim().parse::<u32>().ok())
+        .collect();
+    (base.trim().to_ascii_lowercase(), parameters)
+}
+
 /// One physical SQL member of a queryable logical field.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct QueryableColumn {
@@ -22,6 +152,23 @@ pub struct QueryableColumn {
     pub data_type: String,
     /// Stable output label used when projecting this member.
     pub output_label: String,
+    /// Structured value type of this member.
+    pub kind: ColumnKind,
+}
+
+impl QueryableColumn {
+    /// Whether this member is the `RTRef` discriminator of a reference field.
+    #[must_use]
+    pub fn is_reference_type_member(&self) -> bool {
+        self.physical_name.to_ascii_lowercase().ends_with("rtref")
+    }
+
+    /// Whether this member is the `RRRef`/`IDRRef` value of a reference field.
+    #[must_use]
+    pub fn is_reference_value_member(&self) -> bool {
+        let lower = self.physical_name.to_ascii_lowercase();
+        lower.ends_with("rref") && !lower.ends_with("rtref")
+    }
 }
 
 /// One logical 1C field and all physical members implementing it.
@@ -385,6 +532,7 @@ impl<'snapshot> CompilationCatalog<'snapshot> {
             .custom_names
             .get_or_init(|| index_custom_field_names(self.snapshot));
         let fields: Arc<[QueryableField]> = project_queryable_fields(
+            self.snapshot,
             physical_table,
             &merged_live,
             merged_schema.as_ref(),
@@ -411,6 +559,7 @@ impl<'snapshot> CompilationCatalog<'snapshot> {
             .custom_names
             .get_or_init(|| index_custom_field_names(self.snapshot));
         let fields: Arc<[QueryableField]> = project_queryable_fields(
+            self.snapshot,
             physical_table,
             table,
             schema_table,
@@ -458,13 +607,30 @@ pub struct PresentationRequest {
     pub targets: Vec<PresentationTarget>,
 }
 
+/// One output column of a compiled query.
+#[non_exhaustive]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CompiledColumn {
+    /// Emitted result label.
+    pub label: String,
+    /// Structured value type of the column.
+    pub kind: ColumnKind,
+}
+
+impl CompiledColumn {
+    pub(crate) const fn new(label: String, kind: ColumnKind) -> Self {
+        Self { label, kind }
+    }
+}
+
 /// Native SQL text generated from one bounded 1C query.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CompiledQuery {
     /// SELECT-only statement in the requested database dialect.
     pub sql: String,
-    /// Output labels in statement order.
-    pub columns: Vec<String>,
+    /// Output columns in statement order, each with its emitted label and
+    /// structured kind.
+    pub columns: Vec<CompiledColumn>,
     /// Zero-based output columns whose cells contain deferred reference
     /// presentation payloads for application-side batch resolution.
     pub deferred_presentations: Vec<usize>,
@@ -574,6 +740,7 @@ pub fn queryable_fields(
         merged_extension_projection(snapshot, physical_table, table, schema_table);
 
     Ok(project_queryable_fields(
+        snapshot,
         physical_table,
         &merged_live,
         merged_schema.as_ref(),
@@ -1161,6 +1328,7 @@ pub fn queryable_field_catalog(snapshot: &MetadataSnapshot) -> QueryableFieldCat
             .entry(ObjectId::from(&object.guid))
             .or_insert_with(|| {
                 project_queryable_fields(
+                    snapshot,
                     physical_table,
                     table,
                     schema_table,
@@ -1199,6 +1367,7 @@ fn index_custom_field_names(snapshot: &MetadataSnapshot) -> CustomFieldNameIndex
 }
 
 fn project_queryable_fields(
+    snapshot: &MetadataSnapshot,
     physical_table: &str,
     table: &LiveTable,
     schema_table: Option<&crate::metadata::SchemaTable>,
@@ -1258,16 +1427,34 @@ fn project_queryable_fields(
             push_unique_name(&mut aliases, schema_name.clone());
             push_unique_name(&mut aliases, name.clone());
             let compound = columns.len() > 1;
+            let runtime_typed = columns
+                .iter()
+                .any(|column| column.name.to_ascii_lowercase().ends_with("rtref"));
+            let reference_kind = reference_column_kind(
+                snapshot,
+                physical_table,
+                &schema_name,
+                &reference_targets,
+                runtime_typed,
+            );
             let columns = columns
                 .into_iter()
-                .map(|column| QueryableColumn {
-                    output_label: if compound {
-                        compound_label(&name, &schema_name, &column.name)
-                    } else {
-                        name.clone()
-                    },
-                    physical_name: column.name.clone(),
-                    data_type: column.data_type.clone(),
+                .map(|column| {
+                    let lower = column.name.to_ascii_lowercase();
+                    let is_reference_value = lower.ends_with("rref") && !lower.ends_with("rtref");
+                    QueryableColumn {
+                        output_label: if compound {
+                            compound_label(&name, &schema_name, &column.name)
+                        } else {
+                            name.clone()
+                        },
+                        physical_name: column.name.clone(),
+                        data_type: column.data_type.clone(),
+                        kind: match &reference_kind {
+                            Some(kind) if is_reference_value => kind.clone(),
+                            _ => ColumnKind::from_catalog_type(&column.data_type),
+                        },
+                    }
                 })
                 .collect();
             QueryableField {
@@ -1280,4 +1467,57 @@ fn project_queryable_fields(
             }
         })
         .collect()
+}
+
+/// Derives the reference kind of a field's `RRRef`/`IDRRef` member, or `None`
+/// when the field is not a reference.
+///
+/// SchemaStorage targets are resolved to object IDs through the snapshot
+/// index; targets whose table is absent are skipped because projecting the
+/// field remains valid. A bare `_IDRRef` without SchemaStorage targets points
+/// at the owner of the physical table.
+fn reference_column_kind(
+    snapshot: &MetadataSnapshot,
+    physical_table: &str,
+    schema_name: &str,
+    reference_targets: &[String],
+    runtime_typed: bool,
+) -> Option<ColumnKind> {
+    if reference_targets.is_empty() {
+        // An `RTRef` member marks a reference even when SchemaStorage does
+        // not enumerate its targets.
+        if runtime_typed {
+            return Some(ColumnKind::Reference {
+                targets: Vec::new(),
+                runtime_typed: true,
+            });
+        }
+        if names_equal(schema_name, "ID") {
+            let targets = snapshot
+                .object_id_by_physical_table(physical_table)
+                .ok()
+                .into_iter()
+                .collect();
+            return Some(ColumnKind::Reference {
+                targets,
+                runtime_typed: false,
+            });
+        }
+        return None;
+    }
+    let mut targets = Vec::new();
+    for target in reference_targets {
+        if target.is_empty() {
+            continue;
+        }
+        if let Ok(id) = snapshot.object_id_by_physical_table(target)
+            && !targets.contains(&id)
+        {
+            targets.push(id);
+        }
+    }
+    Some(ColumnKind::Reference {
+        targets,
+        runtime_typed,
+    })
 }
