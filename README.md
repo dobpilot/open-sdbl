@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/dobpilot/open-sdbl/actions/workflows/ci.yml/badge.svg)](https://github.com/dobpilot/open-sdbl/actions/workflows/ci.yml)
 [![Rust 2024](https://img.shields.io/badge/Rust-2024-dea584?logo=rust)](https://doc.rust-lang.org/edition-guide/rust-2024/)
-[![License: GPL-3.0](https://img.shields.io/badge/license-GPL--3.0--only-blue.svg)](LICENSE)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 `open-sdbl` — библиотека и интерактивная консоль для запросов к информационным
 базам 1С на PostgreSQL и Microsoft SQL Server. Проект читает служебные
@@ -646,4 +646,4 @@ Callback вызывается для типа, а не для каждой ст�
 
 ## Лицензия
 
-[GNU General Public License v3.0 only](LICENSE).
+[MIT License](LICENSE).
