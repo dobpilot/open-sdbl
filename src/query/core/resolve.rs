@@ -491,41 +491,22 @@ impl<'snapshot> CompilationCatalog<'snapshot> {
         if let Some(fields) = self.fields.borrow().get(&key) {
             return Ok(Arc::clone(fields));
         }
-        self.charge(self.snapshot.live_tables().len().max(1), token)?;
-        let table = self
-            .snapshot
-            .live_tables()
-            .iter()
-            .find(|table| names_equal(&table.name, physical_table))
-            .ok_or_else(|| {
-                QueryDiagnostic::at_or_unpositioned(
-                    QueryDiagnosticKind::NotLive,
-                    token,
-                    format!("physical table {physical_table:?} is not live"),
-                )
-            })?;
-        self.charge(self.snapshot.live_tables().len().max(1), token)?;
-        let extension_live_count = self
-            .snapshot
-            .live_tables()
-            .iter()
-            .filter(|candidate| is_extension_table_name(physical_table, &candidate.name))
-            .count();
-        let schema_passes = extension_live_count.saturating_add(2);
-        self.charge(
-            self.snapshot
-                .schema()
-                .tables
-                .len()
-                .max(1)
-                .saturating_mul(schema_passes),
-            token,
-        )?;
+        let table = self.snapshot.live_table(physical_table).ok_or_else(|| {
+            QueryDiagnostic::at_or_unpositioned(
+                QueryDiagnosticKind::NotLive,
+                token,
+                format!("physical table {physical_table:?} is not live"),
+            )
+        })?;
+        // Lookups are indexed, so the work is the merged projection itself:
+        // one unit per live variant plus one per merged column.
+        let extension_live_count = self.snapshot.extension_live_tables(physical_table).count();
+        self.charge(extension_live_count.saturating_add(1), token)?;
         let (merged_live, merged_schema) = merged_extension_projection(
             self.snapshot,
             physical_table,
             table,
-            self.snapshot.schema().table(physical_table),
+            self.snapshot.schema_table(physical_table),
         );
         self.charge(merged_live.columns.len().max(1), token)?;
         let custom_names = self
@@ -725,17 +706,13 @@ pub fn queryable_fields(
             "metadata object has no physical table",
         )
     })?;
-    let table = snapshot
-        .live_tables()
-        .iter()
-        .find(|table| names_equal(&table.name, physical_table))
-        .ok_or_else(|| {
-            QueryDiagnostic::unpositioned(
-                QueryDiagnosticKind::Metadata,
-                format!("physical table {physical_table} is not live"),
-            )
-        })?;
-    let schema_table = snapshot.schema().table(physical_table);
+    let table = snapshot.live_table(physical_table).ok_or_else(|| {
+        QueryDiagnostic::unpositioned(
+            QueryDiagnosticKind::Metadata,
+            format!("physical table {physical_table} is not live"),
+        )
+    })?;
+    let schema_table = snapshot.schema_table(physical_table);
     let (merged_live, merged_schema) =
         merged_extension_projection(snapshot, physical_table, table, schema_table);
 
@@ -755,16 +732,8 @@ fn merged_extension_projection(
     canonical_schema: Option<&SchemaTable>,
 ) -> (LiveTable, Option<SchemaTable>) {
     let mut live = canonical_live.clone();
-    for variant in snapshot
-        .live_tables()
-        .iter()
-        .filter(|candidate| is_extension_table_name(physical_table, &candidate.name))
-    {
-        let variant_schema = snapshot
-            .schema()
-            .tables
-            .iter()
-            .find(|schema| names_equal(&schema.physical_name(), &variant.name));
+    for variant in snapshot.extension_live_tables(physical_table) {
+        let variant_schema = snapshot.schema_table(&variant.name);
         for column in &variant.columns {
             let logical = logical_column_name(&column.name);
             let declared_in_variant = variant_schema.is_some_and(|variant_schema| {
@@ -772,10 +741,7 @@ fn merged_extension_projection(
                     names_equal(&logical_column_name(&declared.physical_name()), &logical)
                 })
             });
-            let is_extension_field = snapshot.fields().iter().any(|field| {
-                field.extension_origin.is_some()
-                    && names_equal(&logical_column_name(&field.physical_name), &logical)
-            });
+            let is_extension_field = snapshot.is_extension_field_name(&logical);
             if (declared_in_variant || is_extension_field)
                 && !live
                     .columns
@@ -787,12 +753,10 @@ fn merged_extension_projection(
         }
     }
     let mut schema = canonical_schema.cloned();
-    for variant in snapshot
-        .schema()
-        .tables
-        .iter()
-        .filter(|candidate| is_extension_table_name(physical_table, &candidate.physical_name()))
-    {
+    let schema_variants = snapshot
+        .extension_live_tables(physical_table)
+        .filter_map(|variant| snapshot.schema_table(&variant.name));
+    for variant in schema_variants {
         let merged = schema.get_or_insert_with(|| SchemaTable {
             name: physical_table.trim_start_matches('_').to_owned(),
             number: variant.number,
@@ -822,13 +786,10 @@ fn merged_extension_projection(
         else {
             continue;
         };
-        let Some(target) = snapshot.fields().iter().find_map(|field| {
-            (field.extension_origin.is_some()
-                && field.number == number
-                && field.reference_target.is_some())
-            .then(|| field.reference_target.clone())
-            .flatten()
-        }) else {
+        let Some(target) = snapshot
+            .extension_reference_target(number)
+            .map(str::to_owned)
+        else {
             continue;
         };
         let merged = schema.get_or_insert_with(|| SchemaTable {
@@ -888,12 +849,7 @@ pub(super) fn resolve_source_metadata<'snapshot>(
         let live_table = object
             .physical_table
             .as_deref()
-            .and_then(|physical| {
-                snapshot
-                    .live_tables()
-                    .iter()
-                    .find(|table| names_equal(&table.name, physical))
-            })
+            .and_then(|physical| snapshot.live_table(physical))
             .ok_or_else(|| {
                 QueryDiagnostic::at(
                     QueryDiagnosticKind::NotLive,
@@ -992,12 +948,9 @@ pub(super) fn resolve_source_metadata<'snapshot>(
     })?;
     let physical_table = format!("{parent_physical}_VT{}", mapping.number);
     let mut live_variants = snapshot
-        .live_tables()
-        .iter()
-        .filter(|table| {
-            names_equal(&table.name, &physical_table)
-                || is_extension_table_name(&physical_table, &table.name)
-        })
+        .live_table(&physical_table)
+        .into_iter()
+        .chain(snapshot.extension_live_tables(&physical_table))
         .collect::<Vec<_>>();
     live_variants.sort_by_key(|table| table.name.to_ascii_lowercase());
     if live_variants.is_empty() {
@@ -1182,17 +1135,13 @@ fn resolve_service_table_part<'snapshot>(
             inline_service_physical(snapshot, parent, |name| name.starts_with("ExtDim"), token)?
         }
     };
-    let live_table = snapshot
-        .live_tables()
-        .iter()
-        .find(|table| names_equal(&table.name, &physical))
-        .ok_or_else(|| {
-            QueryDiagnostic::at(
-                QueryDiagnosticKind::NotLive,
-                Some(token),
-                format!("service table {physical:?} is not live"),
-            )
-        })?;
+    let live_table = snapshot.live_table(&physical).ok_or_else(|| {
+        QueryDiagnostic::at(
+            QueryDiagnosticKind::NotLive,
+            Some(token),
+            format!("service table {physical:?} is not live"),
+        )
+    })?;
     let schema_table = snapshot.schema().table(&physical).ok_or_else(|| {
         QueryDiagnostic::at(
             QueryDiagnosticKind::Metadata,

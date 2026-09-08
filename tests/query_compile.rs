@@ -1830,7 +1830,7 @@ fn extension_projection_scans_are_budgeted_once_after_the_field_cache_miss() {
 }
 
 #[test]
-fn extension_projection_catalog_scans_cannot_escape_the_work_budget() {
+fn unrelated_catalog_tables_do_not_consume_the_work_budget() {
     let snapshot = with_schema(snapshot(), |schema| {
         schema.tables.extend(
             (0..9_000).map(|index| schema_table(&format!("Unrelated{index}"), 0, Vec::new())),
@@ -1840,10 +1840,10 @@ fn extension_projection_catalog_scans_cannot_escape_the_work_budget() {
         tables.extend((0..9_000).map(|index| live_table(&format!("_unrelated{index}"), &[])));
     });
 
-    let error = QueryCompiler::new(&snapshot, PostgresBackend)
+    let compiled = QueryCompiler::new(&snapshot, PostgresBackend)
         .compile("SELECT Code FROM Catalog.OpenSdblMetadataProbe;")
-        .unwrap_err();
-    assert_eq!(error.kind(), QueryDiagnosticKind::WorkBudgetExceeded);
+        .unwrap();
+    assert_eq!(labels(&compiled), ["Code"]);
 }
 
 #[test]
@@ -3220,4 +3220,114 @@ fn diagnoses_invalid_uuid_arguments() {
     )
     .unwrap();
     assert_eq!(labels(&alias), ["UUID"]);
+}
+
+fn inflated_snapshot(extra_tables: usize) -> MetadataSnapshot {
+    let base = universal_dereferenced_presentation_snapshot();
+    let mut schema = base.schema().clone();
+    let mut live = base.live_tables().to_vec();
+    let template = schema.tables[0].clone();
+    for offset in 0..extra_tables {
+        let number = 10_000 + u32::try_from(offset).unwrap();
+        let mut table = template.clone();
+        table.name = format!("Reference{number}");
+        table.number = number;
+        schema.tables.push(table);
+        live.push(LiveTable {
+            name: format!("_reference{number}"),
+            columns: vec![LiveColumn {
+                name: "_idrref".to_owned(),
+                data_type: "bytea".to_owned(),
+            }],
+            indexes: Vec::new(),
+        });
+    }
+    resolve_metadata(
+        base.db_names().clone(),
+        base.descriptors().to_vec(),
+        schema,
+        live,
+    )
+    .snapshot
+}
+
+#[test]
+fn compilation_work_does_not_scale_with_information_base_size() {
+    let snapshot = inflated_snapshot(20_000);
+    let source = "ВЫБРАТЬ ПЕРВЫЕ 10
+        ПредставлениеСсылки(строки.ЦФО) КАК ЦФО,
+        ПредставлениеСсылки(строки.Ссылка.ДоговорКонтрагента) КАК Договор,
+        строки.СуммаБезНДС КАК СуммаБезНДС,
+        строки.Период КАК Период,
+        ПредставлениеСсылки(строки.ЦФО.Сам_БизнесРегион) КАК Город
+        ИЗ РегистрСведений.бит_СтатусыОбъектов КАК статусы
+        ВНУТРЕННЕЕ СОЕДИНЕНИЕ Документ.бит_ДополнительныеУсловияПоДоговору.ГрафикНачислений КАК строки
+        ПО статусы.Объект = строки.Ссылка
+        ГДЕ строки.Сумма > 0;";
+    let (postgres, mssql) = for_each_backend!(prepare source, &snapshot);
+    let prepared = postgres.unwrap();
+    assert!(mssql.is_ok());
+    let plans = prepared
+        .presentation_request()
+        .targets
+        .iter()
+        .map(|target| {
+            let id = FieldId::Standard(StandardFieldId::Id);
+            PresentationPlan {
+                object: target.object,
+                fields: vec![id],
+                expression: PresentationExpression::Field(id),
+            }
+        })
+        .collect::<Vec<_>>();
+    let compiled = prepared.compile(&snapshot, &plans).unwrap();
+    assert_eq!(compiled.columns.len(), 5);
+    assert_eq!(compiled.deferred_presentations, [1]);
+}
+
+#[test]
+fn indexes_live_and_schema_tables_including_extension_variants() {
+    let snapshot = with_live_tables(snapshot(), |tables| {
+        tables.push(LiveTable {
+            name: "_reference53X1".to_owned(),
+            columns: vec![LiveColumn {
+                name: "_fld99".to_owned(),
+                data_type: "bytea".to_owned(),
+            }],
+            indexes: Vec::new(),
+        });
+    });
+    assert_eq!(
+        snapshot
+            .live_table("_Reference53")
+            .map(|table| table.name.as_str()),
+        Some("_reference53")
+    );
+    assert!(snapshot.live_table("_reference99").is_none());
+    assert_eq!(
+        snapshot
+            .extension_live_tables("_reference53")
+            .map(|table| table.name.as_str())
+            .collect::<Vec<_>>(),
+        ["_reference53X1"]
+    );
+    assert!(
+        snapshot
+            .extension_live_tables("_reference53X1")
+            .next()
+            .is_none()
+    );
+    assert_eq!(
+        snapshot
+            .schema_table("_reference53")
+            .map(|table| table.number),
+        snapshot
+            .schema()
+            .table("_reference53")
+            .map(|table| table.number)
+    );
+    assert_eq!(
+        snapshot.object_id_by_physical_table("Reference53"),
+        snapshot.object_id_by_physical_table("_reference53")
+    );
 }

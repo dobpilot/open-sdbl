@@ -392,17 +392,13 @@ fn resolve_balance_totals<'snapshot>(
             format!("Balance totals table {physical_name} is absent from SchemaStorage"),
         )
     })?;
-    let live_table = snapshot
-        .live_tables()
-        .iter()
-        .find(|table| names_equal(&table.name, &physical_name))
-        .ok_or_else(|| {
-            QueryDiagnostic::at(
-                QueryDiagnosticKind::NotLive,
-                Some(token),
-                format!("Balance totals table {physical_name} is not live"),
-            )
-        })?;
+    let live_table = snapshot.live_table(&physical_name).ok_or_else(|| {
+        QueryDiagnostic::at(
+            QueryDiagnosticKind::NotLive,
+            Some(token),
+            format!("Balance totals table {physical_name} is not live"),
+        )
+    })?;
     let period = live_table
         .columns
         .iter()

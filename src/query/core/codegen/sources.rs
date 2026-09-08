@@ -17,8 +17,7 @@ use crate::query::core::ast::{
 use crate::query::core::dialect::{OutputLabelAllocator, SqlDialect, compile_literal};
 use crate::query::core::names::names_equal;
 use crate::query::core::resolve::{
-    ColumnKind, CompilationCatalog, CompiledColumn, QueryableField, is_extension_table_name,
-    kind_from_query_name,
+    ColumnKind, CompilationCatalog, CompiledColumn, QueryableField, kind_from_query_name,
 };
 use crate::query::core::{QueryDiagnostic, QueryDiagnosticKind};
 use crate::{Keyword, Token, TokenKind};
@@ -293,17 +292,13 @@ pub(super) fn compile_metadata_value(
             "VALUE catalog has no physical table",
         )
     })?;
-    let table = snapshot
-        .live_tables()
-        .iter()
-        .find(|table| names_equal(&table.name, physical_table))
-        .ok_or_else(|| {
-            QueryDiagnostic::at(
-                QueryDiagnosticKind::NotLive,
-                Some(object_token),
-                "VALUE catalog table is not live",
-            )
-        })?;
+    let table = snapshot.live_table(physical_table).ok_or_else(|| {
+        QueryDiagnostic::at(
+            QueryDiagnosticKind::NotLive,
+            Some(object_token),
+            "VALUE catalog table is not live",
+        )
+    })?;
     let id = table
         .columns
         .iter()
@@ -492,12 +487,9 @@ pub(super) fn compile_live_relation(
 ) -> String {
     let canonical_name = extension_table_base(&canonical.name).unwrap_or(&canonical.name);
     let mut tables = snapshot
-        .live_tables()
-        .iter()
-        .filter(|table| {
-            names_equal(&table.name, canonical_name)
-                || is_extension_table_name(canonical_name, &table.name)
-        })
+        .live_table(canonical_name)
+        .into_iter()
+        .chain(snapshot.extension_live_tables(canonical_name))
         .collect::<Vec<_>>();
     tables.sort_by_key(|table| table.name.to_ascii_lowercase());
     if tables.len() == 1 {

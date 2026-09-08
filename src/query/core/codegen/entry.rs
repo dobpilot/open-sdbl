@@ -66,12 +66,7 @@ pub(crate) fn compile_presentation_lookup(
     let target_table = object
         .physical_table
         .as_deref()
-        .and_then(|physical| {
-            snapshot
-                .live_tables()
-                .iter()
-                .find(|table| names_equal(&table.name, physical))
-        })
+        .and_then(|physical| snapshot.live_table(physical))
         .ok_or_else(|| {
             QueryDiagnostic::unpositioned(
                 QueryDiagnosticKind::NotLive,

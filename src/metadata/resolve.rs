@@ -8,8 +8,8 @@ use super::db_names::DbNameFieldConflict;
 use super::normalize::{normalize_logical_name, normalize_standard_field_name};
 use super::{
     AttributeId, ConfigDescriptor, ConfigFieldPurpose, ConfigPredefinedValue, DbNameEntry, DbNames,
-    FieldId, Guid, LookupError, MetadataKind, ObjectId, SchemaStorage, StandardFieldId,
-    collapse_logical_fields, normalize_index_key, recase_postgres_identifier,
+    FieldId, Guid, LookupError, MetadataKind, ObjectId, SchemaStorage, SchemaTable,
+    StandardFieldId, collapse_logical_fields, normalize_index_key, recase_postgres_identifier,
 };
 
 #[derive(Debug, Clone, Copy)]
@@ -24,6 +24,18 @@ struct MetadataIndex {
     objects_by_name: HashMap<(MetadataKind, String), LookupSlot<usize>>,
     objects_by_database_type: HashMap<u32, LookupSlot<ObjectId>>,
     objects_by_physical_table: HashMap<String, LookupSlot<ObjectId>>,
+    /// Lower-case live table name to its position.
+    live_tables_by_name: HashMap<String, usize>,
+    /// Lower-case canonical table name to the positions of its `X<n>`
+    /// extension variants, sorted by name.
+    extension_variants_by_base: HashMap<String, Vec<usize>>,
+    /// Lower-case SchemaStorage table name (without the leading underscore)
+    /// to its position.
+    schema_tables_by_name: HashMap<String, usize>,
+    /// Normalized logical names of fields added by configuration extensions.
+    extension_field_names: HashSet<String>,
+    /// Reference target of an extension field by its field number.
+    extension_reference_targets: HashMap<u32, String>,
     attributes_by_id: HashMap<AttributeId, LookupSlot<usize>>,
     attributes_by_owner_name: HashMap<(ObjectId, String), LookupSlot<usize>>,
     values_by_owner_name: HashMap<(ObjectId, String), LookupSlot<usize>>,
@@ -565,6 +577,51 @@ impl MetadataSnapshot {
         }
     }
 
+    /// Looks up a live table by its physical name, case-insensitively, in
+    /// expected O(1) time.
+    #[must_use]
+    pub fn live_table(&self, physical_name: &str) -> Option<&LiveTable> {
+        self.index
+            .live_tables_by_name
+            .get(&physical_name.to_ascii_lowercase())
+            .map(|position| &self.live_tables[*position])
+    }
+
+    /// Returns the `X<n>` configuration-extension variants of a canonical
+    /// physical table, sorted by name.
+    pub fn extension_live_tables(&self, physical_name: &str) -> impl Iterator<Item = &LiveTable> {
+        self.index
+            .extension_variants_by_base
+            .get(&physical_name.to_ascii_lowercase())
+            .into_iter()
+            .flatten()
+            .map(|position| &self.live_tables[*position])
+    }
+
+    /// Looks up a SchemaStorage table by physical or schema name in expected
+    /// O(1) time.
+    #[must_use]
+    pub fn schema_table(&self, physical_name: &str) -> Option<&SchemaTable> {
+        let name = physical_name.strip_prefix('_').unwrap_or(physical_name);
+        self.index
+            .schema_tables_by_name
+            .get(&name.to_ascii_lowercase())
+            .map(|position| &self.schema.tables[*position])
+    }
+
+    pub(crate) fn is_extension_field_name(&self, logical_name: &str) -> bool {
+        self.index
+            .extension_field_names
+            .contains(&normalize_name(logical_name))
+    }
+
+    pub(crate) fn extension_reference_target(&self, number: u32) -> Option<&str> {
+        self.index
+            .extension_reference_targets
+            .get(&number)
+            .map(String::as_str)
+    }
+
     /// Looks up the tabular object owning a physical table by its canonical
     /// name, accepting both the live spelling (`_Reference57`) and the
     /// SchemaStorage spelling (`Reference57`), in expected O(1) time.
@@ -946,6 +1003,7 @@ pub fn resolve_metadata_with_predefined_values_and_extensions(
         &objects,
         &fields,
         &values,
+        &schema,
         &live_tables,
         &live_table_by_name,
     );
@@ -1282,10 +1340,51 @@ fn build_metadata_index(
     objects: &[MetadataObject],
     fields: &[MetadataField],
     values: &[MetadataValue],
+    schema: &SchemaStorage,
     live_tables: &[LiveTable],
     live_table_by_name: &HashMap<String, usize>,
 ) -> MetadataIndex {
-    let mut index = MetadataIndex::default();
+    let mut index = MetadataIndex {
+        live_tables_by_name: live_table_by_name.clone(),
+        ..MetadataIndex::default()
+    };
+    for (position, table) in live_tables.iter().enumerate() {
+        if let Some(base) = extension_table_base(&table.name) {
+            index
+                .extension_variants_by_base
+                .entry(base.to_ascii_lowercase())
+                .or_default()
+                .push(position);
+        }
+    }
+    for variants in index.extension_variants_by_base.values_mut() {
+        variants.sort_by_key(|position| live_tables[*position].name.to_ascii_lowercase());
+    }
+    for (position, table) in schema.tables.iter().enumerate() {
+        index
+            .schema_tables_by_name
+            .entry(table.name.to_ascii_lowercase())
+            .or_insert(position);
+    }
+    for field in fields {
+        if field.extension_origin.is_none() {
+            continue;
+        }
+        let logical = collapse_logical_fields([field.physical_name.as_str()])
+            .into_iter()
+            .next()
+            .map_or_else(
+                || normalize_logical_name(&field.physical_name),
+                |field| field.name,
+            );
+        index.extension_field_names.insert(normalize_name(&logical));
+        if let Some(target) = field.reference_target.as_deref() {
+            index
+                .extension_reference_targets
+                .entry(field.number)
+                .or_insert_with(|| target.to_owned());
+        }
+    }
     let mut owners_by_table = HashMap::<String, ObjectId>::new();
     for (position, object) in objects.iter().enumerate() {
         let id = ObjectId::from(&object.guid);

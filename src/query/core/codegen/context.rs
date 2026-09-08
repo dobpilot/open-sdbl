@@ -451,18 +451,13 @@ impl CompilationContext<'_, '_> {
                 ));
             }
         };
-        let target_live_table = self
-            .snapshot
-            .live_tables()
-            .iter()
-            .find(|table| names_equal(&table.name, &target_physical))
-            .ok_or_else(|| {
-                QueryDiagnostic::at(
-                    QueryDiagnosticKind::NotLive,
-                    Some(reference_token),
-                    format!("reference target table {target_physical:?} is not live"),
-                )
-            })?;
+        let target_live_table = self.snapshot.live_table(&target_physical).ok_or_else(|| {
+            QueryDiagnostic::at(
+                QueryDiagnosticKind::NotLive,
+                Some(reference_token),
+                format!("reference target table {target_physical:?} is not live"),
+            )
+        })?;
         let target_object_id = ObjectId::from(&target_object.guid);
         let target_fields = self.catalog.fields(target_object, Some(reference_token))?;
         let (target_field_index, _) = resolve_named_field(&target_fields, target_token)?;
@@ -589,12 +584,7 @@ impl CompilationContext<'_, '_> {
         let target_table = target_object
             .physical_table
             .as_deref()
-            .and_then(|physical| {
-                self.snapshot
-                    .live_tables()
-                    .iter()
-                    .find(|table| names_equal(&table.name, physical))
-            })
+            .and_then(|physical| self.snapshot.live_table(physical))
             .ok_or_else(|| {
                 QueryDiagnostic::at(
                     QueryDiagnosticKind::NotLive,
