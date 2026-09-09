@@ -251,16 +251,18 @@ impl MsSqlMetadataQueries {
         "SELECT CONVERT(int, 0), [BinaryData] FROM [dbo].[Params] WHERE [FileName] = N'DBNames'";
 
     /// Reads every part of canonical-GUID descriptors and `.1c` predefined
-    /// values as `(name, part, data)` rows ordered by name and part.
-    pub const CONFIG: &'static str = "SELECT CONVERT(nvarchar(128), [FileName]), [PartNo], [BinaryData] FROM [dbo].[Config] WHERE ((LEN([FileName]) = 36 AND TRY_CONVERT(uniqueidentifier, [FileName]) IS NOT NULL) OR (LEN([FileName]) = 39 AND RIGHT([FileName], 3) = N'.1c' AND TRY_CONVERT(uniqueidentifier, LEFT([FileName], 36)) IS NOT NULL)) ORDER BY [FileName], [PartNo]";
+    /// values as `(name, part, data)` rows ordered by name and part. The name
+    /// filter uses `LIKE` character classes so that SQL Server 2005–2008 R2,
+    /// which lack `TRY_CONVERT`, are supported.
+    pub const CONFIG: &'static str = "SELECT CONVERT(nvarchar(128), [FileName]), [PartNo], [BinaryData] FROM [dbo].[Config] WHERE ([FileName] LIKE N'[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]-[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]-[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]-[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]-[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]' OR [FileName] LIKE N'[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]-[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]-[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]-[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]-[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f].1c') ORDER BY [FileName], [PartNo]";
 
     /// Reads single-row descriptors of a base without `PartNo` as
     /// `(name, part, data)` rows with part zero.
-    pub const CONFIG_LEGACY: &'static str = "SELECT CONVERT(nvarchar(128), [FileName]), CONVERT(int, 0), [BinaryData] FROM [dbo].[Config] WHERE ((LEN([FileName]) = 36 AND TRY_CONVERT(uniqueidentifier, [FileName]) IS NOT NULL) OR (LEN([FileName]) = 39 AND RIGHT([FileName], 3) = N'.1c' AND TRY_CONVERT(uniqueidentifier, LEFT([FileName], 36)) IS NOT NULL)) ORDER BY [FileName]";
+    pub const CONFIG_LEGACY: &'static str = "SELECT CONVERT(nvarchar(128), [FileName]), CONVERT(int, 0), [BinaryData] FROM [dbo].[Config] WHERE ([FileName] LIKE N'[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]-[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]-[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]-[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]-[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]' OR [FileName] LIKE N'[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]-[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]-[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]-[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]-[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f].1c') ORDER BY [FileName]";
 
     /// Counts distinct resources and the compressed bytes of every part
     /// matched by [`Self::CONFIG`] or [`Self::CONFIG_LEGACY`].
-    pub const CONFIG_TOTALS: &'static str = "SELECT COUNT_BIG(DISTINCT [FileName]), COALESCE(SUM(CONVERT(bigint, DATALENGTH([BinaryData]))), CONVERT(bigint, 0)) FROM [dbo].[Config] WHERE ((LEN([FileName]) = 36 AND TRY_CONVERT(uniqueidentifier, [FileName]) IS NOT NULL) OR (LEN([FileName]) = 39 AND RIGHT([FileName], 3) = N'.1c' AND TRY_CONVERT(uniqueidentifier, LEFT([FileName], 36)) IS NOT NULL))";
+    pub const CONFIG_TOTALS: &'static str = "SELECT COUNT_BIG(DISTINCT [FileName]), COALESCE(SUM(CONVERT(bigint, DATALENGTH([BinaryData]))), CONVERT(bigint, 0)) FROM [dbo].[Config] WHERE ([FileName] LIKE N'[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]-[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]-[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]-[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]-[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]' OR [FileName] LIKE N'[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]-[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]-[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]-[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]-[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f].1c')";
 
     /// Reads every part of the opaque configuration-extension resources as
     /// `(name, part, data)` rows ordered by name and part.
@@ -403,6 +405,46 @@ mod tests {
             MsSqlMetadataQueries::CONFIG,
         ] {
             assert!(query.to_ascii_uppercase().contains("ORDER BY"), "{query}");
+        }
+    }
+
+    #[test]
+    fn mssql_statements_avoid_functions_newer_than_sql_server_2008() {
+        for query in MsSqlMetadataQueries::all() {
+            let normalized = query.to_ascii_uppercase();
+            for modern in [
+                "TRY_CONVERT",
+                "TRY_CAST",
+                "IIF(",
+                "CONCAT(",
+                "STRING_AGG",
+                "FORMAT(",
+            ] {
+                assert!(!normalized.contains(modern), "{modern}: {query}");
+            }
+        }
+        let guid = "[0-9A-Fa-f]".repeat(8)
+            + "-"
+            + &"[0-9A-Fa-f]".repeat(4)
+            + "-"
+            + &"[0-9A-Fa-f]".repeat(4)
+            + "-"
+            + &"[0-9A-Fa-f]".repeat(4)
+            + "-"
+            + &"[0-9A-Fa-f]".repeat(12);
+        for query in [
+            MsSqlMetadataQueries::CONFIG,
+            MsSqlMetadataQueries::CONFIG_LEGACY,
+            MsSqlMetadataQueries::CONFIG_TOTALS,
+        ] {
+            assert!(
+                query.contains(&format!("[FileName] LIKE N'{guid}'")),
+                "{query}"
+            );
+            assert!(
+                query.contains(&format!("[FileName] LIKE N'{guid}.1c'")),
+                "{query}"
+            );
         }
     }
 
