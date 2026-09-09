@@ -16,20 +16,22 @@ owned by the CLI package rather than the core library.
 #### Scenario: Core-only dependency
 - **WHEN** another Rust package depends on `open-sdbl`
 - **THEN** it receives query-generation and decoding APIs without a binary
-  target, async runtime, or PostgreSQL client dependency
+  target, async runtime, PostgreSQL client, or TDS client dependency
 
 #### Scenario: CLI build
 - **WHEN** a user builds package `open-sdbl-cli`
-- **THEN** Cargo produces an executable named `open-sdbl` containing the `lex`
-  and `metadata postgres` commands
+- **THEN** Cargo produces an executable named `open-sdbl` containing the `lex`,
+  `metadata postgres`, `metadata mssql`, `console postgres`, and `console
+  mssql` commands
 
 ### Requirement: Keep deterministic metadata work in the core
-The `open-sdbl` library SHALL generate fixed metadata acquisition queries and
-SHALL decode, resolve, and compile caller-provided metadata and SDBL without
-opening a database connection. Query compilation SHALL be exposed through an
-immutable generic `QueryCompiler<B>` bound to a separate PostgreSQL or MSSQL
-backend value and backed by one shared functional core. Former database-named
-free functions SHALL NOT remain part of the public API.
+The `open-sdbl` library SHALL generate fixed metadata acquisition queries for
+PostgreSQL and Microsoft SQL Server and SHALL decode, resolve, and compile
+caller-provided DBNames, Config, SchemaStorage, live-catalog records, and SDBL
+without opening a database connection. Query compilation SHALL be exposed
+through an immutable generic `QueryCompiler<B>` bound to a separate PostgreSQL
+or MSSQL backend value and backed by one shared functional core. Former
+database-named free functions SHALL NOT remain part of the public API.
 
 #### Scenario: Caller-provided resources
 - **WHEN** an application supplies metadata blobs and typed live-catalog rows
@@ -54,10 +56,14 @@ free functions SHALL NOT remain part of the public API.
   functions
 
 #### Scenario: Query inspection
-- **WHEN** an application requests PostgreSQL metadata query definitions or
-  compiles SDBL through a provider compiler
-- **THEN** the library returns deterministic SELECT-only SQL without executing
-  it
+- **WHEN** an application requests PostgreSQL metadata query definitions
+- **THEN** the library returns fixed SELECT-only statements without executing
+  them
+
+#### Scenario: MSSQL query inspection
+- **WHEN** an application requests MSSQL metadata query definitions
+- **THEN** the library returns fixed SELECT-only statements without executing
+  them
 
 ### Requirement: Keep presentation policy outside the core crate
 The core package SHALL define deterministic ID-only presentation requests,

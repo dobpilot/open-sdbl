@@ -605,3 +605,102 @@ row.
 - **WHEN** a resource has parts 0 and 2 but no part 1
 - **THEN** acquisition fails with a data error naming the resource and the
   missing part
+
+### Requirement: Acquire authoritative 1C metadata from Microsoft SQL Server
+The application SHALL read DBNames from `Params`, assembled GUID-named Config
+resources from `Config`, the current schema from `SchemaStorage`, and live
+tables, columns, and ordered index keys from the SQL Server `dbo` catalog using
+fixed SELECT-only queries supplied by the core library. Returned resources
+SHALL be decoded and resolved by the same deterministic core APIs as PostgreSQL.
+
+#### Scenario: SQL Server DBNames and Config
+- **WHEN** `metadata mssql` connects to a supported 1C SQL Server database
+- **THEN** it reads binary DBNames and Config resources without converting or
+  truncating their bytes
+
+#### Scenario: SQL Server live catalog
+- **WHEN** the database contains physical 1C tables and indexes in `dbo`
+- **THEN** metadata resolution receives their case-preserved names, normalized
+  type declarations, uniqueness flags, and key columns in ordinal order
+
+#### Scenario: Acquisition safety
+- **WHEN** all MSSQL metadata query definitions are inspected
+- **THEN** every statement is SELECT-only and scoped to the connected database
+
+### Requirement: Read the SQL Server 1C year offset
+The MSSQL application provider SHALL read `dbo._YearOffset.Offset`, accept the
+1C values 0 and 2000, and pass the value to MSSQL query compilation.
+
+#### Scenario: Offset 2000 infobase
+- **WHEN** `_YearOffset.Offset` is 2000
+- **THEN** projected physical datetime values are shifted back by 2000 years
+  and logical date literals used for database filtering are shifted forward by
+  2000 years
+
+### Requirement: Resolve extension attributes from the restructure resource
+Given the extension restructure resource
+(`_ExtensionsRestruct._restructData`), resolution SHALL map each
+extension-added attribute to its physical extension column, expose it as
+a queryable field of the owning object with its logical name and
+extension origin, and record its type. Malformed restructure records
+SHALL be reported, not panicked on, and SHALL NOT drop the surrounding
+object.
+
+#### Scenario: Extension attribute becomes queryable
+- **WHEN** a base is resolved together with an extension whose
+  restructure declares an attribute on an existing object
+- **THEN** the owning object exposes that attribute as a queryable field
+  mapped to the extension table's physical column, and a query selecting
+  it compiles on both dialects instead of failing with a missing-field
+  diagnostic
+
+#### Scenario: Wildcard includes extension attributes
+- **WHEN** a query selects all fields of an extended object
+- **THEN** the compiled projection includes the extension attribute
+  columns from the extension table
+
+#### Scenario: Malformed restructure record
+- **WHEN** an extension restructure record cannot be interpreted
+- **THEN** resolution records a typed finding and the object's remaining
+  fields still resolve
+
+### Requirement: Acquire predefined-value metadata
+
+The application adapters SHALL load assembled bare-GUID Config resources and
+assembled `<guid>.1c` resources. The core SHALL decode only verified `.1c`
+predefined-value rows and associate every value with the catalog GUID encoded
+in its file name. Other Config suffixes SHALL remain excluded.
+
+#### Scenario: Catalog predefined values
+- **WHEN** `<catalog-guid>.1c` contains verified predefined rows
+- **THEN** each exact symbolic name and stable GUID is associated with that
+  catalog without reading catalog business rows
+
+#### Scenario: Unrelated suffix resource
+- **WHEN** a Config file has a suffix other than `.1c`
+- **THEN** predefined-value decoding returns no values and does not interpret
+  the payload as metadata
+
+### Requirement: Resolve predefined values deterministically
+
+The metadata snapshot SHALL index exact normalized predefined names by owning
+object. Enumeration child descriptors and catalog `.1c` rows SHALL share the
+same lookup contract. Missing and ambiguous values SHALL remain distinct typed
+outcomes.
+
+#### Scenario: Enumeration value
+- **WHEN** a child descriptor belongs to a resolved enumeration resource
+- **THEN** its metadata GUID and name are indexed under that enumeration
+
+#### Scenario: Ambiguous value
+- **WHEN** two values normalize to the same name under one owner
+- **THEN** lookup reports ambiguity instead of selecting one by source order
+
+### Requirement: Convert metadata GUIDs to 1C storage bytes
+
+The core SHALL convert canonical UUID fields `a-b-c-d-e` to physical 1C byte
+order `d + e + c + b + a` without changing byte order inside a field.
+
+#### Scenario: Known enumeration GUID
+- **WHEN** GUID `d2f8bde9-fadd-4be8-9022-249e3a1ac4b9` is converted
+- **THEN** the bytes are `9022249e3a1ac4b94be8faddd2f8bde9`

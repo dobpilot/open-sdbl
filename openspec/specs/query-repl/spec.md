@@ -20,8 +20,10 @@ expressions. A branch MAY instead contain one two-source
 СОЕДИНЕНИЕ` / `LEFT [OUTER] JOIN`, `ПРАВОЕ [ВНЕШНЕЕ] СОЕДИНЕНИЕ` /
 `RIGHT [OUTER] JOIN`, or `ПОЛНОЕ [ВНЕШНЕЕ] СОЕДИНЕНИЕ` / `FULL
 [OUTER] JOIN`. Joined branches SHALL support named direct fields and one-hop
-reference properties with one or more scalar cross-source direct-field
-equality conditions combined by `И`/`AND`. Final `УПОРЯДОЧИТЬ ПО`/`ORDER BY`
+reference properties. A join condition SHALL contain at least one top-level
+scalar cross-source direct-field equality and MAY combine that anchor with
+additional supported scalar direct-field predicates by top-level `И`/`AND`.
+Additional predicates SHALL remain in ON. Final `УПОРЯДОЧИТЬ ПО`/`ORDER BY`
 SHALL support `ВОЗР`/`ASC` and `УБЫВ`/`DESC`. One or more trailing
 semicolons SHALL terminate the query. Unsupported syntax SHALL fail before
 execution.
@@ -74,7 +76,8 @@ execution.
   combined output rather than a branch table alias
 
 #### Scenario: Incompatible union branches
-- **WHEN** a later branch has a different logical or expanded projection width
+- **WHEN** a later branch has a different logical or expanded SQL projection
+  width
 - **THEN** compilation returns a positional diagnostic and no SQL is produced
 
 #### Scenario: INNER JOIN
@@ -109,10 +112,25 @@ execution.
 - **THEN** filtering preserves null-extended row semantics and result-level
   operations apply to the complete transposed result
 
+#### Scenario: Status predicates next to the join key
+- **WHEN** ON contains a cross-source equality followed by an IN-list of
+  catalog `ЗНАЧЕНИЕ` expressions and an enumeration `ЗНАЧЕНИЕ` comparison
+- **THEN** generated SQL retains all three predicates in ON in source order
+
+#### Scenario: Outer join one-sided predicate
+- **WHEN** an additional predicate refers only to one source of LEFT, RIGHT, or
+  FULL JOIN
+- **THEN** it remains in ON and is not moved to WHERE
+
+#### Scenario: FULL JOIN predicate transposition
+- **WHEN** FULL JOIN contains additional supported predicates
+- **THEN** transposed SQL uses a top-level cross-source equality as its
+  anti-match marker and applies the complete ON condition in both branches
+
 #### Scenario: Unsupported join shape
 - **WHEN** a query uses more than one join, wildcard joined projection,
-  non-scalar join fields, reference properties in ON, or a condition other
-  than cross-source equality conjunctions
+  non-scalar join fields, reference properties in ON, lacks a top-level
+  cross-source direct-field equality, or nests its only equality under OR
 - **THEN** compilation returns a positional diagnostic and no SQL is produced
 
 #### Scenario: Repeated query terminator
@@ -932,4 +950,269 @@ expressions are, including projections and predicates.
 #### Scenario: Invalid argument
 - **WHEN** the argument is a non-reference field, a literal, a `ЗНАЧЕНИЕ`
   expression, or the query has no FROM
+- **THEN** compilation returns a positional diagnostic and emits no SQL
+
+### Requirement: Compile bounded SDBL to Microsoft SQL Server
+The core library SHALL expose MSSQL compile and prepare APIs that reuse the
+existing bounded SDBL parser, metadata resolution, and presentation-plan
+protocol while emitting native T-SQL. Existing PostgreSQL APIs and generated
+PostgreSQL SQL SHALL remain compatible.
+
+#### Scenario: MSSQL projection and limit
+- **WHEN** an MSSQL query selects logical 1C fields with `ПЕРВЫЕ`/`TOP`
+- **THEN** generated T-SQL quotes physical identifiers, converts supported
+  text-rendered values, and applies `TOP` in SQL Server
+
+#### Scenario: MSSQL rowversion projection
+- **WHEN** a selected logical field is backed by an MSSQL `timestamp` or
+  `rowversion` column
+- **THEN** generated T-SQL projects the physical column without `CAST` or
+  `CONVERT`, and the CLI renders the received binary value as hexadecimal text
+
+#### Scenario: Binary literal comparison
+- **WHEN** a filter compares a binary or rowversion field with a validated
+  `0x` hexadecimal literal
+- **THEN** MSSQL T-SQL contains a native varbinary literal and PostgreSQL SQL
+  contains an equivalent `bytea` literal without treating the value as text
+
+#### Scenario: Presentation from a configuration-extension table
+- **WHEN** an MSSQL reference target has a canonical physical table and one or
+  more `X`-suffixed configuration-extension table variants
+- **THEN** direct reads, dereferences, and presentation joins use one
+  deterministic `UNION ALL` relation over the canonical and exact extension
+  variants, allowing referenced rows redirected by 1C to resolve normally
+
+#### Scenario: Unicode and binary values
+- **WHEN** an MSSQL query contains Cyrillic strings or compares reference type
+  discriminators
+- **THEN** generated T-SQL uses Unicode string literals and native varbinary
+  literals without PostgreSQL casts
+
+#### Scenario: Dialect isolation
+- **WHEN** the same supported SDBL is compiled for PostgreSQL and MSSQL
+- **THEN** each output uses its native limit, cast, literal, aggregate, and
+  virtual-table syntax without textual post-processing
+
+### Requirement: Provide a read-only MSSQL console
+The CLI SHALL provide `open-sdbl console mssql` and `open-sdbl metadata mssql`
+using SQL Server authentication, TDS over direct TCP or the existing SOCKS5
+transport, TLS certificate validation by default, and an optional explicit
+server-certificate trust flag. The password SHALL be read from
+`MSSQL_PASSWORD`. The console SHALL request read-only application intent and
+execute only fixed metadata SELECTs or SQL generated from the bounded SELECT
+compiler.
+
+#### Scenario: MSSQL connection defaults
+- **WHEN** a user supplies host, database, user, and `MSSQL_PASSWORD`
+- **THEN** the CLI connects to port 1433 with TLS validation and read-only
+  application intent
+
+#### Scenario: Explicit certificate trust
+- **WHEN** the server uses an untrusted certificate and the user supplies
+  `--trust-server-certificate`
+- **THEN** the CLI opts out of certificate validation for that connection and
+  documents the security tradeoff
+
+#### Scenario: Missing password
+- **WHEN** SQL authentication is requested without `MSSQL_PASSWORD`
+- **THEN** the CLI fails before opening a connection and does not print a
+  password value
+
+#### Scenario: Query execution
+- **WHEN** the user enters a supported semicolon-terminated SDBL SELECT
+- **THEN** the console prints native T-SQL, execution time, textual columns,
+  rows, and row count and remains available after recoverable errors
+
+#### Scenario: Defense in depth
+- **WHEN** the MSSQL provider is deployed
+- **THEN** documentation requires a SQL login whose effective permissions are
+  limited to SELECT because read-only application intent is not authorization
+
+### Requirement: Preserve trusted CLI diagnostic layout
+Top-level argument and usage diagnostics SHALL render built-in help layout with
+real line breaks, while errors containing database-, metadata-, parser-, or
+operating-system-derived text SHALL remain escaped before reaching the
+terminal. The missing PostgreSQL plaintext opt-in diagnostic SHALL use stable
+plain-text fields consisting of an error code, summary, cause, and remediation,
+without ANSI styling or the complete command manual.
+
+#### Scenario: Missing plaintext opt-in
+- **WHEN** PostgreSQL plaintext mode is requested without the explicit
+  insecure opt-in flag
+- **THEN** the diagnostic identifies a stable machine-readable code and gives a
+  human-readable explanation plus exact alternatives to add the opt-in or
+  restore verified TLS
+
+#### Scenario: External error text
+- **WHEN** a non-usage error contains terminal control characters
+- **THEN** those characters are rendered in escaped textual form
+
+### Requirement: Construct date values
+The compiler SHALL accept `ДАТАВРЕМЯ`/`DATETIME` with integer year, month, and
+day components followed by optional hour, minute, and second components. It
+SHALL validate the calendar value and generate a typed date expression for
+PostgreSQL and MSSQL. MSSQL generation SHALL apply the configured `_YearOffset`
+when the expression participates in a source-backed query and SHALL remove that
+offset from projected logical output.
+
+#### Scenario: Date-only constructor
+- **WHEN** `ДАТАВРЕМЯ` receives year, month, and day
+- **THEN** the omitted time is midnight and generated SQL contains a typed date
+  rather than an untyped user-concatenated literal
+
+#### Scenario: Date-time constructor
+- **WHEN** `DATETIME` receives all six valid integer components
+- **THEN** generated SQL preserves the exact hour, minute, and second
+
+#### Scenario: Invalid constructor
+- **WHEN** component count, numeric form, range, calendar date, or offset MSSQL
+  year is invalid
+- **THEN** compilation returns a positional diagnostic and emits no SQL
+
+### Requirement: Calculate beginning-of-period values
+The compiler SHALL accept `НАЧАЛОПЕРИОДА`/`BEGINOFPERIOD` with a date expression
+and one of the bilingual minute, hour, day, week, ten-day, month, quarter,
+half-year, or year period identifiers. It SHALL generate equivalent native SQL
+for PostgreSQL and MSSQL in projections and predicates. Week SHALL begin on
+Monday until regional first-weekday metadata becomes part of the compiler
+input.
+
+#### Scenario: Nested date constructor
+- **WHEN** `НАЧАЛОПЕРИОДА` wraps a `ДАТАВРЕМЯ` expression
+- **THEN** the nested typed date is truncated to the requested boundary
+
+#### Scenario: Source field boundary
+- **WHEN** a source-backed projection or filter applies `НАЧАЛОПЕРИОДА` to a
+  date field
+- **THEN** generated SQL evaluates the function in the database and preserves
+  MSSQL year-offset semantics
+
+#### Scenario: Virtual-table date argument
+- **WHEN** a supported register virtual table receives a constant date-function
+  expression as its period argument
+- **THEN** the expression is compiled in the physical storage date domain
+
+#### Scenario: Unknown period
+- **WHEN** the second argument is absent or is not a supported period identifier
+- **THEN** compilation returns a positional diagnostic and emits no SQL
+
+### Requirement: Compile IN-list predicates
+
+The compiler SHALL accept bilingual `В`/`IN` after a scalar expression and a
+non-empty parenthesized, comma-separated list of scalar expressions. It SHALL
+preserve list order, compile each member using the left operand's type context,
+and emit an SQL `IN (...)` predicate for PostgreSQL and MSSQL.
+
+#### Scenario: Several predefined catalog values
+- **WHEN** a predicate uses
+  `В (ЗНАЧЕНИЕ(Справочник.бит_СтатусыОбъектов.Утвержден), ЗНАЧЕНИЕ(Справочник.бит_СтатусыОбъектов.ДополнительныеУсловияПоДоговору_Проверен))`
+- **THEN** generated SQL compares the left operand with both resolved catalog
+  `_IDRRef` lookup expressions in the same order
+
+#### Scenario: English alias and typed literals
+- **WHEN** a predicate uses `IN` with one or more scalar literals
+- **THEN** each literal uses the target dialect and the left field's resolved
+  physical type
+
+#### Scenario: Empty or malformed list
+- **WHEN** `В`/`IN` is followed by an empty list, a trailing comma, or no closing
+  parenthesis
+- **THEN** compilation returns a positional diagnostic and emits no SQL
+
+### Requirement: Alias projected query columns
+The `open-sdbl` query compiler SHALL accept an explicit `КАК`/`AS` alias after
+each supported projection expression and SHALL expose that alias as the stable
+logical result label in PostgreSQL and MSSQL output.
+
+#### Scenario: Field and dereference aliases
+- **WHEN** direct and one-hop reference-property projections are followed by
+  explicit aliases
+- **THEN** generated SQL and `CompiledQuery.columns` use the requested aliases
+  instead of the underlying field-path labels
+
+#### Scenario: Compound projection alias
+- **WHEN** an explicitly aliased logical field expands into several physical
+  SQL columns
+- **THEN** every member receives a unique deterministic label derived from the
+  requested alias and its existing compound-member suffix
+
+#### Scenario: Missing projection alias
+- **WHEN** `КАК`/`AS` is not followed by a contextual identifier
+- **THEN** compilation returns a positional diagnostic and no SQL is produced
+
+### Requirement: Query authoritative tabular sections
+The `open-sdbl` query compiler SHALL accept a document or catalog source shaped
+as `<kind>.<object>.<section>`. It SHALL resolve the parent object through
+DBNames and Config, resolve the section by a nested Config descriptor and its
+exact DBNames `VT` entry, and require the resulting
+`<parent-physical-table>_VT<number>` or its exact configuration-extension
+`X[digits]` variants in SchemaStorage and the live catalog.
+
+#### Scenario: Joined document tabular section
+- **WHEN** a document tabular section is joined to another metadata source by
+  its `Ссылка` field, the opposing field is a compound reference, and fields
+  are selected with explicit aliases
+- **THEN** generated SQL reads the exact tabular-section table, uses its owner
+  reference in the JOIN, compares both the reference payload and the
+  authoritative target-type discriminator, and preserves the requested output
+  labels
+
+#### Scenario: Reference property from a tabular section
+- **WHEN** a tabular-section field or owner reference has one authoritative
+  SchemaStorage reference target and a target property is selected
+- **THEN** the existing reusable one-hop LEFT JOIN resolves that property
+
+#### Scenario: Extended tabular-section storage
+- **WHEN** the canonical tabular-section table is absent and SchemaStorage plus
+  the live catalog contain exact `X[digits]` variants
+- **THEN** fields are resolved from an authoritative variant and generated SQL
+  reads all exact variants through one deterministic relation
+
+#### Scenario: Inline SchemaStorage declaration
+- **WHEN** SchemaStorage declares a section as
+  `{"VT<number>","I",0,"<parent>",...}`
+- **THEN** metadata resolution exposes the canonical
+  `<parent>_VT<number>` table, its declared columns, and the implied
+  `<parent>_IDRRef` owner reference
+
+#### Scenario: Standard tabular-section fields
+- **WHEN** the section table declares its parent reference and numbered line
+  field
+- **THEN** they are queryable as `Ссылка`/`ID` and
+  `НомерСтроки`/`LineNo` respectively
+
+#### Scenario: Invalid tabular-section mapping
+- **WHEN** the parent, nested descriptor, exact `VT` entry, SchemaStorage table,
+  or live table is missing or ambiguous
+- **THEN** compilation returns a specific diagnostic without guessing from
+  similarly prefixed physical tables
+
+### Requirement: Compile metadata value expressions
+
+The compiler SHALL accept `ЗНАЧЕНИЕ`/`VALUE` with exactly one
+`<kind>.<object>.<value>` metadata path for catalog and enumeration kinds. It
+SHALL resolve the object and value through the metadata snapshot and permit the
+expression in projections and predicates.
+
+#### Scenario: Enumeration value
+- **WHEN** a query uses
+  `ЗНАЧЕНИЕ(Перечисление.бит_ВидыСтатусовОбъектов.Статус)`
+- **THEN** PostgreSQL and MSSQL SQL contain the enumeration GUID in physical 1C
+  byte order as a typed binary expression
+
+#### Scenario: Catalog predefined value
+- **WHEN** a query uses
+  `ЗНАЧЕНИЕ(Справочник.бит_СтатусыОбъектов.Утвержден)`
+- **THEN** generated SQL returns `_IDRRef` from the resolved catalog table by
+  equality on `_PredefinedID` and the stable metadata GUID
+
+#### Scenario: Hierarchical symbolic name
+- **WHEN** a catalog value name contains underscores such as
+  `ДополнительныеУсловияПоДоговору_Проверен`
+- **THEN** the complete symbolic name is resolved exactly as one path component
+  without splitting or inspecting presentation data
+
+#### Scenario: Invalid value expression
+- **WHEN** the path shape, kind, object, value, live table, or required physical
+  columns are unsupported, absent, or ambiguous
 - **THEN** compilation returns a positional diagnostic and emits no SQL
