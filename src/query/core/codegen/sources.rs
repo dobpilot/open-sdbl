@@ -11,7 +11,7 @@ use crate::metadata::{
     ConfigFieldPurpose, LiveTable, MetadataKind, MetadataObject, MetadataSnapshot, ObjectId,
 };
 use crate::query::core::ast::{
-    AggregateArgument, AggregateKind, Expression, OrderTerm, PresentationArgument,
+    AggregateArgument, AggregateKind, CastTarget, Expression, OrderTerm, PresentationArgument,
     PresentationOperation, Projection, SelectAst, SourceAst,
 };
 use crate::query::core::dialect::{OutputLabelAllocator, SqlDialect, compile_literal};
@@ -169,6 +169,21 @@ fn compile_source_free_expression(
             Some(token),
             "UUID requires FROM",
         )),
+        Expression::Cast {
+            token,
+            target: CastTarget::Reference { .. },
+            ..
+        } => Err(QueryDiagnostic::at(
+            QueryDiagnosticKind::UnsupportedFeature,
+            Some(token),
+            "CAST to a metadata type requires FROM",
+        )),
+        Expression::Cast {
+            argument, target, ..
+        } => {
+            let inner = compile_source_free_expression(argument, snapshot, dialect)?;
+            Ok(dialect.cast_scalar(&inner, *target))
+        }
         Expression::Unary { operator, value } => {
             let operator = match operator.kind {
                 TokenKind::Keyword(Keyword::Not) => "NOT ",

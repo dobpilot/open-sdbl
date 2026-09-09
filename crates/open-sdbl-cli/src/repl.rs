@@ -138,6 +138,8 @@ const COMPLETION_KEYWORDS: &[&str] = &[
     "VALUE",
     "УНИКАЛЬНЫЙИДЕНТИФИКАТОР",
     "UUID",
+    "ВЫРАЗИТЬ",
+    "CAST",
 ];
 
 const PRESENTATION_POLICY_VERSION: u32 = 2;

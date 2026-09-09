@@ -2,7 +2,7 @@
 
 use std::collections::HashSet;
 
-use crate::query::core::ast::{DateTimeValue, PeriodKind};
+use crate::query::core::ast::{CastTarget, DateTimeValue, PeriodKind};
 use crate::query::core::resolve::ColumnKind;
 use crate::query::core::{QueryDiagnostic, QueryDiagnosticKind};
 use crate::query::mssql::MsSqlDialectLevel;
@@ -258,6 +258,76 @@ impl SqlDialect {
             }
             _ => expression.to_owned(),
         }
+    }
+
+    /// Renders a scalar `ВЫРАЗИТЬ`/`CAST`. PostgreSQL uses `substring … for`
+    /// rather than `left` so servers back to 9.0 are supported; MSSQL falls
+    /// back to `nvarchar(max)` beyond the 4000-character limit and to
+    /// `numeric(38, 10)` when no precision is given.
+    pub(super) fn cast_scalar(self, inner: &str, target: CastTarget<'_, '_>) -> String {
+        match (self, target) {
+            (
+                Self::Postgres,
+                CastTarget::String {
+                    length: Some(length),
+                },
+            ) => {
+                format!("substring({inner}::text from 1 for {length})")
+            }
+            (Self::Postgres, CastTarget::String { length: None }) => format!("{inner}::text"),
+            (Self::Postgres, CastTarget::Number { precision, scale }) => match (precision, scale) {
+                (Some(precision), Some(scale)) => format!("{inner}::numeric({precision}, {scale})"),
+                (Some(precision), None) => format!("{inner}::numeric({precision})"),
+                _ => format!("{inner}::numeric"),
+            },
+            (Self::Postgres, CastTarget::Boolean) => format!("{inner}::boolean"),
+            (Self::Postgres, CastTarget::Date) => format!("{inner}::timestamp"),
+            (Self::MsSql { .. }, CastTarget::String { length }) => match length {
+                Some(length) if length <= 4000 => format!("CONVERT(nvarchar({length}), {inner})"),
+                _ => format!("CONVERT(nvarchar(max), {inner})"),
+            },
+            (Self::MsSql { .. }, CastTarget::Number { precision, scale }) => format!(
+                "CONVERT(numeric({}, {}), {inner})",
+                precision.unwrap_or(38),
+                scale.unwrap_or(10)
+            ),
+            (Self::MsSql { .. }, CastTarget::Boolean) => format!("CONVERT(bit, {inner})"),
+            (Self::MsSql { .. }, CastTarget::Date) => format!("CONVERT(datetime2, {inner})"),
+            (_, CastTarget::Reference { .. }) => {
+                unreachable!("reference casts are compiled by the expression compiler")
+            }
+        }
+    }
+
+    /// Turns a boolean value into a predicate: SQL Server has no boolean
+    /// expressions, so a `bit` must be compared explicitly.
+    pub(super) fn boolean_predicate(self, value: &str) -> String {
+        match self {
+            Self::Postgres => value.to_owned(),
+            Self::MsSql { .. } => format!("({value} = 0x01)"),
+        }
+    }
+
+    /// Renders `ИСТИНА`/`ЛОЖЬ` in a predicate position.
+    pub(super) fn boolean_literal_predicate(self, value: bool) -> String {
+        match self {
+            Self::Postgres => self.boolean_literal(value).to_owned(),
+            Self::MsSql { .. } => (if value { "(1 = 1)" } else { "(1 = 0)" }).to_owned(),
+        }
+    }
+
+    /// The `RRRef` of a runtime-typed reference when its `RTRef` names the
+    /// requested table, `NULL` otherwise.
+    pub(super) fn narrowed_reference(
+        self,
+        type_column: &str,
+        database_type: u32,
+        reference: &str,
+    ) -> String {
+        format!(
+            "CASE WHEN {type_column} = {} THEN {reference} END",
+            self.binary_u32(database_type)
+        )
     }
 
     /// Decodes a 16-byte 1C reference (`d + e + c + b + a` field order) into

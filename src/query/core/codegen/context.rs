@@ -555,7 +555,7 @@ impl CompilationContext<'_, '_> {
             .qualified_column(Some(&resolved.sql_alias), &column.physical_name)
     }
 
-    fn ensure_presentation_join(
+    pub(super) fn ensure_presentation_join(
         &mut self,
         scope: ScopeId,
         source_alias: &str,

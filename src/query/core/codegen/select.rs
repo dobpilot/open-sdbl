@@ -3,7 +3,7 @@ use super::context::{
     SelectedProjection, SourceScope, compile_presentation, projected_members,
 };
 use super::expression::{
-    compile_aggregate, compile_expression, expression_kind, reference_column,
+    compile_aggregate, compile_expression, compile_predicate, expression_kind, reference_column,
     reference_type_column, single_column,
 };
 use super::orchestrate::PresentationCompilation;
@@ -55,7 +55,7 @@ pub(super) fn compile_branch(
     let filter = ast
         .filter
         .as_ref()
-        .map(|filter| compile_expression(filter, &mut context))
+        .map(|filter| compile_predicate(filter, &mut context))
         .transpose()?;
     let order = compile_order_terms(
         order_terms,
@@ -601,7 +601,7 @@ fn compile_join_condition_parts(
         }
 
         validate_direct_join_condition_fields(expression, context)?;
-        parts.push(compile_expression(expression, context)?);
+        parts.push(compile_predicate(expression, context)?);
     }
     Ok(())
 }
@@ -658,6 +658,22 @@ fn validate_direct_join_condition_fields(
             }
             Expression::Uuid { argument, .. } => {
                 context.resolve_direct(argument)?;
+            }
+            Expression::Cast {
+                argument,
+                path: None,
+                ..
+            } => pending.push(argument),
+            Expression::Cast {
+                token,
+                path: Some(_),
+                ..
+            } => {
+                return Err(QueryDiagnostic::at(
+                    QueryDiagnosticKind::UnsupportedFeature,
+                    Some(token),
+                    "JOIN condition supports direct fields only",
+                ));
             }
             Expression::BeginOfPeriod { value, .. }
             | Expression::Unary { value, .. }

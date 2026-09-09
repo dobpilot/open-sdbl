@@ -111,6 +111,8 @@ pub enum Keyword {
     Value,
     /// `УНИКАЛЬНЫЙИДЕНТИФИКАТОР` or `UUID`.
     Uuid,
+    /// `ВЫРАЗИТЬ` or `CAST`.
+    Cast,
 }
 
 impl Keyword {
@@ -165,6 +167,7 @@ impl Keyword {
             Self::BeginOfPeriod => "BEGINOFPERIOD",
             Self::Value => "VALUE",
             Self::Uuid => "UUID",
+            Self::Cast => "CAST",
         }
     }
 }
@@ -543,7 +546,7 @@ fn is_identifier_continue(character: char) -> bool {
     character == '_' || character.is_alphanumeric()
 }
 
-const KEYWORDS: [(Keyword, &str, &str); 47] = [
+const KEYWORDS: [(Keyword, &str, &str); 48] = [
     (Keyword::Select, "ВЫБРАТЬ", "SELECT"),
     (Keyword::From, "ИЗ", "FROM"),
     (Keyword::Where, "ГДЕ", "WHERE"),
@@ -595,6 +598,7 @@ const KEYWORDS: [(Keyword, &str, &str); 47] = [
     (Keyword::BeginOfPeriod, "НАЧАЛОПЕРИОДА", "BEGINOFPERIOD"),
     (Keyword::Value, "ЗНАЧЕНИЕ", "VALUE"),
     (Keyword::Uuid, "УНИКАЛЬНЫЙИДЕНТИФИКАТОР", "UUID"),
+    (Keyword::Cast, "ВЫРАЗИТЬ", "CAST"),
 ];
 
 fn keyword(text: &str) -> Option<Keyword> {

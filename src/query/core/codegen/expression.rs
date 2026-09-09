@@ -1,7 +1,7 @@
 use super::context::CompilationContext;
 use super::sources::compile_metadata_value;
 use crate::metadata::MetadataSnapshot;
-use crate::query::core::ast::{AggregateArgument, AggregateKind, Expression};
+use crate::query::core::ast::{AggregateArgument, AggregateKind, CastTarget, Expression};
 use crate::query::core::dialect::compile_literal;
 use crate::query::core::names::names_equal;
 use crate::query::core::resolve::{
@@ -9,6 +9,270 @@ use crate::query::core::resolve::{
 };
 use crate::query::core::{QueryDiagnostic, QueryDiagnosticKind};
 use crate::{Keyword, Token, TokenKind};
+
+/// Compiles an expression in a predicate position (`WHERE`, `ON`, operands
+/// of `AND`/`OR`/`NOT`). SQL Server has no boolean expressions, so boolean
+/// fields, literals, and casts become explicit comparisons there; other
+/// dialects and expressions compile unchanged.
+pub(super) fn compile_predicate(
+    expression: &Expression<'_, '_>,
+    context: &mut CompilationContext<'_, '_>,
+) -> Result<String, QueryDiagnostic> {
+    match expression {
+        Expression::Field(reference) => {
+            let resolved = context.resolve(reference)?;
+            let column = single_column(resolved.field(), reference.last())?;
+            let sql = context
+                .dialect
+                .qualified_column(Some(&resolved.sql_alias), &column.physical_name);
+            Ok(if column.kind == ColumnKind::Boolean {
+                context.dialect.boolean_predicate(&sql)
+            } else {
+                sql
+            })
+        }
+        Expression::Literal(token) => match token.kind {
+            TokenKind::Keyword(Keyword::True) => {
+                Ok(context.dialect.boolean_literal_predicate(true))
+            }
+            TokenKind::Keyword(Keyword::False) => {
+                Ok(context.dialect.boolean_literal_predicate(false))
+            }
+            _ => compile_expression(expression, context),
+        },
+        Expression::Cast {
+            target: CastTarget::Boolean,
+            ..
+        } => {
+            let sql = compile_expression(expression, context)?;
+            Ok(context.dialect.boolean_predicate(&sql))
+        }
+        Expression::Unary { operator, value }
+            if operator.kind == TokenKind::Keyword(Keyword::Not) =>
+        {
+            Ok(format!("(NOT {})", compile_predicate(value, context)?))
+        }
+        Expression::Binary { operator, .. }
+            if matches!(
+                operator.kind,
+                TokenKind::Keyword(Keyword::And | Keyword::Or)
+            ) =>
+        {
+            // Walk the left-associative AND/OR spine iteratively so that very
+            // long conjunctions do not recurse once per operator.
+            let mut leftmost = expression;
+            let mut terms = Vec::new();
+            while let Expression::Binary {
+                left,
+                operator,
+                right,
+            } = leftmost
+                && matches!(
+                    operator.kind,
+                    TokenKind::Keyword(Keyword::And | Keyword::Or)
+                )
+            {
+                terms.push((*operator, right.as_ref()));
+                leftmost = left.as_ref();
+            }
+            terms.reverse();
+            let mut sql = "(".repeat(terms.len());
+            sql.push_str(&compile_predicate(leftmost, context)?);
+            for (operator, right) in terms {
+                sql.push(' ');
+                sql.push_str(binary_operator_sql(operator)?);
+                sql.push(' ');
+                sql.push_str(&compile_predicate(right, context)?);
+                sql.push(')');
+            }
+            Ok(sql)
+        }
+        _ => compile_expression(expression, context),
+    }
+}
+
+/// A `<Kind>.<Object>` cast target before resolution.
+#[derive(Clone, Copy)]
+struct NarrowingTarget<'tokens, 'source> {
+    kind: &'tokens Token<'source>,
+    object: &'tokens Token<'source>,
+}
+
+struct NarrowedReference {
+    sql: String,
+    kind: ColumnKind,
+}
+
+/// Compiles `ВЫРАЗИТЬ(<field> КАК <Kind>.<Object>)[.<Field>]`.
+fn compile_narrowed_reference(
+    context: &mut CompilationContext<'_, '_>,
+    token: &Token<'_>,
+    argument: &Expression<'_, '_>,
+    target: NarrowingTarget<'_, '_>,
+    path: Option<&Token<'_>>,
+) -> Result<NarrowedReference, QueryDiagnostic> {
+    let Expression::Field(reference) = argument else {
+        return Err(QueryDiagnostic::at(
+            QueryDiagnosticKind::Syntax,
+            Some(token),
+            "CAST to a metadata type expects a reference field",
+        ));
+    };
+    let kind = kind_from_query_name(target.kind.lexeme).ok_or_else(|| {
+        QueryDiagnostic::at(
+            QueryDiagnosticKind::UnknownObject,
+            Some(target.kind),
+            format!("unknown CAST metadata kind {:?}", target.kind.lexeme),
+        )
+    })?;
+    let target_id = context
+        .snapshot
+        .object_id(kind, target.object.lexeme)
+        .map_err(|error| {
+            QueryDiagnostic::lookup(
+                target.object,
+                error.clone(),
+                format!(
+                    "CAST target {}.{:?} could not be resolved: {error}",
+                    kind.as_str(),
+                    target.object.lexeme
+                ),
+            )
+        })?;
+    let target_object = context.snapshot.object_by_id(target_id).ok_or_else(|| {
+        QueryDiagnostic::at(
+            QueryDiagnosticKind::Metadata,
+            Some(target.object),
+            "CAST target disappeared from the metadata index",
+        )
+    })?;
+    let resolved = context.resolve_direct(reference)?;
+    let field = resolved.field();
+    let is_reference = !field.reference_targets.is_empty()
+        || field
+            .columns
+            .iter()
+            .any(QueryableColumn::is_reference_value_member);
+    let reference_member = if is_reference {
+        reference_column(field, reference.last()).ok()
+    } else {
+        None
+    };
+    let Some(reference_member) = reference_member else {
+        return Err(QueryDiagnostic::at(
+            QueryDiagnosticKind::Syntax,
+            Some(token),
+            format!(
+                "CAST argument {:?} must be a reference field",
+                reference.last().lexeme
+            ),
+        ));
+    };
+    let type_member = field
+        .columns
+        .iter()
+        .find(|column| column.is_reference_type_member());
+    let fixed_targets = field
+        .reference_targets
+        .iter()
+        .filter(|target| !target.is_empty())
+        .collect::<Vec<_>>();
+    let universal = field.reference_targets.iter().any(String::is_empty);
+    if !universal && !fixed_targets.is_empty() {
+        let admissible = target_object
+            .physical_table
+            .as_deref()
+            .is_some_and(|table| {
+                fixed_targets.iter().any(|candidate| {
+                    names_equal(
+                        table.strip_prefix('_').unwrap_or(table),
+                        candidate.strip_prefix('_').unwrap_or(candidate),
+                    )
+                })
+            });
+        if !admissible {
+            return Err(QueryDiagnostic::at(
+                QueryDiagnosticKind::Syntax,
+                Some(target.object),
+                format!(
+                    "field {:?} cannot hold {}.{}",
+                    field.name,
+                    kind.as_str(),
+                    target.object.lexeme
+                ),
+            ));
+        }
+    }
+    let scope = resolved.scope;
+    let source_alias = resolved.sql_alias.clone();
+    let reference_sql = context
+        .dialect
+        .qualified_column(Some(&source_alias), &reference_member.physical_name);
+
+    let Some(path) = path else {
+        let sql = match type_member {
+            Some(type_member) => {
+                let number = target_object.number.ok_or_else(|| {
+                    QueryDiagnostic::at(
+                        QueryDiagnosticKind::Metadata,
+                        Some(target.object),
+                        "CAST target has no database type number",
+                    )
+                })?;
+                context.dialect.narrowed_reference(
+                    &context
+                        .dialect
+                        .qualified_column(Some(&source_alias), &type_member.physical_name),
+                    number,
+                    &reference_sql,
+                )
+            }
+            None => reference_sql,
+        };
+        return Ok(NarrowedReference {
+            sql,
+            kind: ColumnKind::Reference {
+                targets: vec![target_id],
+                runtime_typed: false,
+            },
+        });
+    };
+
+    let field = field.clone();
+    let alias = context.ensure_presentation_join(
+        scope,
+        &source_alias,
+        &field,
+        target_id,
+        type_member.is_some(),
+        token,
+    )?;
+    let target_fields = context.catalog.fields(target_object, Some(token))?;
+    let (_, target_field) = resolve_named_field(&target_fields, path)?;
+    let column = single_column(target_field, path)?;
+    Ok(NarrowedReference {
+        sql: context.dialect.column_projection(
+            &context
+                .dialect
+                .qualified_column(Some(&alias), &column.physical_name),
+            &column.kind,
+            &column.data_type,
+        ),
+        kind: column.kind.clone(),
+    })
+}
+
+fn scalar_cast_kind(target: CastTarget<'_, '_>) -> ColumnKind {
+    match target {
+        CastTarget::String { length } => ColumnKind::String { length },
+        CastTarget::Number { precision, scale } => ColumnKind::Number { precision, scale },
+        CastTarget::Boolean => ColumnKind::Boolean,
+        CastTarget::Date => ColumnKind::DateTime,
+        CastTarget::Reference { .. } => ColumnKind::Unknown {
+            data_type: String::new(),
+        },
+    }
+}
 
 /// Derives the output kind of a compiled scalar expression. Must be called
 /// only after [`compile_expression`] succeeded for the same expression, so
@@ -23,6 +287,19 @@ pub(super) fn expression_kind(
             let column = single_column(resolved.field(), reference.last())?;
             Ok(column.kind.clone())
         }
+        Expression::Cast {
+            token,
+            argument,
+            target: CastTarget::Reference { kind, object },
+            path,
+        } => Ok(compile_narrowed_reference(
+            context,
+            token,
+            argument,
+            NarrowingTarget { kind, object },
+            *path,
+        )?
+        .kind),
         Expression::Unary { operator, value } => match operator.kind {
             TokenKind::Keyword(Keyword::Not) => Ok(ColumnKind::Boolean),
             _ => expression_kind(value, context),
@@ -43,6 +320,7 @@ pub(super) fn source_free_expression_kind(
         Expression::Literal(token) => literal_kind(token),
         Expression::DateTime { .. } | Expression::BeginOfPeriod { .. } => ColumnKind::DateTime,
         Expression::Uuid { .. } => ColumnKind::Uuid,
+        Expression::Cast { target, .. } => scalar_cast_kind(*target),
         Expression::MetadataValue { kind, object, .. } => ColumnKind::Reference {
             targets: kind_from_query_name(kind.lexeme)
                 .and_then(|kind| snapshot.object_id(kind, object.lexeme).ok())
@@ -119,6 +397,25 @@ pub(super) fn compile_expression(
             context.snapshot,
             context.dialect,
         ),
+        Expression::Cast {
+            token,
+            argument,
+            target,
+            path,
+        } => match target {
+            CastTarget::Reference { kind, object } => Ok(compile_narrowed_reference(
+                context,
+                token,
+                argument,
+                NarrowingTarget { kind, object },
+                *path,
+            )?
+            .sql),
+            scalar => {
+                let inner = compile_expression(argument, context)?;
+                Ok(context.dialect.cast_scalar(&inner, *scalar))
+            }
+        },
         Expression::Uuid { token, argument } => {
             let resolved = context.resolve(argument)?;
             let field = resolved.field();

@@ -3451,3 +3451,276 @@ fn dialect_levels_differ_only_where_newer_functions_were_used() {
         MsSqlDialectLevel::Sql2012
     );
 }
+
+#[test]
+fn compiles_scalar_casts_on_both_dialects() {
+    let snapshot = snapshot();
+    let (postgres, mssql) = for_each_backend!(
+        "ВЫБРАТЬ ВЫРАЗИТЬ(Code КАК СТРОКА(10)) КАК Короткий, CAST(Code AS NUMBER(15, 2)) AS Число,
+                ВЫРАЗИТЬ(Code КАК БУЛЕВО) КАК Флаг, ВЫРАЗИТЬ(Date КАК ДАТА) КАК Момент,
+                ВЫРАЗИТЬ(Code КАК СТРОКА) КАК Полный, ВЫРАЗИТЬ(Code КАК СТРОКА(5000)) КАК Большой,
+                ВЫРАЗИТЬ(Code КАК ЧИСЛО) КАК ЧислоПоУмолчанию
+         ИЗ Справочник.OpenSdblMetadataProbe;",
+        &snapshot,
+    );
+    let postgres = postgres.unwrap();
+    assert_eq!(
+        kinds(&postgres),
+        [
+            &ColumnKind::String { length: Some(10) },
+            &ColumnKind::Number {
+                precision: Some(15),
+                scale: Some(2),
+            },
+            &ColumnKind::Boolean,
+            &ColumnKind::DateTime,
+            &ColumnKind::String { length: None },
+            &ColumnKind::String { length: Some(5000) },
+            &ColumnKind::Number {
+                precision: None,
+                scale: None,
+            },
+        ]
+    );
+    assert!(
+        postgres
+            .sql
+            .contains("substring(\"__src\".\"_code\"::text from 1 for 10) AS \"Короткий\"")
+    );
+    assert!(
+        postgres
+            .sql
+            .contains("\"__src\".\"_code\"::numeric(15, 2) AS \"Число\"")
+    );
+    assert!(
+        postgres
+            .sql
+            .contains("\"__src\".\"_code\"::boolean AS \"Флаг\"")
+    );
+    assert!(
+        postgres
+            .sql
+            .contains("\"__src\".\"_date_time\"::timestamp AS \"Момент\"")
+    );
+    assert!(
+        postgres
+            .sql
+            .contains("\"__src\".\"_code\"::text AS \"Полный\"")
+    );
+    assert!(
+        postgres
+            .sql
+            .contains("\"__src\".\"_code\"::numeric AS \"ЧислоПоУмолчанию\"")
+    );
+
+    let mssql = mssql.unwrap();
+    assert!(
+        mssql
+            .sql
+            .contains("CONVERT(nvarchar(10), [__src].[_code]) AS [Короткий]")
+    );
+    assert!(
+        mssql
+            .sql
+            .contains("CONVERT(numeric(15, 2), [__src].[_code]) AS [Число]")
+    );
+    assert!(
+        mssql
+            .sql
+            .contains("CONVERT(bit, [__src].[_code]) AS [Флаг]")
+    );
+    assert!(
+        mssql
+            .sql
+            .contains("CONVERT(datetime2, [__src].[_date_time]) AS [Момент]")
+    );
+    assert!(
+        mssql
+            .sql
+            .contains("CONVERT(nvarchar(max), [__src].[_code]) AS [Полный]")
+    );
+    assert!(
+        mssql
+            .sql
+            .contains("CONVERT(nvarchar(max), [__src].[_code]) AS [Большой]")
+    );
+    assert!(
+        mssql
+            .sql
+            .contains("CONVERT(numeric(38, 10), [__src].[_code]) AS [ЧислоПоУмолчанию]")
+    );
+
+    let offset = mssql_compile_with_offset!(
+        "SELECT CAST(Date AS DATE) AS Момент FROM Catalog.OpenSdblMetadataProbe;",
+        &mssql_snapshot(),
+        2000,
+    )
+    .unwrap();
+    assert!(
+        offset
+            .sql
+            .contains("DATEADD(year, -2000, CONVERT(datetime2, [__src].[_date_time])) AS [Момент]")
+    );
+
+    let source_free = postgres_compile!("SELECT ВЫРАЗИТЬ(4 КАК СТРОКА(3));", &snapshot).unwrap();
+    assert_eq!(
+        source_free.sql,
+        "SELECT substring(4::text from 1 for 3) AS \"column1\""
+    );
+    assert_eq!(
+        kinds(&source_free),
+        [&ColumnKind::String { length: Some(3) }]
+    );
+}
+
+#[test]
+fn narrows_references_with_and_without_dereference() {
+    let snapshot = universal_dereferenced_presentation_snapshot();
+    let catalog = snapshot
+        .object_id(MetadataKind::Catalog, "ЦентрыФинансовойОтветственности")
+        .unwrap();
+    let (postgres, mssql) = for_each_backend!(
+        "ВЫБРАТЬ ВЫРАЗИТЬ(ДоговорКонтрагента КАК Справочник.ЦентрыФинансовойОтветственности) КАК Договор
+         ИЗ Документ.бит_ДополнительныеУсловияПоДоговору;",
+        &snapshot,
+    );
+    let postgres = postgres.unwrap();
+    assert!(postgres.sql.contains(
+        "CASE WHEN \"__src\".\"_fld59_rtref\" = decode('0000003e', 'hex') THEN \"__src\".\"_fld59_rrref\" END AS \"Договор\""
+    ));
+    assert_eq!(
+        postgres.columns[0].kind,
+        ColumnKind::Reference {
+            targets: vec![catalog],
+            runtime_typed: false,
+        }
+    );
+    assert!(mssql.unwrap().sql.contains(
+        "CASE WHEN [__src].[_fld59_rtref] = 0x0000003e THEN [__src].[_fld59_rrref] END AS [Договор]"
+    ));
+
+    let dereferenced = postgres_compile!(
+        "ВЫБРАТЬ ВЫРАЗИТЬ(ДоговорКонтрагента КАК Справочник.ЦентрыФинансовойОтветственности).Сам_БизнесРегион КАК Регион
+         ИЗ Документ.бит_ДополнительныеУсловияПоДоговору;",
+        &snapshot,
+    )
+    .unwrap();
+    assert!(dereferenced.sql.contains(
+        "LEFT JOIN \"_reference62\" AS \"__ref1\" ON \"__src\".\"_fld59_rrref\" = \"__ref1\".\"_idrref\" AND \"__src\".\"_fld59_rtref\" = decode('0000003e', 'hex')"
+    ));
+    assert!(
+        dereferenced
+            .sql
+            .contains("\"__ref1\".\"_fld63\" AS \"Регион\"")
+    );
+    assert_eq!(dereferenced.sql.matches(" LEFT JOIN ").count(), 1);
+
+    let fixed = postgres_compile!(
+        "SELECT ВЫРАЗИТЬ(Организация КАК Справочник.Организации).Код AS Код, Организация.Код AS Тот_же FROM Catalog.OpenSdblMetadataProbe;",
+        &reference_snapshot(),
+    )
+    .unwrap();
+    assert!(fixed.sql.contains("\"__ref1\".\"_code\"::text AS \"Код\""));
+    assert!(
+        fixed
+            .sql
+            .contains("\"__ref1\".\"_code\"::text AS \"Тот_же\"")
+    );
+    assert_eq!(fixed.sql.matches(" LEFT JOIN ").count(), 1);
+    assert!(!fixed.sql.contains("_rtref"));
+}
+
+#[test]
+fn diagnoses_invalid_casts() {
+    let snapshot = snapshot();
+    let mismatch = postgres_compile!(
+        "SELECT ВЫРАЗИТЬ(Организация КАК Справочник.OpenSdblMetadataProbe) FROM Catalog.OpenSdblMetadataProbe;",
+        &reference_snapshot(),
+    )
+    .unwrap_err();
+    assert_eq!(mismatch.kind(), QueryDiagnosticKind::Syntax);
+    assert!(mismatch.message().contains("cannot hold"));
+
+    let non_reference = postgres_compile!(
+        "SELECT ВЫРАЗИТЬ(Code КАК Справочник.OpenSdblMetadataProbe) FROM Catalog.OpenSdblMetadataProbe;",
+        &snapshot,
+    )
+    .unwrap_err();
+    assert_eq!(non_reference.kind(), QueryDiagnosticKind::Syntax);
+
+    let unknown_target = postgres_compile!(
+        "SELECT ВЫРАЗИТЬ(Code КАК ФЛОАТ) FROM Catalog.OpenSdblMetadataProbe;",
+        &snapshot,
+    )
+    .unwrap_err();
+    assert_eq!(
+        unknown_target.kind(),
+        QueryDiagnosticKind::UnsupportedFeature
+    );
+    assert_eq!((unknown_target.line(), unknown_target.column()), (1, 26));
+
+    let too_many = postgres_compile!(
+        "SELECT ВЫРАЗИТЬ(Code КАК СТРОКА(1, 2)) FROM Catalog.OpenSdblMetadataProbe;",
+        &snapshot,
+    )
+    .unwrap_err();
+    assert_eq!(too_many.kind(), QueryDiagnosticKind::Syntax);
+
+    let deep = postgres_compile!(
+        "SELECT ВЫРАЗИТЬ(Организация КАК Справочник.Организации).Ссылка.Код FROM Catalog.OpenSdblMetadataProbe;",
+        &reference_snapshot(),
+    )
+    .unwrap_err();
+    assert_eq!(deep.kind(), QueryDiagnosticKind::UnsupportedFeature);
+
+    let source_free = postgres_compile!(
+        "SELECT ВЫРАЗИТЬ(Code КАК Справочник.OpenSdblMetadataProbe);",
+        &snapshot,
+    )
+    .unwrap_err();
+    assert_eq!(source_free.kind(), QueryDiagnosticKind::UnsupportedFeature);
+
+    let alias = postgres_compile!(
+        "SELECT Code AS CAST FROM Catalog.OpenSdblMetadataProbe;",
+        &snapshot,
+    )
+    .unwrap();
+    assert_eq!(labels(&alias), ["CAST"]);
+}
+
+#[test]
+fn renders_boolean_predicates_as_comparisons_on_mssql() {
+    let snapshot = with_live_tables(snapshot(), |tables| {
+        tables[0].columns.push(LiveColumn {
+            name: "_fld77".to_owned(),
+            data_type: "boolean".to_owned(),
+        });
+    });
+    let (postgres, mssql) = for_each_backend!(
+        "SELECT Code FROM Catalog.OpenSdblMetadataProbe WHERE Fld77 AND NOT ВЫРАЗИТЬ(Code КАК БУЛЕВО) OR TRUE;",
+        &snapshot,
+    );
+    let postgres = postgres.unwrap();
+    assert!(postgres.sql.ends_with(
+        "WHERE ((\"__src\".\"_fld77\" AND (NOT \"__src\".\"_code\"::boolean)) OR TRUE)"
+    ));
+    let mssql = mssql.unwrap();
+    assert!(mssql.sql.ends_with(
+        "WHERE ((([__src].[_fld77] = 0x01) AND (NOT (CONVERT(bit, [__src].[_code]) = 0x01))) OR (1 = 1))"
+    ));
+
+    let projected = mssql_compile!(
+        "SELECT Fld77 FROM Catalog.OpenSdblMetadataProbe WHERE Fld77;",
+        &snapshot,
+    )
+    .unwrap();
+    assert!(projected.sql.contains("SELECT [__src].[_fld77] AS [Fld77]"));
+    assert!(projected.sql.ends_with("WHERE ([__src].[_fld77] = 0x01)"));
+
+    let joined = mssql_compile!(
+        "SELECT l.Code FROM Catalog.OpenSdblMetadataProbe l INNER JOIN Catalog.OpenSdblMetadataProbe r ON l.Code = r.Code AND r.Fld77;",
+        &snapshot,
+    )
+    .unwrap();
+    assert!(joined.sql.contains("AND ([r].[_fld77] = 0x01)"));
+}

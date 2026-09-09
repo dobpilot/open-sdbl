@@ -1,13 +1,14 @@
 //! Bounded recursive-descent parser.
 
 use crate::query::core::ast::{
-    AccumulationAst, AccumulationKind, AggregateArgument, AggregateKind, Expression,
+    AccumulationAst, AccumulationKind, AggregateArgument, AggregateKind, CastTarget, Expression,
     FieldReference, JoinAst, JoinKind, OrderTerm, PeriodKind, PresentationArgument,
     PresentationOperation, Projection, ProjectionItem, QueryAst, SelectAst, SliceAst, SliceKind,
     SourceAst, UnionLink, parse_datetime_value,
 };
 use crate::query::core::diag::SourcePosition;
 use crate::query::core::names::names_equal;
+use crate::query::core::resolve::kind_from_query_name;
 use crate::query::core::{QueryDiagnostic, QueryDiagnosticKind};
 use crate::{Keyword, Token, TokenKind};
 
@@ -42,6 +43,7 @@ fn is_contextual_identifier(kind: TokenKind) -> bool {
                     | Keyword::BeginOfPeriod
                     | Keyword::Value
                     | Keyword::Uuid
+                    | Keyword::Cast
             )
         )
 }
@@ -646,6 +648,9 @@ impl<'tokens, 'source> Parser<'tokens, 'source> {
             if let Some(token) = self.consume_keyword_token(Keyword::Uuid) {
                 return self.parse_uuid(token);
             }
+            if let Some(token) = self.consume_keyword_token(Keyword::Cast) {
+                return self.parse_cast(token);
+            }
         }
         let Some(token) = self.peek() else {
             return Err(self.diagnostic(QueryDiagnosticKind::Syntax, None, "expected expression"));
@@ -773,6 +778,127 @@ impl<'tokens, 'source> Parser<'tokens, 'source> {
         }
         self.expect_lexeme(")")?;
         Ok(Expression::Uuid { token, argument })
+    }
+
+    fn parse_cast(
+        &mut self,
+        token: &'tokens Token<'source>,
+    ) -> Result<Expression<'tokens, 'source>, QueryDiagnostic> {
+        self.expect_lexeme("(")?;
+        let argument = self.parse_or()?;
+        self.expect_keyword(Keyword::As)?;
+        let target = self.parse_cast_target()?;
+        self.expect_lexeme(")")?;
+        let path = if matches!(target, CastTarget::Reference { .. }) && self.consume_lexeme(".") {
+            let field = self.expect_identifier("expected field name after '.'")?;
+            if let Some(next) = self.peek()
+                && next.lexeme == "."
+            {
+                return Err(QueryDiagnostic::at(
+                    QueryDiagnosticKind::UnsupportedFeature,
+                    Some(next),
+                    "reference paths deeper than one hop are not supported after CAST",
+                ));
+            }
+            Some(field)
+        } else {
+            None
+        };
+        Ok(Expression::Cast {
+            token,
+            argument: Box::new(argument),
+            target,
+            path,
+        })
+    }
+
+    fn parse_cast_target(&mut self) -> Result<CastTarget<'tokens, 'source>, QueryDiagnostic> {
+        let name = self.expect_identifier("CAST expects a target type")?;
+        let is = |candidates: [&str; 2]| {
+            candidates
+                .iter()
+                .any(|candidate| names_equal(name.lexeme, candidate))
+        };
+        if is(["СТРОКА", "STRING"]) {
+            let parameters = self.parse_cast_parameters(name, 1)?;
+            return Ok(CastTarget::String {
+                length: parameters.first().copied(),
+            });
+        }
+        if is(["ЧИСЛО", "NUMBER"]) {
+            let parameters = self.parse_cast_parameters(name, 2)?;
+            let narrow = |value: Option<&u32>| value.and_then(|value| u8::try_from(*value).ok());
+            return Ok(CastTarget::Number {
+                precision: narrow(parameters.first()),
+                scale: narrow(parameters.get(1)),
+            });
+        }
+        if is(["БУЛЕВО", "BOOLEAN"]) {
+            return Ok(CastTarget::Boolean);
+        }
+        if is(["ДАТА", "DATE"]) {
+            return Ok(CastTarget::Date);
+        }
+        if kind_from_query_name(name.lexeme).is_some() && self.consume_lexeme(".") {
+            let object = self.expect_identifier("CAST expects a metadata object")?;
+            return Ok(CastTarget::Reference { kind: name, object });
+        }
+        Err(QueryDiagnostic::at(
+            QueryDiagnosticKind::UnsupportedFeature,
+            Some(name),
+            format!(
+                "unsupported CAST target {:?}; expected STRING(n), NUMBER(p, s), BOOLEAN, DATE, or <Kind>.<Object>",
+                name.lexeme
+            ),
+        ))
+    }
+
+    /// Parses an optional `(n[, m])` parameter list of a scalar cast target.
+    fn parse_cast_parameters(
+        &mut self,
+        target: &'tokens Token<'source>,
+        limit: usize,
+    ) -> Result<Vec<u32>, QueryDiagnostic> {
+        let mut parameters = Vec::new();
+        if !self.consume_lexeme("(") {
+            return Ok(parameters);
+        }
+        loop {
+            let number = self.peek().ok_or_else(|| {
+                self.diagnostic(
+                    QueryDiagnosticKind::Syntax,
+                    None,
+                    "CAST target expects a numeric parameter",
+                )
+            })?;
+            let value = (number.kind == TokenKind::Number)
+                .then(|| number.lexeme.parse::<u32>().ok())
+                .flatten()
+                .ok_or_else(|| {
+                    QueryDiagnostic::at(
+                        QueryDiagnosticKind::Syntax,
+                        Some(number),
+                        "CAST target expects a non-negative integer parameter",
+                    )
+                })?;
+            self.next();
+            parameters.push(value);
+            if parameters.len() > limit {
+                return Err(QueryDiagnostic::at(
+                    QueryDiagnosticKind::Syntax,
+                    Some(target),
+                    format!(
+                        "CAST target {:?} accepts at most {limit} parameters",
+                        target.lexeme
+                    ),
+                ));
+            }
+            if !self.consume_lexeme(",") {
+                break;
+            }
+        }
+        self.expect_lexeme(")")?;
+        Ok(parameters)
     }
 
     fn parse_field_reference(

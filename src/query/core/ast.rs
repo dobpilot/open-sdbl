@@ -224,6 +224,14 @@ pub(super) enum Expression<'tokens, 'source> {
         token: &'tokens Token<'source>,
         argument: FieldReference<'tokens, 'source>,
     },
+    /// `ВЫРАЗИТЬ(<expression> КАК <target>)`, optionally followed by one
+    /// `.Field` when the target is a metadata object.
+    Cast {
+        token: &'tokens Token<'source>,
+        argument: Box<Self>,
+        target: CastTarget<'tokens, 'source>,
+        path: Option<&'tokens Token<'source>>,
+    },
     Unary {
         operator: &'tokens Token<'source>,
         value: Box<Self>,
@@ -245,8 +253,37 @@ pub(super) enum Expression<'tokens, 'source> {
 
 impl Expression<'_, '_> {
     pub(super) const fn is_date(&self) -> bool {
-        matches!(self, Self::DateTime { .. } | Self::BeginOfPeriod { .. })
+        matches!(
+            self,
+            Self::DateTime { .. }
+                | Self::BeginOfPeriod { .. }
+                | Self::Cast {
+                    target: CastTarget::Date,
+                    ..
+                }
+        )
     }
+}
+
+/// Target of a `ВЫРАЗИТЬ`/`CAST` expression.
+#[derive(Debug, Clone, Copy)]
+pub(super) enum CastTarget<'tokens, 'source> {
+    /// `СТРОКА(n)` / `STRING(n)`; `None` keeps the length unbounded.
+    String { length: Option<u32> },
+    /// `ЧИСЛО(p, s)` / `NUMBER(p, s)`.
+    Number {
+        precision: Option<u8>,
+        scale: Option<u8>,
+    },
+    /// `БУЛЕВО` / `BOOLEAN`.
+    Boolean,
+    /// `ДАТА` / `DATE`.
+    Date,
+    /// `<Kind>.<Object>` such as `Справочник.Контрагенты`.
+    Reference {
+        kind: &'tokens Token<'source>,
+        object: &'tokens Token<'source>,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
