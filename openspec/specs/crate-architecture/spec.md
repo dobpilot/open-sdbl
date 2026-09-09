@@ -46,9 +46,11 @@ database-named free functions SHALL NOT remain part of the public API.
 
 #### Scenario: MSSQL compiler
 - **WHEN** an application constructs `QueryCompiler` with
-  `MsSqlBackend::new(year_offset)`
-- **THEN** the compiler consistently applies that immutable year offset to
-  compilation, preparation, and presentation lookup operations
+  `MsSqlBackend::new(year_offset)` optionally followed by
+  `with_dialect_level(level)`
+- **THEN** the compiler consistently applies that immutable year offset and
+  dialect level to compilation, preparation, and presentation lookup
+  operations
 
 #### Scenario: Single public compilation model
 - **WHEN** an application compiles or prepares a query for either backend
@@ -56,14 +58,15 @@ database-named free functions SHALL NOT remain part of the public API.
   functions
 
 #### Scenario: Query inspection
-- **WHEN** an application requests PostgreSQL metadata query definitions
-- **THEN** the library returns fixed SELECT-only statements without executing
-  them
+- **WHEN** an application prepares a query with `QueryCompiler`
+- **THEN** it can inspect the presentation request before supplying plans and
+  compiling them
 
 #### Scenario: MSSQL query inspection
-- **WHEN** an application requests MSSQL metadata query definitions
-- **THEN** the library returns fixed SELECT-only statements without executing
-  them
+- **WHEN** an application prepares a query with `QueryCompiler` bound to
+  `MsSqlBackend`
+- **THEN** it can inspect the presentation request before supplying plans and
+  compiling them
 
 ### Requirement: Keep presentation policy outside the core crate
 The core package SHALL define deterministic ID-only presentation requests,

@@ -150,8 +150,28 @@ impl PostgresMetadataQueries {
     /// Reads the current authoritative physical schema.
     pub const SCHEMA: &'static str = "SELECT currentschema FROM schemastorage WHERE schemaid = 0";
 
+    /// Reads the numeric server version (`90204` for 9.2.4, `160002` for 16.2)
+    /// so the adapter can pick a catalog statement the server supports.
+    pub const SERVER_VERSION: &'static str = "SELECT current_setting('server_version_num')::int";
+
     /// Reads public PostgreSQL tables, columns, and ordered index keys.
     pub const CATALOG: &'static str = "SELECT 'T', c.relname, '', '', '' FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = 'public' AND c.relkind IN ('r','p') UNION ALL SELECT 'C', c.relname, a.attname, format_type(a.atttypid, a.atttypmod), '' FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace JOIN pg_attribute a ON a.attrelid = c.oid WHERE n.nspname = 'public' AND c.relkind IN ('r','p') AND a.attnum > 0 AND NOT a.attisdropped UNION ALL SELECT 'I', t.relname, i.relname, x.indisunique::text, COALESCE(string_agg(a.attname, ',' ORDER BY k.ordinality), '') FROM pg_class t JOIN pg_namespace n ON n.oid = t.relnamespace JOIN pg_index x ON x.indrelid = t.oid JOIN pg_class i ON i.oid = x.indexrelid LEFT JOIN LATERAL unnest(x.indkey) WITH ORDINALITY AS k(attnum, ordinality) ON true LEFT JOIN pg_attribute a ON a.attrelid = t.oid AND a.attnum = k.attnum WHERE n.nspname = 'public' GROUP BY t.relname, i.relname, x.indisunique ORDER BY 1, 2, 3";
+
+    /// Reads the same catalog rows as [`Self::CATALOG`] without `LATERAL` and
+    /// `WITH ORDINALITY`, for servers older than PostgreSQL 9.4.
+    pub const CATALOG_LEGACY: &'static str = "SELECT 'T', c.relname, '', '', '' FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = 'public' AND c.relkind IN ('r','p') UNION ALL SELECT 'C', c.relname, a.attname, format_type(a.atttypid, a.atttypmod), '' FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace JOIN pg_attribute a ON a.attrelid = c.oid WHERE n.nspname = 'public' AND c.relkind IN ('r','p') AND a.attnum > 0 AND NOT a.attisdropped UNION ALL SELECT 'I', t.relname, i.relname, x.indisunique::text, array_to_string(ARRAY(SELECT a.attname FROM generate_subscripts(x.indkey, 1) AS k(i) JOIN pg_attribute a ON a.attrelid = t.oid AND a.attnum = x.indkey[k.i] ORDER BY k.i), ',') FROM pg_class t JOIN pg_namespace n ON n.oid = t.relnamespace JOIN pg_index x ON x.indrelid = t.oid JOIN pg_class i ON i.oid = x.indexrelid WHERE n.nspname = 'public' ORDER BY 1, 2, 3";
+
+    /// Selects the catalog statement for the numeric server version read
+    /// with [`Self::SERVER_VERSION`]: servers before 9.4 lack `LATERAL` and
+    /// `WITH ORDINALITY`.
+    #[must_use]
+    pub const fn catalog(server_version_num: i32) -> &'static str {
+        if server_version_num < 90400 {
+            Self::CATALOG_LEGACY
+        } else {
+            Self::CATALOG
+        }
+    }
 
     /// Selects the DBNames statement for a detected layout.
     #[must_use]
@@ -199,9 +219,10 @@ impl PostgresMetadataQueries {
 
     /// Returns every acquisition statement, both layout variants included.
     #[must_use]
-    pub const fn all() -> [&'static str; 12] {
+    pub const fn all() -> [&'static str; 14] {
         [
             Self::VERIFY_TRANSACTION,
+            Self::SERVER_VERSION,
             Self::LAYOUT,
             Self::DB_NAMES,
             Self::DB_NAMES_LEGACY,
@@ -213,6 +234,7 @@ impl PostgresMetadataQueries {
             Self::EXTENSION_RESTRUCTURE,
             Self::SCHEMA,
             Self::CATALOG,
+            Self::CATALOG_LEGACY,
         ]
     }
 }
@@ -231,6 +253,11 @@ impl MsSqlMetadataQueries {
     /// Reads the connected database name and status for adapter validation.
     pub const VERIFY_DATABASE: &'static str =
         "SELECT DB_NAME(), CONVERT(nvarchar(60), DATABASEPROPERTYEX(DB_NAME(), N'Status'))";
+
+    /// Reads the server product version (`10.50.6000.34`) used to choose the
+    /// dialect level of generated T-SQL.
+    pub const PRODUCT_VERSION: &'static str =
+        "SELECT CONVERT(nvarchar(128), SERVERPROPERTY('ProductVersion'))";
 
     /// Reads the year offset applied to physical 1C datetime values.
     pub const YEAR_OFFSET: &'static str =
@@ -333,9 +360,10 @@ impl MsSqlMetadataQueries {
 
     /// Returns every acquisition statement, both layout variants included.
     #[must_use]
-    pub const fn all() -> [&'static str; 13] {
+    pub const fn all() -> [&'static str; 14] {
         [
             Self::VERIFY_DATABASE,
+            Self::PRODUCT_VERSION,
             Self::YEAR_OFFSET,
             Self::LAYOUT,
             Self::DB_NAMES,
@@ -446,6 +474,31 @@ mod tests {
                 "{query}"
             );
         }
+    }
+
+    #[test]
+    fn legacy_catalog_avoids_lateral_and_ordinality() {
+        let legacy = PostgresMetadataQueries::CATALOG_LEGACY.to_ascii_uppercase();
+        assert!(!legacy.contains("LATERAL") && !legacy.contains("ORDINALITY"));
+        assert!(legacy.contains("GENERATE_SUBSCRIPTS"));
+        for query in [
+            PostgresMetadataQueries::CATALOG,
+            PostgresMetadataQueries::CATALOG_LEGACY,
+        ] {
+            assert!(query.contains("SELECT 'T', c.relname, '', '', ''"));
+            assert!(query.contains("format_type(a.atttypid, a.atttypmod)"));
+            assert!(query.contains("x.indisunique::text"));
+            assert!(query.ends_with("ORDER BY 1, 2, 3"));
+        }
+        assert_eq!(
+            PostgresMetadataQueries::catalog(90204),
+            PostgresMetadataQueries::CATALOG_LEGACY
+        );
+        assert_eq!(
+            PostgresMetadataQueries::catalog(90400),
+            PostgresMetadataQueries::CATALOG
+        );
+        assert!(MsSqlMetadataQueries::PRODUCT_VERSION.contains("SERVERPROPERTY('ProductVersion')"));
     }
 
     #[test]

@@ -674,6 +674,9 @@ pub(super) async fn run(
     if interactive {
         writeln!(output, "open-sdbl 1C query console. Type \\help for help.")
             .map_err(CliError::standard_output)?;
+        if let Some(description) = session.server_description() {
+            writeln!(output, "{description}").map_err(CliError::standard_output)?;
+        }
     }
     let mut footer = PinnedFooter::enable(interactive)?;
     loop {

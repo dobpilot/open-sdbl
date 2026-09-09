@@ -479,12 +479,15 @@ async fn connect_postgres_raw_tls(
 
 struct PostgresMetadataSource<'transaction> {
     transaction: Option<Transaction<'transaction>>,
+    /// `server_version_num`, read once the read-only transaction is verified.
+    server_version: Option<i32>,
 }
 
 impl<'transaction> PostgresMetadataSource<'transaction> {
     fn new(transaction: Transaction<'transaction>) -> Self {
         Self {
             transaction: Some(transaction),
+            server_version: None,
         }
     }
 
@@ -497,7 +500,15 @@ impl<'transaction> PostgresMetadataSource<'transaction> {
 
 impl MetadataSource for PostgresMetadataSource<'_> {
     async fn begin_readonly(&mut self) -> Result<(), CliError> {
-        verify_transaction(self.transaction()?).await
+        verify_transaction(self.transaction()?).await?;
+        let rows = postgres_rows(
+            self.transaction()?,
+            "PostgreSQL server version query",
+            PostgresMetadataQueries::SERVER_VERSION,
+        )
+        .await?;
+        self.server_version = Some(exactly_one_row(&rows, "server version")?.try_get(0)?);
+        Ok(())
     }
 
     async fn detect_layout(&mut self) -> Result<StorageLayout, CliError> {
@@ -644,10 +655,15 @@ impl MetadataSource for PostgresMetadataSource<'_> {
     }
 
     async fn read_live_tables(&mut self) -> Result<Vec<LiveTable>, CliError> {
+        let server_version = self.server_version.ok_or_else(|| {
+            CliError::Database(
+                "PostgreSQL server version was not read before the catalog".to_owned(),
+            )
+        })?;
         let rows = postgres_rows(
             self.transaction()?,
             "PostgreSQL catalog query",
-            PostgresMetadataQueries::CATALOG,
+            PostgresMetadataQueries::catalog(server_version),
         )
         .await?;
         run_metadata_blocking("PostgreSQL catalog", move || decode_catalog_rows(rows)).await

@@ -704,3 +704,20 @@ order `d + e + c + b + a` without changing byte order inside a field.
 #### Scenario: Known enumeration GUID
 - **WHEN** GUID `d2f8bde9-fadd-4be8-9022-249e3a1ac4b9` is converted
 - **THEN** the bytes are `9022249e3a1ac4b94be8faddd2f8bde9`
+
+### Requirement: Read the live PostgreSQL catalog on servers before 9.4
+The PostgreSQL adapter SHALL read `server_version_num` inside the read-only
+transaction and SHALL use a catalog statement without `LATERAL` or
+`WITH ORDINALITY` when the server is older than 9.4. Both statements SHALL
+return the same `(tag, table, name, detail, columns)` rows with index columns
+in key order.
+
+#### Scenario: PostgreSQL 9.2
+- **WHEN** the server reports `server_version_num` below 90400
+- **THEN** the adapter lists tables, columns, and ordered index keys through
+  the legacy statement
+
+#### Scenario: Modern server
+- **WHEN** the server reports 9.4 or newer
+- **THEN** the adapter uses the `LATERAL` statement and the resolved snapshot
+  is identical to the legacy statement's result

@@ -1,6 +1,8 @@
 use std::env;
 use std::io::Write;
 
+use open_sdbl::query::MsSqlDialectLevel;
+
 use crate::error::CliError;
 use crate::net::socks5::{Socks5Proxy, parse_socks5_proxy};
 
@@ -8,7 +10,7 @@ pub(crate) const HELP: &str = "open-sdbl — tooling for the 1C query language\n
 Usage:\n  open-sdbl lex [FILE|-]\n  open-sdbl metadata postgres --host HOST --database DB --user USER [OPTIONS]\n  open-sdbl console postgres --host HOST --database DB --user USER [OPTIONS]\n  open-sdbl metadata mssql --host HOST --database DB --user USER [OPTIONS]\n  open-sdbl console mssql --host HOST --database DB --user USER [OPTIONS]\n  open-sdbl --help\n\n\
 Commands:\n  lex       Print lexical tokens; reads standard input when FILE is '-' or omitted\n  metadata  Read and resolve 1C information-base metadata\n  console   Run 1C queries and inspect resolved metadata interactively\n\n\
 PostgreSQL options:\n  --port PORT                 PostgreSQL port (default: 5432)\n  --sslmode MODE              disable, require, verify-ca, or verify-full (default)\n  --trust-ca-file PATH        Trust only certificates signed by this private CA\n  --insecure-plaintext        Required explicit opt-in for --sslmode disable\n  --socks5-proxy HOST:PORT    Route through a SOCKS5 proxy\n  --socks5-user USER          Authenticate to SOCKS5 using SOCKS5_PASSWORD\n\n\
-MSSQL options:\n  --port PORT                 SQL Server port (default: 1433)\n  --socks5-proxy HOST:PORT    Route through a SOCKS5 proxy\n  --socks5-user USER          Authenticate to SOCKS5 using SOCKS5_PASSWORD\n  --trust-server-certificate  Accept any TLS certificate (unsafe; development only)\n  --trust-ca-file PATH        Trust a specific PEM, CRT, or DER certificate\n\n\
+MSSQL options:\n  --port PORT                 SQL Server port (default: 1433)\n  --socks5-proxy HOST:PORT    Route through a SOCKS5 proxy\n  --socks5-user USER          Authenticate to SOCKS5 using SOCKS5_PASSWORD\n  --trust-server-certificate  Accept any TLS certificate (unsafe; development only)\n  --trust-ca-file PATH        Trust a specific PEM, CRT, or DER certificate\n  --mssql-dialect LEVEL       2008 or 2012; default is detected from the server version\n\n\
 Authentication:\n  PostgreSQL: PGPASSWORD, PGPASSFILE, or $HOME/.pgpass\n  MSSQL: MSSQL_PASSWORD\n  SOCKS5: SOCKS5_PASSWORD (when --socks5-user is present)\n  Password environment variables are consumed and removed; password flags are unsupported\n\n\
 Read-only requirements:\n  PostgreSQL queries run in verified READ ONLY, READ COMMITTED transactions\n  MSSQL login must belong to db_datareader, but not db_datawriter, db_owner, or sysadmin\n";
 
@@ -57,6 +59,8 @@ pub(crate) struct MsSqlConnection {
     pub(crate) options: ConnectionOptions,
     pub(crate) trust_server_certificate: bool,
     pub(crate) trust_ca_file: Option<String>,
+    /// Explicit dialect level; `None` means detect it from the server.
+    pub(crate) dialect_level: Option<MsSqlDialectLevel>,
 }
 
 pub(crate) fn parse_connection(
@@ -90,6 +94,7 @@ pub(crate) fn parse_connection(
     };
     let mut trust_server_certificate = false;
     let mut trust_ca_file = None;
+    let mut mssql_dialect = None;
     let mut postgres_sslmode = None;
     let mut insecure_plaintext = false;
     let mut socks5_user = None;
@@ -152,6 +157,13 @@ pub(crate) fn parse_connection(
                 })?);
             }
             "--trust-ca-file" => trust_ca_file = Some(value),
+            "--mssql-dialect" if provider == "mssql" => {
+                mssql_dialect = Some(MsSqlDialectLevel::parse(&value).ok_or_else(|| {
+                    CliError::Usage(format!(
+                        "invalid MSSQL dialect level {value:?}: expected 2008 or 2012\n\n{HELP}"
+                    ))
+                })?);
+            }
             _ => {
                 return Err(CliError::Usage(format!(
                     "unknown {command} option {option:?}\n\n{HELP}"
@@ -208,6 +220,7 @@ pub(crate) fn parse_connection(
             options,
             trust_server_certificate,
             trust_ca_file,
+            dialect_level: mssql_dialect,
         })
     }))
 }

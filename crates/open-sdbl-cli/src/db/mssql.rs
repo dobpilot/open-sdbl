@@ -3,7 +3,7 @@ use open_sdbl::metadata::{
     LiveTable, MetadataSnapshot, MsSqlMetadataQueries, StorageLayout, parse_db_names,
     parse_schema_storage,
 };
-use open_sdbl::query::MsSqlBackend;
+use open_sdbl::query::{MsSqlBackend, MsSqlDialectLevel};
 use tiberius::{AuthMethod, Client as MsSqlClient, ColumnData, Config as MsSqlConfig};
 use tokio::net::TcpStream;
 use tokio::time::timeout;
@@ -42,6 +42,8 @@ pub(crate) struct MsSqlSession {
     connection: MsSqlConnection,
     database: String,
     backend: MsSqlBackend,
+    /// `SERVERPROPERTY('ProductVersion')` of the connected server.
+    product_version: String,
     poisoned: bool,
     secrets: MsSqlSecrets,
 }
@@ -126,6 +128,7 @@ impl MsSqlSession {
             connection: connection.clone(),
             database: options.database.clone(),
             backend: MsSqlBackend::default(),
+            product_version: String::new(),
             poisoned: false,
             secrets,
         };
@@ -138,9 +141,22 @@ impl MsSqlSession {
             )
             .await?;
         session.verify_database().await?;
+        session.product_version = session.read_product_version().await?;
+        let dialect_level = match connection.dialect_level {
+            Some(level) => level,
+            None => MsSqlDialectLevel::from_product_version(&session.product_version).ok_or_else(
+                || {
+                    CliError::Data(format!(
+                        "unsupported SQL Server product version {:?}; pass --mssql-dialect explicitly",
+                        session.product_version
+                    ))
+                },
+            )?,
+        };
         let year_offset = session.read_year_offset().await?;
-        session.backend =
-            MsSqlBackend::new(year_offset).map_err(|error| CliError::Data(error.to_string()))?;
+        session.backend = MsSqlBackend::new(year_offset)
+            .map_err(|error| CliError::Data(error.to_string()))?
+            .with_dialect_level(dialect_level);
         Ok(session)
     }
 
@@ -191,6 +207,27 @@ impl MsSqlSession {
             )));
         }
         Ok(())
+    }
+
+    async fn read_product_version(&mut self) -> Result<String, CliError> {
+        let rows = mssql_rows(
+            self.client_mut()?,
+            "MSSQL product version query",
+            MsSqlMetadataQueries::PRODUCT_VERSION,
+        )
+        .await?;
+        let row = exactly_one_mssql_row(&rows, "product version")?;
+        required_mssql_string(row, 0, "SQL Server product version")
+    }
+
+    /// One-line description of the connected server and the dialect level
+    /// generated T-SQL targets, printed when the console starts.
+    pub(crate) fn server_description(&self) -> String {
+        format!(
+            "MSSQL dialect: {} (server {})",
+            self.backend.dialect_level(),
+            self.product_version
+        )
     }
 
     async fn read_year_offset(&mut self) -> Result<i32, CliError> {

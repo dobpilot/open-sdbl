@@ -248,6 +248,14 @@ impl DatabaseSession {
         }
     }
 
+    /// Provider-specific startup line, when the provider has one.
+    pub(crate) fn server_description(&self) -> Option<String> {
+        match self {
+            Self::Postgres(_) => None,
+            Self::MsSql(session) => Some(session.server_description()),
+        }
+    }
+
     pub(crate) const fn execution_label(&self) -> &'static str {
         match self {
             Self::Postgres(_) => "PostgreSQL execution",
@@ -383,6 +391,7 @@ mod tests {
             trust_server_certificate: std::env::var_os("OPEN_SDBL_MSSQL_TEST_TRUST_CERTIFICATE")
                 .is_some(),
             trust_ca_file: None,
+            dialect_level: None,
         }
     }
 
@@ -406,6 +415,45 @@ mod tests {
         let snapshot = session.metadata().await.unwrap();
         assert!(!snapshot.objects().is_empty());
         assert!(!snapshot.live_tables().is_empty());
+        session.close().await.unwrap();
+    }
+
+    #[tokio::test]
+    #[ignore = "requires OPEN_SDBL_MSSQL_TEST_* pointing at a SQL Server 2008 R2 base"]
+    async fn compiles_begin_of_period_on_a_sql_server_2008_base() {
+        let mut session =
+            MsSqlSession::connect(&mssql_test_connection(), &mssql_test_credentials())
+                .await
+                .unwrap();
+        let backend = session.backend();
+        assert_eq!(
+            backend.dialect_level(),
+            open_sdbl::query::MsSqlDialectLevel::Sql2008,
+            "{}",
+            session.server_description()
+        );
+        let snapshot = session.metadata().await.unwrap();
+        let document = snapshot
+            .objects()
+            .iter()
+            .find(|object| {
+                object.kind == Some(open_sdbl::metadata::MetadataKind::Document)
+                    && object.live
+                    && object.name.is_some()
+            })
+            .expect("a base has at least one live document");
+        let compiled = QueryCompiler::new(&snapshot, backend)
+            .compile(&format!(
+                "ВЫБРАТЬ ПЕРВЫЕ 3 НАЧАЛОПЕРИОДА(Дата, МЕСЯЦ), НАЧАЛОПЕРИОДА(Дата, ДЕКАДА) ИЗ Документ.{};",
+                document.name.as_deref().unwrap()
+            ))
+            .unwrap();
+        assert!(!compiled.sql.contains("DATETIME2FROMPARTS"));
+        let rows = session
+            .query(&compiled.sql, compiled.columns.len())
+            .await
+            .unwrap();
+        assert!(rows.len() <= 3);
         session.close().await.unwrap();
     }
 

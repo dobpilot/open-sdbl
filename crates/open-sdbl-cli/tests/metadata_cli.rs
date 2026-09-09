@@ -10,6 +10,7 @@ fn metadata_help_and_required_options_are_reported() {
     let help = String::from_utf8(help.stdout).unwrap();
     assert!(help.contains("metadata postgres --host HOST"));
     assert!(help.contains("--socks5-proxy HOST:PORT"));
+    assert!(help.contains("--mssql-dialect LEVEL"));
     assert!(help.contains("PGPASSWORD, PGPASSFILE, or $HOME/.pgpass"));
     assert!(!help.contains("--psql"));
 
