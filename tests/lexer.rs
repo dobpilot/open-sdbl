@@ -1,6 +1,6 @@
 use open_sdbl::{DiagnosticKind, Keyword, Lexer, TokenKind, tokenize};
 
-const KEYWORD_ALIASES: [(Keyword, &str, &str); 48] = [
+const KEYWORD_ALIASES: [(Keyword, &str, &str); 51] = [
     (Keyword::Select, "ВЫБРАТЬ", "SELECT"),
     (Keyword::From, "ИЗ", "FROM"),
     (Keyword::Where, "ГДЕ", "WHERE"),
@@ -53,6 +53,9 @@ const KEYWORD_ALIASES: [(Keyword, &str, &str); 48] = [
     (Keyword::Value, "ЗНАЧЕНИЕ", "VALUE"),
     (Keyword::Uuid, "УНИКАЛЬНЫЙИДЕНТИФИКАТОР", "UUID"),
     (Keyword::Cast, "ВЫРАЗИТЬ", "CAST"),
+    (Keyword::IsNullFunction, "ЕСТЬNULL", "ISNULL"),
+    (Keyword::Like, "ПОДОБНО", "LIKE"),
+    (Keyword::Escape, "СПЕЦСИМВОЛ", "ESCAPE"),
 ];
 
 #[test]
@@ -85,7 +88,7 @@ fn recognizes_russian_and_english_keywords_case_insensitively() {
 
 #[test]
 fn recognizes_the_complete_bilingual_keyword_table() {
-    assert_eq!(KEYWORD_ALIASES.len(), 48);
+    assert_eq!(KEYWORD_ALIASES.len(), 51);
     for (index, (keyword, russian, english)) in KEYWORD_ALIASES.into_iter().enumerate() {
         assert!(
             KEYWORD_ALIASES[..index]

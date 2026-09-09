@@ -4,7 +4,7 @@ use super::context::{
 };
 use super::expression::{
     compile_aggregate, compile_expression, compile_predicate, expression_kind, reference_column,
-    reference_type_column, single_column,
+    reference_type_column, single_column, widen_reference,
 };
 use super::orchestrate::PresentationCompilation;
 use super::sources::{
@@ -21,6 +21,7 @@ use crate::query::core::resolve::{
 };
 use crate::query::core::{QueryDiagnostic, QueryDiagnosticKind};
 use crate::{Keyword, Token, TokenKind};
+use std::collections::BTreeSet;
 
 pub(super) fn compile_branch(
     ast: &SelectAst<'_, '_>,
@@ -29,11 +30,12 @@ pub(super) fn compile_branch(
     order_terms: &[OrderTerm<'_, '_>],
     union_order: bool,
     presentations: &mut PresentationCompilation<'_>,
+    widen: &BTreeSet<usize>,
 ) -> Result<CompiledBranch, QueryDiagnostic> {
     let dialect = presentations.dialect;
     validate_aggregate_projection(ast)?;
     let Some(source) = ast.source.as_ref() else {
-        return compile_source_free_branch(ast, order_terms, snapshot, dialect);
+        return compile_source_free_branch(ast, order_terms, snapshot, dialect, widen);
     };
     let join = ast.join.as_ref();
     validate_join_projection(ast, join)?;
@@ -44,7 +46,7 @@ pub(super) fn compile_branch(
         columns,
         sql: projections,
         deferred_presentations,
-    } = render_selected_projections(&selected, &context)?;
+    } = render_selected_projections(&selected, &context, widen)?;
     if projections.is_empty() {
         return Err(empty_projection_diagnostic(source, join));
     }
@@ -295,7 +297,7 @@ fn compile_selected_projections(
                 let sql = compile_expression(expression, context)?;
                 let kind = expression_kind(expression, context)?;
                 selected.push(SelectedProjection::Generated {
-                    sql: if expression.is_date() {
+                    sql: if kind == ColumnKind::DateTime {
                         context.dialect.date_scalar(&sql)
                     } else {
                         sql
@@ -330,9 +332,14 @@ fn compile_selected_projections(
     Ok(selected)
 }
 
+/// Renders the selected projections as `expr AS label` pairs. Columns whose
+/// position is listed in `widen` are fixed references that another UNION
+/// branch projects as a runtime-typed payload; they are widened here so
+/// every branch emits the same width.
 fn render_selected_projections(
     selected: &[SelectedProjection],
     context: &CompilationContext<'_, '_>,
+    widen: &BTreeSet<usize>,
 ) -> Result<RenderedProjections, QueryDiagnostic> {
     let mut columns = Vec::new();
     let mut sql = Vec::new();
@@ -365,6 +372,17 @@ fn render_selected_projections(
                             value_member.kind.clone(),
                         ),
                     };
+                    let (expression, kind) = if widen.contains(&columns.len()) {
+                        widen_reference(
+                            &expression,
+                            &kind,
+                            None,
+                            context.snapshot,
+                            context.dialect,
+                        )?
+                    } else {
+                        (expression, kind)
+                    };
                     let output_label = labels.allocate(&requested_label);
                     sql.push(format!(
                         "{expression} AS {}",
@@ -380,6 +398,11 @@ fn render_selected_projections(
                 kind,
             } => {
                 context.catalog.charge(1, None)?;
+                let (expression, kind) = if widen.contains(&columns.len()) {
+                    widen_reference(expression, kind, None, context.snapshot, context.dialect)?
+                } else {
+                    (expression.clone(), kind.clone())
+                };
                 let output_label = labels.allocate(label);
                 sql.push(format!(
                     "{expression} AS {}",
@@ -388,7 +411,7 @@ fn render_selected_projections(
                 if *deferred {
                     deferred_presentations.push(columns.len());
                 }
-                columns.push(CompiledColumn::new(output_label, kind.clone()));
+                columns.push(CompiledColumn::new(output_label, kind));
             }
         }
     }
@@ -685,6 +708,44 @@ fn validate_direct_join_condition_fields(
             Expression::InList { value, items } => {
                 pending.extend(items.iter().rev());
                 pending.push(value);
+            }
+            Expression::Case {
+                branches,
+                otherwise,
+                ..
+            } => {
+                if let Some(otherwise) = otherwise {
+                    pending.push(otherwise);
+                }
+                for branch in branches.iter().rev() {
+                    pending.push(&branch.then);
+                    pending.push(&branch.when);
+                }
+            }
+            Expression::IsNullFunction {
+                value, fallback, ..
+            } => {
+                pending.push(fallback);
+                pending.push(value);
+            }
+            Expression::Like {
+                value,
+                pattern,
+                escape,
+                ..
+            } => {
+                if let Some(escape) = escape {
+                    pending.push(escape);
+                }
+                pending.push(pattern);
+                pending.push(value);
+            }
+            Expression::Aggregate { token, .. } => {
+                return Err(QueryDiagnostic::at(
+                    QueryDiagnosticKind::UnsupportedFeature,
+                    Some(token),
+                    "JOIN condition cannot contain aggregate functions",
+                ));
             }
             Expression::Literal(_)
             | Expression::DateTime { .. }

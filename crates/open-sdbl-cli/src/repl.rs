@@ -140,6 +140,12 @@ const COMPLETION_KEYWORDS: &[&str] = &[
     "UUID",
     "ВЫРАЗИТЬ",
     "CAST",
+    "ЕСТЬNULL",
+    "ISNULL",
+    "ПОДОБНО",
+    "LIKE",
+    "СПЕЦСИМВОЛ",
+    "ESCAPE",
 ];
 
 const PRESENTATION_POLICY_VERSION: u32 = 2;

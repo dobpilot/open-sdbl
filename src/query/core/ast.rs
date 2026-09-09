@@ -145,7 +145,7 @@ pub(super) enum Projection<'tokens, 'source> {
 #[derive(Debug)]
 pub(super) enum AggregateArgument<'tokens, 'source> {
     All,
-    Field(FieldReference<'tokens, 'source>),
+    Expression(Box<Expression<'tokens, 'source>>),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -249,20 +249,42 @@ pub(super) enum Expression<'tokens, 'source> {
         value: Box<Self>,
         negated: bool,
     },
+    /// `ВЫБОР КОГДА … ТОГДА … [ИНАЧЕ …] КОНЕЦ`.
+    Case {
+        token: &'tokens Token<'source>,
+        branches: Vec<CaseBranch<'tokens, 'source>>,
+        otherwise: Option<Box<Self>>,
+    },
+    /// `ЕСТЬNULL(<value>, <fallback>)`.
+    IsNullFunction {
+        token: &'tokens Token<'source>,
+        value: Box<Self>,
+        fallback: Box<Self>,
+    },
+    /// `<value> [НЕ] ПОДОБНО <pattern> [СПЕЦСИМВОЛ <escape>]`.
+    Like {
+        token: &'tokens Token<'source>,
+        value: Box<Self>,
+        pattern: Box<Self>,
+        escape: Option<Box<Self>>,
+        negated: bool,
+    },
+    /// An aggregate function call; valid only where the branch allows
+    /// aggregates.
+    Aggregate {
+        token: &'tokens Token<'source>,
+        kind: AggregateKind,
+        distinct: bool,
+        argument: AggregateArgument<'tokens, 'source>,
+    },
 }
 
-impl Expression<'_, '_> {
-    pub(super) const fn is_date(&self) -> bool {
-        matches!(
-            self,
-            Self::DateTime { .. }
-                | Self::BeginOfPeriod { .. }
-                | Self::Cast {
-                    target: CastTarget::Date,
-                    ..
-                }
-        )
-    }
+/// One `КОГДА … ТОГДА …` alternative of a `ВЫБОР` expression.
+#[derive(Debug)]
+pub(super) struct CaseBranch<'tokens, 'source> {
+    pub(super) token: &'tokens Token<'source>,
+    pub(super) when: Expression<'tokens, 'source>,
+    pub(super) then: Expression<'tokens, 'source>,
 }
 
 /// Target of a `ВЫРАЗИТЬ`/`CAST` expression.

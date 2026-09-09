@@ -113,6 +113,12 @@ pub enum Keyword {
     Uuid,
     /// `ВЫРАЗИТЬ` or `CAST`.
     Cast,
+    /// `ЕСТЬNULL` or `ISNULL`.
+    IsNullFunction,
+    /// `ПОДОБНО` or `LIKE`.
+    Like,
+    /// `СПЕЦСИМВОЛ` or `ESCAPE`.
+    Escape,
 }
 
 impl Keyword {
@@ -168,6 +174,9 @@ impl Keyword {
             Self::Value => "VALUE",
             Self::Uuid => "UUID",
             Self::Cast => "CAST",
+            Self::IsNullFunction => "ISNULL",
+            Self::Like => "LIKE",
+            Self::Escape => "ESCAPE",
         }
     }
 }
@@ -546,7 +555,7 @@ fn is_identifier_continue(character: char) -> bool {
     character == '_' || character.is_alphanumeric()
 }
 
-const KEYWORDS: [(Keyword, &str, &str); 48] = [
+const KEYWORDS: [(Keyword, &str, &str); 51] = [
     (Keyword::Select, "ВЫБРАТЬ", "SELECT"),
     (Keyword::From, "ИЗ", "FROM"),
     (Keyword::Where, "ГДЕ", "WHERE"),
@@ -599,6 +608,9 @@ const KEYWORDS: [(Keyword, &str, &str); 48] = [
     (Keyword::Value, "ЗНАЧЕНИЕ", "VALUE"),
     (Keyword::Uuid, "УНИКАЛЬНЫЙИДЕНТИФИКАТОР", "UUID"),
     (Keyword::Cast, "ВЫРАЗИТЬ", "CAST"),
+    (Keyword::IsNullFunction, "ЕСТЬNULL", "ISNULL"),
+    (Keyword::Like, "ПОДОБНО", "LIKE"),
+    (Keyword::Escape, "СПЕЦСИМВОЛ", "ESCAPE"),
 ];
 
 fn keyword(text: &str) -> Option<Keyword> {

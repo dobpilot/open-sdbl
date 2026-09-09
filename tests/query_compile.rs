@@ -3724,3 +3724,372 @@ fn renders_boolean_predicates_as_comparisons_on_mssql() {
     .unwrap();
     assert!(joined.sql.contains("AND ([r].[_fld77] = 0x01)"));
 }
+
+fn boolean_snapshot() -> MetadataSnapshot {
+    with_live_tables(snapshot(), |tables| {
+        tables[0].columns.push(LiveColumn {
+            name: "_fld77".to_owned(),
+            data_type: "boolean".to_owned(),
+        });
+    })
+}
+
+#[test]
+fn compiles_case_expressions_in_projections_and_predicates() {
+    let snapshot = boolean_snapshot();
+    let (postgres, mssql) = for_each_backend!(
+        "ВЫБРАТЬ ВЫБОР КОГДА Fld77 ТОГДА \"Да\" КОГДА Code = \"A\" ТОГДА \"A\" ИНАЧЕ \"Нет\" КОНЕЦ КАК Статус,
+                CASE WHEN Fld77 THEN 1 END AS Флаг
+         ИЗ Справочник.OpenSdblMetadataProbe
+         ГДЕ ВЫБОР КОГДА Fld77 ТОГДА ИСТИНА ИНАЧЕ ЛОЖЬ КОНЕЦ;",
+        &snapshot,
+    );
+    let postgres = postgres.unwrap();
+    assert_eq!(labels(&postgres), ["Статус", "Флаг"]);
+    assert_eq!(
+        kinds(&postgres),
+        [
+            &ColumnKind::String { length: None },
+            &ColumnKind::Number {
+                precision: None,
+                scale: None,
+            },
+        ]
+    );
+    assert!(postgres.sql.contains(
+        "CASE WHEN \"__src\".\"_fld77\" THEN 'Да' WHEN (\"__src\".\"_code\" = 'A') THEN 'A' ELSE 'Нет' END AS \"Статус\""
+    ));
+    assert!(
+        postgres
+            .sql
+            .contains("CASE WHEN \"__src\".\"_fld77\" THEN 1 END AS \"Флаг\"")
+    );
+    assert!(
+        postgres
+            .sql
+            .ends_with("WHERE CASE WHEN \"__src\".\"_fld77\" THEN TRUE ELSE FALSE END")
+    );
+
+    let mssql = mssql.unwrap();
+    assert!(mssql.sql.contains(
+        "CASE WHEN ([__src].[_fld77] = 0x01) THEN N'Да' WHEN ([__src].[_code] = N'A') THEN N'A' ELSE N'Нет' END AS [Статус]"
+    ));
+    assert!(
+        mssql.sql.ends_with(
+            "WHERE (CASE WHEN ([__src].[_fld77] = 0x01) THEN 0x01 ELSE 0x00 END = 0x01)"
+        )
+    );
+
+    let source_free = mssql_compile!(
+        "SELECT CASE WHEN TRUE THEN 1 ELSE 2 END AS N, ISNULL(NULL, \"x\") AS S;",
+        &snapshot,
+    )
+    .unwrap();
+    assert!(
+        source_free
+            .sql
+            .contains("CASE WHEN (1 = 1) THEN 1 ELSE 2 END AS [N]")
+    );
+    assert!(source_free.sql.contains("COALESCE(NULL, N'x') AS [S]"));
+    assert_eq!(
+        kinds(&source_free),
+        [
+            &ColumnKind::Number {
+                precision: None,
+                scale: None,
+            },
+            &ColumnKind::String { length: None },
+        ]
+    );
+}
+
+#[test]
+fn corrects_case_dates_once_on_mssql() {
+    let snapshot = boolean_snapshot();
+    let compiled = mssql_compile_with_offset!(
+        "SELECT ВЫБОР КОГДА Fld77 ТОГДА Date ИНАЧЕ ДАТАВРЕМЯ(2024, 1, 1) КОНЕЦ AS D,
+                ЕСТЬNULL(Date, ДАТАВРЕМЯ(1, 1, 1)) AS E,
+                НАЧАЛОПЕРИОДА(ЕСТЬNULL(Date, ДАТАВРЕМЯ(1, 1, 1)), МЕСЯЦ) AS P
+         FROM Catalog.OpenSdblMetadataProbe;",
+        &snapshot,
+        2000
+    )
+    .unwrap();
+    assert_eq!(
+        kinds(&compiled),
+        [
+            &ColumnKind::DateTime,
+            &ColumnKind::DateTime,
+            &ColumnKind::DateTime
+        ]
+    );
+    assert!(compiled.sql.contains(
+        "DATEADD(year, -2000, CASE WHEN ([__src].[_fld77] = 0x01) THEN [__src].[_date_time] ELSE DATEADD(year, 2000, CONVERT(datetime2, '2024-01-01T00:00:00', 126)) END) AS [D]"
+    ));
+    assert!(compiled.sql.contains(
+        "DATEADD(year, -2000, COALESCE([__src].[_date_time], DATEADD(year, 2000, CONVERT(datetime2, '0001-01-01T00:00:00', 126)))) AS [E]"
+    ));
+    assert!(
+        compiled
+            .sql
+            .contains("DATEADD(year, -2000, DATETIME2FROMPARTS(YEAR(COALESCE(")
+    );
+    assert_eq!(compiled.sql.matches("DATEADD(year, -2000").count(), 3);
+}
+
+#[test]
+fn widens_references_in_case_isnull_and_union() {
+    let snapshot = presentation_reference_snapshot(true);
+    let probe = snapshot
+        .object_id(MetadataKind::Catalog, "OpenSdblMetadataProbe")
+        .unwrap();
+    let field_targets = match &postgres_compile!(
+        "SELECT ProbeAttribute FROM Catalog.OpenSdblMetadataProbe;",
+        &snapshot,
+    )
+    .unwrap()
+    .columns[0]
+        .kind
+    {
+        ColumnKind::Reference { targets, .. } => targets.clone(),
+        other => panic!("unexpected field kind {other:?}"),
+    };
+    assert_eq!(field_targets.len(), 2);
+    let mut targets = field_targets.clone();
+    targets.push(probe);
+    targets.sort();
+    let widened = ColumnKind::Reference {
+        targets: targets.clone(),
+        runtime_typed: true,
+    };
+
+    let (postgres, mssql) = for_each_backend!(
+        "SELECT CASE WHEN Ссылка ЕСТЬ NULL THEN ProbeAttribute ELSE Ссылка END AS Any,
+                ЕСТЬNULL(ProbeAttribute, Ссылка) AS Fallback,
+                ЕСТЬNULL(Ссылка, Ссылка) AS Same
+         FROM Catalog.OpenSdblMetadataProbe;",
+        &snapshot,
+    );
+    let postgres = postgres.unwrap();
+    assert_eq!(
+        kinds(&postgres),
+        [
+            &widened,
+            &widened,
+            &ColumnKind::Reference {
+                targets: vec![probe],
+                runtime_typed: false,
+            },
+        ]
+    );
+    assert!(postgres.sql.contains(
+        "CASE WHEN (\"__src\".\"_idrref\" IS NULL) THEN (\"__src\".\"_fld54_rtref\" || \"__src\".\"_fld54_rrref\") ELSE (decode('00000035', 'hex') || \"__src\".\"_idrref\") END AS \"Any\""
+    ));
+    assert!(postgres.sql.contains(
+        "COALESCE((\"__src\".\"_fld54_rtref\" || \"__src\".\"_fld54_rrref\"), (decode('00000035', 'hex') || \"__src\".\"_idrref\")) AS \"Fallback\""
+    ));
+    assert!(
+        postgres
+            .sql
+            .contains("COALESCE(\"__src\".\"_idrref\", \"__src\".\"_idrref\") AS \"Same\"")
+    );
+    assert!(
+        mssql
+            .unwrap()
+            .sql
+            .contains("THEN ([__src].[_fld54_rtref] + [__src].[_fld54_rrref]) ELSE (0x00000035 + [__src].[_idrref]) END AS [Any]")
+    );
+
+    let union = postgres_compile!(
+        "SELECT Ссылка FROM Catalog.OpenSdblMetadataProbe
+         UNION ALL SELECT ProbeAttribute FROM Catalog.OpenSdblMetadataProbe
+         UNION ALL SELECT NULL;",
+        &snapshot,
+    )
+    .unwrap();
+    assert_eq!(kinds(&union), [&widened]);
+    assert!(
+        union
+            .sql
+            .contains("(decode('00000035', 'hex') || \"__src\".\"_idrref\") AS \"ID\"")
+    );
+    assert!(union.sql.contains(
+        "(\"__src\".\"_fld54_rtref\" || \"__src\".\"_fld54_rrref\") AS \"ProbeAttribute\""
+    ));
+
+    let same = postgres_compile!(
+        "SELECT Ссылка FROM Catalog.OpenSdblMetadataProbe
+         UNION ALL SELECT Ссылка FROM Catalog.OpenSdblMetadataProbe;",
+        &snapshot,
+    )
+    .unwrap();
+    assert_eq!(
+        kinds(&same),
+        [&ColumnKind::Reference {
+            targets: vec![probe],
+            runtime_typed: false,
+        }]
+    );
+    assert!(!same.sql.contains("decode('00000035', 'hex')"));
+}
+
+#[test]
+fn diagnoses_incompatible_conditional_branches() {
+    let snapshot = snapshot();
+    let error = postgres_compile!(
+        "SELECT CASE WHEN Code = \"A\" THEN 1 ELSE \"x\" END FROM Catalog.OpenSdblMetadataProbe;",
+        &snapshot,
+    )
+    .unwrap_err();
+    assert_eq!(error.kind(), QueryDiagnosticKind::UnsupportedFeature);
+    assert_eq!((error.line(), error.column()), (1, 41));
+    assert!(error.message().contains("kinds differ"));
+
+    let missing = postgres_compile!(
+        "SELECT CASE END FROM Catalog.OpenSdblMetadataProbe;",
+        &snapshot,
+    )
+    .unwrap_err();
+    assert_eq!(missing.kind(), QueryDiagnosticKind::Syntax);
+
+    let one_argument = postgres_compile!(
+        "SELECT ЕСТЬNULL(Code) FROM Catalog.OpenSdblMetadataProbe;",
+        &snapshot,
+    )
+    .unwrap_err();
+    assert_eq!(one_argument.kind(), QueryDiagnosticKind::Syntax);
+
+    let mismatch = postgres_compile!(
+        "SELECT ISNULL(Code, 5) FROM Catalog.OpenSdblMetadataProbe;",
+        &snapshot,
+    )
+    .unwrap_err();
+    assert_eq!(mismatch.kind(), QueryDiagnosticKind::UnsupportedFeature);
+}
+
+#[test]
+fn compiles_like_predicates_with_escape_and_negation() {
+    let snapshot = snapshot();
+    let (postgres, mssql) = for_each_backend!(
+        "SELECT Code FROM Catalog.OpenSdblMetadataProbe
+         WHERE Code ПОДОБНО \"[0-9]%\" И Code НЕ ПОДОБНО \"%\\_%\" СПЕЦСИМВОЛ \"\\\" OR Code LIKE Code;",
+        &snapshot,
+    );
+    let postgres = postgres.unwrap();
+    assert!(postgres.sql.ends_with(
+        "WHERE (((\"__src\".\"_code\" LIKE '[0-9]%') AND (NOT (\"__src\".\"_code\" LIKE '%\\_%' ESCAPE '\\'))) OR (\"__src\".\"_code\" LIKE \"__src\".\"_code\"))"
+    ));
+    let mssql = mssql.unwrap();
+    assert!(mssql.sql.ends_with(
+        "WHERE ((([__src].[_code] LIKE N'[0-9]%') AND (NOT ([__src].[_code] LIKE N'%\\_%' ESCAPE N'\\'))) OR ([__src].[_code] LIKE [__src].[_code]))"
+    ));
+
+    let in_case = postgres_compile!(
+        "SELECT CASE WHEN Code LIKE \"A%\" THEN 1 ELSE 0 END AS Flag FROM Catalog.OpenSdblMetadataProbe;",
+        &snapshot,
+    )
+    .unwrap();
+    assert!(
+        in_case
+            .sql
+            .contains("CASE WHEN (\"__src\".\"_code\" LIKE 'A%') THEN 1 ELSE 0 END AS \"Flag\"")
+    );
+
+    let projected = postgres_compile!(
+        "SELECT Code LIKE \"A%\" FROM Catalog.OpenSdblMetadataProbe;",
+        &snapshot,
+    )
+    .unwrap_err();
+    assert_eq!(projected.kind(), QueryDiagnosticKind::UnsupportedFeature);
+    assert!(projected.message().contains("predicate positions"));
+
+    let non_string = postgres_compile!(
+        "SELECT Code FROM Catalog.OpenSdblMetadataProbe WHERE Date LIKE \"2024%\";",
+        &snapshot,
+    )
+    .unwrap_err();
+    assert_eq!(non_string.kind(), QueryDiagnosticKind::UnsupportedFeature);
+    assert!(non_string.message().contains("must be strings"));
+}
+
+#[test]
+fn aggregates_arbitrary_scalar_expressions() {
+    let snapshot = boolean_snapshot();
+    let (postgres, mssql) = for_each_backend!(
+        "SELECT SUM(CASE WHEN Fld77 THEN 1 ELSE 0 END) AS S,
+                COUNT(DISTINCT BEGINOFPERIOD(Date, MONTH)) AS C,
+                MAX(ISNULL(Code, \"\")) AS M
+         FROM Catalog.OpenSdblMetadataProbe;",
+        &snapshot,
+    );
+    let postgres = postgres.unwrap();
+    assert_eq!(labels(&postgres), ["S", "C", "M"]);
+    assert_eq!(
+        kinds(&postgres),
+        [
+            &ColumnKind::Number {
+                precision: None,
+                scale: None,
+            },
+            &ColumnKind::Number {
+                precision: None,
+                scale: None,
+            },
+            &ColumnKind::String { length: Some(9) },
+        ]
+    );
+    assert!(
+        postgres
+            .sql
+            .contains("SUM(CASE WHEN \"__src\".\"_fld77\" THEN 1 ELSE 0 END) AS \"S\"")
+    );
+    assert!(
+        postgres
+            .sql
+            .contains("COUNT(DISTINCT date_trunc('month', \"__src\".\"_date_time\")) AS \"C\"")
+    );
+    assert!(
+        postgres
+            .sql
+            .contains("MAX(COALESCE(\"__src\".\"_code\", '')) AS \"M\"")
+    );
+    assert!(
+        mssql
+            .unwrap()
+            .sql
+            .contains("SUM(CASE WHEN ([__src].[_fld77] = 0x01) THEN 1 ELSE 0 END) AS [S]")
+    );
+
+    let reference = postgres_compile!(
+        "SELECT MAX(ЕСТЬNULL(ProbeAttribute, Ссылка)) AS R FROM Catalog.OpenSdblMetadataProbe;",
+        &presentation_reference_snapshot(true),
+    )
+    .unwrap();
+    assert!(
+        reference
+            .sql
+            .contains("MAX(COALESCE((\"__src\".\"_fld54_rtref\" || \"__src\".\"_fld54_rrref\"), (decode('00000035', 'hex') || \"__src\".\"_idrref\"))) AS \"R\"")
+    );
+    assert!(matches!(
+        &reference.columns[0].kind,
+        ColumnKind::Reference {
+            runtime_typed: true,
+            ..
+        }
+    ));
+
+    let nested = postgres_compile!(
+        "SELECT SUM(SUM(Code)) FROM Catalog.OpenSdblMetadataProbe;",
+        &snapshot,
+    )
+    .unwrap_err();
+    assert_eq!(nested.kind(), QueryDiagnosticKind::UnsupportedFeature);
+    assert!(nested.message().contains("only as projections"));
+
+    let filtered = postgres_compile!(
+        "SELECT Code FROM Catalog.OpenSdblMetadataProbe WHERE SUM(Code) > 1;",
+        &snapshot,
+    )
+    .unwrap_err();
+    assert_eq!(filtered.kind(), QueryDiagnosticKind::UnsupportedFeature);
+}

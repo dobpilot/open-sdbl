@@ -1,14 +1,18 @@
 use super::context::CompilationContext;
 use super::sources::compile_metadata_value;
 use crate::metadata::MetadataSnapshot;
-use crate::query::core::ast::{AggregateArgument, AggregateKind, CastTarget, Expression};
-use crate::query::core::dialect::compile_literal;
+use crate::metadata::ObjectId;
+use crate::query::core::ast::{
+    AggregateArgument, AggregateKind, CaseBranch, CastTarget, Expression,
+};
+use crate::query::core::dialect::{SqlDialect, compile_literal};
 use crate::query::core::names::names_equal;
 use crate::query::core::resolve::{
     ColumnKind, QueryableColumn, QueryableField, kind_from_query_name,
 };
 use crate::query::core::{QueryDiagnostic, QueryDiagnosticKind};
 use crate::{Keyword, Token, TokenKind};
+use std::collections::BTreeSet;
 
 /// Compiles an expression in a predicate position (`WHERE`, `ON`, operands
 /// of `AND`/`OR`/`NOT`). SQL Server has no boolean expressions, so boolean
@@ -46,6 +50,43 @@ pub(super) fn compile_predicate(
         } => {
             let sql = compile_expression(expression, context)?;
             Ok(context.dialect.boolean_predicate(&sql))
+        }
+        Expression::Case { .. } | Expression::IsNullFunction { .. } => {
+            let sql = compile_expression(expression, context)?;
+            Ok(
+                if expression_kind(expression, context)? == ColumnKind::Boolean {
+                    context.dialect.boolean_predicate(&sql)
+                } else {
+                    sql
+                },
+            )
+        }
+        Expression::Like {
+            token,
+            value,
+            pattern,
+            escape,
+            negated,
+        } => {
+            let value_sql = compile_expression(value, context)?;
+            let pattern_sql = compile_expression(pattern, context)?;
+            let escape_sql = escape
+                .as_ref()
+                .map(|escape| compile_expression(escape, context))
+                .transpose()?;
+            for operand in [value.as_ref(), pattern.as_ref()]
+                .into_iter()
+                .chain(escape.as_deref())
+            {
+                let kind = expression_kind(operand, context)?;
+                check_like_operand(token, &kind)?;
+            }
+            Ok(render_like(
+                &value_sql,
+                &pattern_sql,
+                escape_sql.as_deref(),
+                *negated,
+            ))
         }
         Expression::Unary { operator, value }
             if operator.kind == TokenKind::Keyword(Keyword::Not) =>
@@ -304,7 +345,424 @@ pub(super) fn expression_kind(
             TokenKind::Keyword(Keyword::Not) => Ok(ColumnKind::Boolean),
             _ => expression_kind(value, context),
         },
+        Expression::Case {
+            branches,
+            otherwise,
+            ..
+        } => {
+            let mut operands = Vec::with_capacity(branches.len() + 1);
+            for branch in branches {
+                operands.push(Operand {
+                    token: branch.token,
+                    sql: String::new(),
+                    kind: value_operand_kind(&branch.then, context)?,
+                });
+            }
+            if let Some(otherwise) = otherwise {
+                operands.push(Operand {
+                    token: operand_token(otherwise).unwrap_or(branches[0].token),
+                    sql: String::new(),
+                    kind: value_operand_kind(otherwise, context)?,
+                });
+            }
+            Ok(common_kind(&operands)?.kind)
+        }
+        Expression::IsNullFunction {
+            token,
+            value,
+            fallback,
+        } => {
+            let operands = [
+                Operand {
+                    token,
+                    sql: String::new(),
+                    kind: value_operand_kind(value, context)?,
+                },
+                Operand {
+                    token,
+                    sql: String::new(),
+                    kind: value_operand_kind(fallback, context)?,
+                },
+            ];
+            Ok(common_kind(&operands)?.kind)
+        }
+        Expression::Like { .. } => Ok(ColumnKind::Boolean),
+        Expression::Aggregate { kind, argument, .. } => match (kind, argument) {
+            (AggregateKind::Count | AggregateKind::Sum, _) | (_, AggregateArgument::All) => {
+                Ok(ColumnKind::Number {
+                    precision: None,
+                    scale: None,
+                })
+            }
+            (_, AggregateArgument::Expression(argument)) => match argument.as_ref() {
+                Expression::Field(reference) => {
+                    let resolved = context.resolve(reference)?;
+                    let column = countable_column(resolved.field(), reference.last())?;
+                    Ok(aggregated_field_kind(&column.kind))
+                }
+                other => expression_kind(other, context),
+            },
+        },
         _ => Ok(source_free_expression_kind(expression, context.snapshot)),
+    }
+}
+
+/// The token that positions diagnostics about an operand expression.
+pub(super) fn operand_token<'tokens, 'source>(
+    expression: &Expression<'tokens, 'source>,
+) -> Option<&'tokens Token<'source>> {
+    match expression {
+        Expression::Field(reference) => Some(reference.last()),
+        Expression::Literal(token)
+        | Expression::DateTime { token, .. }
+        | Expression::BeginOfPeriod { token, .. }
+        | Expression::MetadataValue { token, .. }
+        | Expression::Uuid { token, .. }
+        | Expression::Cast { token, .. }
+        | Expression::Case { token, .. }
+        | Expression::IsNullFunction { token, .. }
+        | Expression::Like { token, .. }
+        | Expression::Aggregate { token, .. } => Some(token),
+        Expression::Unary { operator, .. } | Expression::Binary { operator, .. } => Some(operator),
+        Expression::InList { value, .. } | Expression::IsNull { value, .. } => operand_token(value),
+    }
+}
+
+/// The physical reference pair of a field, when it has one.
+fn reference_pair(field: &QueryableField) -> Option<(&QueryableColumn, &QueryableColumn)> {
+    let type_member = field
+        .columns
+        .iter()
+        .find(|column| column.is_reference_type_member())?;
+    let value_member = field
+        .columns
+        .iter()
+        .find(|column| column.is_reference_value_member())?;
+    Some((type_member, value_member))
+}
+
+/// Compiles an operand that contributes a value to a `ВЫБОР`/`ЕСТЬNULL`
+/// result: a runtime-typed reference field becomes its `RTRef ‖ RRRef`
+/// payload, every other expression compiles as usual.
+pub(super) fn value_operand(
+    expression: &Expression<'_, '_>,
+    context: &mut CompilationContext<'_, '_>,
+) -> Result<(String, ColumnKind), QueryDiagnostic> {
+    if let Expression::Field(reference) = expression {
+        let resolved = context.resolve(reference)?;
+        if let Some((type_member, value_member)) = reference_pair(resolved.field()) {
+            let sql = context.dialect.reference_payload(
+                &context.sql_column(&resolved, type_member),
+                &context.sql_column(&resolved, value_member),
+            );
+            return Ok((sql, payload_kind(&value_member.kind)));
+        }
+    }
+    let sql = compile_expression(expression, context)?;
+    let kind = expression_kind(expression, context)?;
+    Ok((sql, kind))
+}
+
+/// The kind reported by [`value_operand`] without compiling the SQL.
+pub(super) fn value_operand_kind(
+    expression: &Expression<'_, '_>,
+    context: &mut CompilationContext<'_, '_>,
+) -> Result<ColumnKind, QueryDiagnostic> {
+    if let Expression::Field(reference) = expression {
+        let resolved = context.resolve(reference)?;
+        if let Some((_, value_member)) = reference_pair(resolved.field()) {
+            return Ok(payload_kind(&value_member.kind));
+        }
+    }
+    expression_kind(expression, context)
+}
+
+fn payload_kind(kind: &ColumnKind) -> ColumnKind {
+    match kind {
+        ColumnKind::Reference { targets, .. } => ColumnKind::Reference {
+            targets: targets.clone(),
+            runtime_typed: true,
+        },
+        other => other.clone(),
+    }
+}
+
+/// One operand of an expression whose operands must agree on a kind
+/// (`ВЫБОР` alternatives, `ЕСТЬNULL` arguments, `ОБЪЕДИНИТЬ` columns).
+pub(super) struct Operand<'tokens, 'source> {
+    pub(super) token: &'tokens Token<'source>,
+    pub(super) sql: String,
+    pub(super) kind: ColumnKind,
+}
+
+/// The kind shared by several operands and whether reference operands must
+/// be widened to one runtime-typed payload.
+pub(super) struct CommonKind {
+    pub(super) kind: ColumnKind,
+    pub(super) widen: bool,
+}
+
+/// Computes the common kind of operands: the first non-wildcard kind, with
+/// which every other operand must be compatible. Reference operands that
+/// differ in target or width are widened to one runtime-typed payload whose
+/// targets are the union of the operand targets.
+pub(super) fn common_kind(operands: &[Operand<'_, '_>]) -> Result<CommonKind, QueryDiagnostic> {
+    let Some(first) = operands
+        .iter()
+        .map(|operand| &operand.kind)
+        .find(|kind| !kind.is_wildcard())
+    else {
+        return Ok(CommonKind {
+            kind: ColumnKind::Null,
+            widen: false,
+        });
+    };
+    for operand in operands {
+        if !operand.kind.is_compatible_with(first) {
+            return Err(QueryDiagnostic::at(
+                QueryDiagnosticKind::UnsupportedFeature,
+                Some(operand.token),
+                format!(
+                    "expression kinds differ: {:?} where {:?} was expected",
+                    operand.kind, first
+                ),
+            ));
+        }
+    }
+    let ColumnKind::Reference { .. } = first else {
+        return Ok(CommonKind {
+            kind: first.clone(),
+            widen: false,
+        });
+    };
+    let mut targets = BTreeSet::new();
+    let mut fixed_target: Option<Option<ObjectId>> = None;
+    let mut uniform = true;
+    for operand in operands {
+        let ColumnKind::Reference {
+            targets: operand_targets,
+            runtime_typed,
+        } = &operand.kind
+        else {
+            continue;
+        };
+        targets.extend(operand_targets.iter().copied());
+        let single = if *runtime_typed {
+            None
+        } else {
+            match operand_targets.as_slice() {
+                [target] => Some(*target),
+                _ => None,
+            }
+        };
+        if *runtime_typed || single.is_none() {
+            uniform = false;
+        }
+        match fixed_target {
+            None => fixed_target = Some(single),
+            Some(previous) if previous != single => uniform = false,
+            Some(_) => {}
+        }
+    }
+    if uniform {
+        return Ok(CommonKind {
+            kind: first.clone(),
+            widen: false,
+        });
+    }
+    Ok(CommonKind {
+        kind: ColumnKind::Reference {
+            targets: targets.into_iter().collect(),
+            runtime_typed: true,
+        },
+        widen: true,
+    })
+}
+
+/// Rewrites a fixed reference expression into the `RTRef ‖ RRRef` payload
+/// of its single target so it can share a column with runtime-typed
+/// references. Payload expressions pass through unchanged.
+pub(super) fn widen_reference(
+    sql: &str,
+    kind: &ColumnKind,
+    token: Option<&Token<'_>>,
+    snapshot: &MetadataSnapshot,
+    dialect: SqlDialect,
+) -> Result<(String, ColumnKind), QueryDiagnostic> {
+    let ColumnKind::Reference {
+        targets,
+        runtime_typed: false,
+    } = kind
+    else {
+        return Ok((sql.to_owned(), kind.clone()));
+    };
+    let [target] = targets.as_slice() else {
+        return Err(QueryDiagnostic::at_or_unpositioned(
+            QueryDiagnosticKind::UnsupportedFeature,
+            token,
+            "reference expression without a single fixed target cannot be widened",
+        ));
+    };
+    let number = snapshot
+        .object_by_id(*target)
+        .and_then(|object| object.number)
+        .ok_or_else(|| {
+            QueryDiagnostic::at_or_unpositioned(
+                QueryDiagnosticKind::Metadata,
+                token,
+                "reference target has no database type number",
+            )
+        })?;
+    Ok((
+        dialect.reference_payload(&dialect.binary_u32(number), sql),
+        ColumnKind::Reference {
+            targets: targets.clone(),
+            runtime_typed: true,
+        },
+    ))
+}
+
+/// Unifies operand kinds and widens references in place, returning the
+/// common kind.
+pub(super) fn unify_operands(
+    operands: &mut [Operand<'_, '_>],
+    snapshot: &MetadataSnapshot,
+    dialect: SqlDialect,
+) -> Result<ColumnKind, QueryDiagnostic> {
+    let common = common_kind(operands)?;
+    if common.widen {
+        for operand in operands.iter_mut() {
+            let (sql, kind) = widen_reference(
+                &operand.sql,
+                &operand.kind,
+                Some(operand.token),
+                snapshot,
+                dialect,
+            )?;
+            operand.sql = sql;
+            operand.kind = kind;
+        }
+    }
+    Ok(common.kind)
+}
+
+/// Renders `CASE WHEN … THEN … [ELSE …] END` from compiled alternatives.
+/// `values` holds one operand per `WHEN` followed by the `ELSE` operand when
+/// `has_else` is set.
+pub(super) fn render_case(
+    whens: &[String],
+    values: &mut [Operand<'_, '_>],
+    has_else: bool,
+    snapshot: &MetadataSnapshot,
+    dialect: SqlDialect,
+) -> Result<(String, ColumnKind), QueryDiagnostic> {
+    let kind = unify_operands(values, snapshot, dialect)?;
+    let mut sql = String::from("CASE");
+    for (when, value) in whens.iter().zip(values.iter()) {
+        sql.push_str(" WHEN ");
+        sql.push_str(when);
+        sql.push_str(" THEN ");
+        sql.push_str(&value.sql);
+    }
+    if has_else {
+        sql.push_str(" ELSE ");
+        sql.push_str(&values[values.len() - 1].sql);
+    }
+    sql.push_str(" END");
+    Ok((sql, kind))
+}
+
+/// Renders `COALESCE(value, fallback)` after unifying the operand kinds.
+pub(super) fn render_coalesce(
+    values: &mut [Operand<'_, '_>; 2],
+    snapshot: &MetadataSnapshot,
+    dialect: SqlDialect,
+) -> Result<(String, ColumnKind), QueryDiagnostic> {
+    let kind = unify_operands(values, snapshot, dialect)?;
+    Ok((
+        format!("COALESCE({}, {})", values[0].sql, values[1].sql),
+        kind,
+    ))
+}
+
+/// Renders `[NOT] (value LIKE pattern [ESCAPE escape])`.
+pub(super) fn render_like(
+    value: &str,
+    pattern: &str,
+    escape: Option<&str>,
+    negated: bool,
+) -> String {
+    let mut sql = format!("({value} LIKE {pattern}");
+    if let Some(escape) = escape {
+        sql.push_str(" ESCAPE ");
+        sql.push_str(escape);
+    }
+    sql.push(')');
+    if negated { format!("(NOT {sql})") } else { sql }
+}
+
+/// `ПОДОБНО` operands must be strings; `NULL` and unknown types pass.
+pub(super) fn check_like_operand(
+    token: &Token<'_>,
+    kind: &ColumnKind,
+) -> Result<(), QueryDiagnostic> {
+    if matches!(
+        kind,
+        ColumnKind::String { .. } | ColumnKind::Null | ColumnKind::Unknown { .. }
+    ) {
+        Ok(())
+    } else {
+        Err(QueryDiagnostic::at(
+            QueryDiagnosticKind::UnsupportedFeature,
+            Some(token),
+            format!("LIKE operands must be strings, found {kind:?}"),
+        ))
+    }
+}
+
+/// Compiles the alternatives of a `ВЫБОР` expression with the given operand
+/// compilers and renders the `CASE`.
+pub(super) fn compile_case<'tokens, 'source, E>(
+    branches: &[CaseBranch<'tokens, 'source>],
+    otherwise: Option<&Expression<'tokens, 'source>>,
+    snapshot: &MetadataSnapshot,
+    dialect: SqlDialect,
+    mut compile: E,
+) -> Result<(String, ColumnKind), QueryDiagnostic>
+where
+    E: FnMut(&Expression<'tokens, 'source>, bool) -> Result<(String, ColumnKind), QueryDiagnostic>,
+{
+    let mut whens = Vec::with_capacity(branches.len());
+    let mut values = Vec::with_capacity(branches.len() + 1);
+    for branch in branches {
+        whens.push(compile(&branch.when, true)?.0);
+        let (sql, kind) = compile(&branch.then, false)?;
+        values.push(Operand {
+            token: branch.token,
+            sql,
+            kind,
+        });
+    }
+    if let Some(otherwise) = otherwise {
+        let (sql, kind) = compile(otherwise, false)?;
+        values.push(Operand {
+            token: operand_token(otherwise).unwrap_or(branches[0].token),
+            sql,
+            kind,
+        });
+    }
+    render_case(&whens, &mut values, otherwise.is_some(), snapshot, dialect)
+}
+
+/// The kind of an aggregate over a field member: aggregating the `RRRef`
+/// member of a reference alone returns 16 bytes.
+fn aggregated_field_kind(kind: &ColumnKind) -> ColumnKind {
+    match kind {
+        ColumnKind::Reference { targets, .. } => ColumnKind::Reference {
+            targets: targets.clone(),
+            runtime_typed: false,
+        },
+        other => other.clone(),
     }
 }
 
@@ -340,7 +798,71 @@ pub(super) fn source_free_expression_kind(
             },
             _ => ColumnKind::Boolean,
         },
-        Expression::InList { .. } | Expression::IsNull { .. } => ColumnKind::Boolean,
+        Expression::InList { .. } | Expression::IsNull { .. } | Expression::Like { .. } => {
+            ColumnKind::Boolean
+        }
+        Expression::Case {
+            branches,
+            otherwise,
+            ..
+        } => {
+            let mut operands = branches
+                .iter()
+                .map(|branch| Operand {
+                    token: branch.token,
+                    sql: String::new(),
+                    kind: source_free_expression_kind(&branch.then, snapshot),
+                })
+                .collect::<Vec<_>>();
+            if let Some(otherwise) = otherwise {
+                operands.push(Operand {
+                    token: operand_token(otherwise).unwrap_or(branches[0].token),
+                    sql: String::new(),
+                    kind: source_free_expression_kind(otherwise, snapshot),
+                });
+            }
+            common_kind(&operands).map_or_else(
+                |_| ColumnKind::Unknown {
+                    data_type: String::new(),
+                },
+                |common| common.kind,
+            )
+        }
+        Expression::IsNullFunction {
+            token,
+            value,
+            fallback,
+        } => {
+            let operands = [
+                Operand {
+                    token,
+                    sql: String::new(),
+                    kind: source_free_expression_kind(value, snapshot),
+                },
+                Operand {
+                    token,
+                    sql: String::new(),
+                    kind: source_free_expression_kind(fallback, snapshot),
+                },
+            ];
+            common_kind(&operands).map_or_else(
+                |_| ColumnKind::Unknown {
+                    data_type: String::new(),
+                },
+                |common| common.kind,
+            )
+        }
+        Expression::Aggregate { kind, argument, .. } => match (kind, argument) {
+            (AggregateKind::Count | AggregateKind::Sum, _) | (_, AggregateArgument::All) => {
+                ColumnKind::Number {
+                    precision: None,
+                    scale: None,
+                }
+            }
+            (_, AggregateArgument::Expression(argument)) => {
+                source_free_expression_kind(argument, snapshot)
+            }
+        },
     }
 }
 
@@ -475,6 +997,61 @@ pub(super) fn compile_expression(
             compile_expression(value, context)?,
             if *negated { "NOT " } else { "" }
         )),
+        Expression::Case {
+            branches,
+            otherwise,
+            ..
+        } => {
+            context.catalog.charge(branches.len(), None)?;
+            let snapshot = context.snapshot;
+            let dialect = context.dialect;
+            compile_case(
+                branches,
+                otherwise.as_deref(),
+                snapshot,
+                dialect,
+                |expression, predicate| {
+                    if predicate {
+                        Ok((compile_predicate(expression, context)?, ColumnKind::Boolean))
+                    } else {
+                        value_operand(expression, context)
+                    }
+                },
+            )
+            .map(|(sql, _)| sql)
+        }
+        Expression::IsNullFunction {
+            token,
+            value,
+            fallback,
+        } => {
+            context.catalog.charge(1, None)?;
+            let (value_sql, value_kind) = value_operand(value, context)?;
+            let (fallback_sql, fallback_kind) = value_operand(fallback, context)?;
+            let mut operands = [
+                Operand {
+                    token,
+                    sql: value_sql,
+                    kind: value_kind,
+                },
+                Operand {
+                    token,
+                    sql: fallback_sql,
+                    kind: fallback_kind,
+                },
+            ];
+            render_coalesce(&mut operands, context.snapshot, context.dialect).map(|(sql, _)| sql)
+        }
+        Expression::Like { token, .. } => Err(QueryDiagnostic::at(
+            QueryDiagnosticKind::UnsupportedFeature,
+            Some(token),
+            "LIKE is supported only in predicate positions",
+        )),
+        Expression::Aggregate { token, .. } => Err(QueryDiagnostic::at(
+            QueryDiagnosticKind::UnsupportedFeature,
+            Some(token),
+            "aggregate functions are supported only as projections of a grouped branch",
+        )),
     }
 }
 
@@ -537,8 +1114,9 @@ fn compile_date_operand(
             .dialect
             .qualified_column(Some(&resolved.sql_alias), &column.physical_name));
     }
-    if expression.is_date() {
-        return compile_expression(expression, context);
+    let sql = compile_expression(expression, context)?;
+    if expression_kind(expression, context)? == ColumnKind::DateTime {
+        return Ok(sql);
     }
     Err(QueryDiagnostic::at(
         QueryDiagnosticKind::Syntax,
@@ -565,19 +1143,20 @@ pub(super) fn compile_aggregate(
     };
     let (argument, argument_kind) = match argument {
         AggregateArgument::All => ("*".to_owned(), number.clone()),
-        AggregateArgument::Field(reference) => {
-            let resolved = context.resolve(reference)?;
-            let column = countable_column(resolved.field(), reference.last())?;
-            let column_kind = match &column.kind {
-                // An aggregate over the RRRef member alone returns 16 bytes.
-                ColumnKind::Reference { targets, .. } => ColumnKind::Reference {
-                    targets: targets.clone(),
-                    runtime_typed: false,
-                },
-                other => other.clone(),
-            };
-            (context.sql_column(&resolved, column), column_kind)
-        }
+        AggregateArgument::Expression(expression) => match expression.as_ref() {
+            Expression::Field(reference) => {
+                let resolved = context.resolve(reference)?;
+                let column = countable_column(resolved.field(), reference.last())?;
+                (
+                    context.sql_column(&resolved, column),
+                    aggregated_field_kind(&column.kind),
+                )
+            }
+            other => {
+                let sql = compile_expression(other, context)?;
+                (sql, expression_kind(other, context)?)
+            }
+        },
     };
     let output_kind = match kind {
         AggregateKind::Count | AggregateKind::Sum => number,

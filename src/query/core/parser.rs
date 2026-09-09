@@ -1,8 +1,8 @@
 //! Bounded recursive-descent parser.
 
 use crate::query::core::ast::{
-    AccumulationAst, AccumulationKind, AggregateArgument, AggregateKind, CastTarget, Expression,
-    FieldReference, JoinAst, JoinKind, OrderTerm, PeriodKind, PresentationArgument,
+    AccumulationAst, AccumulationKind, AggregateArgument, AggregateKind, CaseBranch, CastTarget,
+    Expression, FieldReference, JoinAst, JoinKind, OrderTerm, PeriodKind, PresentationArgument,
     PresentationOperation, Projection, ProjectionItem, QueryAst, SelectAst, SliceAst, SliceKind,
     SourceAst, UnionLink, parse_datetime_value,
 };
@@ -44,6 +44,7 @@ fn is_contextual_identifier(kind: TokenKind) -> bool {
                     | Keyword::Value
                     | Keyword::Uuid
                     | Keyword::Cast
+                    | Keyword::IsNullFunction
             )
         )
 }
@@ -181,61 +182,6 @@ impl<'tokens, 'source> Parser<'tokens, 'source> {
     }
 
     fn parse_projection(&mut self) -> Result<Projection<'tokens, 'source>, QueryDiagnostic> {
-        let aggregate = if self.next_lexeme_is("(") {
-            self.consume_keyword_token(Keyword::Count)
-                .map(|token| (token, AggregateKind::Count))
-                .or_else(|| {
-                    self.consume_keyword_token(Keyword::Sum)
-                        .map(|token| (token, AggregateKind::Sum))
-                })
-                .or_else(|| {
-                    self.consume_keyword_token(Keyword::Min)
-                        .map(|token| (token, AggregateKind::Min))
-                })
-                .or_else(|| {
-                    self.consume_keyword_token(Keyword::Max)
-                        .map(|token| (token, AggregateKind::Max))
-                })
-        } else {
-            None
-        };
-        if let Some((token, kind)) = aggregate {
-            self.expect_lexeme("(")?;
-            let distinct = self.consume_keyword(Keyword::Distinct);
-            if distinct && kind != AggregateKind::Count {
-                return Err(QueryDiagnostic::at(
-                    QueryDiagnosticKind::UnsupportedFeature,
-                    Some(token),
-                    "DISTINCT aggregate argument is currently supported only by COUNT",
-                ));
-            }
-            let argument = if self.consume_lexeme("*") {
-                if kind != AggregateKind::Count {
-                    return Err(QueryDiagnostic::at(
-                        QueryDiagnosticKind::UnsupportedFeature,
-                        Some(token),
-                        "wildcard aggregate argument is supported only by COUNT",
-                    ));
-                }
-                if distinct {
-                    return Err(QueryDiagnostic::at(
-                        QueryDiagnosticKind::UnsupportedFeature,
-                        Some(token),
-                        "COUNT(DISTINCT *) is not supported",
-                    ));
-                }
-                AggregateArgument::All
-            } else {
-                AggregateArgument::Field(self.parse_field_reference()?)
-            };
-            self.expect_lexeme(")")?;
-            return Ok(Projection::Aggregate {
-                token,
-                kind,
-                distinct,
-                argument,
-            });
-        }
         let function = if self.next_lexeme_is("(") {
             self.consume_keyword_token(Keyword::RefPresentation)
                 .map(|token| (token, PresentationOperation::Reference))
@@ -272,6 +218,17 @@ impl<'tokens, 'source> Parser<'tokens, 'source> {
 
         let expression = self.parse_or()?;
         match expression {
+            Expression::Aggregate {
+                token,
+                kind,
+                distinct,
+                argument,
+            } => Ok(Projection::Aggregate {
+                token,
+                kind,
+                distinct,
+                argument,
+            }),
             Expression::Field(mut reference) => {
                 if reference.segments.len() > 1
                     && reference.segments.last().is_some_and(|token| {
@@ -494,6 +451,12 @@ impl<'tokens, 'source> Parser<'tokens, 'source> {
 
     fn parse_comparison(&mut self) -> Result<Expression<'tokens, 'source>, QueryDiagnostic> {
         let mut expression = self.parse_additive()?;
+        if self.peek().is_some_and(|token| {
+            matches!(token.kind, TokenKind::Keyword(Keyword::Like | Keyword::Not))
+        }) && let Some(like) = self.parse_like_tail(&mut expression)?
+        {
+            return Ok(like);
+        }
         if let Some(is) = self.consume_keyword_token(Keyword::Is) {
             let negated = self.consume_keyword(Keyword::Not);
             if !self.consume_keyword(Keyword::Null) {
@@ -617,6 +580,9 @@ impl<'tokens, 'source> Parser<'tokens, 'source> {
     }
 
     fn parse_primary(&mut self) -> Result<Expression<'tokens, 'source>, QueryDiagnostic> {
+        if let Some(token) = self.consume_keyword_token(Keyword::Case) {
+            return self.parse_case(token);
+        }
         if self.peek().is_some_and(|token| token.lexeme == "(") {
             let opening = self.next().expect("peeked token");
             if self.depth >= Self::MAX_DEPTH {
@@ -651,6 +617,12 @@ impl<'tokens, 'source> Parser<'tokens, 'source> {
             if let Some(token) = self.consume_keyword_token(Keyword::Cast) {
                 return self.parse_cast(token);
             }
+            if let Some(token) = self.consume_keyword_token(Keyword::IsNullFunction) {
+                return self.parse_is_null_function(token);
+            }
+            if let Some((token, kind)) = self.consume_aggregate_keyword() {
+                return self.parse_aggregate(token, kind);
+            }
         }
         let Some(token) = self.peek() else {
             return Err(self.diagnostic(QueryDiagnosticKind::Syntax, None, "expected expression"));
@@ -672,6 +644,179 @@ impl<'tokens, 'source> Parser<'tokens, 'source> {
             return Ok(Expression::Literal(self.next().expect("peeked token")));
         }
         Ok(Expression::Field(self.parse_field_reference()?))
+    }
+
+    /// Parses `[НЕ] ПОДОБНО <pattern> [СПЕЦСИМВОЛ <escape>]` after the left
+    /// operand when the next tokens spell it; otherwise leaves the input
+    /// untouched. Kept out of `parse_comparison` so deep expression nesting
+    /// does not grow that frame.
+    #[inline(never)]
+    fn parse_like_tail(
+        &mut self,
+        value: &mut Expression<'tokens, 'source>,
+    ) -> Result<Option<Expression<'tokens, 'source>>, QueryDiagnostic> {
+        let negated = self
+            .peek()
+            .is_some_and(|token| token.kind == TokenKind::Keyword(Keyword::Not));
+        let like_offset = if negated {
+            self.offset + 1
+        } else {
+            self.offset
+        };
+        if !self
+            .tokens
+            .get(like_offset)
+            .is_some_and(|token| token.kind == TokenKind::Keyword(Keyword::Like))
+        {
+            return Ok(None);
+        }
+        self.offset = like_offset;
+        let token = self.next().expect("checked LIKE keyword");
+        self.record_binary_operator(token)?;
+        let pattern = self.parse_additive()?;
+        let escape = if self.consume_keyword(Keyword::Escape) {
+            Some(Box::new(self.parse_additive()?))
+        } else {
+            None
+        };
+        let value = std::mem::replace(value, Expression::Literal(token));
+        Ok(Some(Expression::Like {
+            token,
+            value: Box::new(value),
+            pattern: Box::new(pattern),
+            escape,
+            negated,
+        }))
+    }
+
+    fn consume_aggregate_keyword(&mut self) -> Option<(&'tokens Token<'source>, AggregateKind)> {
+        let kind = match self.peek()?.kind {
+            TokenKind::Keyword(Keyword::Count) => AggregateKind::Count,
+            TokenKind::Keyword(Keyword::Sum) => AggregateKind::Sum,
+            TokenKind::Keyword(Keyword::Min) => AggregateKind::Min,
+            TokenKind::Keyword(Keyword::Max) => AggregateKind::Max,
+            _ => return None,
+        };
+        self.next().map(|token| (token, kind))
+    }
+
+    /// Parses the argument list of an aggregate after its keyword.
+    fn parse_aggregate(
+        &mut self,
+        token: &'tokens Token<'source>,
+        kind: AggregateKind,
+    ) -> Result<Expression<'tokens, 'source>, QueryDiagnostic> {
+        self.expect_lexeme("(")?;
+        let distinct = self.consume_keyword(Keyword::Distinct);
+        if distinct && kind != AggregateKind::Count {
+            return Err(QueryDiagnostic::at(
+                QueryDiagnosticKind::UnsupportedFeature,
+                Some(token),
+                "DISTINCT aggregate argument is currently supported only by COUNT",
+            ));
+        }
+        let argument = if self.consume_lexeme("*") {
+            if kind != AggregateKind::Count {
+                return Err(QueryDiagnostic::at(
+                    QueryDiagnosticKind::UnsupportedFeature,
+                    Some(token),
+                    "wildcard aggregate argument is supported only by COUNT",
+                ));
+            }
+            if distinct {
+                return Err(QueryDiagnostic::at(
+                    QueryDiagnosticKind::UnsupportedFeature,
+                    Some(token),
+                    "COUNT(DISTINCT *) is not supported",
+                ));
+            }
+            AggregateArgument::All
+        } else {
+            AggregateArgument::Expression(Box::new(self.parse_or()?))
+        };
+        self.expect_lexeme(")")?;
+        Ok(Expression::Aggregate {
+            token,
+            kind,
+            distinct,
+            argument,
+        })
+    }
+
+    /// Parses `ВЫБОР КОГДА <predicate> ТОГДА <value> … [ИНАЧЕ <value>] КОНЕЦ`
+    /// after the `ВЫБОР` keyword. Every alternative counts against the
+    /// binary-operator budget and the whole expression against the depth
+    /// limit.
+    fn parse_case(
+        &mut self,
+        token: &'tokens Token<'source>,
+    ) -> Result<Expression<'tokens, 'source>, QueryDiagnostic> {
+        if self.depth >= Self::MAX_DEPTH {
+            return Err(QueryDiagnostic::at_kind(
+                QueryDiagnosticKind::TooDeep,
+                Some(token),
+                format!("query nesting depth exceeds limit of {}", Self::MAX_DEPTH),
+            ));
+        }
+        self.depth += 1;
+        let result = (|| {
+            let mut branches = Vec::new();
+            while let Some(when_token) = self.consume_keyword_token(Keyword::When) {
+                self.record_binary_operator(when_token)?;
+                let when = self.parse_or()?;
+                self.expect_keyword(Keyword::Then)?;
+                let then = self.parse_or()?;
+                branches.push(CaseBranch {
+                    token: when_token,
+                    when,
+                    then,
+                });
+            }
+            if branches.is_empty() {
+                return Err(self.diagnostic(
+                    QueryDiagnosticKind::Syntax,
+                    self.peek().or(Some(token)),
+                    "CASE requires at least one WHEN alternative",
+                ));
+            }
+            let otherwise = if self.consume_keyword(Keyword::Else) {
+                Some(Box::new(self.parse_or()?))
+            } else {
+                None
+            };
+            self.expect_keyword(Keyword::End)?;
+            Ok(Expression::Case {
+                token,
+                branches,
+                otherwise,
+            })
+        })();
+        self.depth -= 1;
+        result
+    }
+
+    /// Parses `ЕСТЬNULL(<value>, <fallback>)` after the keyword.
+    fn parse_is_null_function(
+        &mut self,
+        token: &'tokens Token<'source>,
+    ) -> Result<Expression<'tokens, 'source>, QueryDiagnostic> {
+        self.record_binary_operator(token)?;
+        self.expect_lexeme("(")?;
+        let value = self.parse_or()?;
+        if !self.consume_lexeme(",") {
+            return Err(self.diagnostic(
+                QueryDiagnosticKind::Syntax,
+                self.peek(),
+                "ISNULL requires two arguments",
+            ));
+        }
+        let fallback = self.parse_or()?;
+        self.expect_lexeme(")")?;
+        Ok(Expression::IsNullFunction {
+            token,
+            value: Box::new(value),
+            fallback: Box::new(fallback),
+        })
     }
 
     fn parse_datetime(

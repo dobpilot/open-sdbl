@@ -3,8 +3,9 @@ use std::sync::Arc;
 
 use super::context::{CompilationContext, CompiledBranch, SourceScope};
 use super::expression::{
-    binary_operator_sql, compile_expression, left_binary_spine, reference_column,
-    reference_type_column, single_column, source_free_expression_kind,
+    Operand, binary_operator_sql, check_like_operand, compile_case, compile_expression,
+    left_binary_spine, reference_column, reference_type_column, render_coalesce, render_like,
+    single_column, source_free_expression_kind, widen_reference,
 };
 use super::virtual_tables::{compile_accumulation_relation, compile_constant_date_expression};
 use crate::metadata::{
@@ -27,6 +28,7 @@ pub(super) fn compile_source_free_branch(
     order_terms: &[OrderTerm<'_, '_>],
     snapshot: &MetadataSnapshot,
     dialect: SqlDialect,
+    widen: &BTreeSet<usize>,
 ) -> Result<CompiledBranch, QueryDiagnostic> {
     if ast.join.is_some() {
         return Err(QueryDiagnostic::unpositioned(
@@ -114,6 +116,11 @@ pub(super) fn compile_source_free_branch(
         let requested_label = projection
             .alias
             .map_or(default_label, |alias| alias.lexeme.to_owned());
+        let (sql, kind) = if widen.contains(&columns.len()) {
+            widen_reference(&sql, &kind, None, snapshot, dialect)?
+        } else {
+            (sql, kind)
+        };
         let label = labels.allocate(&requested_label);
         projections.push(format!("{sql} AS {}", dialect.quote_identifier(&label)));
         columns.push(CompiledColumn::new(label, kind));
@@ -148,7 +155,7 @@ fn compile_source_free_expression(
             value,
             period,
         } => {
-            if !value.is_date() {
+            if source_free_expression_kind(value, snapshot) != ColumnKind::DateTime {
                 return Err(QueryDiagnostic::at(
                     QueryDiagnosticKind::Syntax,
                     Some(token),
@@ -220,6 +227,141 @@ fn compile_source_free_expression(
             compile_source_free_expression(value, snapshot, dialect)?,
             if *negated { "NOT " } else { "" }
         )),
+        Expression::Case {
+            branches,
+            otherwise,
+            ..
+        } => compile_case(
+            branches,
+            otherwise.as_deref(),
+            snapshot,
+            dialect,
+            |expression, predicate| {
+                if predicate {
+                    Ok((
+                        compile_source_free_predicate(expression, snapshot, dialect)?,
+                        ColumnKind::Boolean,
+                    ))
+                } else {
+                    Ok((
+                        compile_source_free_expression(expression, snapshot, dialect)?,
+                        source_free_expression_kind(expression, snapshot),
+                    ))
+                }
+            },
+        )
+        .map(|(sql, _)| sql),
+        Expression::IsNullFunction {
+            token,
+            value,
+            fallback,
+        } => {
+            let mut operands = [
+                Operand {
+                    token,
+                    sql: compile_source_free_expression(value, snapshot, dialect)?,
+                    kind: source_free_expression_kind(value, snapshot),
+                },
+                Operand {
+                    token,
+                    sql: compile_source_free_expression(fallback, snapshot, dialect)?,
+                    kind: source_free_expression_kind(fallback, snapshot),
+                },
+            ];
+            render_coalesce(&mut operands, snapshot, dialect).map(|(sql, _)| sql)
+        }
+        Expression::Like { token, .. } => Err(QueryDiagnostic::at(
+            QueryDiagnosticKind::UnsupportedFeature,
+            Some(token),
+            "LIKE is supported only in predicate positions",
+        )),
+        Expression::Aggregate { token, .. } => Err(QueryDiagnostic::at(
+            QueryDiagnosticKind::UnsupportedFeature,
+            Some(token),
+            "aggregate field argument requires FROM",
+        )),
+    }
+}
+
+/// The source-free counterpart of `compile_predicate`: boolean literals and
+/// boolean-valued expressions become comparisons on MSSQL.
+fn compile_source_free_predicate(
+    expression: &Expression<'_, '_>,
+    snapshot: &MetadataSnapshot,
+    dialect: SqlDialect,
+) -> Result<String, QueryDiagnostic> {
+    match expression {
+        Expression::Literal(token) => match token.kind {
+            TokenKind::Keyword(Keyword::True) => Ok(dialect.boolean_literal_predicate(true)),
+            TokenKind::Keyword(Keyword::False) => Ok(dialect.boolean_literal_predicate(false)),
+            _ => compile_source_free_expression(expression, snapshot, dialect),
+        },
+        Expression::Cast {
+            target: CastTarget::Boolean,
+            ..
+        }
+        | Expression::Case { .. }
+        | Expression::IsNullFunction { .. } => {
+            let sql = compile_source_free_expression(expression, snapshot, dialect)?;
+            Ok(
+                if source_free_expression_kind(expression, snapshot) == ColumnKind::Boolean {
+                    dialect.boolean_predicate(&sql)
+                } else {
+                    sql
+                },
+            )
+        }
+        Expression::Like {
+            token,
+            value,
+            pattern,
+            escape,
+            negated,
+        } => {
+            for operand in [value.as_ref(), pattern.as_ref()]
+                .into_iter()
+                .chain(escape.as_deref())
+            {
+                check_like_operand(token, &source_free_expression_kind(operand, snapshot))?;
+            }
+            let escape = escape
+                .as_ref()
+                .map(|escape| compile_source_free_expression(escape, snapshot, dialect))
+                .transpose()?;
+            Ok(render_like(
+                &compile_source_free_expression(value, snapshot, dialect)?,
+                &compile_source_free_expression(pattern, snapshot, dialect)?,
+                escape.as_deref(),
+                *negated,
+            ))
+        }
+        Expression::Unary { operator, value }
+            if operator.kind == TokenKind::Keyword(Keyword::Not) =>
+        {
+            Ok(format!(
+                "(NOT {})",
+                compile_source_free_predicate(value, snapshot, dialect)?
+            ))
+        }
+        Expression::Binary { operator, .. }
+            if matches!(
+                operator.kind,
+                TokenKind::Keyword(Keyword::And | Keyword::Or)
+            ) =>
+        {
+            let (left, terms) = left_binary_spine(expression);
+            let mut sql = "(".repeat(terms.len());
+            sql.push_str(&compile_source_free_predicate(left, snapshot, dialect)?);
+            for (operator, right) in terms {
+                sql.push(' ');
+                sql.push_str(binary_operator_sql(operator)?);
+                sql.push(' ');
+                sql.push_str(&compile_source_free_predicate(right, snapshot, dialect)?);
+                sql.push(')');
+            }
+            Ok(sql)
+        }
+        _ => compile_source_free_expression(expression, snapshot, dialect),
     }
 }
 
