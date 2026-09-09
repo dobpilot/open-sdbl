@@ -36,7 +36,7 @@ pub(crate) use normalize::normalize_standard_field_name;
 pub use normalize::{
     LogicalField, collapse_logical_fields, normalize_index_key, recase_postgres_identifier,
 };
-pub use queries::{MsSqlMetadataQueries, PostgresMetadataQueries};
+pub use queries::{MsSqlMetadataQueries, PostgresMetadataQueries, StorageLayout};
 pub(crate) use resolve::SnapshotFingerprint;
 pub use resolve::{
     AllowedLength, ExtensionMetadata, IndexComparison, LiveColumn, LiveIndex, LiveTable,

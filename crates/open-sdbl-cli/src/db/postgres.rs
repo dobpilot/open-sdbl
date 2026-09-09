@@ -3,7 +3,8 @@ use std::time::Duration;
 
 use futures_util::StreamExt;
 use open_sdbl::metadata::{
-    LiveTable, MetadataSnapshot, PostgresMetadataQueries, parse_db_names, parse_schema_storage,
+    LiveTable, MetadataSnapshot, PostgresMetadataQueries, StorageLayout, parse_db_names,
+    parse_schema_storage,
 };
 use rustls::client::danger::{HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier};
 use rustls::client::{WebPkiServerVerifier, verify_server_cert_signed_by_trust_anchor};
@@ -27,8 +28,8 @@ use crate::error::CliError;
 use crate::net::socks5::{connect_socks5, socks5_password};
 use crate::pipeline::{
     ConfigDecodeLimits, ConfigMetadata, ConfigResource, MetadataSource, acquire_metadata,
-    config_pipeline_depth, decode_catalog_values, decode_config_stream, run_metadata_blocking,
-    unsigned_progress_total,
+    assemble_parts, assemble_single_resource, config_pipeline_depth, decode_catalog_values,
+    decode_config_stream, run_metadata_blocking, unsigned_progress_total,
 };
 use crate::progress::MetadataProgress;
 use crate::{
@@ -499,14 +500,36 @@ impl MetadataSource for PostgresMetadataSource<'_> {
         verify_transaction(self.transaction()?).await
     }
 
-    async fn read_db_names(&mut self) -> Result<open_sdbl::metadata::DbNames, CliError> {
+    async fn detect_layout(&mut self) -> Result<StorageLayout, CliError> {
+        let rows = postgres_rows(
+            self.transaction()?,
+            "PostgreSQL storage layout query",
+            PostgresMetadataQueries::LAYOUT,
+        )
+        .await?;
+        let row = exactly_one_row(&rows, "storage layout")?;
+        let mut flags = [0_i32; 6];
+        for (index, flag) in flags.iter_mut().enumerate() {
+            *flag = row.try_get(index)?;
+        }
+        Ok(StorageLayout::from_flags(flags))
+    }
+
+    async fn read_db_names(
+        &mut self,
+        layout: &StorageLayout,
+    ) -> Result<open_sdbl::metadata::DbNames, CliError> {
         let rows = postgres_rows(
             self.transaction()?,
             "PostgreSQL DBNames query",
-            PostgresMetadataQueries::DB_NAMES,
+            PostgresMetadataQueries::db_names(layout),
         )
         .await?;
-        let data: Vec<u8> = exactly_one_row(&rows, "DBNames")?.try_get(0)?;
+        let parts = rows
+            .iter()
+            .map(|row| Ok((row.try_get::<_, i32>(0)?, row.try_get::<_, Vec<u8>>(1)?)))
+            .collect::<Result<Vec<_>, CliError>>()?;
+        let data = assemble_single_resource("DBNames", parts)?;
         run_metadata_blocking("DBNames", move || {
             parse_db_names(&data).map_err(CliError::from)
         })
@@ -515,6 +538,7 @@ impl MetadataSource for PostgresMetadataSource<'_> {
 
     async fn read_config(
         &mut self,
+        layout: &StorageLayout,
         progress: &mut MetadataProgress,
     ) -> Result<ConfigMetadata, CliError> {
         let transaction = self.transaction()?;
@@ -533,20 +557,21 @@ impl MetadataSource for PostgresMetadataSource<'_> {
         let parameters = std::iter::empty::<&(dyn ToSql + Sync)>();
         let rows = query_timeout("PostgreSQL Config query", async {
             transaction
-                .query_raw(PostgresMetadataQueries::CONFIG, parameters)
+                .query_raw(PostgresMetadataQueries::config(layout), parameters)
                 .await
                 .map_err(CliError::from)
         })
         .await?;
-        let resources = rows.map(|row| {
+        let parts = rows.map(|row| {
             let row = row?;
-            Ok(ConfigResource {
-                file_name: row.try_get(0)?,
-                compressed: row.try_get(1)?,
-            })
+            Ok((
+                row.try_get::<_, String>(0)?,
+                row.try_get::<_, i32>(1)?,
+                row.try_get::<_, Vec<u8>>(2)?,
+            ))
         });
         decode_config_stream(
-            resources,
+            assemble_parts(parts),
             CONFIG_DECODE_BATCH_SIZE,
             config_pipeline_depth(),
             ConfigDecodeLimits::default(),
@@ -555,32 +580,48 @@ impl MetadataSource for PostgresMetadataSource<'_> {
         .await
     }
 
-    async fn read_extension_resources(&mut self) -> Result<Vec<ConfigResource>, CliError> {
+    async fn read_extension_resources(
+        &mut self,
+        layout: &StorageLayout,
+    ) -> Result<Vec<ConfigResource>, CliError> {
+        let Some(query) = PostgresMetadataQueries::extension_resources(layout) else {
+            return Ok(Vec::new());
+        };
         let parameters = std::iter::empty::<&(dyn ToSql + Sync)>();
         let rows = query_timeout("PostgreSQL ConfigCAS query", async {
             self.transaction()?
-                .query_raw(PostgresMetadataQueries::EXTENSION_RESOURCES, parameters)
+                .query_raw(query, parameters)
                 .await
                 .map_err(CliError::from)
         })
         .await?;
-        tokio::pin!(rows);
-        let mut resources = Vec::new();
-        while let Some(row) = rows.next().await {
+        let parts = rows.map(|row| {
             let row = row?;
-            resources.push(ConfigResource {
-                file_name: row.try_get(0)?,
-                compressed: row.try_get(1)?,
-            });
+            Ok((
+                row.try_get::<_, String>(0)?,
+                row.try_get::<_, i32>(1)?,
+                row.try_get::<_, Vec<u8>>(2)?,
+            ))
+        });
+        let mut resources = std::pin::pin!(assemble_parts(parts));
+        let mut assembled = Vec::new();
+        while let Some(resource) = resources.next().await {
+            assembled.push(resource?);
         }
-        Ok(resources)
+        Ok(assembled)
     }
 
-    async fn read_extension_restructures(&mut self) -> Result<Vec<Vec<u8>>, CliError> {
+    async fn read_extension_restructures(
+        &mut self,
+        layout: &StorageLayout,
+    ) -> Result<Vec<Vec<u8>>, CliError> {
+        let Some(query) = PostgresMetadataQueries::extension_restructure(layout) else {
+            return Ok(Vec::new());
+        };
         let rows = postgres_rows(
             self.transaction()?,
             "PostgreSQL extension restructure query",
-            PostgresMetadataQueries::EXTENSION_RESTRUCTURE,
+            query,
         )
         .await?;
         rows.iter()

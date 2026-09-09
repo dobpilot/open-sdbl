@@ -4,7 +4,7 @@ use std::time::Duration;
 
 use futures_util::{Stream, StreamExt};
 use open_sdbl::metadata::{
-    ExtensionMetadata, LiveColumn, LiveIndex, LiveTable, MetadataSnapshot,
+    ExtensionMetadata, LiveColumn, LiveIndex, LiveTable, MetadataSnapshot, StorageLayout,
     extension_metadata_from_restructure, parse_config_resource_bounded,
     parse_extension_restructure, resolve_metadata_with_predefined_values_and_extensions,
 };
@@ -90,12 +90,22 @@ pub(crate) type ConfigMetadata = (
 
 pub(crate) trait MetadataSource {
     async fn begin_readonly(&mut self) -> Result<(), CliError>;
-    async fn read_db_names(&mut self) -> Result<open_sdbl::metadata::DbNames, CliError>;
+    /// Probes the catalog for `PartNo` columns and extension tables; runs
+    /// inside the read-only transaction and never fails on a legacy base.
+    async fn detect_layout(&mut self) -> Result<StorageLayout, CliError>;
+    async fn read_db_names(
+        &mut self,
+        layout: &StorageLayout,
+    ) -> Result<open_sdbl::metadata::DbNames, CliError>;
     async fn read_config(
         &mut self,
+        layout: &StorageLayout,
         progress: &mut MetadataProgress,
     ) -> Result<ConfigMetadata, CliError>;
-    async fn read_extension_resources(&mut self) -> Result<Vec<ConfigResource>, CliError> {
+    async fn read_extension_resources(
+        &mut self,
+        _layout: &StorageLayout,
+    ) -> Result<Vec<ConfigResource>, CliError> {
         Ok(Vec::new())
     }
     async fn read_extensions(
@@ -104,7 +114,10 @@ pub(crate) trait MetadataSource {
     ) -> Result<Vec<ExtensionMetadata>, CliError> {
         Ok(Vec::new())
     }
-    async fn read_extension_restructures(&mut self) -> Result<Vec<Vec<u8>>, CliError> {
+    async fn read_extension_restructures(
+        &mut self,
+        _layout: &StorageLayout,
+    ) -> Result<Vec<Vec<u8>>, CliError> {
         Ok(Vec::new())
     }
     async fn read_schema(&mut self) -> Result<open_sdbl::metadata::SchemaStorage, CliError>;
@@ -121,14 +134,22 @@ pub(crate) async fn acquire_metadata(
         progress.phase("transaction");
         source.begin_readonly().await?;
 
-        progress.phase("DBNames");
-        let db_names = source.read_db_names().await?;
-        let (descriptors, predefined_values) = source.read_config(&mut progress).await?;
+        progress.phase("layout");
+        let layout = source.detect_layout().await?;
+        layout.require_schema_storage()?;
+
+        progress.phase(if layout.config_parts {
+            "DBNames"
+        } else {
+            "DBNames (legacy layout)"
+        });
+        let db_names = source.read_db_names(&layout).await?;
+        let (descriptors, predefined_values) = source.read_config(&layout, &mut progress).await?;
 
         progress.phase("extensions");
-        let extension_resources = source.read_extension_resources().await?;
+        let extension_resources = source.read_extension_resources(&layout).await?;
         let mut extensions = source.read_extensions(extension_resources).await?;
-        let restructure_blobs = source.read_extension_restructures().await?;
+        let restructure_blobs = source.read_extension_restructures(&layout).await?;
         if !restructure_blobs.is_empty() {
             let decoded = run_metadata_blocking("extension restructure", move || {
                 Ok(decode_extension_restructures(restructure_blobs))
@@ -173,6 +194,99 @@ pub(crate) async fn acquire_metadata(
 pub(crate) struct ConfigResource {
     pub(crate) file_name: String,
     pub(crate) compressed: Vec<u8>,
+}
+
+/// One `(name, part, data)` row of a file table, as every layout variant
+/// returns it; legacy bases report part zero for their single row.
+pub(crate) type ResourcePart = (String, i32, Vec<u8>);
+
+/// Groups rows ordered by `(name, part)` into whole resources: consecutive
+/// parts of one name are concatenated in order, and the resource is emitted
+/// when the name changes or the stream ends. Parts must run `0, 1, 2, …`;
+/// anything else is a data error naming the resource.
+pub(crate) fn assemble_parts<S>(rows: S) -> impl Stream<Item = Result<ConfigResource, CliError>>
+where
+    S: Stream<Item = Result<ResourcePart, CliError>>,
+{
+    struct State<S> {
+        rows: std::pin::Pin<Box<S>>,
+        current: Option<(String, i32, Vec<u8>)>,
+        exhausted: bool,
+    }
+
+    futures_util::stream::try_unfold(
+        State {
+            rows: Box::pin(rows),
+            current: None,
+            exhausted: false,
+        },
+        |mut state| async move {
+            loop {
+                if state.exhausted {
+                    return Ok(None);
+                }
+                let Some(row) = state.rows.next().await else {
+                    state.exhausted = true;
+                    let finished =
+                        state
+                            .current
+                            .take()
+                            .map(|(file_name, _, compressed)| ConfigResource {
+                                file_name,
+                                compressed,
+                            });
+                    return Ok(finished.map(|resource| (resource, state)));
+                };
+                let (file_name, part, data) = row?;
+                match &mut state.current {
+                    Some((current_name, next_part, buffer)) if *current_name == file_name => {
+                        check_part_sequence(&file_name, part, *next_part)?;
+                        buffer.extend_from_slice(&data);
+                        *next_part += 1;
+                    }
+                    _ => {
+                        check_part_sequence(&file_name, part, 0)?;
+                        let finished = state.current.replace((file_name, 1, data));
+                        if let Some((file_name, _, compressed)) = finished {
+                            return Ok(Some((
+                                ConfigResource {
+                                    file_name,
+                                    compressed,
+                                },
+                                state,
+                            )));
+                        }
+                    }
+                }
+            }
+        },
+    )
+}
+
+/// Concatenates the parts of one resource read eagerly, such as DBNames.
+pub(crate) fn assemble_single_resource(
+    name: &str,
+    parts: Vec<(i32, Vec<u8>)>,
+) -> Result<Vec<u8>, CliError> {
+    if parts.is_empty() {
+        return Err(CliError::Data(format!("{name} resource is missing")));
+    }
+    let mut assembled = Vec::with_capacity(parts.iter().map(|(_, data)| data.len()).sum());
+    for (expected, (part, data)) in (0_i32..).zip(parts) {
+        check_part_sequence(name, part, expected)?;
+        assembled.extend_from_slice(&data);
+    }
+    Ok(assembled)
+}
+
+fn check_part_sequence(name: &str, part: i32, expected: i32) -> Result<(), CliError> {
+    if part == expected {
+        Ok(())
+    } else {
+        Err(CliError::Data(format!(
+            "resource {name:?} part {part} arrived where part {expected} was expected"
+        )))
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -380,10 +494,67 @@ mod tests {
 
     use futures_util::stream;
 
+    use futures_util::StreamExt;
+
     use super::{
-        ConfigDecodeLimits, decode_catalog_values, decode_config_stream_with_progress_timeout,
+        ConfigDecodeLimits, assemble_parts, assemble_single_resource, decode_catalog_values,
+        decode_config_stream_with_progress_timeout,
     };
     use crate::progress::MetadataProgress;
+
+    async fn assembled(rows: Vec<(&str, i32, &[u8])>) -> Result<Vec<(String, Vec<u8>)>, String> {
+        let rows = rows
+            .into_iter()
+            .map(|(name, part, data)| Ok((name.to_owned(), part, data.to_vec())))
+            .collect::<Vec<_>>();
+        let mut resources = Vec::new();
+        let mut stream = std::pin::pin!(assemble_parts(stream::iter(rows)));
+        while let Some(resource) = stream.next().await {
+            let resource = resource.map_err(|error| error.to_string())?;
+            resources.push((resource.file_name, resource.compressed));
+        }
+        Ok(resources)
+    }
+
+    #[tokio::test]
+    async fn assembles_ordered_parts_into_whole_resources() {
+        let resources = assembled(vec![
+            ("a", 0, b"ab"),
+            ("a", 1, b"cd"),
+            ("a", 2, b"e"),
+            ("b", 0, b"x"),
+            ("c", 0, b""),
+        ])
+        .await
+        .unwrap();
+        assert_eq!(
+            resources,
+            [
+                ("a".to_owned(), b"abcde".to_vec()),
+                ("b".to_owned(), b"x".to_vec()),
+                ("c".to_owned(), Vec::new()),
+            ]
+        );
+        assert!(assembled(Vec::new()).await.unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn rejects_gaps_and_late_starts_in_part_sequences() {
+        let gap = assembled(vec![("a", 0, b"1"), ("a", 2, b"3")])
+            .await
+            .unwrap_err();
+        assert!(gap.contains("\"a\" part 2 arrived where part 1 was expected"));
+        let late = assembled(vec![("a", 1, b"1")]).await.unwrap_err();
+        assert!(late.contains("part 1 arrived where part 0 was expected"));
+
+        assert_eq!(
+            assemble_single_resource("DBNames", vec![(0, b"ab".to_vec()), (1, b"c".to_vec())])
+                .unwrap(),
+            b"abc"
+        );
+        assert!(assemble_single_resource("DBNames", Vec::new()).is_err());
+        assert!(assemble_single_resource("DBNames", vec![(1, Vec::new())]).is_err());
+    }
 
     #[test]
     fn decodes_provider_neutral_catalog_rows() {

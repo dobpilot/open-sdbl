@@ -1,6 +1,7 @@
 use futures_util::StreamExt;
 use open_sdbl::metadata::{
-    LiveTable, MetadataSnapshot, MsSqlMetadataQueries, parse_db_names, parse_schema_storage,
+    LiveTable, MetadataSnapshot, MsSqlMetadataQueries, StorageLayout, parse_db_names,
+    parse_schema_storage,
 };
 use open_sdbl::query::MsSqlBackend;
 use tiberius::{AuthMethod, Client as MsSqlClient, ColumnData, Config as MsSqlConfig};
@@ -19,8 +20,8 @@ use crate::error::CliError;
 use crate::net::socks5::{connect_socks5, socks5_password};
 use crate::pipeline::{
     ConfigDecodeLimits, ConfigMetadata, ConfigResource, MetadataSource, acquire_metadata,
-    config_pipeline_depth, decode_catalog_values, decode_config_stream, run_metadata_blocking,
-    unsigned_progress_total,
+    assemble_parts, assemble_single_resource, config_pipeline_depth, decode_catalog_values,
+    decode_config_stream, run_metadata_blocking, unsigned_progress_total,
 };
 use crate::progress::MetadataProgress;
 use crate::{
@@ -302,6 +303,13 @@ impl MsSqlSession {
         acquire_metadata(&mut MsSqlMetadataSource::new(self)).await
     }
 
+    /// Probes the service-table layout without starting a transaction; used
+    /// by diagnostics and live tests.
+    #[cfg(test)]
+    pub(crate) async fn storage_layout(&mut self) -> Result<StorageLayout, CliError> {
+        MsSqlMetadataSource::new(self).detect_layout().await
+    }
+
     pub(crate) async fn query(
         &mut self,
         sql: &str,
@@ -449,18 +457,41 @@ impl MetadataSource for MsSqlMetadataSource<'_> {
         self.session.execute_batch("BEGIN TRANSACTION").await
     }
 
-    async fn read_db_names(&mut self) -> Result<open_sdbl::metadata::DbNames, CliError> {
+    async fn detect_layout(&mut self) -> Result<StorageLayout, CliError> {
+        let rows = mssql_rows(
+            self.session.client_mut()?,
+            "MSSQL storage layout query",
+            MsSqlMetadataQueries::LAYOUT,
+        )
+        .await?;
+        let row = exactly_one_mssql_row(&rows, "storage layout")?;
+        let mut flags = [0_i32; 6];
+        for (index, flag) in flags.iter_mut().enumerate() {
+            *flag = required_mssql_i32(row, index, "storage layout flag")?;
+        }
+        Ok(StorageLayout::from_flags(flags))
+    }
+
+    async fn read_db_names(
+        &mut self,
+        layout: &StorageLayout,
+    ) -> Result<open_sdbl::metadata::DbNames, CliError> {
         let rows = mssql_rows(
             self.session.client_mut()?,
             "MSSQL DBNames query",
-            MsSqlMetadataQueries::DB_NAMES,
+            MsSqlMetadataQueries::db_names(layout),
         )
         .await?;
-        let data = required_mssql_bytes(
-            exactly_one_mssql_row(&rows, "DBNames")?,
-            0,
-            "DBNames payload",
-        )?;
+        let parts = rows
+            .iter()
+            .map(|row| {
+                Ok((
+                    required_mssql_i32(row, 0, "DBNames part number")?,
+                    required_mssql_bytes(row, 1, "DBNames payload")?,
+                ))
+            })
+            .collect::<Result<Vec<_>, CliError>>()?;
+        let data = assemble_single_resource("DBNames", parts)?;
         run_metadata_blocking("DBNames", move || {
             parse_db_names(&data).map_err(CliError::from)
         })
@@ -469,6 +500,7 @@ impl MetadataSource for MsSqlMetadataSource<'_> {
 
     async fn read_config(
         &mut self,
+        layout: &StorageLayout,
         progress: &mut MetadataProgress,
     ) -> Result<ConfigMetadata, CliError> {
         let client = self.session.client_mut()?;
@@ -492,21 +524,22 @@ impl MetadataSource for MsSqlMetadataSource<'_> {
 
         let rows = query_timeout("MSSQL Config query", async {
             client
-                .simple_query(MsSqlMetadataQueries::CONFIG)
+                .simple_query(MsSqlMetadataQueries::config(layout))
                 .await
                 .map_err(CliError::mssql_query)
         })
         .await?
         .into_row_stream();
-        let resources = rows.map(|row| {
+        let parts = rows.map(|row| {
             let row = row.map_err(CliError::mssql_query)?;
-            Ok(ConfigResource {
-                file_name: required_mssql_string(&row, 0, "Config file name")?,
-                compressed: required_mssql_bytes(&row, 1, "Config payload")?,
-            })
+            Ok((
+                required_mssql_string(&row, 0, "Config file name")?,
+                required_mssql_i32(&row, 1, "Config part number")?,
+                required_mssql_bytes(&row, 2, "Config payload")?,
+            ))
         });
         decode_config_stream(
-            resources,
+            assemble_parts(parts),
             CONFIG_DECODE_BATCH_SIZE,
             config_pipeline_depth(),
             ConfigDecodeLimits::default(),
@@ -515,33 +548,49 @@ impl MetadataSource for MsSqlMetadataSource<'_> {
         .await
     }
 
-    async fn read_extension_resources(&mut self) -> Result<Vec<ConfigResource>, CliError> {
+    async fn read_extension_resources(
+        &mut self,
+        layout: &StorageLayout,
+    ) -> Result<Vec<ConfigResource>, CliError> {
+        let Some(query) = MsSqlMetadataQueries::extension_resources(layout) else {
+            return Ok(Vec::new());
+        };
         let rows = query_timeout("MSSQL ConfigCAS query", async {
             self.session
                 .client_mut()?
-                .simple_query(MsSqlMetadataQueries::EXTENSION_RESOURCES)
+                .simple_query(query)
                 .await
                 .map_err(CliError::mssql_query)
         })
         .await?
         .into_row_stream();
-        tokio::pin!(rows);
-        let mut resources = Vec::new();
-        while let Some(row) = rows.next().await {
+        let parts = rows.map(|row| {
             let row = row.map_err(CliError::mssql_query)?;
-            resources.push(ConfigResource {
-                file_name: required_mssql_string(&row, 0, "ConfigCAS file name")?,
-                compressed: required_mssql_bytes(&row, 1, "ConfigCAS payload")?,
-            });
+            Ok((
+                required_mssql_string(&row, 0, "ConfigCAS file name")?,
+                required_mssql_i32(&row, 1, "ConfigCAS part number")?,
+                required_mssql_bytes(&row, 2, "ConfigCAS payload")?,
+            ))
+        });
+        let mut resources = std::pin::pin!(assemble_parts(parts));
+        let mut assembled = Vec::new();
+        while let Some(resource) = resources.next().await {
+            assembled.push(resource?);
         }
-        Ok(resources)
+        Ok(assembled)
     }
 
-    async fn read_extension_restructures(&mut self) -> Result<Vec<Vec<u8>>, CliError> {
+    async fn read_extension_restructures(
+        &mut self,
+        layout: &StorageLayout,
+    ) -> Result<Vec<Vec<u8>>, CliError> {
+        let Some(query) = MsSqlMetadataQueries::extension_restructure(layout) else {
+            return Ok(Vec::new());
+        };
         let rows = mssql_rows(
             self.session.client_mut()?,
             "MSSQL extension restructure query",
-            MsSqlMetadataQueries::EXTENSION_RESTRUCTURE,
+            query,
         )
         .await?;
         rows.iter()

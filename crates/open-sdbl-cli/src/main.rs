@@ -410,6 +410,49 @@ mod tests {
     }
 
     #[tokio::test]
+    #[ignore = "requires OPEN_SDBL_MSSQL_TEST_* pointing at a platform 8.2 base without PartNo"]
+    async fn reads_metadata_from_a_legacy_mssql_base_without_part_numbers() {
+        let mut session =
+            MsSqlSession::connect(&mssql_test_connection(), &mssql_test_credentials())
+                .await
+                .unwrap();
+        let layout = session.storage_layout().await.unwrap();
+        assert!(
+            !layout.config_parts,
+            "the configured base has PartNo: {layout:?}"
+        );
+        assert!(!layout.params_parts);
+        assert!(!layout.extension_store);
+        assert!(!layout.extension_restructure);
+        assert!(layout.schema_storage);
+
+        let backend = session.backend();
+        let snapshot = session.metadata().await.unwrap();
+        assert!(!snapshot.objects().is_empty());
+        let catalog = snapshot
+            .objects()
+            .iter()
+            .find(|object| {
+                object.kind == Some(open_sdbl::metadata::MetadataKind::Catalog)
+                    && object.live
+                    && object.name.is_some()
+            })
+            .expect("a legacy base has at least one live catalog");
+        let compiled = QueryCompiler::new(&snapshot, backend)
+            .compile(&format!(
+                "ВЫБРАТЬ ПЕРВЫЕ 1 Ссылка, УНИКАЛЬНЫЙИДЕНТИФИКАТОР(Ссылка) ИЗ Справочник.{};",
+                catalog.name.as_deref().unwrap()
+            ))
+            .unwrap();
+        let rows = session
+            .query(&compiled.sql, compiled.columns.len())
+            .await
+            .unwrap();
+        assert!(rows.len() <= 1);
+        session.close().await.unwrap();
+    }
+
+    #[tokio::test]
     #[ignore = "requires the MSSQL demo database and its _ДемоЗаказПокупателя document"]
     async fn reads_native_rowversion_from_the_mssql_demo_database() {
         let mut session =
