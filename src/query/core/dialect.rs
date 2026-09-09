@@ -5,12 +5,16 @@ use std::collections::HashSet;
 use crate::query::core::ast::{DateTimeValue, PeriodKind};
 use crate::query::core::resolve::ColumnKind;
 use crate::query::core::{QueryDiagnostic, QueryDiagnosticKind};
+use crate::query::mssql::MsSqlDialectLevel;
 use crate::{Keyword, Token, TokenKind};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SqlDialect {
     Postgres,
-    MsSql { year_offset: i32 },
+    MsSql {
+        year_offset: i32,
+        dialect_level: MsSqlDialectLevel,
+    },
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -135,8 +139,11 @@ pub(super) fn compile_literal(
 }
 
 impl SqlDialect {
-    pub(crate) const fn mssql(year_offset: i32) -> Self {
-        Self::MsSql { year_offset }
+    pub(crate) const fn mssql(year_offset: i32, dialect_level: MsSqlDialectLevel) -> Self {
+        Self::MsSql {
+            year_offset,
+            dialect_level,
+        }
     }
 
     pub(super) const fn is_mssql(self) -> bool {
@@ -191,10 +198,42 @@ impl SqlDialect {
     /// subtracts `_YearOffset`, PostgreSQL passes the expression through.
     pub(super) fn date_scalar(self, expression: &str) -> String {
         match self {
-            Self::MsSql { year_offset } if year_offset != 0 => {
+            Self::MsSql { year_offset, .. } if year_offset != 0 => {
                 format!("DATEADD(year, {}, {expression})", -year_offset)
             }
             _ => expression.to_owned(),
+        }
+    }
+
+    /// `НАЧАЛОПЕРИОДА` without `DATETIME2FROMPARTS` (SQL Server 2012): every
+    /// boundary is `DATEADD`/`DATEDIFF` arithmetic from a `datetime2` base so
+    /// that results match the newer rendering byte for byte. The base is
+    /// `0001-01-01`, keeping bases without a year offset in range.
+    fn begin_of_period_sql_2008(value: &str, period: PeriodKind) -> String {
+        const BASE: &str = "CONVERT(datetime2, '00010101', 112)";
+        let day = format!("CONVERT(datetime2, CONVERT(date, {value}))");
+        match period {
+            PeriodKind::Minute => {
+                format!("DATEADD(minute, DATEDIFF(minute, {day}, {value}), {day})")
+            }
+            PeriodKind::Hour => format!("DATEADD(hour, DATEDIFF(hour, {day}, {value}), {day})"),
+            PeriodKind::Day => day,
+            PeriodKind::Week => format!(
+                "DATEADD(day, -(((DATEDIFF(day, CONVERT(date, '19000101', 112), CONVERT(date, {value})) % 7) + 7) % 7), {day})"
+            ),
+            PeriodKind::TenDays => format!(
+                "DATEADD(day, CASE WHEN DAY({value}) <= 10 THEN 0 WHEN DAY({value}) <= 20 THEN 10 ELSE 20 END, DATEADD(month, DATEDIFF(month, {BASE}, {value}), {BASE}))"
+            ),
+            PeriodKind::Month => {
+                format!("DATEADD(month, DATEDIFF(month, {BASE}, {value}), {BASE})")
+            }
+            PeriodKind::Quarter => {
+                format!("DATEADD(quarter, DATEDIFF(quarter, {BASE}, {value}), {BASE})")
+            }
+            PeriodKind::HalfYear => {
+                format!("DATEADD(month, (DATEDIFF(month, {BASE}, {value}) / 6) * 6, {BASE})")
+            }
+            PeriodKind::Year => format!("DATEADD(year, DATEDIFF(year, {BASE}, {value}), {BASE})"),
         }
     }
 
@@ -209,7 +248,7 @@ impl SqlDialect {
         data_type: &str,
     ) -> String {
         match (self, kind) {
-            (Self::MsSql { year_offset }, ColumnKind::DateTime) if year_offset != 0 => {
+            (Self::MsSql { year_offset, .. }, ColumnKind::DateTime) if year_offset != 0 => {
                 format!("DATEADD(year, {}, {expression})", -year_offset)
             }
             (Self::Postgres, ColumnKind::String { .. })
@@ -263,7 +302,7 @@ impl SqlDialect {
         );
         match self {
             Self::Postgres => Ok(format!("TIMESTAMP '{}'", literal.replace('T', " "))),
-            Self::MsSql { year_offset } => {
+            Self::MsSql { year_offset, .. } => {
                 if storage_domain {
                     let physical_year = i32::from(value.year)
                         .checked_add(year_offset)
@@ -309,6 +348,10 @@ impl SqlDialect {
                     "(date_trunc('year', {value}) + CASE WHEN EXTRACT(MONTH FROM {value}) > 6 THEN INTERVAL '6 months' ELSE INTERVAL '0 months' END)"
                 ),
             },
+            Self::MsSql {
+                dialect_level: MsSqlDialectLevel::Sql2008,
+                ..
+            } => Self::begin_of_period_sql_2008(value, period),
             Self::MsSql { .. } => match period {
                 PeriodKind::Minute => format!(
                     "DATETIME2FROMPARTS(YEAR({value}), MONTH({value}), DAY({value}), DATEPART(hour, {value}), DATEPART(minute, {value}), 0, 0, 0)"
@@ -352,7 +395,7 @@ impl SqlDialect {
             Self::MsSql { .. } if matches!(base.as_str(), "binary" | "varbinary" | "image") => {
                 format!("CONVERT(varchar(max), {expression}, 1)")
             }
-            Self::MsSql { year_offset }
+            Self::MsSql { year_offset, .. }
                 if year_offset != 0
                     && matches!(
                         base.as_str(),
@@ -376,7 +419,7 @@ impl SqlDialect {
             .map_or(data_type, |(base, _)| base)
             .trim();
         match self {
-            Self::MsSql { year_offset }
+            Self::MsSql { year_offset, .. }
                 if year_offset != 0
                     && token.kind == TokenKind::String
                     && matches!(

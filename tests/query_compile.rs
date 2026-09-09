@@ -8,9 +8,9 @@ use open_sdbl::metadata::{
     parse_config_descriptors, parse_db_names, resolve_metadata,
 };
 use open_sdbl::query::{
-    Backend, ColumnKind, MsSqlBackend, PostgresBackend, Prepared, PresentationExpression,
-    PresentationPlan, QueryCompiler, QueryDiagnosticKind, find_metadata_object,
-    queryable_field_catalog, queryable_fields,
+    Backend, ColumnKind, MsSqlBackend, MsSqlDialectLevel, PostgresBackend, Prepared,
+    PresentationExpression, PresentationPlan, QueryCompiler, QueryDiagnosticKind,
+    find_metadata_object, queryable_field_catalog, queryable_fields,
 };
 
 fn labels(compiled: &open_sdbl::query::CompiledQuery) -> Vec<&str> {
@@ -35,6 +35,10 @@ fn compile_backend_generic<B: Backend>(
 
 fn mssql_backend(year_offset: i32) -> MsSqlBackend {
     MsSqlBackend::new(year_offset).expect("test MSSQL year offset must be valid")
+}
+
+fn mssql_backend_at(level: MsSqlDialectLevel, year_offset: i32) -> MsSqlBackend {
+    mssql_backend(year_offset).with_dialect_level(level)
 }
 
 fn assert_backend_outcomes_match(
@@ -220,6 +224,12 @@ macro_rules! mssql_compile {
 macro_rules! mssql_compile_with_offset {
     ($source:expr, $snapshot:expr, $year_offset:expr $(,)?) => {
         QueryCompiler::new($snapshot, mssql_backend($year_offset)).compile($source)
+    };
+}
+
+macro_rules! mssql_compile_with_level {
+    ($source:expr, $snapshot:expr, $level:expr, $year_offset:expr $(,)?) => {
+        QueryCompiler::new($snapshot, mssql_backend_at($level, $year_offset)).compile($source)
     };
 }
 
@@ -1401,7 +1411,7 @@ fn applies_balance_period_and_condition_before_outer_where() {
 
     let anchor = compiled
         .sql
-        .find("MAX(\"__anchor_totals\".\"_period\") FILTER")
+        .find("MAX(CASE WHEN \"__anchor_totals\".\"_period\" <=")
         .unwrap();
     let totals_condition = compiled
         .sql
@@ -3329,5 +3339,115 @@ fn indexes_live_and_schema_tables_including_extension_variants() {
     assert_eq!(
         snapshot.object_id_by_physical_table("Reference53"),
         snapshot.object_id_by_physical_table("_reference53")
+    );
+}
+
+#[test]
+fn preserves_sql_server_2008_goldens_for_begin_of_period() {
+    let snapshot = mssql_snapshot();
+    let value = "[__src].[_date_time]";
+    let base = "CONVERT(datetime2, '00010101', 112)";
+    let day = format!("CONVERT(datetime2, CONVERT(date, {value}))");
+    let cases = [
+        (
+            "МИНУТА",
+            format!("DATEADD(minute, DATEDIFF(minute, {day}, {value}), {day})"),
+        ),
+        (
+            "ЧАС",
+            format!("DATEADD(hour, DATEDIFF(hour, {day}, {value}), {day})"),
+        ),
+        ("ДЕНЬ", day.clone()),
+        (
+            "НЕДЕЛЯ",
+            format!(
+                "DATEADD(day, -(((DATEDIFF(day, CONVERT(date, '19000101', 112), CONVERT(date, {value})) % 7) + 7) % 7), {day})"
+            ),
+        ),
+        (
+            "ДЕКАДА",
+            format!(
+                "DATEADD(day, CASE WHEN DAY({value}) <= 10 THEN 0 WHEN DAY({value}) <= 20 THEN 10 ELSE 20 END, DATEADD(month, DATEDIFF(month, {base}, {value}), {base}))"
+            ),
+        ),
+        (
+            "МЕСЯЦ",
+            format!("DATEADD(month, DATEDIFF(month, {base}, {value}), {base})"),
+        ),
+        (
+            "КВАРТАЛ",
+            format!("DATEADD(quarter, DATEDIFF(quarter, {base}, {value}), {base})"),
+        ),
+        (
+            "ПОЛУГОДИЕ",
+            format!("DATEADD(month, (DATEDIFF(month, {base}, {value}) / 6) * 6, {base})"),
+        ),
+        (
+            "ГОД",
+            format!("DATEADD(year, DATEDIFF(year, {base}, {value}), {base})"),
+        ),
+    ];
+    for (period, expected) in cases {
+        let source = format!(
+            "ВЫБРАТЬ НАЧАЛОПЕРИОДА(Дата, {period}) КАК Начало ИЗ Справочник.OpenSdblMetadataProbe;"
+        );
+        let legacy =
+            mssql_compile_with_level!(&source, &snapshot, MsSqlDialectLevel::Sql2008, 0).unwrap();
+        assert_eq!(
+            legacy.sql,
+            format!("SELECT {expected} AS [Начало] FROM [_reference53] AS [__src]"),
+            "SQL Server 2008 golden changed for {period}"
+        );
+        assert!(!legacy.sql.contains("DATETIME2FROMPARTS"));
+
+        let offset =
+            mssql_compile_with_level!(&source, &snapshot, MsSqlDialectLevel::Sql2008, 2000)
+                .unwrap();
+        assert!(
+            offset
+                .sql
+                .starts_with(&format!("SELECT DATEADD(year, -2000, {expected}) AS")),
+            "year offset must wrap the 2008 rendering for {period}: {}",
+            offset.sql
+        );
+        assert_eq!(kinds(&legacy), [&ColumnKind::DateTime]);
+    }
+}
+
+#[test]
+fn dialect_levels_differ_only_where_newer_functions_were_used() {
+    let sources = [
+        (
+            snapshot(),
+            "ВЫБРАТЬ ПЕРВЫЕ 5 Ссылка, Code, UUID(Ссылка), Date ИЗ Справочник.OpenSdblMetadataProbe ГДЕ Date > ДАТАВРЕМЯ(2024, 1, 1) УПОРЯДОЧИТЬ ПО Code;",
+        ),
+        (
+            reference_snapshot(),
+            "SELECT Организация.Код, ПРЕДСТАВЛЕНИЕ(4) FROM Catalog.OpenSdblMetadataProbe UNION ALL SELECT Code, ПРЕДСТАВЛЕНИЕ(5) FROM Catalog.OpenSdblMetadataProbe;",
+        ),
+        (
+            snapshot(),
+            "SELECT COUNT(*), SUM(Code) FROM Catalog.OpenSdblMetadataProbe l FULL JOIN Catalog.OpenSdblMetadataProbe r ON l.Code = r.Code;",
+        ),
+    ];
+    for (snapshot, source) in &sources {
+        let modern = QueryCompiler::new(snapshot, mssql_backend(2000))
+            .compile(source)
+            .map(|compiled| compiled.sql);
+        let legacy =
+            QueryCompiler::new(snapshot, mssql_backend_at(MsSqlDialectLevel::Sql2008, 2000))
+                .compile(source)
+                .map(|compiled| compiled.sql);
+        assert_eq!(modern.ok(), legacy.ok(), "levels diverge for {source}");
+    }
+
+    let with_period = "SELECT BEGINOFPERIOD(Date, MONTH) FROM Catalog.OpenSdblMetadataProbe;";
+    let modern = mssql_compile!(with_period, &mssql_snapshot()).unwrap();
+    assert!(modern.sql.contains("DATETIME2FROMPARTS"));
+    assert_eq!(
+        QueryCompiler::new(&mssql_snapshot(), mssql_backend(0))
+            .backend()
+            .dialect_level(),
+        MsSqlDialectLevel::Sql2012
     );
 }

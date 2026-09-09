@@ -26,7 +26,7 @@ pub use core::{
     QueryableField, QueryableFieldCatalog, find_metadata_object, queryable_field_catalog,
     queryable_fields,
 };
-pub use mssql::{InvalidMsSqlYearOffset, MsSqlBackend};
+pub use mssql::{InvalidMsSqlYearOffset, MsSqlBackend, MsSqlDialectLevel};
 pub use postgres::PostgresBackend;
 
 mod sealed {

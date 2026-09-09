@@ -49,7 +49,11 @@ fn join_reuse_requires_the_complete_reference_identity() {
 #[test]
 fn quotes_identifiers_with_the_canonical_dialect_delimiters() {
     assert_eq!(SqlDialect::Postgres.quote_identifier("a\"b"), "\"a\"\"b\"");
-    assert_eq!(SqlDialect::mssql(0).quote_identifier("a]b"), "[a]]b]");
+    assert_eq!(
+        SqlDialect::mssql(0, crate::query::mssql::MsSqlDialectLevel::Sql2012)
+            .quote_identifier("a]b"),
+        "[a]]b]"
+    );
 }
 
 #[test]
@@ -59,7 +63,10 @@ fn bounds_mssql_labels_by_utf16_code_units() {
     assert_eq!(truncated.encode_utf16().count(), 128);
     assert_eq!(truncated.chars().count(), 64);
 
-    let mut labels = OutputLabelAllocator::new(SqlDialect::mssql(0));
+    let mut labels = OutputLabelAllocator::new(SqlDialect::mssql(
+        0,
+        crate::query::mssql::MsSqlDialectLevel::Sql2012,
+    ));
     let first = labels.allocate(&requested);
     let second = labels.allocate(&requested);
     assert_ne!(first, second);

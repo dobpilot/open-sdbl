@@ -622,14 +622,11 @@ fn compile_historical_balance_sql(
         movement_predicates.push(condition.to_owned());
     }
 
-    let anchor = match dialect {
-        SqlDialect::Postgres => format!(
-            "COALESCE(MAX({totals_period}) FILTER (WHERE {totals_period} <= {boundary}), MAX({totals_period}))"
-        ),
-        SqlDialect::MsSql { .. } => format!(
-            "COALESCE(MAX(CASE WHEN {totals_period} <= {boundary} THEN {totals_period} END), MAX({totals_period}))"
-        ),
-    };
+    // `MAX(CASE WHEN …)` is the portable spelling of `FILTER (WHERE …)`
+    // (PostgreSQL 9.4), so one form serves every supported server.
+    let anchor = format!(
+        "COALESCE(MAX(CASE WHEN {totals_period} <= {boundary} THEN {totals_period} END), MAX({totals_period}))"
+    );
     let totals_table = dialect.quote_identifier(&totals.table.name);
     let movement_table = dialect.quote_identifier(movement_table);
     let balance_anchor = dialect.quote_identifier("__balance_anchor");

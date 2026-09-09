@@ -428,7 +428,7 @@ fn build_metadata(
 
 Основной API компиляции — `QueryCompiler<B>`, параметризованный
 неизменяемым backend-value. PostgreSQL не имеет состояния, а MSSQL
-хранит только смещение дат:
+хранит смещение дат и уровень диалекта:
 
 ```rust
 use open_sdbl::{
@@ -459,6 +459,25 @@ fn compile_mssql(
 `MsSqlBackend::new` возвращает `Result` и отклоняет смещения вне
 `0..=10_000`; backend со смещением ноль можно получить через
 `MsSqlBackend::default()`.
+
+Вторая часть значения backend — уровень диалекта `MsSqlDialectLevel`:
+`Sql2012` (по умолчанию) разрешает функции SQL Server 2012+, `Sql2008`
+ограничивается SQL Server 2008/2008 R2 и эмулирует `НАЧАЛОПЕРИОДА` через
+`DATEADD`/`DATEDIFF` от базы `datetime2 '0001-01-01'`; логические значения на
+обоих уровнях совпадают, а все остальные выражения генерируются одинаково.
+Уровень выбирается builder-ом и не влияет на смещение дат:
+
+```rust
+use open_sdbl::query::{MsSqlBackend, MsSqlDialectLevel};
+
+let backend = MsSqlBackend::new(2000)?.with_dialect_level(MsSqlDialectLevel::Sql2008);
+assert_eq!(backend.dialect_level(), MsSqlDialectLevel::Sql2008);
+```
+
+`MsSqlDialectLevel::from_product_version("10.50.6000.34")` сопоставляет строку
+`SERVERPROPERTY('ProductVersion')` с уровнем (major < 11 → `Sql2008`); enum
+помечен `#[non_exhaustive]`. Генерируемый PostgreSQL-SQL переносим начиная с
+9.0 без отдельного уровня.
 Legacy free functions удалены: компиляция для обеих СУБД выполняется только
 через `QueryCompiler<B>`.
 `CompiledQuery` содержит SQL, описание выходных колонок и маркеры отложенных
