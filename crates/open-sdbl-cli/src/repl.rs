@@ -1,6 +1,7 @@
 use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::io::{self, IsTerminal, Write};
+#[cfg(target_os = "linux")]
 use std::mem::MaybeUninit;
 use std::time::{Duration, Instant};
 
@@ -38,6 +39,7 @@ const CONSOLE_HELP: &str = "Commands:
 Enter a supported 1C SELECT query and terminate it with a semicolon.
 ";
 
+#[cfg(any(target_os = "linux", test))]
 const COMMAND_HINT: &str =
     "\\dt tables  \\di indexes  \\d <name> describe  \\refresh reload  \\help  \\q quit";
 
@@ -1662,6 +1664,7 @@ async fn read_bounded_line(
     }
 }
 
+#[cfg(any(target_os = "linux", test))]
 fn footer_text(columns: u16) -> String {
     let available = usize::from(columns.saturating_sub(1));
     if COMMAND_HINT.len() <= available {
