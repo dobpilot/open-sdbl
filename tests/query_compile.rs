@@ -5043,3 +5043,637 @@ fn diagnoses_invalid_nested_queries() {
     }
     assert!(postgres_compile!(&format!("{ok};"), &snapshot).is_ok());
 }
+
+use open_sdbl::query::{TempTable, TempTablesManager};
+
+/// Compiles batches on both backends against separate managers and checks
+/// that the backends stay in step statement by statement.
+struct BatchSession {
+    postgres: TempTablesManager,
+    mssql: TempTablesManager,
+}
+
+type BatchOutcome =
+    Result<Option<open_sdbl::query::CompiledQuery>, open_sdbl::query::QueryDiagnostic>;
+
+impl BatchSession {
+    fn new() -> Self {
+        Self {
+            postgres: TempTablesManager::new(),
+            mssql: TempTablesManager::new(),
+        }
+    }
+
+    fn compile(
+        &mut self,
+        snapshot: &MetadataSnapshot,
+        source: &str,
+    ) -> (BatchOutcome, BatchOutcome) {
+        self.compile_with(snapshot, source, &CompileOptions::new())
+    }
+
+    fn compile_with(
+        &mut self,
+        snapshot: &MetadataSnapshot,
+        source: &str,
+        options: &CompileOptions<'_>,
+    ) -> (BatchOutcome, BatchOutcome) {
+        let postgres = QueryCompiler::new(snapshot, PostgresBackend).compile_batch(
+            source,
+            options,
+            &mut self.postgres,
+        );
+        let mssql = QueryCompiler::new(snapshot, mssql_backend(0)).compile_batch(
+            source,
+            options,
+            &mut self.mssql,
+        );
+        assert_error_outcomes_match(source, &postgres, &mssql);
+        if let (Ok(postgres), Ok(mssql)) = (&postgres, &mssql) {
+            assert_eq!(
+                postgres.as_ref().map(|query| labels(query)),
+                mssql.as_ref().map(|query| labels(query)),
+                "backend batch labels differ for {source}"
+            );
+        }
+        (postgres, mssql)
+    }
+
+    fn tables(&self) -> Vec<TempTable<'_>> {
+        self.postgres.tables().collect()
+    }
+}
+
+fn postgres_batch(session: &mut BatchSession, snapshot: &MetadataSnapshot, source: &str) -> String {
+    session
+        .compile(snapshot, source)
+        .0
+        .unwrap()
+        .expect("batch produces a statement")
+        .sql
+}
+
+#[test]
+fn compiles_temporary_tables_as_common_table_expressions() {
+    let snapshot = snapshot();
+    let mut session = BatchSession::new();
+
+    let placed = session
+        .compile(
+            &snapshot,
+            "ВЫБРАТЬ Code КАК К, КОЛИЧЕСТВО(*) КАК N ПОМЕСТИТЬ Обороты
+             ИЗ Catalog.OpenSdblMetadataProbe СГРУППИРОВАТЬ ПО Code;",
+        )
+        .0
+        .unwrap()
+        .expect("a placement statement returns its row count");
+    assert_eq!(labels(&placed), ["Количество"]);
+    assert_eq!(
+        kinds(&placed),
+        [&ColumnKind::Number {
+            precision: None,
+            scale: None,
+        }]
+    );
+    assert_eq!(
+        placed.sql,
+        "WITH \"vt1\" AS (SELECT \"__src\".\"_code\"::text AS \"К\", COUNT(*) AS \"N\" FROM \"_reference53\" AS \"__src\" GROUP BY \"__src\".\"_code\") SELECT COUNT(*) AS \"Количество\" FROM \"vt1\" AS \"__placed\""
+    );
+
+    let (postgres, mssql) = session.compile(
+        &snapshot,
+        "ВЫБРАТЬ Т.К КАК Код, Т.N КАК Итог ИЗ Обороты КАК Т ГДЕ Т.N > 1;",
+    );
+    let postgres = postgres.unwrap().expect("a query statement returns rows");
+    assert_eq!(labels(&postgres), ["Код", "Итог"]);
+    assert_eq!(
+        kinds(&postgres),
+        [
+            &ColumnKind::String { length: Some(9) },
+            &ColumnKind::Number {
+                precision: None,
+                scale: None,
+            },
+        ]
+    );
+    assert!(postgres.sql.starts_with(
+        "WITH \"vt1\" AS (SELECT \"__src\".\"_code\"::text AS \"К\", COUNT(*) AS \"N\" FROM \"_reference53\" AS \"__src\" GROUP BY \"__src\".\"_code\") SELECT \"Т\".\"К\" AS \"Код\""
+    ));
+    assert!(
+        postgres
+            .sql
+            .ends_with("FROM \"vt1\" AS \"Т\" WHERE (\"Т\".\"N\" > 1)")
+    );
+    let mssql = mssql.unwrap().unwrap();
+    assert!(
+        mssql
+            .sql
+            .starts_with("WITH [vt1] AS (SELECT [__src].[_code] AS [К], COUNT(*) AS [N]")
+    );
+    assert!(mssql.sql.ends_with("FROM [vt1] AS [Т] WHERE ([Т].[N] > 1)"));
+
+    let joined = postgres_batch(
+        &mut session,
+        &snapshot,
+        "ВЫБРАТЬ Т.Итог ИЗ (ВЫБРАТЬ Х.N КАК Итог ИЗ Обороты КАК Х) КАК Т
+         ВНУТРЕННЕЕ СОЕДИНЕНИЕ Catalog.OpenSdblMetadataProbe КАК c ПО c.Code = Т.Итог;",
+    );
+    assert!(joined.contains("FROM (SELECT \"Х\".\"N\" AS \"Итог\" FROM \"vt1\" AS \"Х\") AS \"Т\" INNER JOIN \"_reference53\" AS \"c\""));
+
+    // The table name qualifies its own fields when no alias is given.
+    let unaliased = postgres_batch(&mut session, &snapshot, "ВЫБРАТЬ Обороты.К ИЗ Обороты;");
+    assert!(unaliased.ends_with("SELECT \"Обороты\".\"К\" AS \"К\" FROM \"vt1\" AS \"Обороты\""));
+
+    // A membership subquery reads the same CTE.
+    let membership = postgres_batch(
+        &mut session,
+        &snapshot,
+        "ВЫБРАТЬ Code ИЗ Catalog.OpenSdblMetadataProbe ГДЕ Code В (ВЫБРАТЬ Т.К ИЗ Обороты КАК Т);",
+    );
+    assert!(membership.contains("IN (SELECT \"Т\".\"К\" AS \"К\" FROM \"vt1\" AS \"Т\")"));
+}
+
+#[test]
+fn emits_only_the_temporary_tables_a_statement_reaches() {
+    let snapshot = snapshot();
+    let mut session = BatchSession::new();
+    let sql = postgres_batch(
+        &mut session,
+        &snapshot,
+        "ВЫБРАТЬ Code КАК Имя ПОМЕСТИТЬ Первая ИЗ Catalog.OpenSdblMetadataProbe;
+         ВЫБРАТЬ Date КАК Д ПОМЕСТИТЬ Вторая ИЗ Catalog.OpenSdblMetadataProbe;
+         ВЫБРАТЬ Т.Д ИЗ Вторая КАК Т;",
+    );
+    assert!(sql.starts_with("WITH \"vt2\" AS ("));
+    assert_eq!(sql.matches(" AS (").count(), 1);
+    assert!(!sql.contains("vt1"));
+    assert_eq!(
+        session
+            .tables()
+            .iter()
+            .map(TempTable::name)
+            .collect::<Vec<_>>(),
+        ["Первая", "Вторая"]
+    );
+
+    // A chain keeps the CTEs it reads, in definition order.
+    let chained = postgres_batch(
+        &mut session,
+        &snapshot,
+        "ВЫБРАТЬ Т.Имя КАК Имя ПОМЕСТИТЬ Третья ИЗ Первая КАК Т;
+         ВЫБРАТЬ Х.Имя ИЗ Третья КАК Х;",
+    );
+    assert!(chained.starts_with("WITH \"vt1\" AS ("));
+    assert!(
+        chained.contains(", \"vt3\" AS (SELECT \"Т\".\"Имя\" AS \"Имя\" FROM \"vt1\" AS \"Т\")")
+    );
+    assert!(!chained.contains("vt2"));
+}
+
+#[test]
+fn appends_rows_through_a_union_all_definition() {
+    let snapshot = snapshot();
+    let mut session = BatchSession::new();
+    session
+        .compile(
+            &snapshot,
+            "ВЫБРАТЬ Code КАК Наименование ПОМЕСТИТЬ ВТ ИЗ Catalog.OpenSdblMetadataProbe;",
+        )
+        .0
+        .unwrap();
+
+    let appended = session
+        .compile(
+            &snapshot,
+            "ВЫБРАТЬ Code КАК Другое ДОБАВИТЬ ВТ ИЗ Catalog.OpenSdblMetadataProbe ГДЕ Code = \"A\";",
+        )
+        .0
+        .unwrap()
+        .expect("an append statement returns its row count");
+    assert_eq!(labels(&appended), ["Количество"]);
+    // Only the appended rows are counted, so the base table is not read.
+    assert!(!appended.sql.contains("vt2"));
+    assert!(appended.sql.contains(
+        "SELECT COUNT(*) AS \"Количество\" FROM (SELECT \"__src\".\"_code\"::text AS \"Другое\""
+    ));
+
+    let read = postgres_batch(
+        &mut session,
+        &snapshot,
+        "ВЫБРАТЬ Т.Наименование ИЗ ВТ КАК Т;",
+    );
+    assert!(read.contains(
+        ", \"vt2\" AS (SELECT \"Наименование\" FROM \"vt1\" UNION ALL SELECT \"__src\".\"_code\"::text AS \"Другое\""
+    ));
+    assert!(read.ends_with("FROM \"vt2\" AS \"Т\""));
+
+    // A second append chains onto the previous definition.
+    session
+        .compile(
+            &snapshot,
+            "ВЫБРАТЬ Code КАК Третье ДОБАВИТЬ ВТ ИЗ Catalog.OpenSdblMetadataProbe ГДЕ Code = \"B\";",
+        )
+        .0
+        .unwrap();
+    let chained = postgres_batch(
+        &mut session,
+        &snapshot,
+        "ВЫБРАТЬ Т.Наименование ИЗ ВТ КАК Т;",
+    );
+    assert!(chained.contains("\"vt3\" AS (SELECT \"Наименование\" FROM \"vt2\" UNION ALL"));
+    assert!(chained.ends_with("FROM \"vt3\" AS \"Т\""));
+    assert_eq!(chained.matches(" AS (").count(), 3);
+
+    // The table keeps the labels of its first definition.
+    assert_eq!(
+        session.tables()[0]
+            .columns()
+            .iter()
+            .map(|column| column.label.as_str())
+            .collect::<Vec<_>>(),
+        ["Наименование"]
+    );
+}
+
+#[test]
+fn drops_and_redefines_temporary_tables() {
+    let snapshot = snapshot();
+    let mut session = BatchSession::new();
+    session
+        .compile(
+            &snapshot,
+            "ВЫБРАТЬ Code КАК Имя ПОМЕСТИТЬ ВТ ИЗ Catalog.OpenSdblMetadataProbe;",
+        )
+        .0
+        .unwrap();
+
+    let dropped = session.compile(&snapshot, "УНИЧТОЖИТЬ ВТ;").0.unwrap();
+    assert!(dropped.is_none(), "a drop statement produces no SQL");
+    assert!(session.tables().is_empty());
+
+    let missing = session
+        .compile(&snapshot, "ВЫБРАТЬ Т.Имя ИЗ ВТ КАК Т;")
+        .0
+        .unwrap_err();
+    assert_eq!(missing.kind(), QueryDiagnosticKind::TemporaryTable);
+    assert!(missing.message().contains("does not exist"));
+
+    let redefined = postgres_batch(
+        &mut session,
+        &snapshot,
+        "ВЫБРАТЬ Date КАК Д ПОМЕСТИТЬ ВТ ИЗ Catalog.OpenSdblMetadataProbe;
+         ВЫБРАТЬ Т.Д ИЗ ВТ КАК Т;",
+    );
+    assert!(redefined.starts_with("WITH \"vt2\" AS (SELECT \"__src\".\"_date_time\" AS \"Д\""));
+    assert_eq!(session.tables().len(), 1);
+}
+
+#[test]
+fn accepts_index_clauses_without_generating_indexes() {
+    let snapshot = snapshot();
+    let mut session = BatchSession::new();
+    let plain = postgres_batch(
+        &mut session,
+        &snapshot,
+        "ВЫБРАТЬ Code КАК Код, Date КАК Д ПОМЕСТИТЬ ВТ ИЗ Catalog.OpenSdblMetadataProbe
+         ИНДЕКСИРОВАТЬ ПО Код, Д УНИКАЛЬНО;",
+    );
+    assert!(!plain.to_uppercase().contains("INDEX"));
+
+    let sets = postgres_batch(
+        &mut session,
+        &snapshot,
+        "ВЫБРАТЬ Code КАК Код, Date КАК Д ПОМЕСТИТЬ ВТ2 ИЗ Catalog.OpenSdblMetadataProbe
+         ИНДЕКСИРОВАТЬ ПО НАБОРАМ ((Код, Д) УНИКАЛЬНО, (Д));",
+    );
+    assert!(!sets.to_uppercase().contains("INDEX"));
+
+    let ordered = postgres_batch(
+        &mut session,
+        &snapshot,
+        "ВЫБРАТЬ ПЕРВЫЕ 5 Code КАК Код ПОМЕСТИТЬ ВТ3 ИЗ Catalog.OpenSdblMetadataProbe
+         УПОРЯДОЧИТЬ ПО Код ИНДЕКСИРОВАТЬ ПО Код;",
+    );
+    assert!(ordered.contains("LIMIT 5"));
+
+    let unknown_field = session
+        .compile(
+            &snapshot,
+            "ВЫБРАТЬ Code КАК Код ПОМЕСТИТЬ ВТ4 ИЗ Catalog.OpenSdblMetadataProbe
+             ИНДЕКСИРОВАТЬ ПО Date;",
+        )
+        .0
+        .unwrap_err();
+    assert_eq!(unknown_field.kind(), QueryDiagnosticKind::TemporaryTable);
+    assert!(
+        unknown_field
+            .message()
+            .contains("is not in the selection list")
+    );
+    assert_eq!(unknown_field.line(), 2);
+}
+
+#[test]
+fn keeps_temporary_tables_across_batches_and_failures() {
+    let snapshot = snapshot();
+    let mut session = BatchSession::new();
+    let parameters = [QueryParameter::new(
+        "Код",
+        ParameterValue::String("A".to_owned()),
+    )];
+    session
+        .compile_with(
+            &snapshot,
+            "ВЫБРАТЬ Code КАК Имя ПОМЕСТИТЬ ВТ ИЗ Catalog.OpenSdblMetadataProbe ГДЕ Code = &Код;",
+            &CompileOptions::new().parameters(&parameters),
+        )
+        .0
+        .unwrap();
+
+    // The definition froze the parameter, so reading it needs no values.
+    let read = postgres_batch(&mut session, &snapshot, "ВЫБРАТЬ Т.Имя ИЗ ВТ КАК Т;");
+    assert!(read.contains("WHERE (\"__src\".\"_code\" = 'A')"));
+
+    let before = session
+        .tables()
+        .iter()
+        .map(|table| table.name().to_owned())
+        .collect::<Vec<_>>();
+    let failed = session
+        .compile(
+            &snapshot,
+            "ВЫБРАТЬ Code КАК Имя ПОМЕСТИТЬ Другая ИЗ Catalog.OpenSdblMetadataProbe;
+             ВЫБРАТЬ Т.Нет ИЗ Другая КАК Т;",
+        )
+        .0
+        .unwrap_err();
+    assert_eq!(failed.kind(), QueryDiagnosticKind::UnknownField);
+    assert_eq!(
+        session
+            .tables()
+            .iter()
+            .map(|table| table.name().to_owned())
+            .collect::<Vec<_>>(),
+        before,
+        "a failed batch must not change the manager"
+    );
+}
+
+#[test]
+fn compiles_temporary_table_references_and_dates() {
+    let snapshot = snapshot();
+    let mut manager = TempTablesManager::new();
+    let compiler = QueryCompiler::new(&snapshot, PostgresBackend);
+    compiler
+        .compile_batch(
+            "ВЫБРАТЬ Ссылка КАК Ссылка ПОМЕСТИТЬ ВТ ИЗ Catalog.OpenSdblMetadataProbe;",
+            &CompileOptions::new(),
+            &mut manager,
+        )
+        .unwrap();
+    assert!(matches!(
+        manager.tables().next().unwrap().columns()[0].kind,
+        ColumnKind::Reference {
+            runtime_typed: false,
+            ..
+        }
+    ));
+
+    let source = "ВЫБРАТЬ Т.Ссылка.Code КАК Код ИЗ ВТ КАК Т;";
+    let prepared = compiler.prepare_with(source, &manager).unwrap();
+    assert!(prepared.presentation_request().targets.is_empty());
+    let dereferenced = prepared
+        .compile_batch(&snapshot, &CompileOptions::new(), &mut manager)
+        .unwrap()
+        .unwrap();
+    assert!(dereferenced.sql.contains(
+        "FROM \"vt1\" AS \"Т\" LEFT JOIN \"_reference53\" AS \"__ref1\" ON \"Т\".\"Ссылка\" = \"__ref1\".\"_idrref\""
+    ));
+
+    // A runtime-typed column read from a temporary table is presented by
+    // the application, exactly as a derived-source payload column is.
+    let payload_snapshot = presentation_reference_snapshot(true);
+    let payload_compiler = QueryCompiler::new(&payload_snapshot, PostgresBackend);
+    let mut payload_manager = TempTablesManager::new();
+    payload_compiler
+        .compile_batch(
+            "ВЫБРАТЬ ProbeAttribute КАК Объект ПОМЕСТИТЬ ВТ ИЗ Catalog.OpenSdblMetadataProbe;",
+            &CompileOptions::new(),
+            &mut payload_manager,
+        )
+        .unwrap();
+    let payload = payload_compiler
+        .compile_batch(
+            "ВЫБРАТЬ ПРЕДСТАВЛЕНИЕССЫЛКИ(Т.Объект) КАК Текст ИЗ ВТ КАК Т;",
+            &CompileOptions::new(),
+            &mut payload_manager,
+        )
+        .unwrap()
+        .unwrap();
+    assert_eq!(payload.deferred_presentations, [0]);
+    assert!(
+        payload
+            .sql
+            .contains("SELECT \"Т\".\"Объект\" AS \"Текст\" FROM \"vt1\" AS \"Т\"")
+    );
+
+    // MSSQL corrects the year offset once, in the final projection only.
+    let mssql = QueryCompiler::new(&snapshot, mssql_backend(2000));
+    let mut offset_manager = TempTablesManager::new();
+    mssql
+        .compile_batch(
+            "ВЫБРАТЬ Date КАК Д ПОМЕСТИТЬ ВТ ИЗ Catalog.OpenSdblMetadataProbe;",
+            &CompileOptions::new(),
+            &mut offset_manager,
+        )
+        .unwrap();
+    let dated = mssql
+        .compile_batch(
+            "ВЫБРАТЬ Т.Д ИЗ ВТ КАК Т;",
+            &CompileOptions::new(),
+            &mut offset_manager,
+        )
+        .unwrap()
+        .unwrap();
+    assert_eq!(dated.sql.matches("DATEADD").count(), 1);
+    assert!(
+        dated
+            .sql
+            .contains("SELECT DATEADD(year, -2000, [Т].[Д]) AS [Д] FROM [vt1] AS [Т]")
+    );
+}
+
+#[test]
+fn diagnoses_temporary_table_failures() {
+    let snapshot = snapshot();
+    let mut session = BatchSession::new();
+    session
+        .compile(
+            &snapshot,
+            "ВЫБРАТЬ Code КАК Имя ПОМЕСТИТЬ ВТ ИЗ Catalog.OpenSdblMetadataProbe;",
+        )
+        .0
+        .unwrap();
+
+    let duplicate = session
+        .compile(
+            &snapshot,
+            "ВЫБРАТЬ Code КАК Имя ПОМЕСТИТЬ ВТ ИЗ Catalog.OpenSdblMetadataProbe;",
+        )
+        .0
+        .unwrap_err();
+    assert_eq!(duplicate.kind(), QueryDiagnosticKind::TemporaryTable);
+    assert!(duplicate.message().contains("already exists"));
+
+    let widths = session
+        .compile(
+            &snapshot,
+            "ВЫБРАТЬ Code КАК Имя, Date КАК Д ДОБАВИТЬ ВТ ИЗ Catalog.OpenSdblMetadataProbe;",
+        )
+        .0
+        .unwrap_err();
+    assert_eq!(widths.kind(), QueryDiagnosticKind::TemporaryTable);
+    assert!(widths.message().contains("projects 2 columns"));
+
+    let kind_mismatch = session
+        .compile(
+            &snapshot,
+            "ВЫБРАТЬ Date КАК Имя ДОБАВИТЬ ВТ ИЗ Catalog.OpenSdblMetadataProbe;",
+        )
+        .0
+        .unwrap_err();
+    assert_eq!(kind_mismatch.kind(), QueryDiagnosticKind::TemporaryTable);
+
+    let missing_append = session
+        .compile(
+            &snapshot,
+            "ВЫБРАТЬ Code КАК Имя ДОБАВИТЬ Нет ИЗ Catalog.OpenSdblMetadataProbe;",
+        )
+        .0
+        .unwrap_err();
+    assert_eq!(missing_append.kind(), QueryDiagnosticKind::TemporaryTable);
+
+    let missing_drop = session.compile(&snapshot, "УНИЧТОЖИТЬ Нет;").0.unwrap_err();
+    assert_eq!(missing_drop.kind(), QueryDiagnosticKind::TemporaryTable);
+
+    let wildcard = session
+        .compile(
+            &snapshot,
+            "ВЫБРАТЬ * ПОМЕСТИТЬ ВТ5 ИЗ Catalog.OpenSdblMetadataProbe;",
+        )
+        .0
+        .unwrap_err();
+    assert!(wildcard.message().contains("'*'"));
+
+    let ordered = session
+        .compile(
+            &snapshot,
+            "ВЫБРАТЬ Code КАК Имя ПОМЕСТИТЬ ВТ6 ИЗ Catalog.OpenSdblMetadataProbe УПОРЯДОЧИТЬ ПО Имя;",
+        )
+        .0
+        .unwrap_err();
+    assert!(ordered.message().contains("requires TOP"));
+
+    let nested_into = session
+        .compile(
+            &snapshot,
+            "ВЫБРАТЬ Т.Имя ИЗ (ВЫБРАТЬ Code КАК Имя ПОМЕСТИТЬ ВТ7 ИЗ Catalog.OpenSdblMetadataProbe) КАК Т;",
+        )
+        .0
+        .unwrap_err();
+    assert_eq!(nested_into.kind(), QueryDiagnosticKind::Syntax);
+    assert!(nested_into.message().contains("INTO is not allowed"));
+
+    let union_into = session
+        .compile(
+            &snapshot,
+            "ВЫБРАТЬ Code КАК Имя ИЗ Catalog.OpenSdblMetadataProbe
+             ОБЪЕДИНИТЬ ВСЕ ВЫБРАТЬ Code КАК Имя ПОМЕСТИТЬ ВТ8 ИЗ Catalog.OpenSdblMetadataProbe;",
+        )
+        .0
+        .unwrap_err();
+    assert_eq!(union_into.kind(), QueryDiagnosticKind::Syntax);
+
+    let statements = (0..65).map(|_| "ВЫБРАТЬ 1").collect::<Vec<_>>().join("; ");
+    let too_many = session
+        .compile(&snapshot, &format!("{statements};"))
+        .0
+        .unwrap_err();
+    assert_eq!(too_many.kind(), QueryDiagnosticKind::WorkBudgetExceeded);
+    assert!(too_many.message().contains("64 statements"));
+}
+
+#[test]
+fn bounds_batches_compiled_without_a_manager() {
+    let snapshot = snapshot();
+    let compiler = QueryCompiler::new(&snapshot, PostgresBackend);
+
+    let batch = compiler
+        .compile(
+            "ВЫБРАТЬ Code КАК Имя ПОМЕСТИТЬ ВТ ИЗ Catalog.OpenSdblMetadataProbe;
+             ВЫБРАТЬ Т.Имя ИЗ ВТ КАК Т;",
+        )
+        .unwrap();
+    assert!(batch.sql.starts_with("WITH \"vt1\" AS ("));
+
+    let no_rows = compiler
+        .compile(
+            "ВЫБРАТЬ Code КАК Имя ПОМЕСТИТЬ ВТ ИЗ Catalog.OpenSdblMetadataProbe;
+             УНИЧТОЖИТЬ ВТ;",
+        )
+        .unwrap_err();
+    assert_eq!(no_rows.kind(), QueryDiagnosticKind::TemporaryTable);
+    assert!(no_rows.message().contains("returns no rows"));
+
+    // A manager filled by one dialect refuses another.
+    let mut manager = TempTablesManager::new();
+    compiler
+        .compile_batch(
+            "ВЫБРАТЬ Code КАК Имя ПОМЕСТИТЬ ВТ ИЗ Catalog.OpenSdblMetadataProbe;",
+            &CompileOptions::new(),
+            &mut manager,
+        )
+        .unwrap();
+    let other_dialect = QueryCompiler::new(&snapshot, mssql_backend(0))
+        .compile_batch(
+            "ВЫБРАТЬ Т.Имя ИЗ ВТ КАК Т;",
+            &CompileOptions::new(),
+            &mut manager,
+        )
+        .unwrap_err();
+    assert_eq!(other_dialect.kind(), QueryDiagnosticKind::TemporaryTable);
+    assert!(other_dialect.message().contains("another SQL dialect"));
+
+    let other_snapshot = QueryCompiler::new(&reference_snapshot(), PostgresBackend)
+        .compile_batch(
+            "ВЫБРАТЬ Т.Имя ИЗ ВТ КАК Т;",
+            &CompileOptions::new(),
+            &mut manager,
+        )
+        .unwrap_err();
+    assert_eq!(other_snapshot.kind(), QueryDiagnosticKind::SnapshotMismatch);
+
+    manager.clear();
+    assert!(manager.is_empty());
+    assert!(!manager.contains("ВТ"));
+
+    // A manager holds a bounded number of definitions.
+    let mut crowded = TempTablesManager::new();
+    let mut definitions = 0;
+    let overflow = loop {
+        let source = format!(
+            "ВЫБРАТЬ Code КАК Имя ПОМЕСТИТЬ Т{definitions} ИЗ Catalog.OpenSdblMetadataProbe;"
+        );
+        match compiler.compile_batch(&source, &CompileOptions::new(), &mut crowded) {
+            Ok(_) => definitions += 1,
+            Err(error) => break error,
+        }
+        assert!(
+            definitions <= 256,
+            "the definition bound must stop the loop"
+        );
+    };
+    assert_eq!(definitions, 256);
+    assert_eq!(overflow.kind(), QueryDiagnosticKind::TemporaryTable);
+    assert!(overflow.message().contains("256 definitions"));
+}

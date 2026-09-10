@@ -62,6 +62,9 @@ pub enum QueryDiagnosticKind {
     /// A named parameter is missing, unused, or used where a list is not
     /// allowed.
     Parameter,
+    /// A temporary table is unknown, already defined, structurally
+    /// incompatible, or unusable with the supplied manager.
+    TemporaryTable,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

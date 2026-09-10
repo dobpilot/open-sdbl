@@ -119,6 +119,16 @@ pub enum Keyword {
     Like,
     /// `СПЕЦСИМВОЛ` or `ESCAPE`.
     Escape,
+    /// `ДОБАВИТЬ` or `ADD`.
+    Add,
+    /// `УНИЧТОЖИТЬ` or `DROP`.
+    Drop,
+    /// `ИНДЕКСИРОВАТЬ` or `INDEX`.
+    Index,
+    /// `НАБОРАМ` or `SETS`.
+    Sets,
+    /// `УНИКАЛЬНО` or `UNIQUE`.
+    Unique,
 }
 
 impl Keyword {
@@ -177,6 +187,11 @@ impl Keyword {
             Self::IsNullFunction => "ISNULL",
             Self::Like => "LIKE",
             Self::Escape => "ESCAPE",
+            Self::Add => "ADD",
+            Self::Drop => "DROP",
+            Self::Index => "INDEX",
+            Self::Sets => "SETS",
+            Self::Unique => "UNIQUE",
         }
     }
 }
@@ -555,7 +570,7 @@ fn is_identifier_continue(character: char) -> bool {
     character == '_' || character.is_alphanumeric()
 }
 
-const KEYWORDS: [(Keyword, &str, &str); 51] = [
+const KEYWORDS: [(Keyword, &str, &str); 56] = [
     (Keyword::Select, "ВЫБРАТЬ", "SELECT"),
     (Keyword::From, "ИЗ", "FROM"),
     (Keyword::Where, "ГДЕ", "WHERE"),
@@ -611,6 +626,11 @@ const KEYWORDS: [(Keyword, &str, &str); 51] = [
     (Keyword::IsNullFunction, "ЕСТЬNULL", "ISNULL"),
     (Keyword::Like, "ПОДОБНО", "LIKE"),
     (Keyword::Escape, "СПЕЦСИМВОЛ", "ESCAPE"),
+    (Keyword::Add, "ДОБАВИТЬ", "ADD"),
+    (Keyword::Drop, "УНИЧТОЖИТЬ", "DROP"),
+    (Keyword::Index, "ИНДЕКСИРОВАТЬ", "INDEX"),
+    (Keyword::Sets, "НАБОРАМ", "SETS"),
+    (Keyword::Unique, "УНИКАЛЬНО", "UNIQUE"),
 ];
 
 fn keyword(text: &str) -> Option<Keyword> {

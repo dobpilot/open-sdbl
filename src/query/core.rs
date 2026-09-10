@@ -8,6 +8,7 @@ mod names;
 mod params;
 mod parser;
 mod resolve;
+mod temp_tables;
 
 pub use diag::{QueryDiagnostic, QueryDiagnosticKind};
 pub use params::{
@@ -18,6 +19,9 @@ pub use resolve::{
     PresentationRequest, PresentationTarget, QueryableColumn, QueryableField,
     QueryableFieldCatalog, find_metadata_object, queryable_field_catalog, queryable_fields,
 };
+pub use temp_tables::{TempTable, TempTablesManager};
 
-pub(super) use codegen::{compile_presentation_lookup, compile_query, prepare_query};
+pub(super) use codegen::{
+    compile_batch, compile_presentation_lookup, compile_query, prepare_query, prepare_query_with,
+};
 pub(super) use dialect::SqlDialect;

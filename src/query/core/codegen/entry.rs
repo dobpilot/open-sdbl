@@ -1,7 +1,8 @@
 use std::collections::BTreeSet;
 
+use super::batch::compile_batch_ast;
 use super::expression::single_column_at;
-use super::orchestrate::{PresentationCompilation, compile};
+use super::orchestrate::PresentationCompilation;
 use super::sources::compile_live_relation;
 use super::virtual_tables::compile_presentation_plan;
 use crate::metadata::MetadataSnapshot;
@@ -13,6 +14,7 @@ use crate::query::core::resolve::{
     ColumnKind, CompilationCatalog, CompiledColumn, CompiledQuery, PresentationPlan,
     PresentationRequest, PresentationTarget,
 };
+use crate::query::core::temp_tables::TempTablesManager;
 use crate::query::core::{QueryDiagnostic, QueryDiagnosticKind};
 use crate::{TokenKind, tokenize};
 
@@ -21,13 +23,26 @@ pub(crate) fn prepare_query(
     snapshot: &MetadataSnapshot,
     dialect: SqlDialect,
 ) -> Result<PresentationRequest, QueryDiagnostic> {
+    prepare_query_with(source, snapshot, dialect, &TempTablesManager::new())
+}
+
+/// Collects presentation targets with the caller's temporary tables
+/// visible. Definitions of the batch are applied to a private copy of the
+/// manager so that preparation stays free of side effects.
+pub(crate) fn prepare_query_with(
+    source: &str,
+    snapshot: &MetadataSnapshot,
+    dialect: SqlDialect,
+    manager: &TempTablesManager,
+) -> Result<PresentationRequest, QueryDiagnostic> {
     let tokens = tokenize(source)?
         .into_iter()
         .filter(|token| token.kind != TokenKind::Comment)
         .collect::<Vec<_>>();
     let ast = Parser::new(&tokens, source).parse()?;
     let mut presentations = PresentationCompilation::collect(dialect);
-    let _ = compile(&ast, snapshot, &mut presentations)?;
+    let mut scratch = manager.clone();
+    let _ = compile_batch_ast(&ast, snapshot, &mut presentations, &mut scratch)?;
     Ok(PresentationRequest {
         targets: presentations
             .requested
@@ -127,6 +142,24 @@ pub(crate) fn compile_query(
     parameters: &[QueryParameter],
     dialect: SqlDialect,
 ) -> Result<CompiledQuery, QueryDiagnostic> {
+    let mut manager = TempTablesManager::new();
+    compile_batch(source, snapshot, plans, parameters, dialect, &mut manager)?.ok_or_else(|| {
+        QueryDiagnostic::unpositioned(
+            QueryDiagnosticKind::TemporaryTable,
+            "the batch returns no rows; compile it with a temporary table manager",
+        )
+    })
+}
+
+/// Compiles a batch, updating `manager` with its definitions and drops.
+pub(crate) fn compile_batch(
+    source: &str,
+    snapshot: &MetadataSnapshot,
+    plans: &[PresentationPlan],
+    parameters: &[QueryParameter],
+    dialect: SqlDialect,
+    manager: &mut TempTablesManager,
+) -> Result<Option<CompiledQuery>, QueryDiagnostic> {
     let tokens = tokenize(source)?
         .into_iter()
         .filter(|token| token.kind != TokenKind::Comment)
@@ -135,7 +168,7 @@ pub(crate) fn compile_query(
     let ast = Parser::new(&tokens, source).parse()?;
     let mut presentations =
         PresentationCompilation::strict(plans, Parameters::bound(parameters), dialect);
-    compile(&ast, snapshot, &mut presentations)
+    compile_batch_ast(&ast, snapshot, &mut presentations, manager)
 }
 
 /// Every `&Имя` token needs exactly one value and every value must be

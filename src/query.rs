@@ -24,8 +24,8 @@ pub use core::{
     ColumnKind, CompileOptions, CompiledColumn, CompiledQuery, InvalidParameterDate, ParameterDate,
     ParameterValue, PresentationExpression, PresentationPlan, PresentationRequest,
     PresentationTarget, QueryDiagnostic, QueryDiagnosticKind, QueryParameter, QueryableColumn,
-    QueryableField, QueryableFieldCatalog, find_metadata_object, queryable_field_catalog,
-    queryable_fields,
+    QueryableField, QueryableFieldCatalog, TempTable, TempTablesManager, find_metadata_object,
+    queryable_field_catalog, queryable_fields,
 };
 pub use mssql::{InvalidMsSqlYearOffset, MsSqlBackend, MsSqlDialectLevel};
 pub use postgres::PostgresBackend;
@@ -94,6 +94,34 @@ impl<B: Backend> QueryCompiler<'_, B> {
         )
     }
 
+    /// Compiles a batch of `;`-separated statements, updating `manager`.
+    ///
+    /// Temporary tables placed by earlier statements or by earlier batches
+    /// are emulated with common table expressions. `Ok(None)` means the
+    /// batch ends with `УНИЧТОЖИТЬ` and produces no rows, exactly as
+    /// `Запрос.Выполнить()` yields `Неопределено` there. The manager is
+    /// updated only when the whole batch compiles.
+    ///
+    /// # Errors
+    ///
+    /// Returns a positional diagnostic when parsing, metadata resolution,
+    /// parameter binding, temporary-table use, or SQL generation fails.
+    pub fn compile_batch(
+        &self,
+        source: &str,
+        options: &CompileOptions<'_>,
+        manager: &mut TempTablesManager,
+    ) -> Result<Option<CompiledQuery>, QueryDiagnostic> {
+        core::compile_batch(
+            source,
+            self.snapshot,
+            options.presentation_plans(),
+            options.parameter_values(),
+            self.backend.dialect(),
+            manager,
+        )
+    }
+
     /// Resolves a query and collects its presentation target request.
     ///
     /// [`Prepared::compile`] recompiles the source after the application has
@@ -105,6 +133,31 @@ impl<B: Backend> QueryCompiler<'_, B> {
     /// resolved.
     pub fn prepare(&self, source: &str) -> Result<Prepared<B>, QueryDiagnostic> {
         let request = core::prepare_query(source, self.snapshot, self.backend.dialect())?;
+        Ok(Prepared {
+            source: source.to_owned(),
+            backend: self.backend,
+            request,
+            snapshot_fingerprint: self.snapshot.fingerprint(),
+        })
+    }
+
+    /// Resolves a batch with the manager's temporary tables visible.
+    ///
+    /// The manager is not modified: definitions of the batch are applied to
+    /// a private copy so that the request can be collected before the
+    /// application supplies presentation plans.
+    ///
+    /// # Errors
+    ///
+    /// Returns a positional diagnostic when the batch cannot be safely
+    /// resolved.
+    pub fn prepare_with(
+        &self,
+        source: &str,
+        manager: &TempTablesManager,
+    ) -> Result<Prepared<B>, QueryDiagnostic> {
+        let request =
+            core::prepare_query_with(source, self.snapshot, self.backend.dialect(), manager)?;
         Ok(Prepared {
             source: source.to_owned(),
             backend: self.backend,
@@ -194,6 +247,32 @@ impl<B: Backend> Prepared<B> {
             options.presentation_plans(),
             options.parameter_values(),
             self.backend.dialect(),
+        )
+    }
+
+    /// Recompiles the prepared batch, updating `manager`.
+    ///
+    /// # Errors
+    ///
+    /// Returns a diagnostic for an invalid batch, plan, parameter binding,
+    /// temporary-table use, or a snapshot other than the one the batch was
+    /// prepared against.
+    pub fn compile_batch(
+        &self,
+        snapshot: &MetadataSnapshot,
+        options: &CompileOptions<'_>,
+        manager: &mut TempTablesManager,
+    ) -> Result<Option<CompiledQuery>, QueryDiagnostic> {
+        if snapshot.fingerprint() != self.snapshot_fingerprint {
+            return Err(QueryDiagnostic::snapshot_mismatch());
+        }
+        core::compile_batch(
+            &self.source,
+            snapshot,
+            options.presentation_plans(),
+            options.parameter_values(),
+            self.backend.dialect(),
+            manager,
         )
     }
 }

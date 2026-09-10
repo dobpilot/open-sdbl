@@ -116,15 +116,6 @@ impl<'plans> PresentationCompilation<'plans> {
     }
 }
 
-pub(super) fn compile(
-    ast: &QueryAst<'_, '_>,
-    snapshot: &MetadataSnapshot,
-    presentations: &mut PresentationCompilation<'_>,
-) -> Result<CompiledQuery, QueryDiagnostic> {
-    let catalog = CompilationCatalog::new(snapshot, presentations.parameters);
-    compile_query_ast(ast, snapshot, &catalog, presentations, None)
-}
-
 /// Compiles one statement. `nested` carries the token of a nested query,
 /// which stays in the storage domain (no MSSQL year-offset correction on
 /// its projections), cannot project `*` or deferred presentations, and may

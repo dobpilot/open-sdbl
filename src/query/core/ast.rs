@@ -3,11 +3,47 @@
 use crate::Token;
 use crate::query::core::{QueryDiagnostic, QueryDiagnosticKind};
 
+/// A sequence of `;`-separated statements compiled as one SQL statement.
+#[derive(Debug)]
+pub(super) struct BatchAst<'tokens, 'source> {
+    pub(super) statements: Vec<StatementAst<'tokens, 'source>>,
+}
+
+/// One statement of a batch.
+#[derive(Debug)]
+pub(super) enum StatementAst<'tokens, 'source> {
+    /// A query, optionally placing its rows into a temporary table.
+    Query(QueryAst<'tokens, 'source>),
+    /// `УНИЧТОЖИТЬ <Имя>`, reported at its name token.
+    Drop { name: &'tokens Token<'source> },
+}
+
 #[derive(Debug)]
 pub(super) struct QueryAst<'tokens, 'source> {
     pub(super) branches: Vec<SelectAst<'tokens, 'source>>,
     pub(super) unions: Vec<UnionLink<'tokens, 'source>>,
     pub(super) order: Vec<OrderTerm<'tokens, 'source>>,
+    /// `ПОМЕСТИТЬ`/`ДОБАВИТЬ` hoisted from the first branch.
+    pub(super) into: Option<IntoAst<'tokens, 'source>>,
+    /// A trailing `ИНДЕКСИРОВАТЬ ПО` clause, validated but not generated.
+    pub(super) index: Option<IndexAst<'tokens, 'source>>,
+}
+
+/// `ПОМЕСТИТЬ <Имя>` or `ДОБАВИТЬ <Имя>`.
+#[derive(Debug)]
+pub(super) struct IntoAst<'tokens, 'source> {
+    pub(super) token: &'tokens Token<'source>,
+    pub(super) name: &'tokens Token<'source>,
+    /// `true` for `ДОБАВИТЬ`, which appends to an existing table.
+    pub(super) append: bool,
+}
+
+/// `ИНДЕКСИРОВАТЬ ПО [НАБОРАМ]` with its field sets. `УНИКАЛЬНО` is parsed
+/// and dropped because no index is generated.
+#[derive(Debug)]
+pub(super) struct IndexAst<'tokens, 'source> {
+    pub(super) token: &'tokens Token<'source>,
+    pub(super) sets: Vec<Vec<&'tokens Token<'source>>>,
 }
 
 #[derive(Debug)]
@@ -19,6 +55,9 @@ pub(super) struct UnionLink<'tokens, 'source> {
 #[derive(Debug)]
 pub(super) struct SelectAst<'tokens, 'source> {
     pub(super) distinct: bool,
+    /// `ПОМЕСТИТЬ`/`ДОБАВИТЬ` of this branch; only the first branch of a
+    /// statement may carry one.
+    pub(super) into: Option<IntoAst<'tokens, 'source>>,
     pub(super) top: Option<u32>,
     pub(super) projection: Vec<ProjectionItem<'tokens, 'source>>,
     pub(super) source: Option<SourceAst<'tokens, 'source>>,
@@ -37,7 +76,8 @@ pub(super) struct GroupKey<'tokens, 'source> {
 
 #[derive(Debug)]
 pub(super) struct SourceAst<'tokens, 'source> {
-    /// The metadata kind token, or the opening parenthesis of a nested query.
+    /// The metadata kind token, the opening parenthesis of a nested query,
+    /// or the name of a temporary table.
     pub(super) kind: &'tokens Token<'source>,
     /// The object name token, or the opening parenthesis of a nested query.
     pub(super) object: &'tokens Token<'source>,
@@ -47,6 +87,8 @@ pub(super) struct SourceAst<'tokens, 'source> {
     pub(super) alias: Option<&'tokens Token<'source>>,
     /// A nested `(ВЫБРАТЬ …)` used as a derived source.
     pub(super) nested: Option<Box<QueryAst<'tokens, 'source>>>,
+    /// A bare identifier naming a temporary table of the batch.
+    pub(super) temporary: bool,
 }
 
 #[derive(Debug)]

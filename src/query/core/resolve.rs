@@ -1,7 +1,7 @@
 //! Metadata lookup and queryable-field projection.
 
 use std::cell::{Cell, OnceCell, RefCell};
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::sync::Arc;
 
 use crate::Token;
@@ -12,6 +12,7 @@ use crate::metadata::{
 use crate::query::core::ast::SourceAst;
 use crate::query::core::names::{folded_name, names_equal};
 use crate::query::core::params::Parameters;
+use crate::query::core::temp_tables::{TempTableSource, TempTablesManager};
 use crate::query::core::{QueryDiagnostic, QueryDiagnosticKind};
 
 /// Structured value type of one physical or compiled output column.
@@ -436,6 +437,10 @@ pub(super) struct CompilationCatalog<'snapshot> {
     work: Cell<usize>,
     /// Named parameter values of this compilation.
     pub(super) parameters: Parameters<'snapshot>,
+    /// Temporary tables visible to the statement being compiled.
+    temporary: &'snapshot TempTablesManager,
+    /// The CTEs the statement reads, with their own dependencies.
+    used_temporary: RefCell<BTreeSet<u32>>,
 }
 
 impl<'snapshot> CompilationCatalog<'snapshot> {
@@ -447,13 +452,41 @@ impl<'snapshot> CompilationCatalog<'snapshot> {
         snapshot: &'snapshot MetadataSnapshot,
         parameters: Parameters<'snapshot>,
     ) -> Self {
+        Self::with_temporary(snapshot, parameters, TempTablesManager::none())
+    }
+
+    pub(super) fn with_temporary(
+        snapshot: &'snapshot MetadataSnapshot,
+        parameters: Parameters<'snapshot>,
+        temporary: &'snapshot TempTablesManager,
+    ) -> Self {
         Self {
             snapshot,
             custom_names: OnceCell::new(),
             fields: RefCell::new(HashMap::new()),
             work: Cell::new(0),
             parameters,
+            temporary,
+            used_temporary: RefCell::new(BTreeSet::new()),
         }
+    }
+
+    /// Resolves a temporary-table source and records it, with everything it
+    /// reads, as a dependency of the statement being compiled.
+    pub(super) fn temporary_source(
+        &self,
+        token: &Token<'_>,
+    ) -> Result<TempTableSource, QueryDiagnostic> {
+        let source = self.temporary.source(token)?;
+        let mut used = self.used_temporary.borrow_mut();
+        used.insert(source.id);
+        used.extend(source.dependencies.iter().copied());
+        Ok(source)
+    }
+
+    /// The CTEs the compiled statement depends on.
+    pub(super) fn used_temporary(&self) -> BTreeSet<u32> {
+        self.used_temporary.borrow().clone()
     }
 
     pub(super) fn charge(

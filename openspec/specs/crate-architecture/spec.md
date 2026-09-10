@@ -35,7 +35,11 @@ inputs beyond the source text (presentation plans and named parameter
 values) SHALL be passed through one `CompileOptions` value accepted by
 `QueryCompiler::compile_with` and `Prepared::compile_with`; the existing
 `compile`, `compile_with_presentations`, and `Prepared::compile` methods
-SHALL remain equivalent to default options. Former database-named free
+SHALL remain equivalent to default options. Temporary-table state SHALL be
+carried by one public `TempTablesManager` value passed as `&mut` to
+`QueryCompiler::compile_batch` and `Prepared::compile_batch` and as `&` to
+`QueryCompiler::prepare_with`; the manager SHALL hold only compiled text
+and column metadata and SHALL perform no I/O. Former database-named free
 functions SHALL NOT remain part of the public API.
 
 #### Scenario: Caller-provided resources
@@ -79,6 +83,13 @@ functions SHALL NOT remain part of the public API.
 - **THEN** the compiler applies both inputs, and calling `compile` on the
   same source without parameters yields the same SQL when the source has no
   parameters
+
+#### Scenario: Batch compilation with a manager
+- **WHEN** an application creates `TempTablesManager::new()`, calls
+  `compile_batch` on a batch that places a table, and then `compile_batch`
+  on a query reading it
+- **THEN** the second call succeeds with the definition emitted as a CTE,
+  and neither call touches the file system, environment, or network
 
 ### Requirement: Keep presentation policy outside the core crate
 The core package SHALL define deterministic ID-only presentation requests,

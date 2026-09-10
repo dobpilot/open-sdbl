@@ -1,6 +1,6 @@
 use open_sdbl::{DiagnosticKind, Keyword, Lexer, TokenKind, tokenize};
 
-const KEYWORD_ALIASES: [(Keyword, &str, &str); 51] = [
+const KEYWORD_ALIASES: [(Keyword, &str, &str); 56] = [
     (Keyword::Select, "ВЫБРАТЬ", "SELECT"),
     (Keyword::From, "ИЗ", "FROM"),
     (Keyword::Where, "ГДЕ", "WHERE"),
@@ -56,6 +56,11 @@ const KEYWORD_ALIASES: [(Keyword, &str, &str); 51] = [
     (Keyword::IsNullFunction, "ЕСТЬNULL", "ISNULL"),
     (Keyword::Like, "ПОДОБНО", "LIKE"),
     (Keyword::Escape, "СПЕЦСИМВОЛ", "ESCAPE"),
+    (Keyword::Add, "ДОБАВИТЬ", "ADD"),
+    (Keyword::Drop, "УНИЧТОЖИТЬ", "DROP"),
+    (Keyword::Index, "ИНДЕКСИРОВАТЬ", "INDEX"),
+    (Keyword::Sets, "НАБОРАМ", "SETS"),
+    (Keyword::Unique, "УНИКАЛЬНО", "UNIQUE"),
 ];
 
 #[test]
@@ -88,7 +93,7 @@ fn recognizes_russian_and_english_keywords_case_insensitively() {
 
 #[test]
 fn recognizes_the_complete_bilingual_keyword_table() {
-    assert_eq!(KEYWORD_ALIASES.len(), 51);
+    assert_eq!(KEYWORD_ALIASES.len(), 56);
     for (index, (keyword, russian, english)) in KEYWORD_ALIASES.into_iter().enumerate() {
         assert!(
             KEYWORD_ALIASES[..index]
@@ -345,5 +350,32 @@ fn every_token_span_round_trips_to_its_lexeme() {
         tokens
             .windows(2)
             .all(|pair| pair[0].span.end <= pair[1].span.start)
+    );
+}
+
+#[test]
+fn recognizes_temporary_table_keywords_bilingually() {
+    let tokens =
+        tokenize("ДОБАВИТЬ ВТ; УНИЧТОЖИТЬ ВТ; ИНДЕКСИРОВАТЬ ПО НАБОРАМ ((Код) УНИКАЛЬНО)").unwrap();
+    let kinds = tokens.iter().map(|token| token.kind).collect::<Vec<_>>();
+
+    assert_eq!(kinds[0], TokenKind::Keyword(Keyword::Add));
+    assert_eq!(kinds[3], TokenKind::Keyword(Keyword::Drop));
+    assert_eq!(kinds[6], TokenKind::Keyword(Keyword::Index));
+    assert_eq!(kinds[7], TokenKind::Keyword(Keyword::By));
+    assert_eq!(kinds[8], TokenKind::Keyword(Keyword::Sets));
+    assert!(kinds.contains(&TokenKind::Keyword(Keyword::Unique)));
+
+    let english = tokenize("add drop index by sets unique").unwrap();
+    assert_eq!(
+        english.iter().map(|token| token.kind).collect::<Vec<_>>(),
+        vec![
+            TokenKind::Keyword(Keyword::Add),
+            TokenKind::Keyword(Keyword::Drop),
+            TokenKind::Keyword(Keyword::Index),
+            TokenKind::Keyword(Keyword::By),
+            TokenKind::Keyword(Keyword::Sets),
+            TokenKind::Keyword(Keyword::Unique),
+        ]
     );
 }

@@ -18,6 +18,7 @@ use crate::query::core::ast::{
 };
 use crate::query::core::dialect::{OutputLabelAllocator, SqlDialect};
 use crate::query::core::names::names_equal;
+use crate::query::core::temp_tables::cte_name;
 use std::str::FromStr;
 
 use crate::query::core::resolve::{
@@ -309,6 +310,36 @@ fn derived_source_scope(
         relation: format!("({})", compiled.sql),
         sql_alias: alias.clone(),
         object_name: alias.clone(),
+        source_alias: Some(alias),
+        identity_is_base: false,
+        reference_joins: Vec::new(),
+    })
+}
+
+/// Builds the scope of a temporary-table source: the stored CTE becomes the
+/// relation and the stored columns become the fields.
+fn temporary_source_scope(
+    source: &SourceAst<'_, '_>,
+    snapshot: &MetadataSnapshot,
+    catalog: &CompilationCatalog<'_>,
+    dialect: SqlDialect,
+) -> Result<SourceScope, QueryDiagnostic> {
+    let table = catalog.temporary_source(source.object)?;
+    let alias = source
+        .alias
+        .map_or_else(|| table.name.clone(), |token| token.lexeme.to_owned());
+    let fields = table
+        .columns
+        .iter()
+        .enumerate()
+        .map(|(index, column)| derived_field(index, &column.label, &column.kind, snapshot, dialect))
+        .collect::<Vec<_>>();
+    Ok(SourceScope {
+        object: derived_owner(),
+        fields: fields.into(),
+        relation: dialect.quote_identifier(&cte_name(table.id)),
+        sql_alias: alias.clone(),
+        object_name: table.name,
         source_alias: Some(alias),
         identity_is_base: false,
         reference_joins: Vec::new(),
@@ -1146,6 +1177,9 @@ fn resolve_join_source(
 ) -> Result<SourceScope, QueryDiagnostic> {
     if let Some(nested) = &source.nested {
         return derived_source_scope(source, nested, snapshot, catalog, dialect, presentations);
+    }
+    if source.temporary {
+        return temporary_source_scope(source, snapshot, catalog, dialect);
     }
     let resolved = resolve_source_metadata(source, snapshot, catalog)?;
     let compiled_source = compile_source_relation(

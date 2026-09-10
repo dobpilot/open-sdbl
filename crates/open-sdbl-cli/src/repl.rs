@@ -7,9 +7,9 @@ use std::time::{Duration, Instant};
 
 use open_sdbl::metadata::{MetadataKind, MetadataObject, MetadataSnapshot, ObjectId};
 use open_sdbl::query::{
-    CompileOptions, CompiledQuery, MsSqlBackend, PostgresBackend, Prepared, PresentationExpression,
-    PresentationPlan, PresentationRequest, QueryCompiler, QueryParameter, find_metadata_object,
-    queryable_field_catalog, queryable_fields,
+    ColumnKind, CompileOptions, CompiledQuery, MsSqlBackend, PostgresBackend, Prepared,
+    PresentationExpression, PresentationPlan, PresentationRequest, QueryCompiler, QueryParameter,
+    TempTablesManager, find_metadata_object, queryable_field_catalog, queryable_fields,
 };
 use open_sdbl::{TokenKind, tokenize};
 use rustyline::completion::{Completer, Pair};
@@ -37,10 +37,13 @@ const CONSOLE_HELP: &str = "Commands:
   \\set <name> <lit>   store a query parameter (&name) from an SDBL literal
   \\params             list stored parameters
   \\unset <name>       remove a stored parameter
+  \\tables             list temporary tables placed in this session
   \\help               show this help
   \\q                  quit
 
 Enter a supported 1C SELECT query and terminate it with a semicolon.
+Statements placing temporary tables (ПОМЕСТИТЬ, ДОБАВИТЬ, УНИЧТОЖИТЬ) keep
+them for the rest of the session; \\refresh forgets them.
 ";
 
 #[cfg(any(target_os = "linux", test))]
@@ -207,6 +210,7 @@ struct ConsoleHelper {
     paths: Vec<CompletionPath>,
     known_identifiers: HashSet<String>,
     parameters: Vec<CompletionName>,
+    temporary_tables: Vec<CompletionName>,
 }
 
 impl ConsoleHelper {
@@ -219,6 +223,7 @@ impl ConsoleHelper {
             "\\set",
             "\\params",
             "\\unset",
+            "\\tables",
             "\\help",
             "\\q",
         ]
@@ -360,6 +365,7 @@ impl ConsoleHelper {
             paths,
             known_identifiers,
             parameters: Vec::new(),
+            temporary_tables: Vec::new(),
         }
     }
 
@@ -369,6 +375,12 @@ impl ConsoleHelper {
             .into_iter()
             .map(|name| CompletionName::new(format!("&{name}")))
             .collect();
+    }
+
+    /// Temporary tables are sources without a metadata qualifier, so they
+    /// are offered separately from the dotted metadata names.
+    fn set_temporary_tables(&mut self, names: Vec<String>) {
+        self.temporary_tables = names.into_iter().map(CompletionName::new).collect();
     }
 
     #[cfg(test)]
@@ -386,6 +398,7 @@ impl ConsoleHelper {
             paths: Vec::new(),
             known_identifiers,
             parameters: Vec::new(),
+            temporary_tables: Vec::new(),
         }
     }
 
@@ -410,6 +423,23 @@ impl ConsoleHelper {
             &self.source_candidates
         } else {
             &self.candidates
+        };
+        let mut temporary = if source_context {
+            self.temporary_tables
+                .iter()
+                .filter(|candidate| candidate.key.starts_with(&prefix))
+                .map(|candidate| {
+                    (
+                        candidate.key.clone(),
+                        Pair {
+                            display: candidate.value.clone(),
+                            replacement: candidate.value.clone(),
+                        },
+                    )
+                })
+                .collect::<Vec<_>>()
+        } else {
+            Vec::new()
         };
         let complete_virtual_source = prefix.bytes().filter(|byte| *byte == b'.').count() >= 2;
         let mut values = candidates
@@ -457,7 +487,9 @@ impl ConsoleHelper {
                 }
             }
         }
+        values.append(&mut temporary);
         values.sort_by(|left, right| left.0.cmp(&right.0));
+        values.dedup_by(|left, right| left.0 == right.0);
         (start, values.into_iter().map(|(_, pair)| pair).collect())
     }
 }
@@ -685,18 +717,21 @@ impl PreparedQuery {
         }
     }
 
-    fn compile(
+    /// Compiles the prepared batch, updating the session's temporary tables.
+    /// `None` means the batch only dropped tables and has nothing to run.
+    fn compile_batch(
         self,
         snapshot: &MetadataSnapshot,
         plans: &[PresentationPlan],
         parameters: &[QueryParameter],
-    ) -> Result<CompiledQuery, open_sdbl::query::QueryDiagnostic> {
+        temporary: &mut TempTablesManager,
+    ) -> Result<Option<CompiledQuery>, open_sdbl::query::QueryDiagnostic> {
         let options = CompileOptions::new()
             .presentations(plans)
             .parameters(parameters);
         match self {
-            Self::Postgres(query) => query.compile_with(snapshot, &options),
-            Self::MsSql(query) => query.compile_with(snapshot, &options),
+            Self::Postgres(query) => query.compile_batch(snapshot, &options, temporary),
+            Self::MsSql(query) => query.compile_batch(snapshot, &options, temporary),
         }
     }
 }
@@ -721,6 +756,7 @@ pub(super) async fn run(
     let mut statement = String::new();
     let mut presentation_cache = HashMap::new();
     let mut parameters = ParameterStore::new();
+    let mut temporary_tables = TempTablesManager::new();
 
     if interactive {
         writeln!(output, "open-sdbl 1C query console. Type \\help for help.")
@@ -807,12 +843,28 @@ pub(super) async fn run(
                 }
                 continue;
             }
-            match execute_meta_command(session, &mut snapshot, line.trim(), output).await {
+            match execute_meta_command(
+                session,
+                &mut snapshot,
+                &temporary_tables,
+                line.trim(),
+                output,
+            )
+            .await
+            {
                 Ok(MetaOutcome::Continue) => {}
                 Ok(MetaOutcome::Refreshed) => {
                     presentation_cache.clear();
+                    // Definitions hold SQL generated against the old
+                    // snapshot, so they cannot survive a reload.
+                    if !temporary_tables.is_empty() {
+                        temporary_tables.clear();
+                        writeln!(output, "Temporary tables cleared.")
+                            .map_err(CliError::standard_output)?;
+                    }
                     if let Some(helper) = editor.as_mut().and_then(Editor::helper_mut) {
                         *helper = ConsoleHelper::from_snapshot(&snapshot);
+                        helper.set_parameters(parameters.names());
                     }
                 }
                 Ok(MetaOutcome::Quit) => return Ok(()),
@@ -833,12 +885,13 @@ pub(super) async fn run(
         let generation_started = Instant::now();
         let prepared = match session.dialect() {
             DatabaseDialect::Postgres => QueryCompiler::new(&snapshot, PostgresBackend)
-                .prepare(&statement)
+                .prepare_with(&statement, &temporary_tables)
                 .map(PreparedQuery::Postgres),
             DatabaseDialect::MsSql { backend } => QueryCompiler::new(&snapshot, backend)
-                .prepare(&statement)
+                .prepare_with(&statement, &temporary_tables)
                 .map(PreparedQuery::MsSql),
         };
+        let placed_before = temporary_table_names(&temporary_tables);
         let compilation = match prepared {
             Ok(prepared) => {
                 let plans = presentation_plans(
@@ -847,13 +900,42 @@ pub(super) async fn run(
                     prepared.presentation_request(),
                 );
                 let values = parameters.values_for(&statement);
-                prepared.compile(&snapshot, &plans, &values)
+                prepared.compile_batch(&snapshot, &plans, &values, &mut temporary_tables)
             }
             Err(error) => Err(error),
         };
         let generation_elapsed = generation_started.elapsed();
+        if compilation.is_ok()
+            && let Some(helper) = editor.as_mut().and_then(Editor::helper_mut)
+        {
+            helper.set_temporary_tables(temporary_table_names(&temporary_tables));
+        }
         match compilation {
-            Ok(compiled) => {
+            Ok(None) => {
+                let dropped = placed_before
+                    .into_iter()
+                    .filter(|name| !temporary_tables.contains(name))
+                    .collect::<Vec<_>>();
+                writeln!(
+                    output,
+                    "{}",
+                    timing_line("SQL generation", generation_elapsed)
+                )
+                .map_err(CliError::standard_output)?;
+                if dropped.is_empty() {
+                    writeln!(output, "No statement to execute.")
+                } else {
+                    writeln!(
+                        output,
+                        "Temporary tables dropped: {}.",
+                        escape_field(&dropped.join(", "))
+                    )
+                }
+                .map_err(CliError::standard_output)?;
+                statement.clear();
+                continue;
+            }
+            Ok(Some(compiled)) => {
                 writeln!(
                     output,
                     "{}",
@@ -1258,6 +1340,7 @@ enum MetaOutcome {
 async fn execute_meta_command(
     session: &mut DatabaseSession,
     snapshot: &mut MetadataSnapshot,
+    temporary: &TempTablesManager,
     command: &str,
     output: &mut impl Write,
 ) -> Result<MetaOutcome, CliError> {
@@ -1275,6 +1358,10 @@ async fn execute_meta_command(
         }
         "\\di" => {
             print_indexes(output, snapshot).map_err(CliError::standard_output)?;
+            Ok(MetaOutcome::Continue)
+        }
+        "\\tables" => {
+            print_temporary_tables(output, temporary).map_err(CliError::standard_output)?;
             Ok(MetaOutcome::Continue)
         }
         "\\refresh" => {
@@ -1349,6 +1436,71 @@ fn print_tables(output: &mut impl Write, snapshot: &MetadataSnapshot) -> io::Res
         &rows,
     )?;
     writeln!(output, "({} objects)", rows.len())
+}
+
+/// The names of the temporary tables a statement can read.
+fn temporary_table_names(temporary: &TempTablesManager) -> Vec<String> {
+    temporary
+        .tables()
+        .map(|table| table.name().to_owned())
+        .collect()
+}
+
+/// Prints the temporary tables of this session with their columns.
+fn print_temporary_tables(
+    output: &mut impl Write,
+    temporary: &TempTablesManager,
+) -> io::Result<()> {
+    if temporary.is_empty() {
+        return writeln!(output, "No temporary tables placed.");
+    }
+    let width = temporary
+        .tables()
+        .map(|table| table.name().chars().count())
+        .max()
+        .unwrap_or(0);
+    for table in temporary.tables() {
+        let columns = table
+            .columns()
+            .iter()
+            .map(|column| {
+                format!(
+                    "{} [{}]",
+                    escape_field(&column.label),
+                    column_kind_label(&column.kind)
+                )
+            })
+            .collect::<Vec<_>>()
+            .join(", ");
+        writeln!(
+            output,
+            "{:<width$}  {columns}",
+            escape_field(table.name()),
+            width = width
+        )?;
+    }
+    Ok(())
+}
+
+/// A short display name for a column kind, used by `\tables`.
+fn column_kind_label(kind: &ColumnKind) -> String {
+    match kind {
+        ColumnKind::String { .. } => "String".to_owned(),
+        ColumnKind::Number { .. } => "Number".to_owned(),
+        ColumnKind::Boolean => "Boolean".to_owned(),
+        ColumnKind::DateTime => "DateTime".to_owned(),
+        ColumnKind::Reference { runtime_typed, .. } => {
+            if *runtime_typed {
+                "Reference*".to_owned()
+            } else {
+                "Reference".to_owned()
+            }
+        }
+        ColumnKind::Binary { .. } => "Binary".to_owned(),
+        ColumnKind::Uuid => "UUID".to_owned(),
+        ColumnKind::Null => "Null".to_owned(),
+        _ => "Unknown".to_owned(),
+    }
 }
 
 fn print_indexes(output: &mut impl Write, snapshot: &MetadataSnapshot) -> io::Result<()> {
@@ -1935,17 +2087,20 @@ mod tests {
         FieldId, LiveTable, MetadataKind, ObjectId, SchemaStorage, StandardFieldId, parse_db_names,
         resolve_metadata,
     };
-    use open_sdbl::query::PresentationExpression;
+    use open_sdbl::query::{
+        CompileOptions, PostgresBackend, PresentationExpression, QueryCompiler,
+    };
     use rustyline::highlight::Highlighter;
     use unicode_width::UnicodeWidthStr;
 
     use super::{
-        BoundedLine, CompletionPath, ConsoleHelper, UNRESOLVED_REFERENCE, completion_start,
-        decode_input_line, default_presentation_template, display_width,
-        ensure_session_remains_usable, footer_text, format_duration, presentation_plan,
-        print_table_with_width, push_service_table_candidates, push_unique,
-        push_virtual_table_candidates, read_bounded_line, resolved_presentation,
-        split_deferred_payload, statement_is_complete, timing_line,
+        BoundedLine, CONSOLE_HELP, ColumnKind, CompletionPath, ConsoleHelper, TempTablesManager,
+        UNRESOLVED_REFERENCE, column_kind_label, completion_start, decode_input_line,
+        default_presentation_template, display_width, ensure_session_remains_usable, footer_text,
+        format_duration, presentation_plan, print_table_with_width, print_temporary_tables,
+        push_service_table_candidates, push_unique, push_virtual_table_candidates,
+        read_bounded_line, resolved_presentation, split_deferred_payload, statement_is_complete,
+        timing_line,
     };
     use crate::{MAX_CELL_WIDTH, MAX_PRINTED_ROWS};
 
@@ -2269,6 +2424,104 @@ mod tests {
             &["Справочник.Номенклатура".to_owned()],
         );
         assert!(candidates.is_empty());
+    }
+
+    #[test]
+    fn lists_and_completes_session_temporary_tables() {
+        assert!(CONSOLE_HELP.contains("\\tables"));
+        assert!(CONSOLE_HELP.contains("ПОМЕСТИТЬ"));
+
+        let mut empty = Vec::new();
+        print_temporary_tables(&mut empty, &TempTablesManager::new()).unwrap();
+        assert_eq!(
+            String::from_utf8(empty).unwrap(),
+            "No temporary tables placed.\n"
+        );
+
+        let mut helper = ConsoleHelper::for_test(
+            vec!["\\tables".to_owned()],
+            vec!["Справочник.Договоры".to_owned()],
+            HashSet::new(),
+        );
+        helper.set_temporary_tables(vec!["Обороты".to_owned(), "Остатки".to_owned()]);
+
+        let (_, sources) = helper.complete_values("ИЗ ", "ИЗ ".len());
+        assert_eq!(
+            sources
+                .iter()
+                .map(|candidate| candidate.replacement.as_str())
+                .collect::<Vec<_>>(),
+            ["Обороты", "Остатки", "Справочник.Договоры"]
+        );
+
+        let (_, filtered) = helper.complete_values("ИЗ обо", "ИЗ обо".len());
+        assert_eq!(filtered.len(), 1);
+        assert_eq!(filtered[0].replacement, "Обороты");
+
+        // Temporary tables are sources, not expression candidates.
+        let (_, projection) = helper.complete_values("ВЫБРАТЬ обо", "ВЫБРАТЬ обо".len());
+        assert!(projection.is_empty());
+
+        let (_, commands) = helper.complete_values("\\tab", "\\tab".len());
+        assert_eq!(commands[0].replacement, "\\tables");
+    }
+
+    #[test]
+    fn lists_temporary_tables_placed_in_this_session() {
+        let serialized = b"{1,{b8bac76b-c91b-4d78-8a70-ffa39f8de694,\"Reference\",53}}";
+        let length = u16::try_from(serialized.len()).unwrap();
+        let mut compressed = vec![1];
+        compressed.extend_from_slice(&length.to_le_bytes());
+        compressed.extend_from_slice(&(!length).to_le_bytes());
+        compressed.extend_from_slice(serialized);
+        let snapshot = resolve_metadata(
+            parse_db_names(&compressed).unwrap(),
+            Vec::new(),
+            SchemaStorage {
+                tables: Vec::new(),
+                anomalies: Vec::new(),
+            },
+            Vec::<LiveTable>::new(),
+        )
+        .snapshot;
+
+        let mut temporary = TempTablesManager::new();
+        QueryCompiler::new(&snapshot, PostgresBackend)
+            .compile_batch(
+                "ВЫБРАТЬ 1 КАК Итог, ИСТИНА КАК Флаг ПОМЕСТИТЬ Обороты;",
+                &CompileOptions::new(),
+                &mut temporary,
+            )
+            .unwrap();
+
+        let mut listing = Vec::new();
+        print_temporary_tables(&mut listing, &temporary).unwrap();
+        assert_eq!(
+            String::from_utf8(listing).unwrap(),
+            "Обороты  Итог [Number], Флаг [Boolean]\n"
+        );
+    }
+
+    #[test]
+    fn labels_temporary_table_column_kinds() {
+        assert_eq!(
+            column_kind_label(&ColumnKind::String { length: Some(9) }),
+            "String"
+        );
+        assert_eq!(
+            column_kind_label(&ColumnKind::Reference {
+                targets: Vec::new(),
+                runtime_typed: true,
+            }),
+            "Reference*"
+        );
+        assert_eq!(column_kind_label(&ColumnKind::DateTime), "DateTime");
+        assert_eq!(
+            column_kind_label(&ColumnKind::Unknown {
+                data_type: "bytea".to_owned(),
+            }),
+            "Unknown"
+        );
     }
 
     #[test]

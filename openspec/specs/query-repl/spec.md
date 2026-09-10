@@ -26,9 +26,10 @@ scalar direct-field equality between the joined source and an earlier source
 and MAY combine that anchor with additional supported scalar direct-field
 predicates over the joined source and earlier sources by top-level
 `И`/`AND`. Additional predicates SHALL remain in ON. Final `УПОРЯДОЧИТЬ
-ПО`/`ORDER BY` SHALL support `ВОЗР`/`ASC` and `УБЫВ`/`DESC`. One or more
-trailing semicolons SHALL terminate the query. Unsupported syntax SHALL fail
-before execution.
+ПО`/`ORDER BY` SHALL support `ВОЗР`/`ASC` and `УБЫВ`/`DESC`. Statements
+of a batch SHALL be separated by semicolons and one or more trailing
+semicolons SHALL terminate the batch; a single statement remains a valid
+batch. Unsupported syntax SHALL fail before execution.
 
 #### Scenario: Logical catalog query
 - **WHEN** a query selects `Код` and a custom attribute from
@@ -152,12 +153,13 @@ before execution.
 
 #### Scenario: Repeated query terminator
 - **WHEN** a valid query ends in more than one semicolon
-- **THEN** all trailing semicolons are consumed as terminators
+- **THEN** all trailing semicolons are consumed as terminators and no
+  empty statement is reported
 
 #### Scenario: Bounded syntax failure
-- **WHEN** a query contains a mutation, temporary table, unsupported clause,
-  ambiguous reference target, path deeper than one hop, or branch-local
-  ordering before another union
+- **WHEN** a query contains a mutation, unsupported clause, ambiguous
+  reference target, path deeper than one hop, or branch-local ordering
+  before another union
 - **THEN** compilation returns a positional diagnostic and no SQL is produced
 
 ### Requirement: Resolve queryable objects and fields bilingually
@@ -1567,3 +1569,145 @@ with a positional diagnostic.
 #### Scenario: Negated list
 - **WHEN** a query filters with `Код НЕ В ("1", "2")`
 - **THEN** generated SQL contains `NOT IN ('1', '2')`
+
+### Requirement: Compile temporary-table batches
+The compiler SHALL accept a batch of statements separated by `;`. A
+statement SHALL be a query optionally carrying `ПОМЕСТИТЬ <Имя>` / `INTO`
+or `ДОБАВИТЬ <Имя>` / `ADD` after its first selection list and optionally
+ending with `ИНДЕКСИРОВАТЬ ПО <поля>` / `INDEX BY`, `ИНДЕКСИРОВАТЬ ПО
+НАБОРАМ ((…), …)` / `INDEX BY SETS`, each with an optional `УНИКАЛЬНО` /
+`UNIQUE`, or the statement `УНИЧТОЖИТЬ <Имя>` / `DROP`. Temporary tables
+SHALL be emulated with common table expressions named `vt1`, `vt2`, … in
+definition order: `ПОМЕСТИТЬ` SHALL define a new CTE from the statement
+compiled under the nested-query rules (no `*`, no deferred presentations,
+ordering only with `ПЕРВЫЕ`), `ДОБАВИТЬ` SHALL define a new CTE
+`SELECT … FROM <previous> UNION ALL <statement>` and rebind the name after
+a strict positional structure check (equal column count, compatible kinds,
+identical reference targets and width, `NULL` compatible with anything),
+and `УНИЧТОЖИТЬ` SHALL emit nothing and hide the name so that it MAY be
+defined again. `ИНДЕКСИРОВАТЬ ПО` fields SHALL name output labels of the
+statement and SHALL generate nothing. A bare identifier source `ИЗ <Имя>
+[КАК <Псевдоним>]`, also in joins, nested queries, and `В (ВЫБРАТЬ …)`,
+SHALL read a visible temporary table as a derived source whose fields carry
+the stored columns and kinds, with the table name as the default alias.
+The batch SHALL compile to one statement whose `WITH` list contains
+exactly the CTEs reachable from the final statement in ascending order; a
+final `ПОМЕСТИТЬ` or `ДОБАВИТЬ` SHALL yield one `Количество` row counting
+the rows placed or appended, and a final `УНИЧТОЖИТЬ` SHALL yield no
+statement. Temporary-table definitions SHALL stay in the storage date
+domain so that the final projection corrects MSSQL dates once. A batch of
+more than 64 statements SHALL fail with `WorkBudgetExceeded`, and each
+statement SHALL charge the work budget.
+
+#### Scenario: Define and read a temporary table
+- **WHEN** a batch is `ВЫБРАТЬ Ссылка КАК Товар, СУММА(Количество) КАК Итог ПОМЕСТИТЬ Обороты ИЗ … СГРУППИРОВАТЬ ПО Ссылка; ВЫБРАТЬ Т.Товар, Т.Итог ИЗ Обороты КАК Т ГДЕ Т.Итог > 0`
+- **THEN** both dialects emit `WITH "vt1" AS (…) SELECT … FROM "vt1" AS "Т" WHERE …`
+  with the dialect's identifier quoting and the columns `Товар` (reference)
+  and `Итог` (number)
+
+#### Scenario: Append rows
+- **WHEN** a second statement is `ВЫБРАТЬ Наименование КАК Наименование ДОБАВИТЬ ВТ ИЗ Справочник.Услуги`
+  after `ВТ` was placed from `Справочник.Товары` with one string column
+- **THEN** the batch defines `vt2 AS (SELECT "Наименование" FROM "vt1" UNION ALL SELECT … )`,
+  later reads of `ВТ` use `vt2`, and the `WITH` list carries `vt1` before
+  `vt2`
+
+#### Scenario: Structure mismatch on append
+- **WHEN** `ДОБАВИТЬ` appends two columns to a one-column table or a
+  reference column of another target
+- **THEN** compilation fails with a `TemporaryTable` diagnostic at the
+  `ДОБАВИТЬ` token and no SQL is produced
+
+#### Scenario: Placement count
+- **WHEN** the batch ends with a `ПОМЕСТИТЬ` statement
+- **THEN** the generated statement is `WITH … SELECT COUNT(*) AS "Количество" FROM "vtN"`
+  with one number column labelled `Количество`
+
+#### Scenario: Drop and redefine
+- **WHEN** a batch drops `ВТ` and then places `ВТ` again
+- **THEN** the second definition succeeds as a new CTE, a read between the
+  drop and the redefinition fails with a `TemporaryTable` diagnostic, and a
+  batch ending with the drop yields no statement
+
+#### Scenario: Unreachable definition omitted
+- **WHEN** the final statement reads only `ВТ2` while `ВТ1` was placed
+  earlier and is not referenced by `ВТ2`
+- **THEN** the `WITH` list contains only the CTE of `ВТ2`
+
+#### Scenario: Index clause ignored
+- **WHEN** a definition ends with `ИНДЕКСИРОВАТЬ ПО НАБОРАМ ((Код, Наименование) УНИКАЛЬНО, (Артикул))`
+- **THEN** the batch compiles without any index SQL, and a field absent
+  from the selection list fails with a `TemporaryTable` diagnostic at that
+  field
+
+#### Scenario: Definition restrictions
+- **WHEN** a `ПОМЕСТИТЬ` statement projects `*`, requests a deferred
+  presentation, orders without `ПЕРВЫЕ`, or appears inside a nested query
+- **THEN** compilation fails with a positional diagnostic
+
+### Requirement: Manage temporary tables across compilations
+The `open-sdbl` library SHALL provide `TempTablesManager`, a plain value
+holding compiled temporary-table definitions (name, CTE name, SQL,
+columns, dependencies, visibility) that survives between compilations.
+`QueryCompiler::compile_batch(source, &options, &mut manager)` and
+`Prepared::compile_batch(snapshot, &options, &mut manager)` SHALL read
+visible tables from the manager, SHALL return `Ok(None)` when the batch
+ends with `УНИЧТОЖИТЬ`, and SHALL commit the batch's definitions and drops
+to the manager only when compilation succeeds.
+`QueryCompiler::prepare_with(source, &manager)` SHALL collect presentation
+targets with the manager's tables visible. The manager SHALL expose the
+visible tables with their names and `CompiledColumn`s, `contains`,
+`is_empty`, and `clear`. The first definition SHALL bind the manager to the
+compiling dialect and snapshot; use with another dialect SHALL fail with
+`TemporaryTable` and with another snapshot with `SnapshotMismatch`. A
+manager SHALL hold at most 256 definitions. `compile`, `compile_with`,
+`prepare`, `compile_with_presentations`, and `Prepared::compile` SHALL
+accept batches with a manager private to the call and SHALL fail with a
+`TemporaryTable` diagnostic when the batch returns no rows.
+
+#### Scenario: Definition reused by a later batch
+- **WHEN** an application compiles `ВЫБРАТЬ … ПОМЕСТИТЬ ВТ ИЗ … ГДЕ Дата > &Период`
+  with a bound `Период` and then compiles `ВЫБРАТЬ Т.Дата ИЗ ВТ КАК Т`
+  with the same manager and no parameters
+- **THEN** the second SQL contains the first definition with the inlined
+  date literal and no unused-parameter diagnostic is raised
+
+#### Scenario: Failed batch leaves the manager unchanged
+- **WHEN** a batch places `ВТ1` and then fails on its second statement
+- **THEN** the manager still lists the tables it had before the call
+
+#### Scenario: Manager listing
+- **WHEN** an application iterates `manager.tables()` after placing and
+  appending to `ВТ`
+- **THEN** it sees one entry `ВТ` with the columns and kinds of the first
+  definition
+
+#### Scenario: Batch without rows through compile
+- **WHEN** an application calls `compile` on `УНИЧТОЖИТЬ ВТ`
+- **THEN** compilation fails with a `TemporaryTable` diagnostic
+
+### Requirement: Manage console temporary tables
+The console SHALL keep one `TempTablesManager` for the session, SHALL run
+every statement through `prepare_with` and `Prepared::compile_batch`, SHALL
+execute and display the statement when one is produced (so a `ПОМЕСТИТЬ`
+statement shows its `Количество` row), SHALL print the names dropped from
+the manager when none is produced, SHALL provide `\tables` listing every
+visible temporary table with its name and columns as label and kind, SHALL
+clear the manager with a notice on `\refresh`, and SHALL offer visible
+table names in source completion.
+
+#### Scenario: Batch entered statement by statement
+- **WHEN** the user enters a `ПОМЕСТИТЬ` statement terminated by `;` and
+  then a query reading that table terminated by `;`
+- **THEN** the first shows a `Количество` row, the second executes the
+  `WITH` statement, and `\tables` lists the table in between
+
+#### Scenario: Drop notice
+- **WHEN** the user enters `УНИЧТОЖИТЬ ВТ;`
+- **THEN** the console prints that `ВТ` was dropped, executes no SQL, and
+  `\tables` no longer lists it
+
+#### Scenario: Refresh clears definitions
+- **WHEN** the user enters `\refresh` after placing a table
+- **THEN** the console reloads metadata, prints that temporary tables were
+  cleared, and `\tables` reports none

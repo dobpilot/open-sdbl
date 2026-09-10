@@ -1,10 +1,11 @@
 //! Bounded recursive-descent parser.
 
 use crate::query::core::ast::{
-    AccumulationAst, AccumulationKind, AggregateArgument, AggregateKind, CaseBranch, CastTarget,
-    Expression, FieldReference, GroupKey, JoinAst, JoinKind, OrderTerm, PeriodKind,
-    PresentationArgument, PresentationOperation, Projection, ProjectionItem, QueryAst, SelectAst,
-    SliceAst, SliceKind, SourceAst, UnionLink, parse_datetime_value,
+    AccumulationAst, AccumulationKind, AggregateArgument, AggregateKind, BatchAst, CaseBranch,
+    CastTarget, Expression, FieldReference, GroupKey, IndexAst, IntoAst, JoinAst, JoinKind,
+    OrderTerm, PeriodKind, PresentationArgument, PresentationOperation, Projection, ProjectionItem,
+    QueryAst, SelectAst, SliceAst, SliceKind, SourceAst, StatementAst, UnionLink,
+    parse_datetime_value,
 };
 use crate::query::core::diag::SourcePosition;
 use crate::query::core::names::names_equal;
@@ -46,6 +47,11 @@ fn is_contextual_identifier(kind: TokenKind) -> bool {
                     | Keyword::Uuid
                     | Keyword::Cast
                     | Keyword::IsNullFunction
+                    | Keyword::Add
+                    | Keyword::Drop
+                    | Keyword::Index
+                    | Keyword::Sets
+                    | Keyword::Unique
             )
         )
 }
@@ -60,6 +66,8 @@ impl<'tokens, 'source> Parser<'tokens, 'source> {
     /// Nested statements compile recursively, so their depth is bounded
     /// separately from expression nesting.
     const MAX_NESTED_QUERIES: usize = 16;
+    /// Statements of one batch; every statement compiles independently.
+    const MAX_STATEMENTS: usize = 64;
 
     pub(super) fn new(tokens: &'tokens [Token<'source>], source: &str) -> Self {
         let mut line = 1;
@@ -86,17 +94,41 @@ impl<'tokens, 'source> Parser<'tokens, 'source> {
         }
     }
 
-    pub(super) fn parse(mut self) -> Result<QueryAst<'tokens, 'source>, QueryDiagnostic> {
-        let query = self.parse_query_body()?;
-        while self.consume_lexeme(";") {}
-        if let Some(token) = self.peek() {
-            return Err(QueryDiagnostic::at(
-                QueryDiagnosticKind::UnsupportedFeature,
-                Some(token),
-                format!("unsupported query syntax starting at {:?}", token.lexeme),
-            ));
+    pub(super) fn parse(mut self) -> Result<BatchAst<'tokens, 'source>, QueryDiagnostic> {
+        let mut statements = Vec::new();
+        loop {
+            while self.consume_lexeme(";") {}
+            if self.peek().is_none() && !statements.is_empty() {
+                break;
+            }
+            if statements.len() == Self::MAX_STATEMENTS {
+                return Err(self.diagnostic(
+                    QueryDiagnosticKind::WorkBudgetExceeded,
+                    self.peek(),
+                    format!("batch exceeds {} statements", Self::MAX_STATEMENTS),
+                ));
+            }
+            statements.push(self.parse_statement()?);
+            if let Some(token) = self.peek()
+                && token.lexeme != ";"
+            {
+                return Err(QueryDiagnostic::at(
+                    QueryDiagnosticKind::UnsupportedFeature,
+                    Some(token),
+                    format!("unsupported query syntax starting at {:?}", token.lexeme),
+                ));
+            }
         }
-        Ok(query)
+        Ok(BatchAst { statements })
+    }
+
+    /// Parses one statement of a batch without its terminator.
+    fn parse_statement(&mut self) -> Result<StatementAst<'tokens, 'source>, QueryDiagnostic> {
+        if self.consume_keyword(Keyword::Drop) {
+            let name = self.expect_identifier("expected temporary table name after DROP")?;
+            return Ok(StatementAst::Drop { name });
+        }
+        Ok(StatementAst::Query(self.parse_query_body()?))
     }
 
     /// Parses `SELECT … [UNION …] [ORDER BY …]` without the terminator; used
@@ -111,12 +143,79 @@ impl<'tokens, 'source> Parser<'tokens, 'source> {
             });
             branches.push(self.parse_select()?);
         }
+        let into = branches[0].into.take();
+        if let Some(branch) = branches[1..]
+            .iter()
+            .find(|branch| branch.into.is_some())
+            .and_then(|branch| branch.into.as_ref())
+        {
+            return Err(QueryDiagnostic::at(
+                QueryDiagnosticKind::Syntax,
+                Some(branch.token),
+                "INTO is allowed only in the first branch of a statement",
+            ));
+        }
+        // The Syntax Assistant lists clauses out of textual order, so the
+        // index clause is accepted on either side of the final ordering.
+        let mut index = self.parse_index()?;
         let order = self.parse_order()?;
+        if index.is_none() {
+            index = self.parse_index()?;
+        }
         Ok(QueryAst {
             branches,
             unions,
             order,
+            into,
+            index,
         })
+    }
+
+    /// Parses `ИНДЕКСИРОВАТЬ ПО <поля>` and
+    /// `ИНДЕКСИРОВАТЬ ПО НАБОРАМ ((<поля>) [УНИКАЛЬНО], …)`. `УНИКАЛЬНО` is
+    /// accepted and dropped: common table expressions carry no indexes.
+    fn parse_index(&mut self) -> Result<Option<IndexAst<'tokens, 'source>>, QueryDiagnostic> {
+        let Some(token) = self.consume_keyword_token(Keyword::Index) else {
+            return Ok(None);
+        };
+        self.expect_keyword(Keyword::By)?;
+        let mut sets = Vec::new();
+        if self.consume_keyword(Keyword::Sets) {
+            self.expect_lexeme("(")?;
+            loop {
+                self.expect_lexeme("(")?;
+                sets.push(self.parse_index_fields()?);
+                self.expect_lexeme(")")?;
+                self.consume_keyword(Keyword::Unique);
+                if !self.consume_lexeme(",") {
+                    break;
+                }
+            }
+            self.expect_lexeme(")")?;
+        } else {
+            sets.push(self.parse_index_fields()?);
+            self.consume_keyword(Keyword::Unique);
+        }
+        Ok(Some(IndexAst { token, sets }))
+    }
+
+    fn parse_index_fields(&mut self) -> Result<Vec<&'tokens Token<'source>>, QueryDiagnostic> {
+        let mut fields = Vec::new();
+        loop {
+            let field = self.expect_identifier("expected index field name")?;
+            if self.next_lexeme_is(".") {
+                return Err(QueryDiagnostic::at(
+                    QueryDiagnosticKind::Syntax,
+                    Some(field),
+                    "index fields name selection-list labels, not paths",
+                ));
+            }
+            fields.push(field);
+            if !self.consume_lexeme(",") {
+                break;
+            }
+        }
+        Ok(fields)
     }
 
     /// Parses a parenthesized nested query after its opening parenthesis was
@@ -141,12 +240,37 @@ impl<'tokens, 'source> Parser<'tokens, 'source> {
         let result = (|| {
             self.expect_lexeme("(")?;
             let query = self.parse_query_body()?;
+            if let Some(into) = &query.into {
+                return Err(QueryDiagnostic::at(
+                    QueryDiagnosticKind::Syntax,
+                    Some(into.token),
+                    "INTO is not allowed inside a nested query",
+                ));
+            }
+            if let Some(index) = &query.index {
+                return Err(QueryDiagnostic::at(
+                    QueryDiagnosticKind::Syntax,
+                    Some(index.token),
+                    "INDEX BY is not allowed inside a nested query",
+                ));
+            }
             self.expect_lexeme(")")?;
             Ok(query)
         })();
         self.depth -= 1;
         self.nesting -= 1;
         result
+    }
+
+    /// A bare identifier without a following `.` names a temporary table;
+    /// metadata sources are always written as `Вид.Имя`.
+    fn next_is_temporary_source(&self) -> bool {
+        self.peek()
+            .is_some_and(|token| is_contextual_identifier(token.kind))
+            && self
+                .tokens
+                .get(self.offset + 1)
+                .is_none_or(|token| token.lexeme != ".")
     }
 
     fn next_is_nested_query(&self) -> bool {
@@ -205,6 +329,21 @@ impl<'tokens, 'source> Parser<'tokens, 'source> {
                 break;
             }
         }
+        let into = if let Some(token) = self.consume_keyword_token(Keyword::Into) {
+            Some(IntoAst {
+                token,
+                name: self.expect_identifier("expected temporary table name after INTO")?,
+                append: false,
+            })
+        } else if let Some(token) = self.consume_keyword_token(Keyword::Add) {
+            Some(IntoAst {
+                token,
+                name: self.expect_identifier("expected temporary table name after ADD")?,
+                append: true,
+            })
+        } else {
+            None
+        };
         let source = if self.consume_keyword(Keyword::From) {
             Some(self.parse_source()?)
         } else {
@@ -245,6 +384,7 @@ impl<'tokens, 'source> Parser<'tokens, 'source> {
 
         Ok(SelectAst {
             distinct,
+            into,
             top,
             projection,
             source,
@@ -385,6 +525,30 @@ impl<'tokens, 'source> Parser<'tokens, 'source> {
                 accumulation: None,
                 alias: Some(alias),
                 nested: Some(Box::new(nested)),
+                temporary: false,
+            });
+        }
+        if self.next_is_temporary_source() {
+            let name = self.next().expect("checked identifier");
+            let alias = if self.consume_keyword(Keyword::As) {
+                Some(self.expect_identifier("expected source alias after AS")?)
+            } else if self
+                .peek()
+                .is_some_and(|token| token.kind == TokenKind::Identifier)
+            {
+                self.next()
+            } else {
+                None
+            };
+            return Ok(SourceAst {
+                kind: name,
+                object: name,
+                table_part: None,
+                slice: None,
+                accumulation: None,
+                alias,
+                nested: None,
+                temporary: true,
             });
         }
         let kind = self.expect_identifier("expected metadata kind after FROM")?;
@@ -448,6 +612,7 @@ impl<'tokens, 'source> Parser<'tokens, 'source> {
             object,
             table_part,
             nested: None,
+            temporary: false,
             slice,
             accumulation,
             alias,
@@ -560,18 +725,7 @@ impl<'tokens, 'source> Parser<'tokens, 'source> {
             return Ok(like);
         }
         if let Some(is) = self.consume_keyword_token(Keyword::Is) {
-            let negated = self.consume_keyword(Keyword::Not);
-            if !self.consume_keyword(Keyword::Null) {
-                return Err(self.diagnostic(
-                    QueryDiagnosticKind::Syntax,
-                    self.peek().or(Some(is)),
-                    "IS only supports NULL in this query subset",
-                ));
-            }
-            return Ok(Expression::IsNull {
-                value: Box::new(expression),
-                negated,
-            });
+            return self.parse_is_null_tail(expression, is);
         }
         let negated_in = self
             .peek()
@@ -584,45 +738,7 @@ impl<'tokens, 'source> Parser<'tokens, 'source> {
             self.offset += 1;
         }
         if let Some(operator) = self.consume_keyword_token(Keyword::In) {
-            if self.next_is_nested_query() {
-                let opening = self.peek().expect("checked opening parenthesis");
-                self.record_binary_operator(operator)?;
-                let query = self.parse_nested_query(opening)?;
-                return Ok(Expression::InQuery {
-                    token: operator,
-                    value: Box::new(expression),
-                    query: Box::new(query),
-                    negated: negated_in,
-                });
-            }
-            self.expect_lexeme("(")?;
-            if self.consume_lexeme(")") {
-                return Err(QueryDiagnostic::at_kind(
-                    QueryDiagnosticKind::Syntax,
-                    Some(operator),
-                    "IN list must contain at least one expression",
-                ));
-            }
-            let mut items = Vec::new();
-            loop {
-                items.push(self.parse_additive()?);
-                if !self.consume_lexeme(",") {
-                    break;
-                }
-                if self.peek().is_some_and(|token| token.lexeme == ")") {
-                    return Err(self.diagnostic(
-                        QueryDiagnosticKind::Syntax,
-                        self.peek(),
-                        "expected expression after ',' in IN list",
-                    ));
-                }
-            }
-            self.expect_lexeme(")")?;
-            return Ok(Expression::InList {
-                value: Box::new(expression),
-                items,
-                negated: negated_in,
-            });
+            return self.parse_in_tail(expression, operator, negated_in);
         }
         if self
             .peek()
@@ -637,6 +753,78 @@ impl<'tokens, 'source> Parser<'tokens, 'source> {
             };
         }
         Ok(expression)
+    }
+
+    /// The `ЕСТЬ [НЕ] NULL` tail. Kept out of `parse_comparison` so that its
+    /// locals stay off the frame of the deep expression recursion.
+    #[inline(never)]
+    fn parse_is_null_tail(
+        &mut self,
+        expression: Expression<'tokens, 'source>,
+        is: &'tokens Token<'source>,
+    ) -> Result<Expression<'tokens, 'source>, QueryDiagnostic> {
+        let negated = self.consume_keyword(Keyword::Not);
+        if !self.consume_keyword(Keyword::Null) {
+            return Err(self.diagnostic(
+                QueryDiagnosticKind::Syntax,
+                self.peek().or(Some(is)),
+                "IS only supports NULL in this query subset",
+            ));
+        }
+        Ok(Expression::IsNull {
+            value: Box::new(expression),
+            negated,
+        })
+    }
+
+    /// The `[НЕ] В (…)` tail, either a value list or a nested query. Kept out
+    /// of `parse_comparison` for the same reason.
+    #[inline(never)]
+    fn parse_in_tail(
+        &mut self,
+        expression: Expression<'tokens, 'source>,
+        operator: &'tokens Token<'source>,
+        negated: bool,
+    ) -> Result<Expression<'tokens, 'source>, QueryDiagnostic> {
+        if self.next_is_nested_query() {
+            let opening = self.peek().expect("checked opening parenthesis");
+            self.record_binary_operator(operator)?;
+            let query = self.parse_nested_query(opening)?;
+            return Ok(Expression::InQuery {
+                token: operator,
+                value: Box::new(expression),
+                query: Box::new(query),
+                negated,
+            });
+        }
+        self.expect_lexeme("(")?;
+        if self.consume_lexeme(")") {
+            return Err(QueryDiagnostic::at_kind(
+                QueryDiagnosticKind::Syntax,
+                Some(operator),
+                "IN list must contain at least one expression",
+            ));
+        }
+        let mut items = Vec::new();
+        loop {
+            items.push(self.parse_additive()?);
+            if !self.consume_lexeme(",") {
+                break;
+            }
+            if self.peek().is_some_and(|token| token.lexeme == ")") {
+                return Err(self.diagnostic(
+                    QueryDiagnosticKind::Syntax,
+                    self.peek(),
+                    "expected expression after ',' in IN list",
+                ));
+            }
+        }
+        self.expect_lexeme(")")?;
+        Ok(Expression::InList {
+            value: Box::new(expression),
+            items,
+            negated,
+        })
     }
 
     fn parse_additive(&mut self) -> Result<Expression<'tokens, 'source>, QueryDiagnostic> {
@@ -990,23 +1178,31 @@ impl<'tokens, 'source> Parser<'tokens, 'source> {
             self.expect_lexeme("(")?;
             let value = self.parse_or()?;
             self.expect_lexeme(",")?;
-            let period = self.expect_identifier("expected period kind after ','")?;
-            let period = PeriodKind::from_name(period.lexeme).ok_or_else(|| {
-                QueryDiagnostic::at(
-                    QueryDiagnosticKind::UnsupportedFeature,
-                    Some(period),
-                    format!("unsupported BEGINOFPERIOD period {:?}", period.lexeme),
-                )
-            })?;
-            self.expect_lexeme(")")?;
             Ok(Expression::BeginOfPeriod {
                 token,
                 value: Box::new(value),
-                period,
+                period: self.expect_period_kind()?,
             })
         })();
         self.depth -= 1;
         result
+    }
+
+    /// The period-kind argument and closing parenthesis of
+    /// `НАЧАЛОПЕРИОДА`. Extracted so that its diagnostics do not enlarge the
+    /// frame of the deep expression recursion.
+    #[inline(never)]
+    fn expect_period_kind(&mut self) -> Result<PeriodKind, QueryDiagnostic> {
+        let token = self.expect_identifier("expected period kind after ','")?;
+        let period = PeriodKind::from_name(token.lexeme).ok_or_else(|| {
+            QueryDiagnostic::at(
+                QueryDiagnosticKind::UnsupportedFeature,
+                Some(token),
+                format!("unsupported BEGINOFPERIOD period {:?}", token.lexeme),
+            )
+        })?;
+        self.expect_lexeme(")")?;
+        Ok(period)
     }
 
     fn parse_metadata_value(
