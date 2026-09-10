@@ -4,6 +4,7 @@ mod context;
 mod entry;
 mod expression;
 mod orchestrate;
+mod params;
 mod select;
 mod sources;
 mod virtual_tables;

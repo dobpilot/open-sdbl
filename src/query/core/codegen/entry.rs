@@ -7,6 +7,7 @@ use super::virtual_tables::compile_presentation_plan;
 use crate::metadata::MetadataSnapshot;
 use crate::query::core::dialect::SqlDialect;
 use crate::query::core::names::names_equal;
+use crate::query::core::params::{Parameters, QueryParameter, parameter_name};
 use crate::query::core::parser::Parser;
 use crate::query::core::resolve::{
     ColumnKind, CompilationCatalog, CompiledColumn, CompiledQuery, PresentationPlan,
@@ -42,7 +43,7 @@ pub(crate) fn compile_presentation_lookup(
     references: &[[u8; 16]],
     dialect: SqlDialect,
 ) -> Result<CompiledQuery, QueryDiagnostic> {
-    let catalog = CompilationCatalog::new(snapshot);
+    let catalog = CompilationCatalog::new(snapshot, Parameters::unbound());
     let references = references.iter().copied().collect::<BTreeSet<_>>();
     if references.is_empty() {
         return Err(QueryDiagnostic::unpositioned(
@@ -123,13 +124,72 @@ pub(crate) fn compile_query(
     source: &str,
     snapshot: &MetadataSnapshot,
     plans: &[PresentationPlan],
+    parameters: &[QueryParameter],
     dialect: SqlDialect,
 ) -> Result<CompiledQuery, QueryDiagnostic> {
     let tokens = tokenize(source)?
         .into_iter()
         .filter(|token| token.kind != TokenKind::Comment)
         .collect::<Vec<_>>();
+    check_parameter_binding(&tokens, parameters)?;
     let ast = Parser::new(&tokens, source).parse()?;
-    let mut presentations = PresentationCompilation::strict(plans, dialect);
+    let mut presentations =
+        PresentationCompilation::strict(plans, Parameters::bound(parameters), dialect);
     compile(ast, snapshot, &mut presentations)
+}
+
+/// Every `&Имя` token needs exactly one value and every value must be
+/// referenced; names compare case-insensitively.
+fn check_parameter_binding(
+    tokens: &[crate::Token<'_>],
+    parameters: &[QueryParameter],
+) -> Result<(), QueryDiagnostic> {
+    for (index, parameter) in parameters.iter().enumerate() {
+        if parameters[..index]
+            .iter()
+            .any(|previous| names_equal(previous.name(), parameter.name()))
+        {
+            return Err(QueryDiagnostic::unpositioned(
+                QueryDiagnosticKind::Parameter,
+                format!(
+                    "parameter {:?} is supplied more than once",
+                    parameter.name()
+                ),
+            ));
+        }
+    }
+    let mut referenced = vec![false; parameters.len()];
+    for token in tokens
+        .iter()
+        .filter(|token| token.kind == TokenKind::Parameter)
+    {
+        let name = parameter_name(token);
+        match parameters
+            .iter()
+            .position(|parameter| names_equal(parameter.name(), name))
+        {
+            Some(index) => referenced[index] = true,
+            None => {
+                return Err(QueryDiagnostic::at(
+                    QueryDiagnosticKind::Parameter,
+                    Some(token),
+                    format!("parameter {:?} has no value", token.lexeme),
+                ));
+            }
+        }
+    }
+    if let Some(unused) = referenced
+        .iter()
+        .position(|used| !used)
+        .map(|index| &parameters[index])
+    {
+        return Err(QueryDiagnostic::unpositioned(
+            QueryDiagnosticKind::Parameter,
+            format!(
+                "parameter {:?} is supplied but never referenced",
+                unused.name()
+            ),
+        ));
+    }
+    Ok(())
 }

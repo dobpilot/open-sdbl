@@ -2,6 +2,7 @@ use std::collections::BTreeSet;
 
 use super::context::{CompilationContext, SourceScope};
 use super::expression::{compile_expression, single_column, single_column_at};
+use super::params::render_scalar_parameter;
 use super::sources::CompiledSourceRelation;
 use crate::Token;
 use crate::metadata::{
@@ -11,6 +12,7 @@ use crate::metadata::{
 use crate::query::core::ast::{AccumulationAst, AccumulationKind, Expression, SourceAst};
 use crate::query::core::dialect::SqlDialect;
 use crate::query::core::names::names_equal;
+use crate::query::core::params::{ParameterValue, Parameters};
 use crate::query::core::resolve::{
     CompilationCatalog, PresentationExpression, PresentationPlan, QueryableColumn, QueryableField,
     logical_column_name,
@@ -176,12 +178,24 @@ pub(super) fn compile_accumulation_relation(
 
     let begin = begin
         .map(|expression| {
-            compile_virtual_period_literal(expression, virtual_table, "begin period", dialect)
+            compile_virtual_period_literal(
+                expression,
+                virtual_table,
+                "begin period",
+                catalog,
+                dialect,
+            )
         })
         .transpose()?;
     let end = end
         .map(|expression| {
-            compile_virtual_period_literal(expression, virtual_table, "period boundary", dialect)
+            compile_virtual_period_literal(
+                expression,
+                virtual_table,
+                "period boundary",
+                catalog,
+                dialect,
+            )
         })
         .transpose()?;
     let mut predicates = vec![format!(
@@ -292,7 +306,13 @@ fn compile_accumulation_balance_relation(
     let condition = virtual_table.arguments.get(1).and_then(Option::as_ref);
     let boundary = boundary
         .map(|expression| {
-            compile_virtual_period_literal(expression, virtual_table, "period boundary", dialect)
+            compile_virtual_period_literal(
+                expression,
+                virtual_table,
+                "period boundary",
+                catalog,
+                dialect,
+            )
         })
         .transpose()?;
     let totals_condition = compile_accumulation_condition(
@@ -745,10 +765,30 @@ fn accumulation_metadata_field(
         })
 }
 
+/// A date parameter as a virtual-table period bound, in the storage domain.
+pub(super) fn compile_date_parameter(
+    token: &Token<'_>,
+    parameters: Parameters<'_>,
+    dialect: SqlDialect,
+) -> Result<String, QueryDiagnostic> {
+    match parameters.lookup(token)? {
+        None => Ok("NULL".to_owned()),
+        Some(value @ ParameterValue::Date(_)) => {
+            render_scalar_parameter(value, token, dialect, true)
+        }
+        Some(_) => Err(QueryDiagnostic::at(
+            QueryDiagnosticKind::Parameter,
+            Some(token),
+            format!("parameter {:?} must be a date", token.lexeme),
+        )),
+    }
+}
+
 fn compile_virtual_period_literal(
     expression: &Expression<'_, '_>,
     virtual_table: &AccumulationAst<'_, '_>,
     argument: &str,
+    catalog: &CompilationCatalog<'_>,
     dialect: SqlDialect,
 ) -> Result<String, QueryDiagnostic> {
     match expression {
@@ -756,6 +796,7 @@ fn compile_virtual_period_literal(
         Expression::DateTime { .. } | Expression::BeginOfPeriod { .. } => {
             compile_constant_date_expression(expression, dialect)
         }
+        Expression::Parameter(token) => compile_date_parameter(token, catalog.parameters, dialect),
         _ => Err(QueryDiagnostic::at(
             QueryDiagnosticKind::Metadata,
             Some(virtual_table.token),

@@ -628,11 +628,7 @@ impl<'tokens, 'source> Parser<'tokens, 'source> {
             return Err(self.diagnostic(QueryDiagnosticKind::Syntax, None, "expected expression"));
         };
         if token.kind == TokenKind::Parameter {
-            return Err(QueryDiagnostic::at_kind(
-                QueryDiagnosticKind::UnsupportedFeature,
-                Some(token),
-                "query parameters are not supported by this REPL",
-            ));
+            return Ok(Expression::Parameter(self.next().expect("peeked token")));
         }
         if matches!(
             token.kind,

@@ -138,9 +138,9 @@ execution.
 - **THEN** all trailing semicolons are consumed as terminators
 
 #### Scenario: Bounded syntax failure
-- **WHEN** a query contains a mutation, temporary table, parameter,
-  unsupported clause, ambiguous reference target, path deeper than one hop,
-  or branch-local ordering before another union
+- **WHEN** a query contains a mutation, temporary table, unsupported clause,
+  ambiguous reference target, path deeper than one hop, or branch-local
+  ordering before another union
 - **THEN** compilation returns a positional diagnostic and no SQL is produced
 
 ### Requirement: Resolve queryable objects and fields bilingually
@@ -1356,3 +1356,94 @@ Aggregates nested in aggregates SHALL fail with a positional diagnostic.
 - **WHEN** a query projects `КОЛИЧЕСТВО(РАЗЛИЧНЫЕ НАЧАЛОПЕРИОДА(Дата, МЕСЯЦ))`
 - **THEN** generated SQL contains `COUNT(DISTINCT …)` over the period
   expression
+
+### Requirement: Compile named query parameters
+The compiler SHALL accept `&Имя` wherever a scalar expression is allowed and
+SHALL inline the supplied `ParameterValue` as a typed literal of the target
+dialect: `NULL`, booleans, decimal numbers from an unscaled integer and
+scale, strings, dates shifted by the MSSQL year offset, 16-byte references
+guarded by `RTRef` when compared with runtime-typed fields, raw binary, and
+lists inside `В`/`IN` (an empty list SHALL compile to an always-false
+predicate; `NULL` elements SHALL be rendered as `NULL`). Scalar parameters
+SHALL be rendered for the other operand's column type without a kind check,
+as written literals are. Parameter names SHALL be matched case-insensitively. Date
+parameters SHALL be accepted as virtual-table periods and any parameter
+SHALL be accepted inside virtual-table conditions. The column kind of a
+parameter SHALL follow its value.
+
+#### Scenario: Date and reference parameters
+- **WHEN** `ГДЕ Дата >= &Начало И Склад = &Склад` is compiled with a date and
+  a catalog reference value for MSSQL with a non-zero year offset
+- **THEN** generated SQL contains the shifted date literal and the 16-byte
+  binary literal compared with the warehouse `RRRef`
+
+#### Scenario: List parameter
+- **WHEN** `Склад В (&Склады)` is compiled with a list of two references
+- **THEN** generated SQL contains `IN (0x…, 0x…)` in list order
+
+#### Scenario: Virtual-table period parameter
+- **WHEN** `РегистрСведений.Курсы.СрезПоследних(&Период, Валюта = &Валюта)` is
+  compiled with a date and a reference value
+- **THEN** the slice uses the date literal as its period bound and the
+  reference literal in its condition
+
+### Requirement: Compile empty references
+The compiler SHALL accept `ЗНАЧЕНИЕ(<Вид>.<Объект>.ПустаяСсылка)` /
+`VALUE(<Kind>.<Object>.EmptyRef)` for every metadata kind that has a
+reference table and SHALL render it as a 16-byte zero binary literal whose
+kind is a fixed reference to that object.
+
+#### Scenario: Empty document reference
+- **WHEN** a query filters with `Заказ = ЗНАЧЕНИЕ(Документ.Заказ.ПустаяСсылка)`
+- **THEN** generated SQL compares the order `RRRef` with sixteen zero bytes
+  and the expression kind is a reference to the order document
+
+### Requirement: Compare references with output-format binary values
+The compiler SHALL accept a binary literal or a `Binary` parameter as the
+other operand of `=`, `<>`, or `В`/`IN` against a reference field when its
+length matches the field's output format: 16 bytes for a single-member
+reference and 20 bytes (`RTRef ‖ RRRef`) for a runtime-typed field, in which
+case the comparison SHALL be split into member comparisons. Any other length
+SHALL fail with a positional diagnostic naming the expected form.
+
+#### Scenario: Pasting a printed recorder
+- **WHEN** a query filters with `Регистратор = 0x<40 hex digits>` copied from
+  the console output of a runtime-typed field
+- **THEN** generated SQL compares `_RTRef` with the first four bytes and
+  `_RRRef` with the remaining sixteen
+
+#### Scenario: Wrong width
+- **WHEN** a 16-byte literal is compared with a runtime-typed field
+- **THEN** compilation fails with a positional diagnostic that names the
+  20-byte form
+
+### Requirement: Manage console query parameters
+The console SHALL provide `\set <Имя> <литерал>` to store a session
+parameter from an SDBL literal (number, string, `ИСТИНА`/`ЛОЖЬ`, `NULL`,
+`ДАТАВРЕМЯ(…)`, `0x…`, `ЗНАЧЕНИЕ` of an enumeration value or an empty
+reference, or a parenthesized list of those), `\params` to list stored
+parameters with their original literal text and value kind, and
+`\unset <Имя>` to remove one; `\set` without arguments SHALL print the
+command syntax. When executing a query the
+console SHALL pass only the parameters the query references and SHALL
+surface the compiler's parameter diagnostics unchanged.
+
+#### Scenario: Stored parameter used by a query
+- **WHEN** the user enters `\set Период ДАТАВРЕМЯ(2024, 1, 1)` and then a
+  query referencing `&Период`
+- **THEN** the query compiles with the stored date and the generated SQL
+  contains the date literal
+
+#### Scenario: Listing parameters
+- **WHEN** the user enters `\params` after setting a date and a list
+- **THEN** the console prints one line per parameter with its name, the
+  literal as entered, and its kind
+
+#### Scenario: Stale parameter
+- **WHEN** a stored parameter is not referenced by the next query
+- **THEN** the query compiles without an unused-parameter diagnostic
+
+#### Scenario: Missing parameter
+- **WHEN** a query references a parameter that was never set
+- **THEN** the console prints the compiler's positional parameter diagnostic
+  and remains available

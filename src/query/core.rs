@@ -5,10 +5,14 @@ mod codegen;
 mod diag;
 mod dialect;
 mod names;
+mod params;
 mod parser;
 mod resolve;
 
 pub use diag::{QueryDiagnostic, QueryDiagnosticKind};
+pub use params::{
+    CompileOptions, InvalidParameterDate, ParameterDate, ParameterValue, QueryParameter,
+};
 pub use resolve::{
     ColumnKind, CompiledColumn, CompiledQuery, PresentationExpression, PresentationPlan,
     PresentationRequest, PresentationTarget, QueryableColumn, QueryableField,

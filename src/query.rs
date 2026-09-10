@@ -21,8 +21,9 @@ mod postgres;
 use crate::metadata::{MetadataSnapshot, SnapshotFingerprint};
 
 pub use core::{
-    ColumnKind, CompiledColumn, CompiledQuery, PresentationExpression, PresentationPlan,
-    PresentationRequest, PresentationTarget, QueryDiagnostic, QueryDiagnosticKind, QueryableColumn,
+    ColumnKind, CompileOptions, CompiledColumn, CompiledQuery, InvalidParameterDate, ParameterDate,
+    ParameterValue, PresentationExpression, PresentationPlan, PresentationRequest,
+    PresentationTarget, QueryDiagnostic, QueryDiagnosticKind, QueryParameter, QueryableColumn,
     QueryableField, QueryableFieldCatalog, find_metadata_object, queryable_field_catalog,
     queryable_fields,
 };
@@ -67,7 +68,30 @@ impl<B: Backend> QueryCompiler<'_, B> {
     /// Returns a positional diagnostic when parsing, metadata resolution, or
     /// SQL generation fails.
     pub fn compile(&self, source: &str) -> Result<CompiledQuery, QueryDiagnostic> {
-        core::compile_query(source, self.snapshot, &[], self.backend.dialect())
+        self.compile_with(source, &CompileOptions::new())
+    }
+
+    /// Compiles a query with presentation plans and named parameter values.
+    ///
+    /// Parameters are inlined as typed literals; every `&Имя` in the source
+    /// must have a value and every supplied value must be referenced.
+    ///
+    /// # Errors
+    ///
+    /// Returns a positional diagnostic when parsing, metadata resolution,
+    /// parameter binding, or SQL generation fails.
+    pub fn compile_with(
+        &self,
+        source: &str,
+        options: &CompileOptions<'_>,
+    ) -> Result<CompiledQuery, QueryDiagnostic> {
+        core::compile_query(
+            source,
+            self.snapshot,
+            options.presentation_plans(),
+            options.parameter_values(),
+            self.backend.dialect(),
+        )
     }
 
     /// Resolves a query and collects its presentation target request.
@@ -99,7 +123,7 @@ impl<B: Backend> QueryCompiler<'_, B> {
         source: &str,
         plans: &[PresentationPlan],
     ) -> Result<CompiledQuery, QueryDiagnostic> {
-        core::compile_query(source, self.snapshot, plans, self.backend.dialect())
+        self.compile_with(source, &CompileOptions::new().presentations(plans))
     }
 
     /// Compiles a safe batch lookup for deferred reference presentations.
@@ -147,10 +171,30 @@ impl<B: Backend> Prepared<B> {
         snapshot: &MetadataSnapshot,
         plans: &[PresentationPlan],
     ) -> Result<CompiledQuery, QueryDiagnostic> {
+        self.compile_with(snapshot, &CompileOptions::new().presentations(plans))
+    }
+
+    /// Recompiles the source with presentation plans and parameter values.
+    ///
+    /// # Errors
+    ///
+    /// Returns a diagnostic for an invalid query, plan, parameter binding,
+    /// or a snapshot other than the one the query was prepared against.
+    pub fn compile_with(
+        &self,
+        snapshot: &MetadataSnapshot,
+        options: &CompileOptions<'_>,
+    ) -> Result<CompiledQuery, QueryDiagnostic> {
         if snapshot.fingerprint() != self.snapshot_fingerprint {
             return Err(QueryDiagnostic::snapshot_mismatch());
         }
-        core::compile_query(&self.source, snapshot, plans, self.backend.dialect())
+        core::compile_query(
+            &self.source,
+            snapshot,
+            options.presentation_plans(),
+            options.parameter_values(),
+            self.backend.dialect(),
+        )
     }
 }
 

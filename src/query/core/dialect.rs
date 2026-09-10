@@ -86,6 +86,37 @@ pub(super) fn truncate_label(value: &str, limit: LabelLimit) -> String {
     }
 }
 
+fn binary_literal_digits<'source>(token: &Token<'source>) -> Result<&'source str, QueryDiagnostic> {
+    token
+        .lexeme
+        .get(2..)
+        .filter(|digits| {
+            !digits.is_empty()
+                && digits.len() % 2 == 0
+                && digits.chars().all(|digit| digit.is_ascii_hexdigit())
+        })
+        .ok_or_else(|| {
+            QueryDiagnostic::at(
+                QueryDiagnosticKind::Syntax,
+                Some(token),
+                "invalid binary literal",
+            )
+        })
+}
+
+/// The bytes of a `0x…` literal token.
+pub(super) fn decode_binary_literal(token: &Token<'_>) -> Result<Vec<u8>, QueryDiagnostic> {
+    let digits = binary_literal_digits(token)?;
+    Ok(digits
+        .as_bytes()
+        .chunks(2)
+        .map(|pair| {
+            let text = std::str::from_utf8(pair).expect("ASCII hex digits");
+            u8::from_str_radix(text, 16).expect("validated hex digits")
+        })
+        .collect())
+}
+
 pub(super) fn compile_literal(
     token: &Token<'_>,
     dialect: SqlDialect,
@@ -107,21 +138,7 @@ pub(super) fn compile_literal(
         }
         TokenKind::Number => Ok(token.lexeme.to_owned()),
         TokenKind::Binary => {
-            let digits = token
-                .lexeme
-                .get(2..)
-                .filter(|digits| {
-                    !digits.is_empty()
-                        && digits.len() % 2 == 0
-                        && digits.chars().all(|digit| digit.is_ascii_hexdigit())
-                })
-                .ok_or_else(|| {
-                    QueryDiagnostic::at(
-                        QueryDiagnosticKind::Syntax,
-                        Some(token),
-                        "invalid binary literal",
-                    )
-                })?;
+            let digits = binary_literal_digits(token)?;
             match dialect {
                 SqlDialect::Postgres => Ok(format!("'\\x{digits}'::bytea")),
                 SqlDialect::MsSql { .. } => Ok(format!("0x{digits}")),

@@ -1267,7 +1267,8 @@ fn rejects_slice_last_for_invalid_sources_and_arguments() {
         &register,
     )
     .unwrap_err();
-    assert!(parameter.message().contains("parameters are not supported"));
+    assert_eq!(parameter.kind(), QueryDiagnosticKind::Parameter);
+    assert!(parameter.message().contains("has no value"));
 }
 
 #[test]
@@ -1367,7 +1368,8 @@ fn rejects_slice_first_for_invalid_sources_and_arguments() {
         &register,
     )
     .unwrap_err();
-    assert!(parameter.message().contains("parameters are not supported"));
+    assert_eq!(parameter.kind(), QueryDiagnosticKind::Parameter);
+    assert!(parameter.message().contains("has no value"));
 }
 
 #[test]
@@ -1881,7 +1883,8 @@ fn rejects_parameters_and_unsupported_clauses_before_sql_generation() {
         &snapshot,
     )
     .unwrap_err();
-    assert!(parameter.message().contains("parameters are not supported"));
+    assert_eq!(parameter.kind(), QueryDiagnosticKind::Parameter);
+    assert!(parameter.message().contains("has no value"));
 
     let unsupported = postgres_compile!(
         "SELECT Code FROM Catalog.OpenSdblMetadataProbe GROUP BY Code;",
@@ -1986,7 +1989,7 @@ fn exposes_typed_diagnostic_sources_and_metadata_token_positions() {
     );
 
     let unsupported = postgres_compile!("SELECT &Parameter;", &snapshot).unwrap_err();
-    assert_eq!(unsupported.kind(), QueryDiagnosticKind::UnsupportedFeature);
+    assert_eq!(unsupported.kind(), QueryDiagnosticKind::Parameter);
 
     let unknown_value = postgres_compile!(
         "SELECT VALUE(Catalog.OpenSdblMetadataProbe.DoesNotExist);",
@@ -4092,4 +4095,417 @@ fn aggregates_arbitrary_scalar_expressions() {
     )
     .unwrap_err();
     assert_eq!(filtered.kind(), QueryDiagnosticKind::UnsupportedFeature);
+}
+
+use open_sdbl::query::{CompileOptions, ParameterDate, ParameterValue, QueryParameter};
+
+fn compile_with_parameters<B: Backend>(
+    snapshot: &MetadataSnapshot,
+    backend: B,
+    source: &str,
+    parameters: &[QueryParameter],
+) -> Result<open_sdbl::query::CompiledQuery, open_sdbl::query::QueryDiagnostic> {
+    QueryCompiler::new(snapshot, backend)
+        .compile_with(source, &CompileOptions::new().parameters(parameters))
+}
+
+fn number(unscaled: i128, scale: u8) -> ParameterValue {
+    ParameterValue::Number { unscaled, scale }
+}
+
+fn date(year: u16, month: u8, day: u8) -> ParameterValue {
+    ParameterValue::Date(ParameterDate::new(year, month, day, 0, 0, 0).unwrap())
+}
+
+#[test]
+fn compiles_scalar_parameters_on_both_dialects() {
+    let snapshot = boolean_snapshot();
+    let parameters = [
+        QueryParameter::new("Строка", ParameterValue::String("A'B".to_owned())),
+        QueryParameter::new("Начало", date(2024, 1, 1)),
+        QueryParameter::new("Флаг", ParameterValue::Boolean(true)),
+        QueryParameter::new("Число", number(1550, 2)),
+        QueryParameter::new("Пусто", ParameterValue::Null),
+    ];
+    let source = "SELECT &Число AS N, &строка AS S, &Начало AS D, &Пусто AS Z
+         FROM Catalog.OpenSdblMetadataProbe
+         WHERE Code = &Строка AND Date >= &Начало AND &Флаг AND Fld77 = &Флаг;";
+    let postgres =
+        compile_with_parameters(&snapshot, PostgresBackend, source, &parameters).unwrap();
+    assert_eq!(
+        kinds(&postgres),
+        [
+            &ColumnKind::Number {
+                precision: None,
+                scale: Some(2),
+            },
+            &ColumnKind::String { length: None },
+            &ColumnKind::DateTime,
+            &ColumnKind::Null,
+        ]
+    );
+    assert!(postgres.sql.starts_with(
+        "SELECT 15.50 AS \"N\", 'A''B' AS \"S\", TIMESTAMP '2024-01-01 00:00:00' AS \"D\", NULL AS \"Z\" FROM"
+    ));
+    assert!(postgres.sql.ends_with(
+        "WHERE ((((\"__src\".\"_code\" = 'A''B') AND (\"__src\".\"_date_time\" >= TIMESTAMP '2024-01-01 00:00:00')) AND TRUE) AND (\"__src\".\"_fld77\" = TRUE))"
+    ));
+
+    let mssql =
+        compile_with_parameters(&snapshot, mssql_backend(2000), source, &parameters).unwrap();
+    assert_eq!(kinds(&mssql), kinds(&postgres));
+    assert!(mssql.sql.contains(
+        "DATEADD(year, -2000, DATEADD(year, 2000, CONVERT(datetime2, '2024-01-01T00:00:00', 126))) AS [D]"
+    ));
+    assert!(mssql.sql.ends_with(
+        "WHERE (((([__src].[_code] = N'A''B') AND ([__src].[_date_time] >= DATEADD(year, 2000, CONVERT(datetime2, '2024-01-01T00:00:00', 126)))) AND (0x01 = 0x01)) AND ([__src].[_fld77] = 0x01))"
+    ));
+
+    let source_free = compile_with_parameters(
+        &snapshot,
+        mssql_backend(2000),
+        "SELECT &Начало AS D, CASE WHEN &Флаг THEN 1 ELSE 0 END AS F;",
+        &[
+            QueryParameter::new("Начало", date(2024, 1, 1)),
+            QueryParameter::new("Флаг", ParameterValue::Boolean(false)),
+        ],
+    )
+    .unwrap();
+    assert!(
+        source_free
+            .sql
+            .contains("CONVERT(datetime2, '2024-01-01T00:00:00', 126) AS [D]")
+    );
+    assert!(
+        source_free
+            .sql
+            .contains("CASE WHEN (0x00 = 0x01) THEN 1 ELSE 0 END AS [F]")
+    );
+    assert!(!source_free.sql.contains("DATEADD"));
+}
+
+#[test]
+fn compiles_reference_parameters_lists_and_output_format_literals() {
+    let snapshot = presentation_reference_snapshot(true);
+    let compiled = postgres_compile!(
+        "SELECT ProbeAttribute FROM Catalog.OpenSdblMetadataProbe;",
+        &snapshot,
+    )
+    .unwrap();
+    let ColumnKind::Reference { targets, .. } = &compiled.columns[0].kind else {
+        panic!("reference field expected");
+    };
+    let target = targets[0];
+    let probe = snapshot
+        .object_id(MetadataKind::Catalog, "OpenSdblMetadataProbe")
+        .unwrap();
+    let id = [0x11; 16];
+    let other = [0x22; 16];
+    let reference = ParameterValue::Reference { object: target, id };
+    let list = ParameterValue::List(vec![
+        reference.clone(),
+        ParameterValue::Reference {
+            object: target,
+            id: other,
+        },
+    ]);
+    let mut payload = 0x39u32.to_be_bytes().to_vec();
+    payload.extend_from_slice(&id);
+
+    let parameters = [
+        QueryParameter::new("Ссылка", reference.clone()),
+        QueryParameter::new("Список", list),
+        QueryParameter::new("Payload", ParameterValue::Binary(payload.clone())),
+        QueryParameter::new("Пустой", ParameterValue::List(Vec::new())),
+    ];
+    let source = "SELECT Ссылка FROM Catalog.OpenSdblMetadataProbe
+         WHERE ProbeAttribute = &Ссылка OR ProbeAttribute <> &Ссылка OR ProbeAttribute IN (&Список)
+            OR ProbeAttribute = &Payload OR Ссылка IN (&Пустой);";
+    let postgres =
+        compile_with_parameters(&snapshot, PostgresBackend, source, &parameters).unwrap();
+    let hex_id = "11".repeat(16);
+    let hex_other = "22".repeat(16);
+    assert!(postgres.sql.contains(&format!(
+        "((\"__src\".\"_fld54_rtref\" = decode('00000039', 'hex')) AND (\"__src\".\"_fld54_rrref\" = decode('{hex_id}', 'hex')))"
+    )));
+    assert!(postgres.sql.contains(&format!(
+        "(NOT ((\"__src\".\"_fld54_rtref\" = decode('00000039', 'hex')) AND (\"__src\".\"_fld54_rrref\" = decode('{hex_id}', 'hex'))))"
+    )));
+    assert!(postgres.sql.contains(&format!(
+        "(((\"__src\".\"_fld54_rtref\" = decode('00000039', 'hex')) AND (\"__src\".\"_fld54_rrref\" = decode('{hex_id}', 'hex'))) OR ((\"__src\".\"_fld54_rtref\" = decode('00000039', 'hex')) AND (\"__src\".\"_fld54_rrref\" = decode('{hex_other}', 'hex'))))"
+    )));
+    assert!(postgres.sql.ends_with("OR FALSE)"));
+    let mssql = compile_with_parameters(&snapshot, mssql_backend(0), source, &parameters).unwrap();
+    assert!(mssql.sql.contains(&format!(
+        "(([__src].[_fld54_rtref] = 0x00000039) AND ([__src].[_fld54_rrref] = 0x{hex_id}))"
+    )));
+    assert!(mssql.sql.ends_with("OR (1 = 0))"));
+
+    let single = compile_with_parameters(
+        &snapshot,
+        PostgresBackend,
+        "SELECT Ссылка FROM Catalog.OpenSdblMetadataProbe WHERE Ссылка = &Ссылка OR Ссылка IN (&Список);",
+        &[
+            QueryParameter::new(
+                "Ссылка",
+                ParameterValue::Reference { object: probe, id },
+            ),
+            QueryParameter::new(
+                "Список",
+                ParameterValue::List(vec![
+                    ParameterValue::Reference { object: probe, id },
+                    ParameterValue::Reference { object: probe, id: other },
+                ]),
+            ),
+        ],
+    )
+    .unwrap();
+    assert!(single.sql.ends_with(&format!(
+        "WHERE ((\"__src\".\"_idrref\" = decode('{hex_id}', 'hex')) OR (\"__src\".\"_idrref\" IN (decode('{hex_id}', 'hex'), decode('{hex_other}', 'hex'))))"
+    )));
+
+    let pasted = postgres_compile!(
+        &format!(
+            "SELECT Ссылка FROM Catalog.OpenSdblMetadataProbe WHERE ProbeAttribute = 0x00000039{} AND Ссылка = 0x{};",
+            hex_id.to_uppercase(),
+            hex_other.to_uppercase()
+        ),
+        &snapshot,
+    )
+    .unwrap();
+    assert!(pasted.sql.ends_with(&format!(
+        "WHERE (((\"__src\".\"_fld54_rtref\" = decode('00000039', 'hex')) AND (\"__src\".\"_fld54_rrref\" = decode('{hex_id}', 'hex'))) AND (\"__src\".\"_idrref\" = decode('{hex_other}', 'hex')))"
+    )));
+
+    let narrow = postgres_compile!(
+        &format!(
+            "SELECT Ссылка FROM Catalog.OpenSdblMetadataProbe WHERE ProbeAttribute = 0x{hex_id};"
+        ),
+        &snapshot,
+    )
+    .unwrap_err();
+    assert_eq!(narrow.kind(), QueryDiagnosticKind::UnsupportedFeature);
+    assert!(narrow.message().contains("20-byte"));
+    assert_eq!((narrow.line(), narrow.column()), (1, 73));
+
+    let wide = postgres_compile!(
+        &format!(
+            "SELECT Ссылка FROM Catalog.OpenSdblMetadataProbe WHERE Ссылка = 0x00000039{hex_id};"
+        ),
+        &snapshot,
+    )
+    .unwrap_err();
+    assert_eq!(wide.kind(), QueryDiagnosticKind::UnsupportedFeature);
+    assert!(wide.message().contains("16-byte"));
+
+    let binary16 = compile_with_parameters(
+        &snapshot,
+        PostgresBackend,
+        "SELECT Ссылка FROM Catalog.OpenSdblMetadataProbe WHERE ProbeAttribute = &B;",
+        &[QueryParameter::new(
+            "B",
+            ParameterValue::Binary(vec![0x11; 16]),
+        )],
+    )
+    .unwrap_err();
+    assert_eq!(binary16.kind(), QueryDiagnosticKind::UnsupportedFeature);
+}
+
+#[test]
+fn diagnoses_parameter_binding_failures() {
+    let snapshot = snapshot();
+    let missing = postgres_compile!(
+        "SELECT Code FROM Catalog.OpenSdblMetadataProbe WHERE Code = &Код;",
+        &snapshot,
+    )
+    .unwrap_err();
+    assert_eq!(missing.kind(), QueryDiagnosticKind::Parameter);
+    assert_eq!((missing.line(), missing.column()), (1, 61));
+
+    let unused = compile_with_parameters(
+        &snapshot,
+        PostgresBackend,
+        "SELECT Code FROM Catalog.OpenSdblMetadataProbe;",
+        &[QueryParameter::new("Лишний", ParameterValue::Null)],
+    )
+    .unwrap_err();
+    assert_eq!(unused.kind(), QueryDiagnosticKind::Parameter);
+    assert!(unused.message().contains("never referenced"));
+
+    let duplicate = compile_with_parameters(
+        &snapshot,
+        PostgresBackend,
+        "SELECT &X;",
+        &[
+            QueryParameter::new("X", ParameterValue::Null),
+            QueryParameter::new("x", ParameterValue::Null),
+        ],
+    )
+    .unwrap_err();
+    assert_eq!(duplicate.kind(), QueryDiagnosticKind::Parameter);
+
+    let misplaced = compile_with_parameters(
+        &snapshot,
+        PostgresBackend,
+        "SELECT Code FROM Catalog.OpenSdblMetadataProbe WHERE Code = &Список;",
+        &[QueryParameter::new(
+            "Список",
+            ParameterValue::List(vec![number(1, 0)]),
+        )],
+    )
+    .unwrap_err();
+    assert_eq!(misplaced.kind(), QueryDiagnosticKind::Parameter);
+    assert!(misplaced.message().contains("operand of IN"));
+
+    let nested = compile_with_parameters(
+        &snapshot,
+        PostgresBackend,
+        "SELECT Code FROM Catalog.OpenSdblMetadataProbe WHERE Code IN (&Список);",
+        &[QueryParameter::new(
+            "Список",
+            ParameterValue::List(vec![ParameterValue::List(Vec::new())]),
+        )],
+    )
+    .unwrap_err();
+    assert_eq!(nested.kind(), QueryDiagnosticKind::Parameter);
+
+    let with_null = compile_with_parameters(
+        &snapshot,
+        PostgresBackend,
+        "SELECT Code FROM Catalog.OpenSdblMetadataProbe WHERE Code IN (&Список, \"C\");",
+        &[QueryParameter::new(
+            "Список",
+            ParameterValue::List(vec![
+                ParameterValue::String("A".to_owned()),
+                ParameterValue::Null,
+            ]),
+        )],
+    )
+    .unwrap();
+    assert!(
+        with_null
+            .sql
+            .ends_with("WHERE (\"__src\".\"_code\" IN ('A', NULL, 'C'))")
+    );
+
+    let prepared = for_each_backend!(
+        prepare "SELECT Code FROM Catalog.OpenSdblMetadataProbe WHERE Code = &Код;",
+        &snapshot,
+    );
+    let prepared = prepared.0.unwrap();
+    assert!(prepared.presentation_request().targets.is_empty());
+    let bound = prepared
+        .compile_with(
+            &snapshot,
+            &CompileOptions::new().parameters(&[QueryParameter::new(
+                "Код",
+                ParameterValue::String("X".to_owned()),
+            )]),
+        )
+        .unwrap();
+    assert!(bound.sql.ends_with("WHERE (\"__src\".\"_code\" = 'X')"));
+    assert!(matches!(
+        prepared.compile(&snapshot, &[]),
+        Err(error) if error.kind() == QueryDiagnosticKind::Parameter
+    ));
+}
+
+#[test]
+fn compiles_empty_references_for_reference_kinds() {
+    let snapshot = snapshot();
+    let probe = snapshot
+        .object_id(MetadataKind::Catalog, "OpenSdblMetadataProbe")
+        .unwrap();
+    let (postgres, mssql) = for_each_backend!(
+        "SELECT ЗНАЧЕНИЕ(Справочник.OpenSdblMetadataProbe.ПустаяСсылка) AS Empty
+         FROM Catalog.OpenSdblMetadataProbe
+         WHERE Ссылка = VALUE(Catalog.OpenSdblMetadataProbe.EmptyRef);",
+        &snapshot,
+    );
+    let postgres = postgres.unwrap();
+    assert_eq!(
+        kinds(&postgres),
+        [&ColumnKind::Reference {
+            targets: vec![probe],
+            runtime_typed: false,
+        }]
+    );
+    let zeros = "00".repeat(16);
+    assert!(
+        postgres
+            .sql
+            .contains(&format!("decode('{zeros}', 'hex') AS \"Empty\""))
+    );
+    assert!(postgres.sql.ends_with(&format!(
+        "WHERE (\"__src\".\"_idrref\" = decode('{zeros}', 'hex'))"
+    )));
+    assert!(
+        mssql
+            .unwrap()
+            .sql
+            .ends_with(&format!("WHERE ([__src].[_idrref] = 0x{zeros})"))
+    );
+
+    let pair = universal_dereferenced_presentation_snapshot();
+    let guarded = postgres_compile!(
+        "SELECT Ссылка FROM Документ.бит_ДополнительныеУсловияПоДоговору
+         WHERE ДоговорКонтрагента = ЗНАЧЕНИЕ(Справочник.ЦентрыФинансовойОтветственности.ПустаяСсылка);",
+        &pair,
+    )
+    .unwrap();
+    assert!(guarded.sql.ends_with(&format!(
+        "WHERE ((\"__src\".\"_fld59_rtref\" = decode('0000003e', 'hex')) AND (\"__src\".\"_fld59_rrref\" = decode('{zeros}', 'hex')))"
+    )));
+
+    let register = postgres_compile!(
+        "SELECT ЗНАЧЕНИЕ(РегистрСведений.Prices.ПустаяСсылка);",
+        &information_register_snapshot(),
+    )
+    .unwrap_err();
+    assert_eq!(register.kind(), QueryDiagnosticKind::UnsupportedFeature);
+    assert!(register.message().contains("no empty reference"));
+}
+
+#[test]
+fn accepts_date_parameters_as_virtual_table_periods() {
+    let register = information_register_snapshot();
+    let parameters = [
+        QueryParameter::new("Период", date(2026, 3, 1)),
+        QueryParameter::new("Значение", ParameterValue::Binary(vec![0x11; 16])),
+    ];
+    let compiled = compile_with_parameters(
+        &register,
+        mssql_backend(2000),
+        "SELECT Period FROM InformationRegister.Prices.SliceLast(&Период, ProbeAttribute = &Значение);",
+        &parameters,
+    )
+    .unwrap();
+    assert!(
+        compiled
+            .sql
+            .contains("<= DATEADD(year, 2000, CONVERT(datetime2, '2026-03-01T00:00:00', 126))")
+    );
+    assert!(compiled.sql.contains(&format!("= 0x{}", "11".repeat(16))));
+
+    let wrong_kind = compile_with_parameters(
+        &register,
+        PostgresBackend,
+        "SELECT Period FROM InformationRegister.Prices.SliceLast(&Период);",
+        &[QueryParameter::new("Период", number(1, 0))],
+    )
+    .unwrap_err();
+    assert_eq!(wrong_kind.kind(), QueryDiagnosticKind::Parameter);
+
+    let turnovers = compile_with_parameters(
+        &accumulation_register_snapshot(),
+        PostgresBackend,
+        "SELECT Номенклатура, КоличествоОборот FROM AccumulationRegister.Остатки.Turnovers(&Начало, &Конец);",
+        &[
+            QueryParameter::new("Начало", date(2026, 8, 1)),
+            QueryParameter::new("Конец", date(2026, 9, 1)),
+        ],
+    )
+    .unwrap();
+    assert!(turnovers.sql.contains(">= TIMESTAMP '2026-08-01 00:00:00'"));
+    assert!(turnovers.sql.contains("< TIMESTAMP '2026-09-01 00:00:00'"));
 }

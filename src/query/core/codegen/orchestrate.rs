@@ -3,6 +3,7 @@ use super::select::compile_branch;
 use crate::Token;
 use crate::metadata::{MetadataSnapshot, ObjectId};
 use crate::query::core::ast::{OrderTerm, QueryAst};
+use crate::query::core::params::Parameters;
 use crate::query::core::resolve::{
     ColumnKind, CompilationCatalog, CompiledColumn, CompiledQuery, PresentationPlan,
 };
@@ -61,15 +62,21 @@ pub(super) struct PresentationCompilation<'plans> {
     pub(super) requested: BTreeSet<ObjectId>,
     collect_only: bool,
     pub(super) dialect: SqlDialect,
+    pub(super) parameters: Parameters<'plans>,
 }
 
 impl<'plans> PresentationCompilation<'plans> {
-    pub(super) fn strict(plans: &'plans [PresentationPlan], dialect: SqlDialect) -> Self {
+    pub(super) fn strict(
+        plans: &'plans [PresentationPlan],
+        parameters: Parameters<'plans>,
+        dialect: SqlDialect,
+    ) -> Self {
         Self {
             plans,
             requested: BTreeSet::new(),
             collect_only: false,
             dialect,
+            parameters,
         }
     }
 
@@ -79,6 +86,7 @@ impl<'plans> PresentationCompilation<'plans> {
             requested: BTreeSet::new(),
             collect_only: true,
             dialect,
+            parameters: Parameters::unbound(),
         }
     }
 
@@ -114,7 +122,7 @@ pub(super) fn compile(
     presentations: &mut PresentationCompilation<'_>,
 ) -> Result<CompiledQuery, QueryDiagnostic> {
     let dialect = presentations.dialect;
-    let catalog = CompilationCatalog::new(snapshot);
+    let catalog = CompilationCatalog::new(snapshot, presentations.parameters);
     let unioned = !ast.unions.is_empty();
     let compile_branches = |widen: &BTreeSet<usize>,
                             presentations: &mut PresentationCompilation<'_>|

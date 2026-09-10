@@ -30,8 +30,13 @@ PostgreSQL and Microsoft SQL Server and SHALL decode, resolve, and compile
 caller-provided DBNames, Config, SchemaStorage, live-catalog records, and SDBL
 without opening a database connection. Query compilation SHALL be exposed
 through an immutable generic `QueryCompiler<B>` bound to a separate PostgreSQL
-or MSSQL backend value and backed by one shared functional core. Former
-database-named free functions SHALL NOT remain part of the public API.
+or MSSQL backend value and backed by one shared functional core. Compilation
+inputs beyond the source text (presentation plans and named parameter
+values) SHALL be passed through one `CompileOptions` value accepted by
+`QueryCompiler::compile_with` and `Prepared::compile_with`; the existing
+`compile`, `compile_with_presentations`, and `Prepared::compile` methods
+SHALL remain equivalent to default options. Former database-named free
+functions SHALL NOT remain part of the public API.
 
 #### Scenario: Caller-provided resources
 - **WHEN** an application supplies metadata blobs and typed live-catalog rows
@@ -67,6 +72,13 @@ database-named free functions SHALL NOT remain part of the public API.
   `MsSqlBackend`
 - **THEN** it can inspect the presentation request before supplying plans and
   compiling them
+
+#### Scenario: Compilation options
+- **WHEN** an application builds `CompileOptions::new().presentations(&plans).parameters(&params)`
+  and calls `compile_with`
+- **THEN** the compiler applies both inputs, and calling `compile` on the
+  same source without parameters yields the same SQL when the source has no
+  parameters
 
 ### Requirement: Keep presentation policy outside the core crate
 The core package SHALL define deterministic ID-only presentation requests,

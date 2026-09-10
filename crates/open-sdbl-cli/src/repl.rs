@@ -7,8 +7,8 @@ use std::time::{Duration, Instant};
 
 use open_sdbl::metadata::{MetadataKind, MetadataObject, MetadataSnapshot, ObjectId};
 use open_sdbl::query::{
-    CompiledQuery, MsSqlBackend, PostgresBackend, Prepared, PresentationExpression,
-    PresentationPlan, PresentationRequest, QueryCompiler, find_metadata_object,
+    CompileOptions, CompiledQuery, MsSqlBackend, PostgresBackend, Prepared, PresentationExpression,
+    PresentationPlan, PresentationRequest, QueryCompiler, QueryParameter, find_metadata_object,
     queryable_field_catalog, queryable_fields,
 };
 use open_sdbl::{TokenKind, tokenize};
@@ -23,6 +23,7 @@ use tokio::io::{AsyncBufRead, AsyncBufReadExt, BufReader};
 use unicode_width::UnicodeWidthStr;
 
 use super::cells::Cell;
+use super::params::{ParameterStore, apply_parameter_command, parse_parameter_command};
 use super::{
     CliError, DatabaseDialect, DatabaseSession, MAX_CELL_WIDTH, MAX_PRINTED_ROWS, QueryRows,
     bounded_field, escape_field, yes_no,
@@ -33,6 +34,9 @@ const CONSOLE_HELP: &str = "Commands:
   \\di                 list declared and live indexes
   \\d <metadata-name>  describe attributes and indexes
   \\refresh            reload DBNames, Config, SchemaStorage, and catalogs
+  \\set <name> <lit>   store a query parameter (&name) from an SDBL literal
+  \\params             list stored parameters
+  \\unset <name>       remove a stored parameter
   \\help               show this help
   \\q                  quit
 
@@ -202,14 +206,25 @@ struct ConsoleHelper {
     source_candidates: Vec<CompletionName>,
     paths: Vec<CompletionPath>,
     known_identifiers: HashSet<String>,
+    parameters: Vec<CompletionName>,
 }
 
 impl ConsoleHelper {
     fn from_snapshot(snapshot: &MetadataSnapshot) -> Self {
-        let mut candidates = ["\\dt", "\\di", "\\d", "\\refresh", "\\help", "\\q"]
-            .into_iter()
-            .map(str::to_owned)
-            .collect::<Vec<_>>();
+        let mut candidates = [
+            "\\dt",
+            "\\di",
+            "\\d",
+            "\\refresh",
+            "\\set",
+            "\\params",
+            "\\unset",
+            "\\help",
+            "\\q",
+        ]
+        .into_iter()
+        .map(str::to_owned)
+        .collect::<Vec<_>>();
         candidates.extend(COMPLETION_KEYWORDS.iter().map(|value| (*value).to_owned()));
         let mut candidate_keys = candidates
             .iter()
@@ -344,7 +359,16 @@ impl ConsoleHelper {
                 .collect(),
             paths,
             known_identifiers,
+            parameters: Vec::new(),
         }
+    }
+
+    /// Replaces the stored parameter names offered after `&`.
+    fn set_parameters(&mut self, names: Vec<String>) {
+        self.parameters = names
+            .into_iter()
+            .map(|name| CompletionName::new(format!("&{name}")))
+            .collect();
     }
 
     #[cfg(test)]
@@ -361,12 +385,26 @@ impl ConsoleHelper {
                 .collect(),
             paths: Vec::new(),
             known_identifiers,
+            parameters: Vec::new(),
         }
     }
 
     fn complete_values(&self, line: &str, pos: usize) -> (usize, Vec<Pair>) {
         let start = completion_start(line, pos);
         let prefix = line[start..pos].to_lowercase();
+        if prefix.starts_with('&') {
+            let mut values = self
+                .parameters
+                .iter()
+                .filter(|candidate| candidate.key.starts_with(&prefix))
+                .map(|candidate| Pair {
+                    display: candidate.value.clone(),
+                    replacement: candidate.value.clone(),
+                })
+                .collect::<Vec<_>>();
+            values.sort_by(|left, right| left.display.cmp(&right.display));
+            return (start, values);
+        }
         let source_context = is_source_completion_context(line, start);
         let candidates = if source_context {
             &self.source_candidates
@@ -519,7 +557,7 @@ fn completion_start(line: &str, pos: usize) -> usize {
 }
 
 fn is_completion_character(character: char) -> bool {
-    character == '\\' || character == '_' || character == '.' || character.is_alphanumeric()
+    matches!(character, '\\' | '_' | '.' | '&') || character.is_alphanumeric()
 }
 
 fn is_source_completion_context(line: &str, start: usize) -> bool {
@@ -651,10 +689,14 @@ impl PreparedQuery {
         self,
         snapshot: &MetadataSnapshot,
         plans: &[PresentationPlan],
+        parameters: &[QueryParameter],
     ) -> Result<CompiledQuery, open_sdbl::query::QueryDiagnostic> {
+        let options = CompileOptions::new()
+            .presentations(plans)
+            .parameters(parameters);
         match self {
-            Self::Postgres(query) => query.compile(snapshot, plans),
-            Self::MsSql(query) => query.compile(snapshot, plans),
+            Self::Postgres(query) => query.compile_with(snapshot, &options),
+            Self::MsSql(query) => query.compile_with(snapshot, &options),
         }
     }
 }
@@ -678,6 +720,7 @@ pub(super) async fn run(
     let mut line = Vec::new();
     let mut statement = String::new();
     let mut presentation_cache = HashMap::new();
+    let mut parameters = ParameterStore::new();
 
     if interactive {
         writeln!(output, "open-sdbl 1C query console. Type \\help for help.")
@@ -750,6 +793,20 @@ pub(super) async fn run(
 
         if statement.is_empty() && line.trim_start().starts_with('\\') {
             add_history(&mut editor, line.trim());
+            if let Some(command) = parse_parameter_command(line.trim()) {
+                match apply_parameter_command(&mut parameters, command, &snapshot) {
+                    Ok(text) => {
+                        output
+                            .write_all(text.as_bytes())
+                            .map_err(CliError::standard_output)?;
+                        if let Some(helper) = editor.as_mut().and_then(Editor::helper_mut) {
+                            helper.set_parameters(parameters.names());
+                        }
+                    }
+                    Err(error) => eprintln!("error: {}", escape_field(&error.to_string())),
+                }
+                continue;
+            }
             match execute_meta_command(session, &mut snapshot, line.trim(), output).await {
                 Ok(MetaOutcome::Continue) => {}
                 Ok(MetaOutcome::Refreshed) => {
@@ -789,7 +846,8 @@ pub(super) async fn run(
                     &snapshot,
                     prepared.presentation_request(),
                 );
-                prepared.compile(&snapshot, &plans)
+                let values = parameters.values_for(&statement);
+                prepared.compile(&snapshot, &plans, &values)
             }
             Err(error) => Err(error),
         };

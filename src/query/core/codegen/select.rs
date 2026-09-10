@@ -35,7 +35,14 @@ pub(super) fn compile_branch(
     let dialect = presentations.dialect;
     validate_aggregate_projection(ast)?;
     let Some(source) = ast.source.as_ref() else {
-        return compile_source_free_branch(ast, order_terms, snapshot, dialect, widen);
+        return compile_source_free_branch(
+            ast,
+            order_terms,
+            snapshot,
+            dialect,
+            widen,
+            catalog.parameters,
+        );
     };
     let join = ast.join.as_ref();
     validate_join_projection(ast, join)?;
@@ -748,6 +755,7 @@ fn validate_direct_join_condition_fields(
                 ));
             }
             Expression::Literal(_)
+            | Expression::Parameter(_)
             | Expression::DateTime { .. }
             | Expression::MetadataValue { .. } => {}
         }

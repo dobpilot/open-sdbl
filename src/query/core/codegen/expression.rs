@@ -1,12 +1,17 @@
-use super::context::CompilationContext;
+use super::context::{CompilationContext, ResolvedPath};
+use super::params::{
+    ReferenceConstant, list_elements, object_type_number, parameter_kind,
+    reference_constant_of_bytes, reference_constant_of_value, render_scalar_parameter,
+};
 use super::sources::compile_metadata_value;
 use crate::metadata::MetadataSnapshot;
 use crate::metadata::ObjectId;
 use crate::query::core::ast::{
-    AggregateArgument, AggregateKind, CaseBranch, CastTarget, Expression,
+    AggregateArgument, AggregateKind, CaseBranch, CastTarget, Expression, FieldReference,
 };
-use crate::query::core::dialect::{SqlDialect, compile_literal};
+use crate::query::core::dialect::{SqlDialect, compile_literal, decode_binary_literal};
 use crate::query::core::names::names_equal;
+use crate::query::core::params::Parameters;
 use crate::query::core::resolve::{
     ColumnKind, QueryableColumn, QueryableField, kind_from_query_name,
 };
@@ -51,7 +56,7 @@ pub(super) fn compile_predicate(
             let sql = compile_expression(expression, context)?;
             Ok(context.dialect.boolean_predicate(&sql))
         }
-        Expression::Case { .. } | Expression::IsNullFunction { .. } => {
+        Expression::Case { .. } | Expression::IsNullFunction { .. } | Expression::Parameter(_) => {
             let sql = compile_expression(expression, context)?;
             Ok(
                 if expression_kind(expression, context)? == ColumnKind::Boolean {
@@ -387,6 +392,11 @@ pub(super) fn expression_kind(
             Ok(common_kind(&operands)?.kind)
         }
         Expression::Like { .. } => Ok(ColumnKind::Boolean),
+        Expression::Parameter(token) => Ok(context
+            .catalog
+            .parameters
+            .lookup(token)?
+            .map_or_else(unknown_kind, parameter_kind)),
         Expression::Aggregate { kind, argument, .. } => match (kind, argument) {
             (AggregateKind::Count | AggregateKind::Sum, _) | (_, AggregateArgument::All) => {
                 Ok(ColumnKind::Number {
@@ -403,7 +413,17 @@ pub(super) fn expression_kind(
                 other => expression_kind(other, context),
             },
         },
-        _ => Ok(source_free_expression_kind(expression, context.snapshot)),
+        _ => Ok(source_free_expression_kind(
+            expression,
+            context.snapshot,
+            context.catalog.parameters,
+        )),
+    }
+}
+
+fn unknown_kind() -> ColumnKind {
+    ColumnKind::Unknown {
+        data_type: String::new(),
     }
 }
 
@@ -422,6 +442,7 @@ pub(super) fn operand_token<'tokens, 'source>(
         | Expression::Case { token, .. }
         | Expression::IsNullFunction { token, .. }
         | Expression::Like { token, .. }
+        | Expression::Parameter(token)
         | Expression::Aggregate { token, .. } => Some(token),
         Expression::Unary { operator, .. } | Expression::Binary { operator, .. } => Some(operator),
         Expression::InList { value, .. } | Expression::IsNull { value, .. } => operand_token(value),
@@ -770,8 +791,14 @@ fn aggregated_field_kind(kind: &ColumnKind) -> ColumnKind {
 pub(super) fn source_free_expression_kind(
     expression: &Expression<'_, '_>,
     snapshot: &MetadataSnapshot,
+    parameters: Parameters<'_>,
 ) -> ColumnKind {
     match expression {
+        Expression::Parameter(token) => parameters
+            .lookup(token)
+            .ok()
+            .flatten()
+            .map_or_else(unknown_kind, parameter_kind),
         Expression::Field(_) => ColumnKind::Unknown {
             data_type: String::new(),
         },
@@ -788,7 +815,7 @@ pub(super) fn source_free_expression_kind(
         },
         Expression::Unary { operator, value } => match operator.kind {
             TokenKind::Keyword(Keyword::Not) => ColumnKind::Boolean,
-            _ => source_free_expression_kind(value, snapshot),
+            _ => source_free_expression_kind(value, snapshot, parameters),
         },
         Expression::Binary { operator, .. } => match operator.kind {
             TokenKind::Keyword(_) => ColumnKind::Boolean,
@@ -811,14 +838,14 @@ pub(super) fn source_free_expression_kind(
                 .map(|branch| Operand {
                     token: branch.token,
                     sql: String::new(),
-                    kind: source_free_expression_kind(&branch.then, snapshot),
+                    kind: source_free_expression_kind(&branch.then, snapshot, parameters),
                 })
                 .collect::<Vec<_>>();
             if let Some(otherwise) = otherwise {
                 operands.push(Operand {
                     token: operand_token(otherwise).unwrap_or(branches[0].token),
                     sql: String::new(),
-                    kind: source_free_expression_kind(otherwise, snapshot),
+                    kind: source_free_expression_kind(otherwise, snapshot, parameters),
                 });
             }
             common_kind(&operands).map_or_else(
@@ -837,12 +864,12 @@ pub(super) fn source_free_expression_kind(
                 Operand {
                     token,
                     sql: String::new(),
-                    kind: source_free_expression_kind(value, snapshot),
+                    kind: source_free_expression_kind(value, snapshot, parameters),
                 },
                 Operand {
                     token,
                     sql: String::new(),
-                    kind: source_free_expression_kind(fallback, snapshot),
+                    kind: source_free_expression_kind(fallback, snapshot, parameters),
                 },
             ];
             common_kind(&operands).map_or_else(
@@ -860,7 +887,7 @@ pub(super) fn source_free_expression_kind(
                 }
             }
             (_, AggregateArgument::Expression(argument)) => {
-                source_free_expression_kind(argument, snapshot)
+                source_free_expression_kind(argument, snapshot, parameters)
             }
         },
     }
@@ -985,13 +1012,37 @@ pub(super) fn compile_expression(
             right: _,
         } => compile_binary_expression(expression, context),
         Expression::InList { value, items } => {
+            if let Some(sql) = compile_reference_pair_in_list(value, items, context)? {
+                return Ok(sql);
+            }
             let value_sql = compile_expression(value, context)?;
-            let item_sql = items
-                .iter()
-                .map(|item| compile_expression_operand(item, value, context))
-                .collect::<Result<Vec<_>, _>>()?;
+            let mut item_sql = Vec::with_capacity(items.len());
+            for item in items {
+                if let Expression::Parameter(token) = item
+                    && let Some(value) = context.catalog.parameters.lookup(token)?
+                    && let Some(elements) = list_elements(value, token)?
+                {
+                    for element in elements {
+                        item_sql.push(render_scalar_parameter(
+                            element,
+                            token,
+                            context.dialect,
+                            true,
+                        )?);
+                    }
+                    continue;
+                }
+                item_sql.push(compile_expression_operand(item, value, context)?);
+            }
+            if item_sql.is_empty() {
+                return Ok(context.dialect.boolean_literal_predicate(false));
+            }
             Ok(format!("({value_sql} IN ({}))", item_sql.join(", ")))
         }
+        Expression::Parameter(token) => match context.catalog.parameters.lookup(token)? {
+            Some(value) => render_scalar_parameter(value, token, context.dialect, true),
+            None => Ok("NULL".to_owned()),
+        },
         Expression::IsNull { value, negated } => Ok(format!(
             "({} IS {}NULL)",
             compile_expression(value, context)?,
@@ -1060,6 +1111,12 @@ fn compile_binary_expression(
     context: &mut CompilationContext<'_, '_>,
 ) -> Result<String, QueryDiagnostic> {
     let (left, terms) = left_binary_spine(expression);
+    if let [(operator, right)] = terms.as_slice()
+        && matches!(operator.lexeme, "=" | "<>")
+        && let Some(sql) = compile_reference_pair_comparison(left, right, operator, context)?
+    {
+        return Ok(sql);
+    }
     let mut sql = "(".repeat(terms.len());
     let Some((_, first_right)) = terms.first() else {
         return Err(QueryDiagnostic::unpositioned(
@@ -1080,6 +1137,187 @@ fn compile_binary_expression(
         sql.push(')');
     }
     Ok(sql)
+}
+
+/// The reference constant an expression stands for: a typed parameter, a
+/// `0x…` literal in the console output format (16 or 20 bytes), or a
+/// `ЗНАЧЕНИЕ` of a reference type.
+fn reference_constant(
+    expression: &Expression<'_, '_>,
+    context: &mut CompilationContext<'_, '_>,
+) -> Result<Option<ReferenceConstant>, QueryDiagnostic> {
+    match expression {
+        Expression::Parameter(token) => match context.catalog.parameters.lookup(token)? {
+            Some(value) => {
+                reference_constant_of_value(value, token, context.snapshot, context.dialect)
+            }
+            None => Ok(None),
+        },
+        Expression::Literal(token) if token.kind == TokenKind::Binary => {
+            let bytes = decode_binary_literal(token)?;
+            Ok(reference_constant_of_bytes(&bytes, context.dialect))
+        }
+        Expression::MetadataValue {
+            token,
+            kind,
+            object,
+            value,
+        } => {
+            let id_sql = compile_metadata_value(
+                token,
+                kind,
+                object,
+                value,
+                context.snapshot,
+                context.dialect,
+            )?;
+            let target = kind_from_query_name(kind.lexeme)
+                .and_then(|kind| context.snapshot.object_id(kind, object.lexeme).ok());
+            let type_sql = target
+                .map(|target| object_type_number(target, token, context.snapshot))
+                .transpose()?
+                .map(|number| context.dialect.binary_u32(number));
+            Ok(Some(ReferenceConstant {
+                type_sql,
+                id_sql,
+                target,
+            }))
+        }
+        _ => Ok(None),
+    }
+}
+
+/// Renders the comparison of a reference field with a reference constant
+/// by physical member: a runtime-typed field compares `RTRef` and `RRRef`,
+/// a single-member field compares its `RRRef` only. Returns `None` when the
+/// operands are not such a pair, leaving the generic path to handle them.
+fn compile_reference_pair_comparison(
+    left: &Expression<'_, '_>,
+    right: &Expression<'_, '_>,
+    operator: &Token<'_>,
+    context: &mut CompilationContext<'_, '_>,
+) -> Result<Option<String>, QueryDiagnostic> {
+    let (field, other) = match (left, right) {
+        (Expression::Field(field), other) | (other, Expression::Field(field)) => (field, other),
+        _ => return Ok(None),
+    };
+    let Some(constant) = reference_constant(other, context)? else {
+        return Ok(None);
+    };
+    let resolved = context.resolve(field)?;
+    let Some(sql) = reference_member_equality(&resolved, field, &constant, other, context)? else {
+        return Ok(None);
+    };
+    Ok(Some(if operator.lexeme == "<>" {
+        format!("(NOT {sql})")
+    } else {
+        sql
+    }))
+}
+
+/// `field IN (constants)` over reference members.
+fn compile_reference_pair_in_list(
+    value: &Expression<'_, '_>,
+    items: &[Expression<'_, '_>],
+    context: &mut CompilationContext<'_, '_>,
+) -> Result<Option<String>, QueryDiagnostic> {
+    let Expression::Field(field) = value else {
+        return Ok(None);
+    };
+    let resolved = context.resolve(field)?;
+    if reference_pair(resolved.field()).is_none() {
+        return Ok(None);
+    }
+    let mut constants = Vec::new();
+    for item in items {
+        if let Expression::Parameter(token) = item
+            && let Some(value) = context.catalog.parameters.lookup(token)?
+            && let Some(elements) = list_elements(value, token)?
+        {
+            for element in elements {
+                let Some(constant) =
+                    reference_constant_of_value(element, token, context.snapshot, context.dialect)?
+                else {
+                    return Err(QueryDiagnostic::at(
+                        QueryDiagnosticKind::Parameter,
+                        Some(token),
+                        "list elements compared with a reference field must be references",
+                    ));
+                };
+                constants.push((constant, item));
+            }
+            continue;
+        }
+        let Some(constant) = reference_constant(item, context)? else {
+            return Ok(None);
+        };
+        constants.push((constant, item));
+    }
+    if constants.is_empty() {
+        return Ok(Some(context.dialect.boolean_literal_predicate(false)));
+    }
+    let mut parts = Vec::with_capacity(constants.len());
+    for (constant, item) in &constants {
+        let Some(sql) = reference_member_equality(&resolved, field, constant, item, context)?
+        else {
+            return Ok(None);
+        };
+        parts.push(sql);
+    }
+    Ok(Some(if parts.len() == 1 {
+        parts.pop().expect("one part")
+    } else {
+        format!("({})", parts.join(" OR "))
+    }))
+}
+
+fn reference_member_equality(
+    resolved: &ResolvedPath,
+    field: &FieldReference<'_, '_>,
+    constant: &ReferenceConstant,
+    other: &Expression<'_, '_>,
+    context: &CompilationContext<'_, '_>,
+) -> Result<Option<String>, QueryDiagnostic> {
+    let token = operand_token(other).unwrap_or(field.last());
+    if let Some((type_member, value_member)) = reference_pair(resolved.field()) {
+        let Some(type_sql) = &constant.type_sql else {
+            return Err(QueryDiagnostic::at(
+                QueryDiagnosticKind::UnsupportedFeature,
+                Some(token),
+                format!(
+                    "runtime-typed reference {:?} must be compared with a typed reference or a 20-byte RTRef ‖ RRRef value",
+                    resolved.field().name
+                ),
+            ));
+        };
+        return Ok(Some(format!(
+            "(({} = {type_sql}) AND ({} = {}))",
+            context.sql_column(resolved, type_member),
+            context.sql_column(resolved, value_member),
+            constant.id_sql
+        )));
+    }
+    let [column] = resolved.field().columns.as_slice() else {
+        return Ok(None);
+    };
+    if !matches!(column.kind, ColumnKind::Reference { .. }) {
+        return Ok(None);
+    }
+    if constant.type_sql.is_some() && constant.target.is_none() {
+        return Err(QueryDiagnostic::at(
+            QueryDiagnosticKind::UnsupportedFeature,
+            Some(token),
+            format!(
+                "reference {:?} expects a 16-byte value, not a 20-byte RTRef ‖ RRRef payload",
+                resolved.field().name
+            ),
+        ));
+    }
+    Ok(Some(format!(
+        "({} = {})",
+        context.sql_column(resolved, column),
+        constant.id_sql
+    )))
 }
 
 fn compile_expression_operand(

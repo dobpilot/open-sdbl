@@ -11,6 +11,7 @@ use crate::metadata::{
 };
 use crate::query::core::ast::SourceAst;
 use crate::query::core::names::{folded_name, names_equal};
+use crate::query::core::params::Parameters;
 use crate::query::core::{QueryDiagnostic, QueryDiagnosticKind};
 
 /// Structured value type of one physical or compiled output column.
@@ -433,6 +434,8 @@ pub(super) struct CompilationCatalog<'snapshot> {
     custom_names: OnceCell<CustomFieldNameIndex>,
     fields: RefCell<HashMap<String, Arc<[QueryableField]>>>,
     work: Cell<usize>,
+    /// Named parameter values of this compilation.
+    pub(super) parameters: Parameters<'snapshot>,
 }
 
 impl<'snapshot> CompilationCatalog<'snapshot> {
@@ -440,12 +443,16 @@ impl<'snapshot> CompilationCatalog<'snapshot> {
     // queries while still bounding adversarial cross-branch work.
     const WORK_LIMIT: usize = 32_768;
 
-    pub(super) fn new(snapshot: &'snapshot MetadataSnapshot) -> Self {
+    pub(super) fn new(
+        snapshot: &'snapshot MetadataSnapshot,
+        parameters: Parameters<'snapshot>,
+    ) -> Self {
         Self {
             snapshot,
             custom_names: OnceCell::new(),
             fields: RefCell::new(HashMap::new()),
             work: Cell::new(0),
+            parameters,
         }
     }
 

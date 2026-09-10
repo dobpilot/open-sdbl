@@ -269,6 +269,8 @@ pub(super) enum Expression<'tokens, 'source> {
         escape: Option<Box<Self>>,
         negated: bool,
     },
+    /// A named `&Имя` parameter whose value is supplied at compilation.
+    Parameter(&'tokens Token<'source>),
     /// An aggregate function call; valid only where the branch allows
     /// aggregates.
     Aggregate {
@@ -437,7 +439,7 @@ pub(super) fn parse_datetime_value(
     })
 }
 
-const fn days_in_month(year: u16, month: u8) -> u8 {
+pub(super) const fn days_in_month(year: u16, month: u8) -> u8 {
     match month {
         4 | 6 | 9 | 11 => 30,
         2 if is_leap_year(year) => 29,

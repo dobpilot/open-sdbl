@@ -59,6 +59,9 @@ pub enum QueryDiagnosticKind {
     SnapshotMismatch,
     /// The total compilation work budget was exhausted.
     WorkBudgetExceeded,
+    /// A named parameter is missing, unused, or used where a list is not
+    /// allowed.
+    Parameter,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

@@ -16,6 +16,7 @@ mod db;
 mod error;
 mod net;
 mod output;
+mod params;
 mod pipeline;
 mod progress;
 mod repl;

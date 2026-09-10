@@ -7,7 +7,10 @@ use super::expression::{
     left_binary_spine, reference_column, reference_type_column, render_coalesce, render_like,
     single_column, source_free_expression_kind, widen_reference,
 };
-use super::virtual_tables::{compile_accumulation_relation, compile_constant_date_expression};
+use super::params::render_scalar_parameter;
+use super::virtual_tables::{
+    compile_accumulation_relation, compile_constant_date_expression, compile_date_parameter,
+};
 use crate::metadata::{
     ConfigFieldPurpose, LiveTable, MetadataKind, MetadataObject, MetadataSnapshot, ObjectId,
 };
@@ -17,6 +20,7 @@ use crate::query::core::ast::{
 };
 use crate::query::core::dialect::{OutputLabelAllocator, SqlDialect, compile_literal};
 use crate::query::core::names::names_equal;
+use crate::query::core::params::Parameters;
 use crate::query::core::resolve::{
     ColumnKind, CompilationCatalog, CompiledColumn, QueryableField, kind_from_query_name,
 };
@@ -29,6 +33,7 @@ pub(super) fn compile_source_free_branch(
     snapshot: &MetadataSnapshot,
     dialect: SqlDialect,
     widen: &BTreeSet<usize>,
+    parameters: Parameters<'_>,
 ) -> Result<CompiledBranch, QueryDiagnostic> {
     if ast.join.is_some() {
         return Err(QueryDiagnostic::unpositioned(
@@ -76,11 +81,12 @@ pub(super) fn compile_source_free_branch(
                 ));
             }
             Projection::Scalar(expression) => {
-                let sql = compile_source_free_expression(expression, snapshot, dialect)?;
+                let sql =
+                    compile_source_free_expression(expression, snapshot, dialect, parameters)?;
                 (
                     sql,
                     format!("column{}", index + 1),
-                    source_free_expression_kind(expression, snapshot),
+                    source_free_expression_kind(expression, snapshot, parameters),
                 )
             }
             Projection::Presentation {
@@ -141,6 +147,7 @@ fn compile_source_free_expression(
     expression: &Expression<'_, '_>,
     snapshot: &MetadataSnapshot,
     dialect: SqlDialect,
+    parameters: Parameters<'_>,
 ) -> Result<String, QueryDiagnostic> {
     match expression {
         Expression::Field(reference) => Err(QueryDiagnostic::at(
@@ -155,14 +162,14 @@ fn compile_source_free_expression(
             value,
             period,
         } => {
-            if source_free_expression_kind(value, snapshot) != ColumnKind::DateTime {
+            if source_free_expression_kind(value, snapshot, parameters) != ColumnKind::DateTime {
                 return Err(QueryDiagnostic::at(
                     QueryDiagnosticKind::Syntax,
                     Some(token),
                     "BEGINOFPERIOD first argument must be a date expression",
                 ));
             }
-            let value = compile_source_free_expression(value, snapshot, dialect)?;
+            let value = compile_source_free_expression(value, snapshot, dialect, parameters)?;
             Ok(dialect.begin_of_period(&value, *period))
         }
         Expression::MetadataValue {
@@ -188,7 +195,7 @@ fn compile_source_free_expression(
         Expression::Cast {
             argument, target, ..
         } => {
-            let inner = compile_source_free_expression(argument, snapshot, dialect)?;
+            let inner = compile_source_free_expression(argument, snapshot, dialect, parameters)?;
             Ok(dialect.cast_scalar(&inner, *target))
         }
         Expression::Unary { operator, value } => {
@@ -206,27 +213,31 @@ fn compile_source_free_expression(
             };
             Ok(format!(
                 "({operator}{})",
-                compile_source_free_expression(value, snapshot, dialect)?
+                compile_source_free_expression(value, snapshot, dialect, parameters)?
             ))
         }
         Expression::Binary {
             left: _,
             operator: _,
             right: _,
-        } => compile_source_free_binary_expression(expression, snapshot, dialect),
+        } => compile_source_free_binary_expression(expression, snapshot, dialect, parameters),
         Expression::InList { value, items } => {
-            let value = compile_source_free_expression(value, snapshot, dialect)?;
+            let value = compile_source_free_expression(value, snapshot, dialect, parameters)?;
             let items = items
                 .iter()
-                .map(|item| compile_source_free_expression(item, snapshot, dialect))
+                .map(|item| compile_source_free_expression(item, snapshot, dialect, parameters))
                 .collect::<Result<Vec<_>, _>>()?;
             Ok(format!("({value} IN ({}))", items.join(", ")))
         }
         Expression::IsNull { value, negated } => Ok(format!(
             "({} IS {}NULL)",
-            compile_source_free_expression(value, snapshot, dialect)?,
+            compile_source_free_expression(value, snapshot, dialect, parameters)?,
             if *negated { "NOT " } else { "" }
         )),
+        Expression::Parameter(token) => match parameters.lookup(token)? {
+            Some(value) => render_scalar_parameter(value, token, dialect, false),
+            None => Ok("NULL".to_owned()),
+        },
         Expression::Case {
             branches,
             otherwise,
@@ -239,13 +250,13 @@ fn compile_source_free_expression(
             |expression, predicate| {
                 if predicate {
                     Ok((
-                        compile_source_free_predicate(expression, snapshot, dialect)?,
+                        compile_source_free_predicate(expression, snapshot, dialect, parameters)?,
                         ColumnKind::Boolean,
                     ))
                 } else {
                     Ok((
-                        compile_source_free_expression(expression, snapshot, dialect)?,
-                        source_free_expression_kind(expression, snapshot),
+                        compile_source_free_expression(expression, snapshot, dialect, parameters)?,
+                        source_free_expression_kind(expression, snapshot, parameters),
                     ))
                 }
             },
@@ -259,13 +270,13 @@ fn compile_source_free_expression(
             let mut operands = [
                 Operand {
                     token,
-                    sql: compile_source_free_expression(value, snapshot, dialect)?,
-                    kind: source_free_expression_kind(value, snapshot),
+                    sql: compile_source_free_expression(value, snapshot, dialect, parameters)?,
+                    kind: source_free_expression_kind(value, snapshot, parameters),
                 },
                 Operand {
                     token,
-                    sql: compile_source_free_expression(fallback, snapshot, dialect)?,
-                    kind: source_free_expression_kind(fallback, snapshot),
+                    sql: compile_source_free_expression(fallback, snapshot, dialect, parameters)?,
+                    kind: source_free_expression_kind(fallback, snapshot, parameters),
                 },
             ];
             render_coalesce(&mut operands, snapshot, dialect).map(|(sql, _)| sql)
@@ -289,22 +300,26 @@ fn compile_source_free_predicate(
     expression: &Expression<'_, '_>,
     snapshot: &MetadataSnapshot,
     dialect: SqlDialect,
+    parameters: Parameters<'_>,
 ) -> Result<String, QueryDiagnostic> {
     match expression {
         Expression::Literal(token) => match token.kind {
             TokenKind::Keyword(Keyword::True) => Ok(dialect.boolean_literal_predicate(true)),
             TokenKind::Keyword(Keyword::False) => Ok(dialect.boolean_literal_predicate(false)),
-            _ => compile_source_free_expression(expression, snapshot, dialect),
+            _ => compile_source_free_expression(expression, snapshot, dialect, parameters),
         },
         Expression::Cast {
             target: CastTarget::Boolean,
             ..
         }
         | Expression::Case { .. }
-        | Expression::IsNullFunction { .. } => {
-            let sql = compile_source_free_expression(expression, snapshot, dialect)?;
+        | Expression::IsNullFunction { .. }
+        | Expression::Parameter(_) => {
+            let sql = compile_source_free_expression(expression, snapshot, dialect, parameters)?;
             Ok(
-                if source_free_expression_kind(expression, snapshot) == ColumnKind::Boolean {
+                if source_free_expression_kind(expression, snapshot, parameters)
+                    == ColumnKind::Boolean
+                {
                     dialect.boolean_predicate(&sql)
                 } else {
                     sql
@@ -322,15 +337,18 @@ fn compile_source_free_predicate(
                 .into_iter()
                 .chain(escape.as_deref())
             {
-                check_like_operand(token, &source_free_expression_kind(operand, snapshot))?;
+                check_like_operand(
+                    token,
+                    &source_free_expression_kind(operand, snapshot, parameters),
+                )?;
             }
             let escape = escape
                 .as_ref()
-                .map(|escape| compile_source_free_expression(escape, snapshot, dialect))
+                .map(|escape| compile_source_free_expression(escape, snapshot, dialect, parameters))
                 .transpose()?;
             Ok(render_like(
-                &compile_source_free_expression(value, snapshot, dialect)?,
-                &compile_source_free_expression(pattern, snapshot, dialect)?,
+                &compile_source_free_expression(value, snapshot, dialect, parameters)?,
+                &compile_source_free_expression(pattern, snapshot, dialect, parameters)?,
                 escape.as_deref(),
                 *negated,
             ))
@@ -340,7 +358,7 @@ fn compile_source_free_predicate(
         {
             Ok(format!(
                 "(NOT {})",
-                compile_source_free_predicate(value, snapshot, dialect)?
+                compile_source_free_predicate(value, snapshot, dialect, parameters)?
             ))
         }
         Expression::Binary { operator, .. }
@@ -351,17 +369,21 @@ fn compile_source_free_predicate(
         {
             let (left, terms) = left_binary_spine(expression);
             let mut sql = "(".repeat(terms.len());
-            sql.push_str(&compile_source_free_predicate(left, snapshot, dialect)?);
+            sql.push_str(&compile_source_free_predicate(
+                left, snapshot, dialect, parameters,
+            )?);
             for (operator, right) in terms {
                 sql.push(' ');
                 sql.push_str(binary_operator_sql(operator)?);
                 sql.push(' ');
-                sql.push_str(&compile_source_free_predicate(right, snapshot, dialect)?);
+                sql.push_str(&compile_source_free_predicate(
+                    right, snapshot, dialect, parameters,
+                )?);
                 sql.push(')');
             }
             Ok(sql)
         }
-        _ => compile_source_free_expression(expression, snapshot, dialect),
+        _ => compile_source_free_expression(expression, snapshot, dialect, parameters),
     }
 }
 
@@ -369,18 +391,44 @@ fn compile_source_free_binary_expression(
     expression: &Expression<'_, '_>,
     snapshot: &MetadataSnapshot,
     dialect: SqlDialect,
+    parameters: Parameters<'_>,
 ) -> Result<String, QueryDiagnostic> {
     let (left, terms) = left_binary_spine(expression);
     let mut sql = "(".repeat(terms.len());
-    sql.push_str(&compile_source_free_expression(left, snapshot, dialect)?);
+    sql.push_str(&compile_source_free_expression(
+        left, snapshot, dialect, parameters,
+    )?);
     for (operator, right) in terms {
         sql.push(' ');
         sql.push_str(binary_operator_sql(operator)?);
         sql.push(' ');
-        sql.push_str(&compile_source_free_expression(right, snapshot, dialect)?);
+        sql.push_str(&compile_source_free_expression(
+            right, snapshot, dialect, parameters,
+        )?);
         sql.push(')');
     }
     Ok(sql)
+}
+
+/// `ПустаяСсылка` / `EmptyRef`: the 16-byte zero reference of an object.
+pub(super) fn is_empty_reference_name(name: &str) -> bool {
+    names_equal(name, "ПустаяСсылка") || names_equal(name, "EmptyRef")
+}
+
+/// Metadata kinds whose objects have a reference table.
+pub(super) fn has_reference_table(kind: MetadataKind) -> bool {
+    matches!(
+        kind,
+        MetadataKind::Catalog
+            | MetadataKind::Document
+            | MetadataKind::Enumeration
+            | MetadataKind::ChartOfCharacteristicTypes
+            | MetadataKind::ChartOfAccounts
+            | MetadataKind::ChartOfCalculationTypes
+            | MetadataKind::ExchangePlan
+            | MetadataKind::BusinessProcess
+            | MetadataKind::Task
+    )
 }
 
 pub(super) fn compile_metadata_value(
@@ -398,6 +446,29 @@ pub(super) fn compile_metadata_value(
             format!("unknown VALUE metadata kind {:?}", kind_token.lexeme),
         )
     })?;
+    if is_empty_reference_name(value_token.lexeme) {
+        if !has_reference_table(kind) {
+            return Err(QueryDiagnostic::at(
+                QueryDiagnosticKind::UnsupportedFeature,
+                Some(kind_token),
+                format!("{} has no empty reference", kind.as_str()),
+            ));
+        }
+        snapshot
+            .object_id(kind, object_token.lexeme)
+            .map_err(|error| {
+                QueryDiagnostic::lookup(
+                    object_token,
+                    error.clone(),
+                    format!(
+                        "VALUE object {}.{:?} could not be resolved: {error}",
+                        kind.as_str(),
+                        object_token.lexeme
+                    ),
+                )
+            })?;
+        return Ok(dialect.binary_literal(&[0; 16]));
+    }
     if !matches!(kind, MetadataKind::Catalog | MetadataKind::Enumeration) {
         return Err(QueryDiagnostic::at(
             QueryDiagnosticKind::UnsupportedFeature,
@@ -812,6 +883,9 @@ pub(super) fn compile_source_relation(
             Expression::Literal(token) => compile_literal(token, dialect),
             Expression::DateTime { .. } | Expression::BeginOfPeriod { .. } => {
                 compile_constant_date_expression(expression, dialect)
+            }
+            Expression::Parameter(token) => {
+                compile_date_parameter(token, catalog.parameters, dialect)
             }
             _ => Err(QueryDiagnostic::at(
                 QueryDiagnosticKind::UnsupportedFeature,
