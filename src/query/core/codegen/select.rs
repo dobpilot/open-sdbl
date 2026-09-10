@@ -1430,6 +1430,52 @@ struct JoinedFieldEquality {
     right_marker: String,
 }
 
+/// One side of a join equality, classified by its physical shape.
+enum JoinOperand<'field> {
+    /// A single physical column; `payload` marks a 20-byte
+    /// `RTRef ‖ RRRef` value and `fixed` a 16-byte reference.
+    Single {
+        column: &'field QueryableColumn,
+        payload: bool,
+        fixed: bool,
+    },
+    /// A composite reference storing its type and value separately.
+    Compound {
+        type_column: &'field QueryableColumn,
+        value_column: &'field QueryableColumn,
+    },
+    Unsupported,
+}
+
+fn classify_join_operand(field: &QueryableField) -> JoinOperand<'_> {
+    if let [column] = field.columns.as_slice() {
+        let (payload, fixed) = match &column.kind {
+            ColumnKind::Reference { runtime_typed, .. } => (*runtime_typed, !*runtime_typed),
+            _ => (false, false),
+        };
+        return JoinOperand::Single {
+            column,
+            payload,
+            fixed,
+        };
+    }
+    let type_column = field
+        .columns
+        .iter()
+        .find(|column| column.is_reference_type_member());
+    let value_column = field
+        .columns
+        .iter()
+        .find(|column| column.is_reference_value_member());
+    match (type_column, value_column) {
+        (Some(type_column), Some(value_column)) => JoinOperand::Compound {
+            type_column,
+            value_column,
+        },
+        _ => JoinOperand::Unsupported,
+    }
+}
+
 fn compile_join_field_equality(
     context: &CompilationContext<'_, '_>,
     left: &ResolvedPath,
@@ -1437,47 +1483,199 @@ fn compile_join_field_equality(
     right: &ResolvedPath,
     right_token: &Token<'_>,
 ) -> Result<JoinedFieldEquality, QueryDiagnostic> {
-    if let ([left_column], [right_column]) = (
-        left.field().columns.as_slice(),
-        right.field().columns.as_slice(),
+    let equality = |sql: String, left_marker: String, right_marker: String| JoinedFieldEquality {
+        sql,
+        left_marker,
+        right_marker,
+    };
+    match (
+        classify_join_operand(left.field()),
+        classify_join_operand(right.field()),
     ) {
-        let left_sql = context.sql_column(left, left_column);
-        let right_sql = context.sql_column(right, right_column);
-        return Ok(JoinedFieldEquality {
-            sql: format!("{left_sql} = {right_sql}"),
-            left_marker: left_sql,
-            right_marker: right_sql,
-        });
-    }
-
-    if left.field().columns.len() > 1 && right.field().columns.len() == 1 {
-        return compile_compound_fixed_reference_equality(
+        // Equal widths compare directly: two scalars, two fixed
+        // references, or two runtime-typed payloads.
+        (
+            JoinOperand::Single {
+                column: left_column,
+                payload: left_payload,
+                ..
+            },
+            JoinOperand::Single {
+                column: right_column,
+                payload: right_payload,
+                ..
+            },
+        ) if left_payload == right_payload => {
+            let left_sql = context.sql_column(left, left_column);
+            let right_sql = context.sql_column(right, right_column);
+            Ok(equality(
+                format!("{left_sql} = {right_sql}"),
+                left_sql,
+                right_sql,
+            ))
+        }
+        // A fixed reference against a payload column is widened to its own
+        // payload, so both sides compare as 20-byte values.
+        (
+            JoinOperand::Single {
+                column: fixed_column,
+                fixed: true,
+                ..
+            },
+            JoinOperand::Single {
+                column: payload_column,
+                payload: true,
+                ..
+            },
+        ) => {
+            let widened = widened_fixed_reference(context, left, fixed_column, left_token)?;
+            let payload_sql = context.sql_column(right, payload_column);
+            Ok(equality(
+                format!("{widened} = {payload_sql}"),
+                widened,
+                payload_sql,
+            ))
+        }
+        (
+            JoinOperand::Single {
+                column: payload_column,
+                payload: true,
+                ..
+            },
+            JoinOperand::Single {
+                column: fixed_column,
+                fixed: true,
+                ..
+            },
+        ) => {
+            let widened = widened_fixed_reference(context, right, fixed_column, right_token)?;
+            let payload_sql = context.sql_column(left, payload_column);
+            Ok(equality(
+                format!("{payload_sql} = {widened}"),
+                payload_sql,
+                widened,
+            ))
+        }
+        // A composite field against a payload column is concatenated.
+        (
+            JoinOperand::Compound {
+                type_column,
+                value_column,
+            },
+            JoinOperand::Single {
+                column: payload_column,
+                payload: true,
+                ..
+            },
+        ) => {
+            let widened = context.dialect.reference_payload(
+                &context.sql_column(left, type_column),
+                &context.sql_column(left, value_column),
+            );
+            let payload_sql = context.sql_column(right, payload_column);
+            Ok(equality(
+                format!("{widened} = {payload_sql}"),
+                widened,
+                payload_sql,
+            ))
+        }
+        (
+            JoinOperand::Single {
+                column: payload_column,
+                payload: true,
+                ..
+            },
+            JoinOperand::Compound {
+                type_column,
+                value_column,
+            },
+        ) => {
+            let widened = context.dialect.reference_payload(
+                &context.sql_column(right, type_column),
+                &context.sql_column(right, value_column),
+            );
+            let payload_sql = context.sql_column(left, payload_column);
+            Ok(equality(
+                format!("{payload_sql} = {widened}"),
+                payload_sql,
+                widened,
+            ))
+        }
+        // Two composite fields compare member by member, which keeps the
+        // physical columns available to the optimizer.
+        (
+            JoinOperand::Compound {
+                type_column: left_type,
+                value_column: left_value,
+            },
+            JoinOperand::Compound {
+                type_column: right_type,
+                value_column: right_value,
+            },
+        ) => {
+            let left_value_sql = context.sql_column(left, left_value);
+            let right_value_sql = context.sql_column(right, right_value);
+            let sql = format!(
+                "({left_value_sql} = {right_value_sql} AND {} = {})",
+                context.sql_column(left, left_type),
+                context.sql_column(right, right_type),
+            );
+            Ok(equality(sql, left_value_sql, right_value_sql))
+        }
+        (
+            JoinOperand::Compound { .. },
+            JoinOperand::Single {
+                fixed: true,
+                payload: false,
+                ..
+            },
+        ) => compile_compound_fixed_reference_equality(
             context,
             left,
             left_token,
             right,
             right_token,
             false,
-        );
-    }
-    if right.field().columns.len() > 1 && left.field().columns.len() == 1 {
-        return compile_compound_fixed_reference_equality(
+        ),
+        (
+            JoinOperand::Single {
+                fixed: true,
+                payload: false,
+                ..
+            },
+            JoinOperand::Compound { .. },
+        ) => compile_compound_fixed_reference_equality(
             context,
             right,
             right_token,
             left,
             left_token,
             true,
-        );
+        ),
+        _ => Err(QueryDiagnostic::at(
+            QueryDiagnosticKind::UnsupportedFeature,
+            Some(left_token),
+            "JOIN equality does not support these compound field shapes",
+        )),
     }
+}
 
-    Err(QueryDiagnostic::at(
-        QueryDiagnosticKind::UnsupportedFeature,
-        Some(left_token),
-        "JOIN equality does not support these compound field shapes",
+/// A fixed reference rendered as the `RTRef ‖ RRRef` payload of its target.
+fn widened_fixed_reference(
+    context: &CompilationContext<'_, '_>,
+    resolved: &ResolvedPath,
+    column: &QueryableColumn,
+    token: &Token<'_>,
+) -> Result<String, QueryDiagnostic> {
+    let database_type = fixed_reference_database_type(context.snapshot, resolved.field(), token)?;
+    Ok(context.dialect.reference_payload(
+        &context.dialect.binary_u32(database_type),
+        &context.sql_column(resolved, column),
     ))
 }
 
+/// A composite reference compared with a fixed one: the identifiers must
+/// match and the composite type must be the fixed target's type number.
 fn compile_compound_fixed_reference_equality(
     context: &CompilationContext<'_, '_>,
     compound: &ResolvedPath,

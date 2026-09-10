@@ -5677,3 +5677,102 @@ fn bounds_batches_compiled_without_a_manager() {
     assert_eq!(overflow.kind(), QueryDiagnosticKind::TemporaryTable);
     assert!(overflow.message().contains("256 definitions"));
 }
+
+#[test]
+fn widens_reference_equalities_in_join_conditions() {
+    let snapshot = presentation_reference_snapshot(true);
+    let mut session = BatchSession::new();
+    session
+        .compile(
+            &snapshot,
+            "ВЫБРАТЬ ProbeAttribute КАК Объект ПОМЕСТИТЬ ВТ ИЗ Catalog.OpenSdblMetadataProbe;",
+        )
+        .0
+        .unwrap();
+
+    // A fixed 16-byte reference is widened to its own payload before it is
+    // compared with the 20-byte column of the temporary table.
+    let (postgres, mssql) = session.compile(
+        &snapshot,
+        "ВЫБРАТЬ Д.Ссылка ИЗ Catalog.OpenSdblMetadataProbe КАК Д
+         ЛЕВОЕ СОЕДИНЕНИЕ ВТ КАК Т ПО Д.Ссылка = Т.Объект;",
+    );
+    let postgres = postgres.unwrap().unwrap();
+    assert!(postgres.sql.contains(
+        "LEFT JOIN \"vt1\" AS \"Т\" ON (decode('00000035', 'hex') || \"Д\".\"_idrref\") = \"Т\".\"Объект\""
+    ));
+    let mssql = mssql.unwrap().unwrap();
+    assert!(
+        mssql
+            .sql
+            .contains("LEFT JOIN [vt1] AS [Т] ON (0x00000035 + [Д].[_idrref]) = [Т].[Объект]")
+    );
+
+    // A composite field is concatenated instead of failing on its missing
+    // unique SchemaStorage target.
+    let composite = session
+        .compile(
+            &snapshot,
+            "ВЫБРАТЬ П.Ссылка ИЗ Catalog.OpenSdblMetadataProbe КАК П
+             ВНУТРЕННЕЕ СОЕДИНЕНИЕ ВТ КАК Т ПО П.ProbeAttribute = Т.Объект;",
+        )
+        .0
+        .unwrap()
+        .unwrap();
+    assert!(composite.sql.contains(
+        "INNER JOIN \"vt1\" AS \"Т\" ON (\"П\".\"_fld54_rtref\" || \"П\".\"_fld54_rrref\") = \"Т\".\"Объект\""
+    ));
+
+    // Two payload columns compare directly.
+    session
+        .compile(
+            &snapshot,
+            "ВЫБРАТЬ ProbeAttribute КАК Объект ПОМЕСТИТЬ ВТ2 ИЗ Catalog.OpenSdblMetadataProbe;",
+        )
+        .0
+        .unwrap();
+    let payloads = session
+        .compile(
+            &snapshot,
+            "ВЫБРАТЬ А.Объект ИЗ ВТ КАК А ВНУТРЕННЕЕ СОЕДИНЕНИЕ ВТ2 КАК Б ПО А.Объект = Б.Объект;",
+        )
+        .0
+        .unwrap()
+        .unwrap();
+    assert!(
+        payloads
+            .sql
+            .contains("INNER JOIN \"vt2\" AS \"Б\" ON \"А\".\"Объект\" = \"Б\".\"Объект\"")
+    );
+
+    // Two composite fields compare member by member.
+    let members = session
+        .compile(
+            &snapshot,
+            "ВЫБРАТЬ А.Ссылка ИЗ Catalog.OpenSdblMetadataProbe КАК А
+             ВНУТРЕННЕЕ СОЕДИНЕНИЕ Catalog.OpenSdblMetadataProbe КАК Б
+             ПО А.ProbeAttribute = Б.ProbeAttribute;",
+        )
+        .0
+        .unwrap()
+        .unwrap();
+    assert!(members.sql.contains(
+        "ON (\"А\".\"_fld54_rrref\" = \"Б\".\"_fld54_rrref\" AND \"А\".\"_fld54_rtref\" = \"Б\".\"_fld54_rtref\")"
+    ));
+
+    // A transposed FULL JOIN anchors on the widened expression.
+    let full = session
+        .compile(
+            &snapshot,
+            "ВЫБРАТЬ Д.Ссылка ИЗ Catalog.OpenSdblMetadataProbe КАК Д
+             ПОЛНОЕ СОЕДИНЕНИЕ ВТ КАК Т ПО Д.Ссылка = Т.Объект;",
+        )
+        .0
+        .unwrap()
+        .unwrap();
+    assert!(full.sql.contains("UNION ALL"));
+    assert!(
+        full.sql
+            .contains("(decode('00000035', 'hex') || \"Д\".\"_idrref\") IS NULL")
+    );
+}
