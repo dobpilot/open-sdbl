@@ -119,6 +119,17 @@ pub(super) fn compile_branch(
             )
         })
         .collect::<Result<Vec<_>, _>>()?;
+    // A transposed FULL JOIN duplicates its condition into two branches
+    // whose anti-match marker must be a column of the join itself.
+    if context.dereference_in_join
+        && let Some(join) = joins.iter().find(|join| join.kind == JoinKind::Full)
+    {
+        return Err(QueryDiagnostic::at(
+            QueryDiagnosticKind::UnsupportedFeature,
+            Some(join.token),
+            "FULL JOIN condition supports direct fields only",
+        ));
+    }
     let filter = ast
         .filter
         .as_ref()
@@ -264,6 +275,8 @@ fn compile_branch_context<'snapshot, 'catalog>(
             sources,
             dialect,
             aggregates_allowed: false,
+            compiling_join_condition: false,
+            dereference_in_join: false,
         });
     }
     let scope = resolve_join_source(source, snapshot, catalog, "__src", dialect, presentations)?;
@@ -273,6 +286,8 @@ fn compile_branch_context<'snapshot, 'catalog>(
         sources: vec![scope],
         dialect,
         aggregates_allowed: false,
+        compiling_join_condition: false,
+        dereference_in_join: false,
     })
 }
 
@@ -1216,7 +1231,11 @@ fn compile_join_condition(
 ) -> Result<FullJoinCondition, QueryDiagnostic> {
     let mut parts = Vec::new();
     let mut left_marker = None;
-    compile_join_condition_parts(expression, context, &mut parts, &mut left_marker, joined)?;
+    context.compiling_join_condition = true;
+    let compiled =
+        compile_join_condition_parts(expression, context, &mut parts, &mut left_marker, joined);
+    context.compiling_join_condition = false;
+    compiled?;
     let left_marker = left_marker.ok_or_else(|| {
         QueryDiagnostic::at(
             QueryDiagnosticKind::UnsupportedFeature,
@@ -1269,7 +1288,7 @@ fn compile_join_condition_parts(
 
 fn compile_cross_source_join_equality(
     expression: &Expression<'_, '_>,
-    context: &CompilationContext<'_, '_>,
+    context: &mut CompilationContext<'_, '_>,
     joined: ScopeId,
 ) -> Result<Option<(String, String)>, QueryDiagnostic> {
     let Expression::Binary {
@@ -1288,8 +1307,8 @@ fn compile_cross_source_join_equality(
     else {
         return Ok(None);
     };
-    let left_field = context.resolve_direct(left_reference)?;
-    let right_field = context.resolve_direct(right_reference)?;
+    let left_field = context.resolve(left_reference)?;
+    let right_field = context.resolve(right_reference)?;
     check_join_scope(left_field.scope, left_reference.last(), joined)?;
     check_join_scope(right_field.scope, right_reference.last(), joined)?;
     // Only an equality that binds the joined source to an earlier one is the
@@ -1335,18 +1354,18 @@ fn check_join_scope(
 
 fn validate_direct_join_condition_fields(
     expression: &Expression<'_, '_>,
-    context: &CompilationContext<'_, '_>,
+    context: &mut CompilationContext<'_, '_>,
     joined: ScopeId,
 ) -> Result<(), QueryDiagnostic> {
     let mut pending = vec![expression];
     while let Some(expression) = pending.pop() {
         match expression {
             Expression::Field(reference) => {
-                let resolved = context.resolve_direct(reference)?;
+                let resolved = context.resolve(reference)?;
                 check_join_scope(resolved.scope, reference.last(), joined)?;
             }
             Expression::Uuid { argument, .. } => {
-                let resolved = context.resolve_direct(argument)?;
+                let resolved = context.resolve(argument)?;
                 check_join_scope(resolved.scope, argument.last(), joined)?;
             }
             Expression::Cast {
@@ -1785,16 +1804,14 @@ fn compile_native_join(
     conditions: &[FullJoinCondition],
     filter: Option<&str>,
 ) -> String {
+    // A condition that dereferences a reference can only see joins written
+    // before it, so every source carries its own dereference joins in a
+    // parenthesized group. Without such a condition the flat list is kept.
+    let grouped = context.dereference_in_join;
     let mut sql = context.dialect.select_prefix(ast.distinct, ast.top);
     sql.push_str(&projections.join(", "));
     sql.push_str(" FROM ");
-    sql.push_str(&context.sources[0].relation);
-    sql.push_str(" AS ");
-    sql.push_str(
-        &context
-            .dialect
-            .quote_identifier(&context.sources[0].sql_alias),
-    );
+    sql.push_str(&render_join_source(context, &context.sources[0], grouped));
     for ((join, condition), source) in joins.iter().zip(conditions).zip(&context.sources[1..]) {
         let operator = match join.kind {
             JoinKind::Inner => "INNER JOIN",
@@ -1805,13 +1822,13 @@ fn compile_native_join(
         sql.push(' ');
         sql.push_str(operator);
         sql.push(' ');
-        sql.push_str(&source.relation);
-        sql.push_str(" AS ");
-        sql.push_str(&context.dialect.quote_identifier(&source.sql_alias));
+        sql.push_str(&render_join_source(context, source, grouped));
         sql.push_str(" ON ");
         sql.push_str(&condition.sql);
     }
-    append_joined_reference_joins(&mut sql, context);
+    if !grouped {
+        append_joined_reference_joins(&mut sql, context);
+    }
     if let Some(filter) = filter {
         sql.push_str(" WHERE ");
         sql.push_str(filter);
@@ -1819,28 +1836,45 @@ fn compile_native_join(
     sql
 }
 
+/// One source of a native join: bare, or grouped with its dereference
+/// joins so that later `ON` clauses can address them.
+fn render_join_source(
+    context: &CompilationContext<'_, '_>,
+    source: &SourceScope,
+    grouped: bool,
+) -> String {
+    let mut sql = format!(
+        "{} AS {}",
+        source.relation,
+        context.dialect.quote_identifier(&source.sql_alias)
+    );
+    if !grouped || source.reference_joins.is_empty() {
+        return sql;
+    }
+    for join in &source.reference_joins {
+        append_reference_join(&mut sql, join, context.dialect);
+    }
+    format!("({sql})")
+}
+
 fn append_joined_reference_joins(sql: &mut String, context: &CompilationContext<'_, '_>) {
     for source in &context.sources {
         for join in &source.reference_joins {
-            sql.push_str(" LEFT JOIN ");
-            sql.push_str(&join.target_relation);
-            sql.push_str(" AS ");
-            sql.push_str(&context.dialect.quote_identifier(&join.alias));
-            sql.push_str(" ON ");
-            sql.push_str(
-                &context
-                    .dialect
-                    .qualified_column(Some(&join.source_alias), &join.source_column),
-            );
-            sql.push_str(" = ");
-            sql.push_str(
-                &context
-                    .dialect
-                    .qualified_column(Some(&join.alias), &join.target_id_column),
-            );
-            append_type_guard(sql, &join.source_alias, join, context.dialect);
+            append_reference_join(sql, join, context.dialect);
         }
     }
+}
+
+fn append_reference_join(sql: &mut String, join: &JoinPlan, dialect: SqlDialect) {
+    sql.push_str(" LEFT JOIN ");
+    sql.push_str(&join.target_relation);
+    sql.push_str(" AS ");
+    sql.push_str(&dialect.quote_identifier(&join.alias));
+    sql.push_str(" ON ");
+    sql.push_str(&dialect.qualified_column(Some(&join.source_alias), &join.source_column));
+    sql.push_str(" = ");
+    sql.push_str(&dialect.qualified_column(Some(&join.alias), &join.target_id_column));
+    append_type_guard(sql, &join.source_alias, join, dialect);
 }
 
 fn append_type_guard(sql: &mut String, source_alias: &str, join: &JoinPlan, dialect: SqlDialect) {

@@ -1057,6 +1057,8 @@ pub(super) fn compile_source_relation(
             }],
             dialect,
             aggregates_allowed: false,
+            compiling_join_condition: false,
+            dereference_in_join: false,
         };
         let sql = compile_expression(condition, &mut condition_context)?;
         if !condition_context.sources[0].reference_joins.is_empty() {

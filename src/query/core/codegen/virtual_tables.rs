@@ -510,6 +510,8 @@ fn compile_accumulation_condition(
         }],
         dialect,
         aggregates_allowed: false,
+        compiling_join_condition: false,
+        dereference_in_join: false,
     };
     let sql = compile_expression(condition, &mut context)?;
     if !context.sources[0].reference_joins.is_empty() {

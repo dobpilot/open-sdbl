@@ -2675,25 +2675,24 @@ fn rejects_unsafe_or_ambiguous_join_shapes() {
     .unwrap_err();
     assert!(same_alias.message().contains("distinct aliases"));
 
-    let reference_condition = postgres_compile!(
+    let deep_condition = postgres_compile!(
         "SELECT p.Code FROM Catalog.OpenSdblMetadataProbe p
-         LEFT JOIN Catalog.Организации t ON p.Организация.Code = t.Code;",
+         LEFT JOIN Catalog.Организации t ON p.Организация.Код.Code = t.Code;",
         &snapshot,
     )
     .unwrap_err();
-    assert!(reference_condition.message().contains("direct fields only"));
+    assert!(deep_condition.message().contains("deeper than one hop"));
 
-    let additional_reference_condition = postgres_compile!(
+    let full_join_condition = postgres_compile!(
         "SELECT p.Code FROM Catalog.OpenSdblMetadataProbe p
-         LEFT JOIN Catalog.Организации t
-         ON p.Code = t.Code AND p.Организация.Code = \"A\";",
+         FULL JOIN Catalog.Организации t ON p.Организация.Code = t.Code;",
         &snapshot,
     )
     .unwrap_err();
     assert!(
-        additional_reference_condition
+        full_join_condition
             .message()
-            .contains("direct fields only")
+            .contains("FULL JOIN condition supports direct fields only")
     );
 
     let ambiguous = postgres_compile!(
@@ -5775,4 +5774,83 @@ fn widens_reference_equalities_in_join_conditions() {
         full.sql
             .contains("(decode('00000035', 'hex') || \"Д\".\"_idrref\") IS NULL")
     );
+}
+
+#[test]
+fn dereferences_references_inside_join_conditions() {
+    let snapshot = reference_snapshot();
+
+    // The dereference join is grouped with its own source so that the ON
+    // clause of the later join can address it.
+    let (postgres, mssql) = for_each_backend!(
+        "ВЫБРАТЬ p.Code ИЗ Catalog.OpenSdblMetadataProbe КАК p
+         ЛЕВОЕ СОЕДИНЕНИЕ Catalog.Организации КАК t ПО p.Организация.Code = t.Code;",
+        &snapshot,
+    );
+    let postgres = postgres.unwrap();
+    assert!(postgres.sql.contains(
+        "FROM (\"_reference53\" AS \"p\" LEFT JOIN \"_reference57\" AS \"__left_ref1\" ON \"p\".\"_fld54\" = \"__left_ref1\".\"_idrref\") LEFT JOIN \"_reference57\" AS \"t\" ON \"__left_ref1\".\"_code\" = \"t\".\"_code\""
+    ));
+    let mssql = mssql.unwrap();
+    assert!(mssql.sql.contains(
+        "FROM ([_reference53] AS [p] LEFT JOIN [_reference57] AS [__left_ref1] ON [p].[_fld54] = [__left_ref1].[_idrref]) LEFT JOIN [_reference57] AS [t] ON"
+    ));
+
+    // A dereference used only as an extra predicate keeps the anchor.
+    let extra = postgres_compile!(
+        "ВЫБРАТЬ p.Code ИЗ Catalog.OpenSdblMetadataProbe КАК p
+         ЛЕВОЕ СОЕДИНЕНИЕ Catalog.Организации КАК t
+         ПО p.Code = t.Code И p.Организация.Code = \"A\";",
+        &snapshot,
+    )
+    .unwrap();
+    assert!(
+        extra
+            .sql
+            .contains("LEFT JOIN \"_reference57\" AS \"__left_ref1\" ON")
+    );
+    assert!(extra.sql.contains("(\"__left_ref1\".\"_code\" = 'A')"));
+
+    // A dereference of an earlier source inside a later condition groups
+    // that earlier source.
+    let earlier = postgres_compile!(
+        "ВЫБРАТЬ p.Code ИЗ Catalog.OpenSdblMetadataProbe КАК p
+         ЛЕВОЕ СОЕДИНЕНИЕ Catalog.Организации КАК t ПО p.Code = t.Code
+         ЛЕВОЕ СОЕДИНЕНИЕ Catalog.Организации КАК u ПО p.Организация.Code = u.Code;",
+        &snapshot,
+    )
+    .unwrap();
+    assert!(earlier.sql.contains(
+        "FROM (\"_reference53\" AS \"p\" LEFT JOIN \"_reference57\" AS \"__left_ref1\" ON"
+    ));
+    assert!(earlier.sql.contains(
+        "LEFT JOIN \"_reference57\" AS \"u\" ON \"__left_ref1\".\"_code\" = \"u\".\"_code\""
+    ));
+
+    // A dereference shared by a projection and a condition is planned once.
+    let shared = postgres_compile!(
+        "ВЫБРАТЬ p.Организация.Code КАК Орг ИЗ Catalog.OpenSdblMetadataProbe КАК p
+         ЛЕВОЕ СОЕДИНЕНИЕ Catalog.Организации КАК t ПО p.Организация.Code = t.Code;",
+        &snapshot,
+    )
+    .unwrap();
+    assert_eq!(shared.sql.matches("__left_ref1").count(), 4);
+    assert!(
+        shared
+            .sql
+            .contains("FROM (\"_reference53\" AS \"p\" LEFT JOIN")
+    );
+
+    // Statements whose conditions use no dereference keep the flat form.
+    let flat = postgres_compile!(
+        "ВЫБРАТЬ p.Организация.Code КАК Орг ИЗ Catalog.OpenSdblMetadataProbe КАК p
+         ЛЕВОЕ СОЕДИНЕНИЕ Catalog.Организации КАК t ПО p.Code = t.Code;",
+        &snapshot,
+    )
+    .unwrap();
+    assert!(
+        flat.sql
+            .contains("FROM \"_reference53\" AS \"p\" LEFT JOIN \"_reference57\" AS \"t\" ON")
+    );
+    assert!(flat.sql.ends_with("LEFT JOIN \"_reference57\" AS \"__left_ref1\" ON \"p\".\"_fld54\" = \"__left_ref1\".\"_idrref\""));
 }

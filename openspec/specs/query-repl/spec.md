@@ -22,10 +22,12 @@ expressions. A branch MAY instead chain one or more
 scope, or contain exactly one `ПОЛНОЕ [ВНЕШНЕЕ] СОЕДИНЕНИЕ` / `FULL
 [OUTER] JOIN`. Joined branches SHALL support named direct fields and one-hop
 reference properties. Each join condition SHALL contain at least one top-level
-scalar direct-field equality between the joined source and an earlier source
-and MAY combine that anchor with additional supported scalar direct-field
-predicates over the joined source and earlier sources by top-level
-`И`/`AND`. Additional predicates SHALL remain in ON. Final `УПОРЯДОЧИТЬ
+scalar equality between a direct field or one-hop reference property of the
+joined source and one of an earlier source, and MAY combine that anchor with
+additional supported scalar predicates over direct fields and one-hop
+reference properties of the joined source and earlier sources by top-level
+`И`/`AND`. Additional predicates SHALL remain in ON. A `ПОЛНОЕ [ВНЕШНЕЕ]
+СОЕДИНЕНИЕ` condition SHALL use direct fields only. Final `УПОРЯДОЧИТЬ
 ПО`/`ORDER BY` SHALL support `ВОЗР`/`ASC` and `УБЫВ`/`DESC`. Statements
 of a batch SHALL be separated by semicolons and one or more trailing
 semicolons SHALL terminate the batch; a single statement remains a valid
@@ -146,9 +148,10 @@ batch. Unsupported syntax SHALL fail before execution.
 #### Scenario: Unsupported join shape
 - **WHEN** a query combines FULL JOIN with another join in the same branch,
   references a later source from an earlier join condition, uses wildcard
-  joined projection, non-scalar join fields, reference properties in ON,
-  lacks a top-level direct-field equality with an earlier source, or nests
-  its only equality under OR
+  joined projection, non-scalar join fields, reference paths deeper than
+  one hop in ON, a reference property in a FULL JOIN condition, lacks a
+  top-level equality with an earlier source, or nests its only equality
+  under OR
 - **THEN** compilation returns a positional diagnostic and no SQL is produced
 
 #### Scenario: Repeated query terminator
@@ -1736,3 +1739,31 @@ comparison. The widened expression SHALL serve as the join anchor marker.
 #### Scenario: Payload against payload
 - **WHEN** two temporary tables are joined on runtime-typed columns
 - **THEN** generated SQL compares the two columns directly
+
+### Requirement: Dereference references inside join conditions
+The compiler SHALL accept one-hop dereferences through fixed single-target
+references of the joined source and of earlier sources anywhere in a join
+condition. When a condition uses a dereference, the generated SQL SHALL
+render the dereference joins of every source as a parenthesized group next
+to that source's relation so that every `ON` clause can reference them;
+statements whose conditions use no dereference SHALL keep the flat join
+list. A `ПОЛНОЕ [ВНЕШНЕЕ] СОЕДИНЕНИЕ` whose condition dereferences a
+reference SHALL fail with a positional diagnostic.
+
+#### Scenario: Tabular section joined through its owner
+- **WHEN** a query joins `Документ.Корреспонденция.Корреспонденты КАК К`
+  to `Справочник.ДокументыПредприятия КАК Д` on `К.Ссылка.Основание = Д.Ссылка`
+- **THEN** both dialects emit the tabular section grouped with a `LEFT JOIN`
+  of its owner document and compare the owner's `Основание` column with the
+  catalog identifier in the `ON` clause
+
+#### Scenario: Earlier source dereferenced in a later condition
+- **WHEN** the third source of a chain is joined on a property of the first
+  source's reference field
+- **THEN** the first source is rendered as a group with its dereference
+  join and the third `ON` references that join's alias
+
+#### Scenario: Flat rendering preserved
+- **WHEN** no join condition dereferences a reference
+- **THEN** the generated SQL is identical to the SQL generated before this
+  change

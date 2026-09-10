@@ -140,6 +140,11 @@ pub(super) struct CompilationContext<'snapshot, 'catalog> {
     /// Whether aggregate calls may appear in the expression being compiled
     /// (projections and `HAVING` of a grouped branch).
     pub(super) aggregates_allowed: bool,
+    /// Set while a join condition is compiled.
+    pub(super) compiling_join_condition: bool,
+    /// Whether a join condition dereferenced a reference, which forces the
+    /// dereference joins to be rendered next to their own source.
+    pub(super) dereference_in_join: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -521,6 +526,9 @@ impl CompilationContext<'_, '_> {
             });
             alias
         };
+        if self.compiling_join_condition {
+            self.dereference_in_join = true;
+        }
         Ok(ResolvedPath {
             scope,
             owner: target_object_id,
