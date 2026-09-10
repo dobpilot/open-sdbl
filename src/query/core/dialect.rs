@@ -277,6 +277,25 @@ impl SqlDialect {
         }
     }
 
+    /// Projects a column inside a nested statement: values stay in the
+    /// storage domain (the outer statement corrects MSSQL dates once), only
+    /// the PostgreSQL 1C string types are cast to text.
+    pub(super) fn storage_column_projection(
+        self,
+        expression: &str,
+        kind: &ColumnKind,
+        data_type: &str,
+    ) -> String {
+        match (self, kind) {
+            (Self::Postgres, ColumnKind::String { .. })
+                if matches!(base_type_name(data_type).as_str(), "mchar" | "mvarchar") =>
+            {
+                format!("{expression}::text")
+            }
+            _ => expression.to_owned(),
+        }
+    }
+
     /// Renders a scalar `ВЫРАЗИТЬ`/`CAST`. PostgreSQL uses `substring … for`
     /// rather than `left` so servers back to 9.0 are supported; MSSQL falls
     /// back to `nvarchar(max)` beyond the 4000-character limit and to

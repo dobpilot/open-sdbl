@@ -1,4 +1,5 @@
 use super::context::{CompilationContext, ResolvedPath};
+use super::orchestrate::{PresentationCompilation, compile_query_ast};
 use super::params::{
     ReferenceConstant, list_elements, object_type_number, parameter_kind,
     reference_constant_of_bytes, reference_constant_of_value, render_scalar_parameter,
@@ -446,6 +447,7 @@ pub(super) fn operand_token<'tokens, 'source>(
         | Expression::Aggregate { token, .. } => Some(token),
         Expression::Unary { operator, .. } | Expression::Binary { operator, .. } => Some(operator),
         Expression::InList { value, .. } | Expression::IsNull { value, .. } => operand_token(value),
+        Expression::InQuery { token, .. } => Some(token),
     }
 }
 
@@ -825,9 +827,10 @@ pub(super) fn source_free_expression_kind(
             },
             _ => ColumnKind::Boolean,
         },
-        Expression::InList { .. } | Expression::IsNull { .. } | Expression::Like { .. } => {
-            ColumnKind::Boolean
-        }
+        Expression::InList { .. }
+        | Expression::InQuery { .. }
+        | Expression::IsNull { .. }
+        | Expression::Like { .. } => ColumnKind::Boolean,
         Expression::Case {
             branches,
             otherwise,
@@ -1011,8 +1014,18 @@ pub(super) fn compile_expression(
             operator: _,
             right: _,
         } => compile_binary_expression(expression, context),
-        Expression::InList { value, items } => {
-            if let Some(sql) = compile_reference_pair_in_list(value, items, context)? {
+        Expression::InQuery {
+            token,
+            value,
+            query,
+            negated,
+        } => compile_in_query(token, value, query, *negated, context),
+        Expression::InList {
+            value,
+            items,
+            negated,
+        } => {
+            if let Some(sql) = compile_reference_pair_in_list(value, items, *negated, context)? {
                 return Ok(sql);
             }
             let value_sql = compile_expression(value, context)?;
@@ -1035,9 +1048,14 @@ pub(super) fn compile_expression(
                 item_sql.push(compile_expression_operand(item, value, context)?);
             }
             if item_sql.is_empty() {
-                return Ok(context.dialect.boolean_literal_predicate(false));
+                return Ok(context.dialect.boolean_literal_predicate(*negated));
             }
-            Ok(format!("({value_sql} IN ({}))", item_sql.join(", ")))
+            let sql = format!("({value_sql} IN ({}))", item_sql.join(", "));
+            Ok(if *negated {
+                format!("(NOT {sql})")
+            } else {
+                sql
+            })
         }
         Expression::Parameter(token) => match context.catalog.parameters.lookup(token)? {
             Some(value) => render_scalar_parameter(value, token, context.dialect, true),
@@ -1229,6 +1247,7 @@ fn compile_reference_pair_comparison(
 fn compile_reference_pair_in_list(
     value: &Expression<'_, '_>,
     items: &[Expression<'_, '_>],
+    negated: bool,
     context: &mut CompilationContext<'_, '_>,
 ) -> Result<Option<String>, QueryDiagnostic> {
     let Expression::Field(field) = value else {
@@ -1264,7 +1283,7 @@ fn compile_reference_pair_in_list(
         constants.push((constant, item));
     }
     if constants.is_empty() {
-        return Ok(Some(context.dialect.boolean_literal_predicate(false)));
+        return Ok(Some(context.dialect.boolean_literal_predicate(negated)));
     }
     let mut parts = Vec::with_capacity(constants.len());
     for (constant, item) in &constants {
@@ -1274,11 +1293,106 @@ fn compile_reference_pair_in_list(
         };
         parts.push(sql);
     }
-    Ok(Some(if parts.len() == 1 {
+    let sql = if parts.len() == 1 {
         parts.pop().expect("one part")
     } else {
         format!("({})", parts.join(" OR "))
-    }))
+    };
+    Ok(Some(if negated { format!("(NOT {sql})") } else { sql }))
+}
+
+/// Compiles `<value> [НЕ] В (<query>)`. The nested statement must project
+/// exactly one column of a compatible kind; reference operands are brought
+/// to the same width by widening the fixed side to an `RTRef ‖ RRRef`
+/// payload.
+fn compile_in_query(
+    token: &Token<'_>,
+    value: &Expression<'_, '_>,
+    query: &crate::query::core::ast::QueryAst<'_, '_>,
+    negated: bool,
+    context: &mut CompilationContext<'_, '_>,
+) -> Result<String, QueryDiagnostic> {
+    let snapshot = context.snapshot;
+    let dialect = context.dialect;
+    let mut presentations =
+        PresentationCompilation::strict(&[], context.catalog.parameters, dialect);
+    let inner = compile_query_ast(
+        query,
+        snapshot,
+        context.catalog,
+        &mut presentations,
+        Some(token),
+    )?;
+    let [column] = inner.columns.as_slice() else {
+        return Err(QueryDiagnostic::at(
+            QueryDiagnosticKind::UnsupportedFeature,
+            Some(token),
+            format!(
+                "IN subquery must project exactly one column, found {}",
+                inner.columns.len()
+            ),
+        ));
+    };
+    let (outer_sql, outer_kind) = value_operand(value, context)?;
+    if !column.kind.is_compatible_with(&outer_kind) {
+        return Err(QueryDiagnostic::at(
+            QueryDiagnosticKind::UnsupportedFeature,
+            Some(token),
+            format!(
+                "IN subquery column kind {:?} is not compatible with {:?}",
+                column.kind, outer_kind
+            ),
+        ));
+    }
+    let (outer_sql, inner_sql) = match (&outer_kind, &column.kind) {
+        (
+            ColumnKind::Reference {
+                runtime_typed: true,
+                ..
+            },
+            ColumnKind::Reference {
+                runtime_typed: false,
+                ..
+            },
+        ) => {
+            // Widen the inner side through a wrapping statement so the
+            // nested SQL stays untouched.
+            let wrapper = "__in";
+            let inner_column = dialect.qualified_column(Some(wrapper), &column.label);
+            let (widened, _) =
+                widen_reference(&inner_column, &column.kind, Some(token), snapshot, dialect)?;
+            (
+                outer_sql,
+                format!(
+                    "SELECT {widened} FROM ({}) AS {}",
+                    inner.sql,
+                    dialect.quote_identifier(wrapper)
+                ),
+            )
+        }
+        (
+            ColumnKind::Reference {
+                runtime_typed: false,
+                ..
+            },
+            ColumnKind::Reference {
+                runtime_typed: true,
+                ..
+            },
+        ) => {
+            let (widened, _) = widen_reference(
+                &outer_sql,
+                &outer_kind,
+                operand_token(value),
+                snapshot,
+                dialect,
+            )?;
+            (widened, inner.sql)
+        }
+        _ => (outer_sql, inner.sql),
+    };
+    let sql = format!("({outer_sql} IN ({inner_sql}))");
+    Ok(if negated { format!("(NOT {sql})") } else { sql })
 }
 
 fn reference_member_equality(

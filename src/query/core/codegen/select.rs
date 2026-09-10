@@ -6,24 +6,37 @@ use super::expression::{
     compile_aggregate, compile_expression, compile_predicate, expression_kind, reference_column,
     reference_type_column, single_column, widen_reference,
 };
-use super::orchestrate::PresentationCompilation;
+use super::orchestrate::{PresentationCompilation, compile_query_ast};
 use super::sources::{
     compile_source_free_branch, compile_source_relation, contains_aggregate,
     projection_is_aggregated, projection_token, validate_aggregate_projection,
 };
-use crate::metadata::{MetadataSnapshot, ObjectId};
+use crate::metadata::{Guid, MetadataSnapshot, ObjectId};
 use crate::query::core::ast::{
     AggregateArgument, CastTarget, Expression, FieldReference, JoinAst, JoinKind, OrderTerm,
     PresentationArgument, Projection, ProjectionItem, SelectAst, SourceAst,
 };
 use crate::query::core::dialect::{OutputLabelAllocator, SqlDialect};
 use crate::query::core::names::names_equal;
+use std::str::FromStr;
+
 use crate::query::core::resolve::{
-    ColumnKind, CompilationCatalog, CompiledColumn, QueryableField, resolve_source_metadata,
+    ColumnKind, CompilationCatalog, CompiledColumn, QueryableColumn, QueryableField,
+    resolve_source_metadata,
 };
 use crate::query::core::{QueryDiagnostic, QueryDiagnosticKind};
 use crate::{Keyword, Token, TokenKind};
 use std::collections::BTreeSet;
+
+/// How a branch is rendered within its statement.
+#[derive(Clone, Copy)]
+pub(super) struct BranchMode<'a> {
+    /// Output positions whose fixed references must be widened to payloads.
+    pub(super) widen: &'a BTreeSet<usize>,
+    /// Whether the statement is nested and keeps values in the storage
+    /// domain (no MSSQL year-offset correction on projections).
+    pub(super) storage_domain: bool,
+}
 
 pub(super) fn compile_branch(
     ast: &SelectAst<'_, '_>,
@@ -32,8 +45,12 @@ pub(super) fn compile_branch(
     order_terms: &[OrderTerm<'_, '_>],
     union_order: bool,
     presentations: &mut PresentationCompilation<'_>,
-    widen: &BTreeSet<usize>,
+    mode: BranchMode<'_>,
 ) -> Result<CompiledBranch, QueryDiagnostic> {
+    let BranchMode {
+        widen,
+        storage_domain,
+    } = mode;
     let dialect = presentations.dialect;
     validate_aggregate_projection(ast)?;
     let Some(source) = ast.source.as_ref() else {
@@ -56,14 +73,21 @@ pub(super) fn compile_branch(
             "GROUP BY and HAVING are not supported together with FULL JOIN",
         ));
     }
-    let mut context = compile_branch_context(source, joins, snapshot, catalog, dialect)?;
+    let mut context =
+        compile_branch_context(source, joins, snapshot, catalog, dialect, presentations)?;
     context.aggregates_allowed = grouped
         || ast
             .projection
             .iter()
             .any(|projection| projection_is_aggregated(&projection.expression));
-    let selected =
-        compile_branch_projections(ast, source, joins.first(), &mut context, presentations)?;
+    let selected = compile_branch_projections(
+        ast,
+        source,
+        joins.first(),
+        &mut context,
+        presentations,
+        storage_domain,
+    )?;
     let group_by = compile_group_keys(ast, &selected, &mut context)?;
     context.aggregates_allowed = grouped;
     let having = ast
@@ -77,7 +101,7 @@ pub(super) fn compile_branch(
         columns,
         sql: projections,
         deferred_presentations,
-    } = render_selected_projections(&selected, &context, widen)?;
+    } = render_selected_projections(&selected, &context, widen, storage_domain)?;
     if projections.is_empty() {
         return Err(empty_projection_diagnostic(source, joins.first()));
     }
@@ -191,10 +215,16 @@ fn compile_branch_context<'snapshot, 'catalog>(
     snapshot: &'snapshot MetadataSnapshot,
     catalog: &'catalog CompilationCatalog<'snapshot>,
     dialect: SqlDialect,
+    presentations: &mut PresentationCompilation<'_>,
 ) -> Result<CompilationContext<'snapshot, 'catalog>, QueryDiagnostic> {
     if !joins.is_empty() {
         let mut sources = vec![resolve_join_source(
-            source, snapshot, catalog, "__left", dialect,
+            source,
+            snapshot,
+            catalog,
+            "__left",
+            dialect,
+            presentations,
         )?];
         for (index, join) in joins.iter().enumerate() {
             // Sources are numbered from one: the base is `__left`, the first
@@ -204,8 +234,14 @@ fn compile_branch_context<'snapshot, 'catalog>(
             } else {
                 format!("__join{}", index + 2)
             };
-            let scope =
-                resolve_join_source(&join.source, snapshot, catalog, &default_alias, dialect)?;
+            let scope = resolve_join_source(
+                &join.source,
+                snapshot,
+                catalog,
+                &default_alias,
+                dialect,
+                presentations,
+            )?;
             if let Some(previous) = sources
                 .iter()
                 .find(|previous: &&SourceScope| names_equal(&previous.sql_alias, &scope.sql_alias))
@@ -229,34 +265,152 @@ fn compile_branch_context<'snapshot, 'catalog>(
             aggregates_allowed: false,
         });
     }
-    let resolved = resolve_source_metadata(source, snapshot, catalog)?;
-    let relation = compile_source_relation(
-        source,
-        snapshot,
-        catalog,
-        resolved.object,
-        resolved.live_table,
-        &resolved.fields,
-        dialect,
-    )?;
+    let scope = resolve_join_source(source, snapshot, catalog, "__src", dialect, presentations)?;
     Ok(CompilationContext {
         snapshot,
         catalog,
-        sources: vec![SourceScope {
-            object: ObjectId::from(&resolved.object.guid),
-            fields: relation.fields,
-            relation: relation.sql,
-            sql_alias: source
-                .alias
-                .map_or_else(|| "__src".to_owned(), |token| token.lexeme.to_owned()),
-            object_name: resolved.qualifier_name,
-            source_alias: source.alias.map(|token| token.lexeme.to_owned()),
-            identity_is_base: resolved.identity_is_base,
-            reference_joins: Vec::new(),
-        }],
+        sources: vec![scope],
         dialect,
         aggregates_allowed: false,
     })
+}
+
+/// Builds the scope of a `(ВЫБРАТЬ …) КАК alias` source: the nested
+/// statement becomes the relation and its columns become the fields.
+fn derived_source_scope(
+    source: &SourceAst<'_, '_>,
+    nested: &crate::query::core::ast::QueryAst<'_, '_>,
+    snapshot: &MetadataSnapshot,
+    catalog: &CompilationCatalog<'_>,
+    dialect: SqlDialect,
+    presentations: &mut PresentationCompilation<'_>,
+) -> Result<SourceScope, QueryDiagnostic> {
+    let compiled = compile_query_ast(
+        nested,
+        snapshot,
+        catalog,
+        presentations,
+        Some(source.object),
+    )?;
+    let alias = source
+        .alias
+        .expect("the parser requires an alias on a nested source")
+        .lexeme
+        .to_owned();
+    let fields = compiled
+        .columns
+        .iter()
+        .enumerate()
+        .map(|(index, column)| derived_field(index, &column.label, &column.kind, snapshot, dialect))
+        .collect::<Vec<_>>();
+    Ok(SourceScope {
+        object: derived_owner(),
+        fields: fields.into(),
+        relation: format!("({})", compiled.sql),
+        sql_alias: alias.clone(),
+        object_name: alias.clone(),
+        source_alias: Some(alias),
+        identity_is_base: false,
+        reference_joins: Vec::new(),
+    })
+}
+
+/// The placeholder owner of derived-source fields; no metadata object has
+/// the nil GUID.
+pub(super) fn derived_owner() -> ObjectId {
+    ObjectId::from(&Guid::from_str(Guid::NIL).expect("the nil GUID is well formed"))
+}
+
+/// One field of a derived source, addressed by the nested column label.
+fn derived_field(
+    index: usize,
+    label: &str,
+    kind: &ColumnKind,
+    snapshot: &MetadataSnapshot,
+    dialect: SqlDialect,
+) -> QueryableField {
+    let physical_table = |id: &ObjectId| {
+        snapshot
+            .object_by_id(*id)
+            .and_then(|object| object.physical_table.clone())
+    };
+    let (reference_target, reference_targets) = match kind {
+        ColumnKind::Reference {
+            targets,
+            runtime_typed: false,
+        } => {
+            let tables = targets
+                .iter()
+                .filter_map(physical_table)
+                .collect::<Vec<_>>();
+            let single = (tables.len() == 1 && targets.len() == 1).then(|| tables[0].clone());
+            (single, tables)
+        }
+        // A payload column already carries the RTRef: it is presented the
+        // way universal references are, deferred to the application.
+        ColumnKind::Reference { .. } => (None, vec![String::new()]),
+        _ => (None, Vec::new()),
+    };
+    QueryableField {
+        name: label.to_owned(),
+        schema_name: format!("__derived{}", index + 1),
+        aliases: vec![label.to_owned()],
+        columns: vec![QueryableColumn {
+            physical_name: label.to_owned(),
+            data_type: derived_data_type(kind, dialect),
+            output_label: label.to_owned(),
+            kind: kind.clone(),
+        }],
+        reference_target,
+        reference_targets,
+    }
+}
+
+/// A catalog type name that renders literals correctly for a derived
+/// column; kinds carry the truth.
+fn derived_data_type(kind: &ColumnKind, dialect: SqlDialect) -> String {
+    let postgres = dialect == SqlDialect::Postgres;
+    match kind {
+        ColumnKind::String { .. } => {
+            if postgres {
+                "text"
+            } else {
+                "nvarchar(max)"
+            }
+        }
+        ColumnKind::Number { .. } => "numeric",
+        ColumnKind::Boolean => {
+            if postgres {
+                "boolean"
+            } else {
+                "bit"
+            }
+        }
+        ColumnKind::DateTime => {
+            if postgres {
+                "timestamp"
+            } else {
+                "datetime2"
+            }
+        }
+        ColumnKind::Reference { .. } | ColumnKind::Binary { .. } => {
+            if postgres {
+                "bytea"
+            } else {
+                "varbinary"
+            }
+        }
+        ColumnKind::Uuid => {
+            if postgres {
+                "uuid"
+            } else {
+                "uniqueidentifier"
+            }
+        }
+        ColumnKind::Null => "",
+        ColumnKind::Unknown { data_type } => data_type.as_str(),
+    }
+    .to_owned()
 }
 
 fn compile_branch_projections(
@@ -265,6 +419,7 @@ fn compile_branch_projections(
     join: Option<&JoinAst<'_, '_>>,
     context: &mut CompilationContext<'_, '_>,
     presentations: &mut PresentationCompilation<'_>,
+    storage_domain: bool,
 ) -> Result<Vec<SelectedProjection>, QueryDiagnostic> {
     if join.is_none()
         && matches!(
@@ -295,7 +450,7 @@ fn compile_branch_projections(
             "'*' cannot be combined with named fields",
         ));
     }
-    compile_selected_projections(ast, context, presentations)
+    compile_selected_projections(ast, context, presentations, storage_domain)
 }
 
 fn empty_projection_diagnostic(
@@ -335,6 +490,7 @@ fn compile_selected_projections(
     ast: &SelectAst<'_, '_>,
     context: &mut CompilationContext<'_, '_>,
     presentations: &mut PresentationCompilation<'_>,
+    storage_domain: bool,
 ) -> Result<Vec<SelectedProjection>, QueryDiagnostic> {
     let mut selected = Vec::with_capacity(ast.projection.len());
     for projection in &ast.projection {
@@ -374,7 +530,7 @@ fn compile_selected_projections(
                 let sql = compile_expression(expression, context)?;
                 let kind = expression_kind(expression, context)?;
                 selected.push(SelectedProjection::Generated {
-                    sql: if kind == ColumnKind::DateTime {
+                    sql: if kind == ColumnKind::DateTime && !storage_domain {
                         context.dialect.date_scalar(&sql)
                     } else {
                         sql
@@ -417,6 +573,7 @@ fn render_selected_projections(
     selected: &[SelectedProjection],
     context: &CompilationContext<'_, '_>,
     widen: &BTreeSet<usize>,
+    storage_domain: bool,
 ) -> Result<RenderedProjections, QueryDiagnostic> {
     let mut columns = Vec::new();
     let mut sql = Vec::new();
@@ -429,11 +586,19 @@ fn render_selected_projections(
                     context.catalog.charge(1, None)?;
                     let (expression, requested_label, kind) = match member {
                         ProjectedMember::Single(column) => (
-                            context.dialect.column_projection(
-                                &context.sql_column(resolved, column),
-                                &column.kind,
-                                &column.data_type,
-                            ),
+                            if storage_domain {
+                                context.dialect.storage_column_projection(
+                                    &context.sql_column(resolved, column),
+                                    &column.kind,
+                                    &column.data_type,
+                                )
+                            } else {
+                                context.dialect.column_projection(
+                                    &context.sql_column(resolved, column),
+                                    &column.kind,
+                                    &column.data_type,
+                                )
+                            },
                             resolved.output_label(column),
                             column.kind.clone(),
                         ),
@@ -793,13 +958,27 @@ fn fingerprint_into(expression: &Expression<'_, '_>, output: &mut String) {
             fingerprint_into(right, output);
             output.push(')');
         }
-        Expression::InList { value, items } => {
-            output.push_str("IN(");
+        Expression::InList {
+            value,
+            items,
+            negated,
+        } => {
+            output.push_str(&format!("IN({negated},"));
             fingerprint_into(value, output);
             for item in items {
                 output.push(',');
                 fingerprint_into(item, output);
             }
+            output.push(')');
+        }
+        Expression::InQuery {
+            token,
+            value,
+            negated,
+            ..
+        } => {
+            output.push_str(&format!("INQ({negated},{},", token.span.start));
+            fingerprint_into(value, output);
             output.push(')');
         }
         Expression::IsNull { value, negated } => {
@@ -963,7 +1142,11 @@ fn resolve_join_source(
     catalog: &CompilationCatalog<'_>,
     default_alias: &str,
     dialect: SqlDialect,
+    presentations: &mut PresentationCompilation<'_>,
 ) -> Result<SourceScope, QueryDiagnostic> {
+    if let Some(nested) = &source.nested {
+        return derived_source_scope(source, nested, snapshot, catalog, dialect, presentations);
+    }
     let resolved = resolve_source_metadata(source, snapshot, catalog)?;
     let compiled_source = compile_source_relation(
         source,
@@ -1155,10 +1338,11 @@ fn validate_direct_join_condition_fields(
                 pending.push(right);
                 pending.push(left);
             }
-            Expression::InList { value, items } => {
+            Expression::InList { value, items, .. } => {
                 pending.extend(items.iter().rev());
                 pending.push(value);
             }
+            Expression::InQuery { value, .. } => pending.push(value),
             Expression::Case {
                 branches,
                 otherwise,

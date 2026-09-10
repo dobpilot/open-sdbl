@@ -1,8 +1,8 @@
 use super::context::CompiledBranch;
-use super::select::compile_branch;
+use super::select::{BranchMode, compile_branch};
 use crate::Token;
 use crate::metadata::{MetadataSnapshot, ObjectId};
-use crate::query::core::ast::{OrderTerm, QueryAst};
+use crate::query::core::ast::{OrderTerm, Projection, QueryAst};
 use crate::query::core::params::Parameters;
 use crate::query::core::resolve::{
     ColumnKind, CompilationCatalog, CompiledColumn, CompiledQuery, PresentationPlan,
@@ -117,12 +117,50 @@ impl<'plans> PresentationCompilation<'plans> {
 }
 
 pub(super) fn compile(
-    ast: QueryAst<'_, '_>,
+    ast: &QueryAst<'_, '_>,
     snapshot: &MetadataSnapshot,
     presentations: &mut PresentationCompilation<'_>,
 ) -> Result<CompiledQuery, QueryDiagnostic> {
-    let dialect = presentations.dialect;
     let catalog = CompilationCatalog::new(snapshot, presentations.parameters);
+    compile_query_ast(ast, snapshot, &catalog, presentations, None)
+}
+
+/// Compiles one statement. `nested` carries the token of a nested query,
+/// which stays in the storage domain (no MSSQL year-offset correction on
+/// its projections), cannot project `*` or deferred presentations, and may
+/// order its rows only together with `ПЕРВЫЕ`.
+pub(super) fn compile_query_ast(
+    ast: &QueryAst<'_, '_>,
+    snapshot: &MetadataSnapshot,
+    catalog: &CompilationCatalog<'_>,
+    presentations: &mut PresentationCompilation<'_>,
+    nested: Option<&Token<'_>>,
+) -> Result<CompiledQuery, QueryDiagnostic> {
+    let dialect = presentations.dialect;
+    if let Some(token) = nested {
+        catalog.charge(1, None)?;
+        if ast.branches.iter().any(|branch| {
+            branch
+                .projection
+                .iter()
+                .any(|item| matches!(item.expression, Projection::All))
+        }) {
+            return Err(QueryDiagnostic::at(
+                QueryDiagnosticKind::UnsupportedFeature,
+                Some(token),
+                "a nested query cannot project '*'",
+            ));
+        }
+        if let Some(term) = ast.order.first()
+            && (ast.branches.len() > 1 || ast.branches[0].top.is_none())
+        {
+            return Err(QueryDiagnostic::at(
+                QueryDiagnosticKind::UnsupportedFeature,
+                Some(term.field.last()),
+                "ORDER BY inside a nested query requires TOP on a single branch",
+            ));
+        }
+    }
     let unioned = !ast.unions.is_empty();
     let compile_branches = |widen: &BTreeSet<usize>,
                             presentations: &mut PresentationCompilation<'_>|
@@ -137,11 +175,14 @@ pub(super) fn compile(
             branches.push(compile_branch(
                 branch,
                 snapshot,
-                &catalog,
+                catalog,
                 order,
                 unioned && index == 0,
                 presentations,
-                widen,
+                BranchMode {
+                    widen,
+                    storage_domain: nested.is_some(),
+                },
             )?);
         }
         Ok(branches)
@@ -197,6 +238,17 @@ pub(super) fn compile(
         }
     }
 
+    if let Some(token) = nested
+        && branches
+            .iter()
+            .any(|branch| !branch.deferred_presentations.is_empty())
+    {
+        return Err(QueryDiagnostic::at(
+            QueryDiagnosticKind::UnsupportedFeature,
+            Some(token),
+            "deferred reference presentations inside a nested query are not supported; present the column in the outer query",
+        ));
+    }
     if !unioned {
         let branch = branches.pop().expect("a query has one branch");
         return Ok(CompiledQuery {

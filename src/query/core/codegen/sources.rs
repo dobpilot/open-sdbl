@@ -234,14 +234,28 @@ fn compile_source_free_expression(
             operator: _,
             right: _,
         } => compile_source_free_binary_expression(expression, snapshot, dialect, parameters),
-        Expression::InList { value, items } => {
+        Expression::InList {
+            value,
+            items,
+            negated,
+        } => {
             let value = compile_source_free_expression(value, snapshot, dialect, parameters)?;
             let items = items
                 .iter()
                 .map(|item| compile_source_free_expression(item, snapshot, dialect, parameters))
                 .collect::<Result<Vec<_>, _>>()?;
-            Ok(format!("({value} IN ({}))", items.join(", ")))
+            let sql = format!("({value} IN ({}))", items.join(", "));
+            Ok(if *negated {
+                format!("(NOT {sql})")
+            } else {
+                sql
+            })
         }
+        Expression::InQuery { token, .. } => Err(QueryDiagnostic::at(
+            QueryDiagnosticKind::UnsupportedFeature,
+            Some(token),
+            "IN subquery requires FROM",
+        )),
         Expression::IsNull { value, negated } => Ok(format!(
             "({} IS {}NULL)",
             compile_source_free_expression(value, snapshot, dialect, parameters)?,
@@ -604,10 +618,11 @@ pub(super) fn contains_aggregate(expression: &Expression<'_, '_>) -> bool {
                 pending.push(left);
                 pending.push(right);
             }
-            Expression::InList { value, items } => {
+            Expression::InList { value, items, .. } => {
                 pending.push(value);
                 pending.extend(items.iter());
             }
+            Expression::InQuery { value, .. } => pending.push(value),
             Expression::Case {
                 branches,
                 otherwise,
@@ -722,8 +737,20 @@ pub(super) fn presentation_targets(
         return Ok(ReferencePresentationTargets::Scalar);
     }
     if field.reference_targets.iter().any(String::is_empty) {
-        let _ = reference_column(field, token)?;
-        let _ = reference_type_column(field, token)?;
+        let derived_payload = matches!(
+            field.columns.as_slice(),
+            [column] if matches!(
+                column.kind,
+                ColumnKind::Reference {
+                    runtime_typed: true,
+                    ..
+                }
+            )
+        );
+        if !derived_payload {
+            let _ = reference_column(field, token)?;
+            let _ = reference_type_column(field, token)?;
+        }
         return Ok(ReferencePresentationTargets::Deferred);
     }
     let mut targets = Vec::new();
@@ -770,6 +797,18 @@ pub(super) fn compile_deferred_reference_presentation(
     token: &Token<'_>,
     dialect: SqlDialect,
 ) -> Result<String, QueryDiagnostic> {
+    // A derived runtime-typed column already carries the payload.
+    if let [column] = field.columns.as_slice()
+        && matches!(
+            column.kind,
+            ColumnKind::Reference {
+                runtime_typed: true,
+                ..
+            }
+        )
+    {
+        return Ok(dialect.qualified_column(Some(source_alias), &column.physical_name));
+    }
     let reference = reference_column(field, token)?;
     let type_column = reference_type_column(field, token)?;
     Ok(dialect.reference_payload(

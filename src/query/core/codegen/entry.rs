@@ -27,7 +27,7 @@ pub(crate) fn prepare_query(
         .collect::<Vec<_>>();
     let ast = Parser::new(&tokens, source).parse()?;
     let mut presentations = PresentationCompilation::collect(dialect);
-    let _ = compile(ast, snapshot, &mut presentations)?;
+    let _ = compile(&ast, snapshot, &mut presentations)?;
     Ok(PresentationRequest {
         targets: presentations
             .requested
@@ -135,7 +135,7 @@ pub(crate) fn compile_query(
     let ast = Parser::new(&tokens, source).parse()?;
     let mut presentations =
         PresentationCompilation::strict(plans, Parameters::bound(parameters), dialect);
-    compile(ast, snapshot, &mut presentations)
+    compile(&ast, snapshot, &mut presentations)
 }
 
 /// Every `&Имя` token needs exactly one value and every value must be

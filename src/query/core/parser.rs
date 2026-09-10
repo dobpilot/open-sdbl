@@ -18,6 +18,7 @@ pub(super) struct Parser<'tokens, 'source> {
     depth: usize,
     binary_operators: usize,
     eof: SourcePosition,
+    nesting: usize,
 }
 
 fn is_comparison(operator: &str) -> bool {
@@ -56,6 +57,9 @@ fn is_ascending_order(token: &Token<'_>) -> bool {
 impl<'tokens, 'source> Parser<'tokens, 'source> {
     const MAX_DEPTH: usize = 128;
     const MAX_BINARY_OPERATORS: usize = 4_096;
+    /// Nested statements compile recursively, so their depth is bounded
+    /// separately from expression nesting.
+    const MAX_NESTED_QUERIES: usize = 16;
 
     pub(super) fn new(tokens: &'tokens [Token<'source>], source: &str) -> Self {
         let mut line = 1;
@@ -73,6 +77,7 @@ impl<'tokens, 'source> Parser<'tokens, 'source> {
             offset: 0,
             depth: 0,
             binary_operators: 0,
+            nesting: 0,
             eof: SourcePosition {
                 offset: source.len(),
                 line,
@@ -82,6 +87,21 @@ impl<'tokens, 'source> Parser<'tokens, 'source> {
     }
 
     pub(super) fn parse(mut self) -> Result<QueryAst<'tokens, 'source>, QueryDiagnostic> {
+        let query = self.parse_query_body()?;
+        while self.consume_lexeme(";") {}
+        if let Some(token) = self.peek() {
+            return Err(QueryDiagnostic::at(
+                QueryDiagnosticKind::UnsupportedFeature,
+                Some(token),
+                format!("unsupported query syntax starting at {:?}", token.lexeme),
+            ));
+        }
+        Ok(query)
+    }
+
+    /// Parses `SELECT … [UNION …] [ORDER BY …]` without the terminator; used
+    /// for the top level and for nested queries.
+    fn parse_query_body(&mut self) -> Result<QueryAst<'tokens, 'source>, QueryDiagnostic> {
         let mut branches = vec![self.parse_select()?];
         let mut unions = Vec::new();
         while let Some(token) = self.consume_keyword_token(Keyword::Union) {
@@ -92,19 +112,49 @@ impl<'tokens, 'source> Parser<'tokens, 'source> {
             branches.push(self.parse_select()?);
         }
         let order = self.parse_order()?;
-        while self.consume_lexeme(";") {}
-        if let Some(token) = self.peek() {
-            return Err(QueryDiagnostic::at(
-                QueryDiagnosticKind::UnsupportedFeature,
-                Some(token),
-                format!("unsupported query syntax starting at {:?}", token.lexeme),
-            ));
-        }
         Ok(QueryAst {
             branches,
             unions,
             order,
         })
+    }
+
+    /// Parses a parenthesized nested query after its opening parenthesis was
+    /// seen but not consumed. Nesting is bounded separately from expression
+    /// depth because every nested statement compiles recursively.
+    fn parse_nested_query(
+        &mut self,
+        opening: &'tokens Token<'source>,
+    ) -> Result<QueryAst<'tokens, 'source>, QueryDiagnostic> {
+        if self.nesting >= Self::MAX_NESTED_QUERIES {
+            return Err(QueryDiagnostic::at_kind(
+                QueryDiagnosticKind::TooDeep,
+                Some(opening),
+                format!(
+                    "nested query depth exceeds limit of {}",
+                    Self::MAX_NESTED_QUERIES
+                ),
+            ));
+        }
+        self.nesting += 1;
+        self.depth += 1;
+        let result = (|| {
+            self.expect_lexeme("(")?;
+            let query = self.parse_query_body()?;
+            self.expect_lexeme(")")?;
+            Ok(query)
+        })();
+        self.depth -= 1;
+        self.nesting -= 1;
+        result
+    }
+
+    fn next_is_nested_query(&self) -> bool {
+        self.peek().is_some_and(|token| token.lexeme == "(")
+            && self
+                .tokens
+                .get(self.offset + 1)
+                .is_some_and(|token| token.kind == TokenKind::Keyword(Keyword::Select))
     }
 
     fn parse_select(&mut self) -> Result<SelectAst<'tokens, 'source>, QueryDiagnostic> {
@@ -310,6 +360,33 @@ impl<'tokens, 'source> Parser<'tokens, 'source> {
     }
 
     fn parse_source(&mut self) -> Result<SourceAst<'tokens, 'source>, QueryDiagnostic> {
+        if self.next_is_nested_query() {
+            let opening = self.peek().expect("checked opening parenthesis");
+            let nested = self.parse_nested_query(opening)?;
+            let alias = if self.consume_keyword(Keyword::As) {
+                self.expect_identifier("expected source alias after AS")?
+            } else if self
+                .peek()
+                .is_some_and(|token| token.kind == TokenKind::Identifier)
+            {
+                self.next().expect("peeked token")
+            } else {
+                return Err(self.diagnostic(
+                    QueryDiagnosticKind::Syntax,
+                    self.peek(),
+                    "a nested query source requires an alias",
+                ));
+            };
+            return Ok(SourceAst {
+                kind: opening,
+                object: opening,
+                table_part: None,
+                slice: None,
+                accumulation: None,
+                alias: Some(alias),
+                nested: Some(Box::new(nested)),
+            });
+        }
         let kind = self.expect_identifier("expected metadata kind after FROM")?;
         self.expect_lexeme(".")?;
         let object = self.expect_identifier("expected metadata object name")?;
@@ -370,6 +447,7 @@ impl<'tokens, 'source> Parser<'tokens, 'source> {
             kind,
             object,
             table_part,
+            nested: None,
             slice,
             accumulation,
             alias,
@@ -495,7 +573,28 @@ impl<'tokens, 'source> Parser<'tokens, 'source> {
                 negated,
             });
         }
+        let negated_in = self
+            .peek()
+            .is_some_and(|token| token.kind == TokenKind::Keyword(Keyword::Not))
+            && self
+                .tokens
+                .get(self.offset + 1)
+                .is_some_and(|token| token.kind == TokenKind::Keyword(Keyword::In));
+        if negated_in {
+            self.offset += 1;
+        }
         if let Some(operator) = self.consume_keyword_token(Keyword::In) {
+            if self.next_is_nested_query() {
+                let opening = self.peek().expect("checked opening parenthesis");
+                self.record_binary_operator(operator)?;
+                let query = self.parse_nested_query(opening)?;
+                return Ok(Expression::InQuery {
+                    token: operator,
+                    value: Box::new(expression),
+                    query: Box::new(query),
+                    negated: negated_in,
+                });
+            }
             self.expect_lexeme("(")?;
             if self.consume_lexeme(")") {
                 return Err(QueryDiagnostic::at_kind(
@@ -522,6 +621,7 @@ impl<'tokens, 'source> Parser<'tokens, 'source> {
             return Ok(Expression::InList {
                 value: Box::new(expression),
                 items,
+                negated: negated_in,
             });
         }
         if self

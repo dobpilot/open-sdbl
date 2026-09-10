@@ -37,12 +37,16 @@ pub(super) struct GroupKey<'tokens, 'source> {
 
 #[derive(Debug)]
 pub(super) struct SourceAst<'tokens, 'source> {
+    /// The metadata kind token, or the opening parenthesis of a nested query.
     pub(super) kind: &'tokens Token<'source>,
+    /// The object name token, or the opening parenthesis of a nested query.
     pub(super) object: &'tokens Token<'source>,
     pub(super) table_part: Option<&'tokens Token<'source>>,
     pub(super) slice: Option<SliceAst<'tokens, 'source>>,
     pub(super) accumulation: Option<AccumulationAst<'tokens, 'source>>,
     pub(super) alias: Option<&'tokens Token<'source>>,
+    /// A nested `(ВЫБРАТЬ …)` used as a derived source.
+    pub(super) nested: Option<Box<QueryAst<'tokens, 'source>>>,
 }
 
 #[derive(Debug)]
@@ -253,6 +257,14 @@ pub(super) enum Expression<'tokens, 'source> {
     InList {
         value: Box<Self>,
         items: Vec<Self>,
+        negated: bool,
+    },
+    /// `<value> [НЕ] В (<query>)`.
+    InQuery {
+        token: &'tokens Token<'source>,
+        value: Box<Self>,
+        query: Box<QueryAst<'tokens, 'source>>,
+        negated: bool,
     },
     IsNull {
         value: Box<Self>,

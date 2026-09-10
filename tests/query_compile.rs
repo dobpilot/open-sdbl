@@ -4826,3 +4826,220 @@ fn diagnoses_invalid_join_chains() {
     .unwrap_err();
     assert!(duplicate_alias.message().contains("distinct aliases"));
 }
+
+#[test]
+fn compiles_nested_sources_with_grouping_joins_and_dereference() {
+    let snapshot = snapshot();
+    let (postgres, mssql) = for_each_backend!(
+        "SELECT Т.К AS Код, Т.N AS Сумма, c.Date
+         FROM (SELECT Code AS К, COUNT(*) AS N FROM Catalog.OpenSdblMetadataProbe GROUP BY Code) AS Т
+         INNER JOIN Catalog.OpenSdblMetadataProbe c ON c.Code = Т.К
+         WHERE Т.N > 1
+         ORDER BY Сумма DESC;",
+        &snapshot,
+    );
+    let postgres = postgres.unwrap();
+    assert_eq!(labels(&postgres), ["Код", "Сумма", "Date"]);
+    assert_eq!(
+        kinds(&postgres),
+        [
+            &ColumnKind::String { length: Some(9) },
+            &ColumnKind::Number {
+                precision: None,
+                scale: None,
+            },
+            &ColumnKind::DateTime,
+        ]
+    );
+    assert!(postgres.sql.contains(
+        "FROM (SELECT \"__src\".\"_code\"::text AS \"К\", COUNT(*) AS \"N\" FROM \"_reference53\" AS \"__src\" GROUP BY \"__src\".\"_code\") AS \"Т\" INNER JOIN \"_reference53\" AS \"c\" ON \"c\".\"_code\" = \"Т\".\"К\" WHERE (\"Т\".\"N\" > 1) ORDER BY 2 DESC"
+    ));
+    assert!(
+        postgres
+            .sql
+            .starts_with("SELECT \"Т\".\"К\" AS \"Код\", \"Т\".\"N\" AS \"Сумма\"")
+    );
+    let mssql = mssql.unwrap();
+    assert!(mssql.sql.contains(
+        "FROM (SELECT [__src].[_code] AS [К], COUNT(*) AS [N] FROM [_reference53] AS [__src] GROUP BY [__src].[_code]) AS [Т] INNER JOIN"
+    ));
+
+    let dereferenced = postgres_compile!(
+        "SELECT Т.ID.Code AS Код, Т.ID AS Ссылка
+         FROM (SELECT Ссылка FROM Catalog.OpenSdblMetadataProbe) КАК Т;",
+        &snapshot,
+    )
+    .unwrap();
+    assert!(dereferenced.sql.contains(
+        "FROM (SELECT \"__src\".\"_idrref\" AS \"ID\" FROM \"_reference53\" AS \"__src\") AS \"Т\" LEFT JOIN \"_reference53\" AS \"__ref1\" ON \"Т\".\"ID\" = \"__ref1\".\"_idrref\""
+    ));
+    assert!(
+        dereferenced
+            .sql
+            .contains("\"__ref1\".\"_code\"::text AS \"Код\"")
+    );
+    assert!(matches!(
+        &dereferenced.columns[1].kind,
+        ColumnKind::Reference {
+            runtime_typed: false,
+            ..
+        }
+    ));
+
+    let first_n = mssql_compile_with_offset!(
+        "SELECT Т.Date, Т.Текст FROM (SELECT TOP 10 Date, ПРЕДСТАВЛЕНИЕ(Code) AS Текст FROM Catalog.OpenSdblMetadataProbe ORDER BY Date DESC) AS Т;",
+        &snapshot,
+        2000
+    )
+    .unwrap();
+    assert!(first_n.sql.contains(
+        "FROM (SELECT TOP (10) [__src].[_date_time] AS [Date], CONVERT(nvarchar(max), [__src].[_code]) AS [Текст] FROM [_reference53] AS [__src] ORDER BY [__src].[_date_time] DESC) AS [Т]"
+    ));
+    assert!(
+        first_n.sql.starts_with(
+            "SELECT DATEADD(year, -2000, [Т].[Date]) AS [Date], [Т].[Текст] AS [Текст]"
+        )
+    );
+    assert_eq!(first_n.sql.matches("DATEADD").count(), 1);
+
+    let payload = postgres_compile!(
+        "SELECT ПРЕДСТАВЛЕНИЕССЫЛКИ(Т.ProbeAttribute) AS Текст, Т.ProbeAttribute
+         FROM (SELECT ProbeAttribute FROM Catalog.OpenSdblMetadataProbe) AS Т;",
+        &presentation_reference_snapshot(true),
+    )
+    .unwrap();
+    assert_eq!(payload.deferred_presentations, [0]);
+    assert!(
+        payload
+            .sql
+            .starts_with("SELECT \"Т\".\"ProbeAttribute\" AS \"Текст\"")
+    );
+}
+
+#[test]
+fn compiles_in_subqueries_with_reference_widening() {
+    let snapshot = snapshot();
+    let scalar = postgres_compile!(
+        "SELECT Code FROM Catalog.OpenSdblMetadataProbe
+         WHERE Code NOT IN (SELECT Code FROM Catalog.OpenSdblMetadataProbe WHERE Date IS NULL)
+           AND Ссылка В (SELECT Ссылка FROM Catalog.OpenSdblMetadataProbe)
+           AND Code НЕ В (\"1\", \"2\");",
+        &snapshot,
+    )
+    .unwrap();
+    assert!(postgres_sql_ends_with(
+        &scalar.sql,
+        "WHERE (((NOT (\"__src\".\"_code\" IN (SELECT \"__src\".\"_code\"::text AS \"Code\" FROM \"_reference53\" AS \"__src\" WHERE (\"__src\".\"_date_time\" IS NULL)))) AND (\"__src\".\"_idrref\" IN (SELECT \"__src\".\"_idrref\" AS \"ID\" FROM \"_reference53\" AS \"__src\"))) AND (NOT (\"__src\".\"_code\" IN ('1', '2'))))"
+    ));
+
+    let pairs = presentation_reference_snapshot(true);
+    let widened_inner = postgres_compile!(
+        "SELECT Ссылка FROM Catalog.OpenSdblMetadataProbe
+         WHERE ProbeAttribute IN (SELECT Ссылка FROM Catalog.OpenSdblMetadataProbe);",
+        &pairs,
+    )
+    .unwrap();
+    assert!(widened_inner.sql.ends_with(
+        "WHERE ((\"__src\".\"_fld54_rtref\" || \"__src\".\"_fld54_rrref\") IN (SELECT (decode('00000035', 'hex') || \"__in\".\"ID\") FROM (SELECT \"__src\".\"_idrref\" AS \"ID\" FROM \"_reference53\" AS \"__src\") AS \"__in\"))"
+    ));
+
+    let widened_outer = postgres_compile!(
+        "SELECT Ссылка FROM Catalog.OpenSdblMetadataProbe
+         WHERE Ссылка IN (SELECT ProbeAttribute FROM Catalog.OpenSdblMetadataProbe);",
+        &pairs,
+    )
+    .unwrap();
+    assert!(widened_outer.sql.ends_with(
+        "WHERE ((decode('00000035', 'hex') || \"__src\".\"_idrref\") IN (SELECT (\"__src\".\"_fld54_rtref\" || \"__src\".\"_fld54_rrref\") AS \"ProbeAttribute\" FROM \"_reference53\" AS \"__src\"))"
+    ));
+
+    let both_payload = mssql_compile!(
+        "SELECT Ссылка FROM Catalog.OpenSdblMetadataProbe
+         WHERE ProbeAttribute NOT IN (SELECT ProbeAttribute FROM Catalog.OpenSdblMetadataProbe);",
+        &pairs,
+    )
+    .unwrap();
+    assert!(both_payload.sql.ends_with(
+        "WHERE (NOT (([__src].[_fld54_rtref] + [__src].[_fld54_rrref]) IN (SELECT ([__src].[_fld54_rtref] + [__src].[_fld54_rrref]) AS [ProbeAttribute] FROM [_reference53] AS [__src])))"
+    ));
+}
+
+fn postgres_sql_ends_with(sql: &str, suffix: &str) -> bool {
+    sql.ends_with(suffix)
+}
+
+#[test]
+fn diagnoses_invalid_nested_queries() {
+    let snapshot = snapshot();
+    let correlated = postgres_compile!(
+        "SELECT o.Code FROM Catalog.OpenSdblMetadataProbe o
+         WHERE o.Code IN (SELECT Code FROM Catalog.OpenSdblMetadataProbe WHERE Date = o.Date);",
+        &snapshot,
+    )
+    .unwrap_err();
+    assert_eq!(correlated.kind(), QueryDiagnosticKind::UnknownField);
+    assert_eq!(correlated.line(), 2);
+
+    let two_columns = postgres_compile!(
+        "SELECT Code FROM Catalog.OpenSdblMetadataProbe WHERE Code IN (SELECT Code, Date FROM Catalog.OpenSdblMetadataProbe);",
+        &snapshot,
+    )
+    .unwrap_err();
+    assert!(two_columns.message().contains("exactly one column"));
+
+    let mismatch = postgres_compile!(
+        "SELECT Code FROM Catalog.OpenSdblMetadataProbe WHERE Code IN (SELECT Date FROM Catalog.OpenSdblMetadataProbe);",
+        &snapshot,
+    )
+    .unwrap_err();
+    assert!(mismatch.message().contains("not compatible"));
+
+    let ordered = postgres_compile!(
+        "SELECT Т.Code FROM (SELECT Code FROM Catalog.OpenSdblMetadataProbe ORDER BY Code) AS Т;",
+        &snapshot,
+    )
+    .unwrap_err();
+    assert!(ordered.message().contains("requires TOP"));
+
+    let wildcard = postgres_compile!(
+        "SELECT Т.Code FROM (SELECT * FROM Catalog.OpenSdblMetadataProbe) AS Т;",
+        &snapshot,
+    )
+    .unwrap_err();
+    assert!(wildcard.message().contains("'*'"));
+
+    let unaliased = postgres_compile!(
+        "SELECT Code FROM (SELECT Code FROM Catalog.OpenSdblMetadataProbe);",
+        &snapshot,
+    )
+    .unwrap_err();
+    assert_eq!(unaliased.kind(), QueryDiagnosticKind::Syntax);
+
+    let deferred = postgres_compile!(
+        "SELECT Т.Текст FROM (SELECT ПРЕДСТАВЛЕНИЕССЫЛКИ(ДоговорКонтрагента) AS Текст FROM Документ.бит_ДополнительныеУсловияПоДоговору) AS Т;",
+        &universal_dereferenced_presentation_snapshot(),
+    )
+    .unwrap_err();
+    assert!(deferred.message().contains("deferred"));
+
+    let runtime_typed = postgres_compile!(
+        "SELECT Т.ProbeAttribute.Code FROM (SELECT ProbeAttribute FROM Catalog.OpenSdblMetadataProbe) AS Т;",
+        &presentation_reference_snapshot(true),
+    )
+    .unwrap_err();
+    assert_eq!(runtime_typed.kind(), QueryDiagnosticKind::Metadata);
+
+    let mut deep = String::from("SELECT Code FROM Catalog.OpenSdblMetadataProbe");
+    for level in 0..17 {
+        deep = format!("SELECT Code FROM ({deep}) AS T{level}");
+    }
+    let too_deep = postgres_compile!(&format!("{deep};"), &snapshot).unwrap_err();
+    assert_eq!(too_deep.kind(), QueryDiagnosticKind::TooDeep);
+    assert!(too_deep.message().contains("nested query depth"));
+
+    let mut ok = String::from("SELECT Code FROM Catalog.OpenSdblMetadataProbe");
+    for level in 0..16 {
+        ok = format!("SELECT Code FROM ({ok}) AS T{level}");
+    }
+    assert!(postgres_compile!(&format!("{ok};"), &snapshot).is_ok());
+}
