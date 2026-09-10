@@ -1,6 +1,6 @@
 [package]
 name = "open-sdbl-cli"
-version = "0.3.0"
+version = "0.3.2"
 edition = "2024"
 rust-version = "1.85"
 description = "Command-line applications for open-sdbl"
