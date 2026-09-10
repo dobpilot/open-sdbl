@@ -137,6 +137,9 @@ pub(super) struct CompilationContext<'snapshot, 'catalog> {
     pub(super) catalog: &'catalog CompilationCatalog<'snapshot>,
     pub(super) sources: Vec<SourceScope>,
     pub(super) dialect: SqlDialect,
+    /// Whether aggregate calls may appear in the expression being compiled
+    /// (projections and `HAVING` of a grouped branch).
+    pub(super) aggregates_allowed: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -170,6 +173,13 @@ impl ResolvedPath {
 
     pub(super) fn field(&self) -> &QueryableField {
         &self.fields[self.field_index]
+    }
+
+    /// Whether two resolutions name the same field of the same source scope.
+    pub(super) fn same_path(&self, other: &Self) -> bool {
+        self.scope == other.scope
+            && self.field_index == other.field_index
+            && self.sql_alias == other.sql_alias
     }
 
     /// Label of the whole logical field: the alias or path label when one

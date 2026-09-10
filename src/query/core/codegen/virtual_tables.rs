@@ -509,6 +509,7 @@ fn compile_accumulation_condition(
             reference_joins: Vec::new(),
         }],
         dialect,
+        aggregates_allowed: false,
     };
     let sql = compile_expression(condition, &mut context)?;
     if !context.sources[0].reference_joins.is_empty() {

@@ -1098,11 +1098,21 @@ pub(super) fn compile_expression(
             Some(token),
             "LIKE is supported only in predicate positions",
         )),
-        Expression::Aggregate { token, .. } => Err(QueryDiagnostic::at(
-            QueryDiagnosticKind::UnsupportedFeature,
-            Some(token),
-            "aggregate functions are supported only as projections of a grouped branch",
-        )),
+        Expression::Aggregate {
+            token,
+            kind,
+            distinct,
+            argument,
+        } => {
+            if !context.aggregates_allowed {
+                return Err(QueryDiagnostic::at(
+                    QueryDiagnosticKind::UnsupportedFeature,
+                    Some(token),
+                    "aggregate functions are supported only as projections of a grouped branch",
+                ));
+            }
+            compile_aggregate(context, *kind, *distinct, argument).map(|(sql, _)| sql)
+        }
     }
 }
 
@@ -1379,23 +1389,24 @@ pub(super) fn compile_aggregate(
         precision: None,
         scale: None,
     };
-    let (argument, argument_kind) = match argument {
-        AggregateArgument::All => ("*".to_owned(), number.clone()),
+    // The argument of an aggregate cannot contain another aggregate.
+    let outer_allowed = std::mem::replace(&mut context.aggregates_allowed, false);
+    let compiled = match argument {
+        AggregateArgument::All => Ok(("*".to_owned(), number.clone())),
         AggregateArgument::Expression(expression) => match expression.as_ref() {
-            Expression::Field(reference) => {
-                let resolved = context.resolve(reference)?;
+            Expression::Field(reference) => context.resolve(reference).and_then(|resolved| {
                 let column = countable_column(resolved.field(), reference.last())?;
-                (
+                Ok((
                     context.sql_column(&resolved, column),
                     aggregated_field_kind(&column.kind),
-                )
-            }
-            other => {
-                let sql = compile_expression(other, context)?;
-                (sql, expression_kind(other, context)?)
-            }
+                ))
+            }),
+            other => compile_expression(other, context)
+                .and_then(|sql| Ok((sql, expression_kind(other, context)?))),
         },
     };
+    context.aggregates_allowed = outer_allowed;
+    let (argument, argument_kind) = compiled?;
     let output_kind = match kind {
         AggregateKind::Count | AggregateKind::Sum => number,
         _ => argument_kind,

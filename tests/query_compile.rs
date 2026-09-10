@@ -1887,7 +1887,7 @@ fn rejects_parameters_and_unsupported_clauses_before_sql_generation() {
     assert!(parameter.message().contains("has no value"));
 
     let unsupported = postgres_compile!(
-        "SELECT Code FROM Catalog.OpenSdblMetadataProbe GROUP BY Code;",
+        "SELECT Code FROM Catalog.OpenSdblMetadataProbe ДЛЯ ИЗМЕНЕНИЯ;",
         &snapshot,
     )
     .unwrap_err();
@@ -4508,4 +4508,202 @@ fn accepts_date_parameters_as_virtual_table_periods() {
     .unwrap();
     assert!(turnovers.sql.contains(">= TIMESTAMP '2026-08-01 00:00:00'"));
     assert!(turnovers.sql.contains("< TIMESTAMP '2026-09-01 00:00:00'"));
+}
+
+#[test]
+fn compiles_grouped_branches_with_having_and_ordering() {
+    let snapshot = boolean_snapshot();
+    let (postgres, mssql) = for_each_backend!(
+        "SELECT Code, COUNT(*) AS N, SUM(CASE WHEN Fld77 THEN 1 ELSE 0 END) AS Flags,
+                CASE WHEN COUNT(*) > 1 THEN \"many\" ELSE \"one\" END AS Label
+         FROM Catalog.OpenSdblMetadataProbe
+         WHERE Fld77
+         GROUP BY Code
+         HAVING COUNT(*) > 1 AND MAX(Date) > DATETIME(2024, 1, 1)
+         ORDER BY N DESC, Code;",
+        &snapshot,
+    );
+    let postgres = postgres.unwrap();
+    assert_eq!(labels(&postgres), ["Code", "N", "Flags", "Label"]);
+    assert!(postgres.sql.contains(
+        "WHERE \"__src\".\"_fld77\" GROUP BY \"__src\".\"_code\" HAVING ((COUNT(*) > 1) AND (MAX(\"__src\".\"_date_time\") > TIMESTAMP '2024-01-01 00:00:00')) ORDER BY 2 DESC, 1 ASC"
+    ));
+    assert!(
+        postgres
+            .sql
+            .contains("CASE WHEN (COUNT(*) > 1) THEN 'many' ELSE 'one' END AS \"Label\"")
+    );
+    let mssql = mssql.unwrap();
+    assert!(mssql.sql.contains(
+        "WHERE ([__src].[_fld77] = 0x01) GROUP BY [__src].[_code] HAVING ((COUNT(*) > 1) AND (MAX([__src].[_date_time]) > CONVERT(datetime2, '2024-01-01T00:00:00', 126))) ORDER BY 2 DESC, 1 ASC"
+    ));
+
+    let only_having = postgres_compile!(
+        "SELECT COUNT(*) FROM Catalog.OpenSdblMetadataProbe HAVING COUNT(*) > 0;",
+        &snapshot,
+    )
+    .unwrap();
+    assert!(only_having.sql.ends_with("HAVING (COUNT(*) > 0)"));
+    assert!(!only_having.sql.contains("GROUP BY"));
+}
+
+#[test]
+fn groups_reference_keys_by_every_physical_member() {
+    let snapshot = presentation_reference_snapshot(true);
+    let compiled = postgres_compile!(
+        "SELECT ProbeAttribute, COUNT(*) AS N FROM Catalog.OpenSdblMetadataProbe GROUP BY ProbeAttribute;",
+        &snapshot,
+    )
+    .unwrap();
+    assert!(compiled.sql.contains(
+        "(\"__src\".\"_fld54_rtref\" || \"__src\".\"_fld54_rrref\") AS \"ProbeAttribute\""
+    ));
+    assert!(
+        compiled
+            .sql
+            .ends_with("GROUP BY \"__src\".\"_fld54_rtref\", \"__src\".\"_fld54_rrref\"")
+    );
+    assert!(matches!(
+        &compiled.columns[0].kind,
+        ColumnKind::Reference {
+            runtime_typed: true,
+            ..
+        }
+    ));
+}
+
+#[test]
+fn groups_by_dereferenced_keys_aliases_and_expressions() {
+    let reference = reference_snapshot();
+    let dereferenced = postgres_compile!(
+        "SELECT Организация.Код AS Код, ПРЕДСТАВЛЕНИЕ(Организация.Код) AS Текст, COUNT(*) AS N
+         FROM Catalog.OpenSdblMetadataProbe
+         GROUP BY Организация.Код;",
+        &reference,
+    )
+    .unwrap();
+    assert_eq!(dereferenced.sql.matches(" LEFT JOIN ").count(), 1);
+    assert!(
+        dereferenced
+            .sql
+            .ends_with("GROUP BY \"__ref1\".\"_code\", (\"__ref1\".\"_code\")::text")
+    );
+
+    let snapshot = snapshot();
+    let by_alias = postgres_compile!(
+        "SELECT НАЧАЛОПЕРИОДА(Date, МЕСЯЦ) AS Месяц, COUNT(*) AS N
+         FROM Catalog.OpenSdblMetadataProbe GROUP BY Месяц ORDER BY Месяц;",
+        &snapshot,
+    )
+    .unwrap();
+    assert!(
+        by_alias
+            .sql
+            .ends_with("GROUP BY date_trunc('month', \"__src\".\"_date_time\") ORDER BY 1 ASC")
+    );
+
+    let by_expression = postgres_compile!(
+        "SELECT НАЧАЛОПЕРИОДА(Date, МЕСЯЦ) AS Месяц, COUNT(*) AS N
+         FROM Catalog.OpenSdblMetadataProbe GROUP BY beginofperiod(date, month);",
+        &snapshot,
+    )
+    .unwrap();
+    assert!(
+        by_expression
+            .sql
+            .ends_with("GROUP BY date_trunc('month', \"__src\".\"_date_time\")")
+    );
+
+    let unprojected_key = postgres_compile!(
+        "SELECT COUNT(*) AS N FROM Catalog.OpenSdblMetadataProbe GROUP BY Code, Date;",
+        &snapshot,
+    )
+    .unwrap();
+    assert!(
+        unprojected_key
+            .sql
+            .ends_with("GROUP BY \"__src\".\"_code\", \"__src\".\"_date_time\"")
+    );
+
+    let joined = postgres_compile!(
+        "SELECT l.Code, COUNT(*) AS N
+         FROM Catalog.OpenSdblMetadataProbe l INNER JOIN Catalog.OpenSdblMetadataProbe r ON l.Code = r.Code
+         GROUP BY l.Code;",
+        &snapshot,
+    )
+    .unwrap();
+    assert!(joined.sql.ends_with("GROUP BY \"l\".\"_code\""));
+
+    let unioned = postgres_compile!(
+        "SELECT Code, COUNT(*) AS N FROM Catalog.OpenSdblMetadataProbe GROUP BY Code
+         UNION ALL SELECT Code, COUNT(*) FROM Catalog.OpenSdblMetadataProbe GROUP BY Code;",
+        &snapshot,
+    )
+    .unwrap();
+    assert_eq!(unioned.sql.matches("GROUP BY").count(), 2);
+}
+
+#[test]
+fn diagnoses_invalid_grouping() {
+    let snapshot = snapshot();
+    let ungrouped = postgres_compile!(
+        "SELECT Code, Date, COUNT(*) FROM Catalog.OpenSdblMetadataProbe GROUP BY Code;",
+        &snapshot,
+    )
+    .unwrap_err();
+    assert_eq!(ungrouped.kind(), QueryDiagnosticKind::UnsupportedFeature);
+    assert_eq!((ungrouped.line(), ungrouped.column()), (1, 14));
+    assert!(ungrouped.message().contains("grouped or aggregated"));
+
+    let in_where = postgres_compile!(
+        "SELECT Code FROM Catalog.OpenSdblMetadataProbe WHERE COUNT(*) > 1 GROUP BY Code;",
+        &snapshot,
+    )
+    .unwrap_err();
+    assert!(in_where.message().contains("only as projections"));
+
+    let aggregate_key = postgres_compile!(
+        "SELECT Code, COUNT(*) AS N FROM Catalog.OpenSdblMetadataProbe GROUP BY Code, N;",
+        &snapshot,
+    )
+    .unwrap_err();
+    assert!(aggregate_key.message().contains("aggregate projection"));
+
+    let nested = postgres_compile!(
+        "SELECT Code, SUM(COUNT(*)) FROM Catalog.OpenSdblMetadataProbe GROUP BY Code;",
+        &snapshot,
+    )
+    .unwrap_err();
+    assert!(nested.message().contains("only as projections"));
+
+    let wildcard = postgres_compile!(
+        "SELECT * FROM Catalog.OpenSdblMetadataProbe GROUP BY Code;",
+        &snapshot,
+    )
+    .unwrap_err();
+    assert!(wildcard.message().contains("GROUP BY"));
+
+    let source_free = postgres_compile!("SELECT 1 GROUP BY 1;", &snapshot).unwrap_err();
+    assert!(source_free.message().contains("requires FROM"));
+
+    let full = postgres_compile!(
+        "SELECT l.Code, COUNT(*) FROM Catalog.OpenSdblMetadataProbe l FULL JOIN Catalog.OpenSdblMetadataProbe r ON l.Code = r.Code GROUP BY l.Code;",
+        &snapshot,
+    )
+    .unwrap_err();
+    assert!(full.message().contains("FULL JOIN"));
+
+    let unknown_key = postgres_compile!(
+        "SELECT COUNT(*) FROM Catalog.OpenSdblMetadataProbe GROUP BY Nothing;",
+        &snapshot,
+    )
+    .unwrap_err();
+    assert_eq!(unknown_key.kind(), QueryDiagnosticKind::UnknownField);
+
+    let mixed = postgres_compile!(
+        "SELECT Code, CASE WHEN COUNT(*) > 1 THEN 1 ELSE 0 END FROM Catalog.OpenSdblMetadataProbe;",
+        &snapshot,
+    )
+    .unwrap_err();
+    assert!(mixed.message().contains("without GROUP BY"));
 }

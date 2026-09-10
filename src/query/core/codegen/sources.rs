@@ -4,8 +4,8 @@ use std::sync::Arc;
 use super::context::{CompilationContext, CompiledBranch, SourceScope};
 use super::expression::{
     Operand, binary_operator_sql, check_like_operand, compile_case, compile_expression,
-    left_binary_spine, reference_column, reference_type_column, render_coalesce, render_like,
-    single_column, source_free_expression_kind, widen_reference,
+    left_binary_spine, operand_token, reference_column, reference_type_column, render_coalesce,
+    render_like, single_column, source_free_expression_kind, widen_reference,
 };
 use super::params::render_scalar_parameter;
 use super::virtual_tables::{
@@ -45,6 +45,19 @@ pub(super) fn compile_source_free_branch(
         return Err(QueryDiagnostic::unpositioned(
             QueryDiagnosticKind::UnsupportedFeature,
             "WHERE requires FROM",
+        ));
+    }
+    if let Some(key) = ast.group.first() {
+        return Err(QueryDiagnostic::at(
+            QueryDiagnosticKind::UnsupportedFeature,
+            Some(key.token),
+            "GROUP BY requires FROM",
+        ));
+    }
+    if ast.having.is_some() {
+        return Err(QueryDiagnostic::unpositioned(
+            QueryDiagnosticKind::UnsupportedFeature,
+            "HAVING requires FROM",
         ));
     }
     if !order_terms.is_empty() {
@@ -559,29 +572,124 @@ pub(super) fn compile_metadata_value(
     ))
 }
 
+/// Whether a projection yields an aggregated value: an aggregate call or a
+/// scalar expression containing one.
+pub(super) fn projection_is_aggregated(projection: &Projection<'_, '_>) -> bool {
+    match projection {
+        Projection::Aggregate { .. } => true,
+        Projection::Scalar(expression) => contains_aggregate(expression),
+        Projection::All | Projection::Field(_) | Projection::Presentation { .. } => false,
+    }
+}
+
+/// Whether an expression contains an aggregate call anywhere.
+pub(super) fn contains_aggregate(expression: &Expression<'_, '_>) -> bool {
+    let mut pending = vec![expression];
+    while let Some(expression) = pending.pop() {
+        match expression {
+            Expression::Aggregate { .. } => return true,
+            Expression::Field(_)
+            | Expression::Literal(_)
+            | Expression::Parameter(_)
+            | Expression::DateTime { .. }
+            | Expression::MetadataValue { .. }
+            | Expression::Uuid { .. } => {}
+            Expression::BeginOfPeriod { value, .. }
+            | Expression::Unary { value, .. }
+            | Expression::IsNull { value, .. }
+            | Expression::Cast {
+                argument: value, ..
+            } => pending.push(value),
+            Expression::Binary { left, right, .. } => {
+                pending.push(left);
+                pending.push(right);
+            }
+            Expression::InList { value, items } => {
+                pending.push(value);
+                pending.extend(items.iter());
+            }
+            Expression::Case {
+                branches,
+                otherwise,
+                ..
+            } => {
+                pending.extend(otherwise.as_deref());
+                for branch in branches {
+                    pending.push(&branch.when);
+                    pending.push(&branch.then);
+                }
+            }
+            Expression::IsNullFunction {
+                value, fallback, ..
+            } => {
+                pending.push(value);
+                pending.push(fallback);
+            }
+            Expression::Like {
+                value,
+                pattern,
+                escape,
+                ..
+            } => {
+                pending.push(value);
+                pending.push(pattern);
+                pending.extend(escape.as_deref());
+            }
+        }
+    }
+    false
+}
+
+/// Without `GROUP BY`, a branch projects either only aggregated values or
+/// none; grouped branches are validated against their keys later.
 pub(super) fn validate_aggregate_projection(
     ast: &SelectAst<'_, '_>,
 ) -> Result<(), QueryDiagnostic> {
-    let count = ast
-        .projection
-        .iter()
-        .find_map(|projection| match &projection.expression {
-            Projection::Aggregate { token, .. } => Some(*token),
-            _ => None,
-        });
-    if let Some(token) = count
-        && ast
+    if !ast.group.is_empty() {
+        if let Some(projection) = ast
             .projection
             .iter()
-            .any(|projection| !matches!(projection.expression, Projection::Aggregate { .. }))
+            .find(|projection| matches!(projection.expression, Projection::All))
+        {
+            return Err(QueryDiagnostic::at(
+                QueryDiagnosticKind::UnsupportedFeature,
+                projection.alias,
+                "'*' cannot be combined with GROUP BY",
+            ));
+        }
+        return Ok(());
+    }
+    let aggregated = ast
+        .projection
+        .iter()
+        .find(|projection| projection_is_aggregated(&projection.expression));
+    if let Some(aggregated) = aggregated
+        && let Some(plain) = ast
+            .projection
+            .iter()
+            .find(|projection| !projection_is_aggregated(&projection.expression))
     {
-        return Err(QueryDiagnostic::at(
+        let token = projection_token(&plain.expression)
+            .or_else(|| projection_token(&aggregated.expression));
+        return Err(QueryDiagnostic::at_or_unpositioned(
             QueryDiagnosticKind::UnsupportedFeature,
-            Some(token),
+            token,
             "aggregates cannot be mixed with non-aggregate projections without GROUP BY",
         ));
     }
     Ok(())
+}
+
+/// A token positioning diagnostics about a projection.
+pub(super) fn projection_token<'tokens, 'source>(
+    projection: &Projection<'tokens, 'source>,
+) -> Option<&'tokens Token<'source>> {
+    match projection {
+        Projection::All => None,
+        Projection::Field(reference) => Some(reference.last()),
+        Projection::Scalar(expression) => operand_token(expression),
+        Projection::Aggregate { token, .. } | Projection::Presentation { token, .. } => Some(token),
+    }
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -909,6 +1017,7 @@ pub(super) fn compile_source_relation(
                 reference_joins: Vec::new(),
             }],
             dialect,
+            aggregates_allowed: false,
         };
         let sql = compile_expression(condition, &mut condition_context)?;
         if !condition_context.sources[0].reference_joins.is_empty() {

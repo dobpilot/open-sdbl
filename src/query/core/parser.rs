@@ -2,9 +2,9 @@
 
 use crate::query::core::ast::{
     AccumulationAst, AccumulationKind, AggregateArgument, AggregateKind, CaseBranch, CastTarget,
-    Expression, FieldReference, JoinAst, JoinKind, OrderTerm, PeriodKind, PresentationArgument,
-    PresentationOperation, Projection, ProjectionItem, QueryAst, SelectAst, SliceAst, SliceKind,
-    SourceAst, UnionLink, parse_datetime_value,
+    Expression, FieldReference, GroupKey, JoinAst, JoinKind, OrderTerm, PeriodKind,
+    PresentationArgument, PresentationOperation, Projection, ProjectionItem, QueryAst, SelectAst,
+    SliceAst, SliceKind, SourceAst, UnionLink, parse_datetime_value,
 };
 use crate::query::core::diag::SourcePosition;
 use crate::query::core::names::names_equal;
@@ -170,6 +170,26 @@ impl<'tokens, 'source> Parser<'tokens, 'source> {
         } else {
             None
         };
+        let mut group = Vec::new();
+        if self.consume_keyword(Keyword::Group) {
+            self.expect_keyword(Keyword::By)?;
+            loop {
+                let token = self.peek().ok_or_else(|| {
+                    self.diagnostic(QueryDiagnosticKind::Syntax, None, "expected GROUP BY key")
+                })?;
+                self.record_binary_operator(token)?;
+                let expression = self.parse_or()?;
+                group.push(GroupKey { token, expression });
+                if !self.consume_lexeme(",") {
+                    break;
+                }
+            }
+        }
+        let having = if self.consume_keyword(Keyword::Having) {
+            Some(self.parse_or()?)
+        } else {
+            None
+        };
 
         Ok(SelectAst {
             distinct,
@@ -178,6 +198,8 @@ impl<'tokens, 'source> Parser<'tokens, 'source> {
             source,
             join,
             filter,
+            group,
+            having,
         })
     }
 

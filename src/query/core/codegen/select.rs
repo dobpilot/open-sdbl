@@ -8,11 +8,13 @@ use super::expression::{
 };
 use super::orchestrate::PresentationCompilation;
 use super::sources::{
-    compile_source_free_branch, compile_source_relation, validate_aggregate_projection,
+    compile_source_free_branch, compile_source_relation, contains_aggregate,
+    projection_is_aggregated, projection_token, validate_aggregate_projection,
 };
 use crate::metadata::{MetadataSnapshot, ObjectId};
 use crate::query::core::ast::{
-    Expression, JoinAst, JoinKind, OrderTerm, Projection, ProjectionItem, SelectAst, SourceAst,
+    AggregateArgument, CastTarget, Expression, FieldReference, JoinAst, JoinKind, OrderTerm,
+    PresentationArgument, Projection, ProjectionItem, SelectAst, SourceAst,
 };
 use crate::query::core::dialect::{OutputLabelAllocator, SqlDialect};
 use crate::query::core::names::names_equal;
@@ -46,8 +48,29 @@ pub(super) fn compile_branch(
     };
     let join = ast.join.as_ref();
     validate_join_projection(ast, join)?;
+    let grouped = !ast.group.is_empty() || ast.having.is_some();
+    if grouped && let Some(join) = join.filter(|join| join.kind == JoinKind::Full) {
+        return Err(QueryDiagnostic::at(
+            QueryDiagnosticKind::UnsupportedFeature,
+            Some(join.token),
+            "GROUP BY and HAVING are not supported together with FULL JOIN",
+        ));
+    }
     let mut context = compile_branch_context(source, join, snapshot, catalog, dialect)?;
+    context.aggregates_allowed = grouped
+        || ast
+            .projection
+            .iter()
+            .any(|projection| projection_is_aggregated(&projection.expression));
     let selected = compile_branch_projections(ast, source, join, &mut context, presentations)?;
+    let group_by = compile_group_keys(ast, &selected, &mut context)?;
+    context.aggregates_allowed = grouped;
+    let having = ast
+        .having
+        .as_ref()
+        .map(|having| compile_predicate(having, &mut context))
+        .transpose()?;
+    context.aggregates_allowed = false;
 
     let RenderedProjections {
         columns,
@@ -68,10 +91,13 @@ pub(super) fn compile_branch(
         .transpose()?;
     let order = compile_order_terms(
         order_terms,
+        ast,
         &selected,
         &mut context,
-        union_order || join.is_some(),
-        if join.is_some() {
+        union_order || join.is_some() || grouped,
+        if grouped {
+            "GROUP BY ORDER BY field must be a key or a projection alias"
+        } else if join.is_some() {
             "JOIN ORDER BY field must occur in the projection"
         } else {
             "UNION ORDER BY field must occur in the first branch projection"
@@ -86,6 +112,14 @@ pub(super) fn compile_branch(
         condition.as_ref(),
         filter.as_deref(),
     );
+    if !group_by.is_empty() {
+        sql.push_str(" GROUP BY ");
+        sql.push_str(&group_by.join(", "));
+    }
+    if let Some(having) = having {
+        sql.push_str(" HAVING ");
+        sql.push_str(&having);
+    }
     if !order.is_empty() && !union_order {
         sql.push_str(" ORDER BY ");
         sql.push_str(&order.join(", "));
@@ -158,6 +192,7 @@ fn compile_branch_context<'snapshot, 'catalog>(
             catalog,
             sources: vec![left, right],
             dialect,
+            aggregates_allowed: false,
         });
     }
     let resolved = resolve_source_metadata(source, snapshot, catalog)?;
@@ -186,6 +221,7 @@ fn compile_branch_context<'snapshot, 'catalog>(
             reference_joins: Vec::new(),
         }],
         dialect,
+        aggregates_allowed: false,
     })
 }
 
@@ -429,8 +465,33 @@ fn render_selected_projections(
     })
 }
 
+/// The output position (1-based) of the first column of projection `index`.
+fn projection_position(selected: &[SelectedProjection], index: usize) -> usize {
+    selected[..index]
+        .iter()
+        .map(|selected| match selected {
+            SelectedProjection::Field(resolved) => projected_members(resolved.field()).len(),
+            SelectedProjection::Generated { .. } => 1,
+        })
+        .sum::<usize>()
+        + 1
+}
+
+/// The projection whose alias equals a single-segment field reference.
+fn aliased_projection(ast: &SelectAst<'_, '_>, field: &FieldReference<'_, '_>) -> Option<usize> {
+    let [segment] = field.segments.as_slice() else {
+        return None;
+    };
+    ast.projection.iter().position(|projection| {
+        projection
+            .alias
+            .is_some_and(|alias| names_equal(alias.lexeme, segment.lexeme))
+    })
+}
+
 fn compile_order_terms(
     order_terms: &[OrderTerm<'_, '_>],
+    ast: &SelectAst<'_, '_>,
     selected: &[SelectedProjection],
     context: &mut CompilationContext<'_, '_>,
     positional: bool,
@@ -439,6 +500,13 @@ fn compile_order_terms(
     order_terms
         .iter()
         .map(|term| {
+            if positional && let Some(index) = aliased_projection(ast, &term.field) {
+                return Ok(format!(
+                    "{}{}",
+                    projection_position(selected, index),
+                    if term.descending { " DESC" } else { " ASC" }
+                ));
+            }
             let resolved = context.resolve(&term.field)?;
             let column = single_column(resolved.field(), term.field.last())?;
             let expression = if positional {
@@ -460,6 +528,309 @@ fn compile_order_terms(
             ))
         })
         .collect()
+}
+
+/// One resolved `GROUP BY` key.
+enum GroupKeyTarget {
+    Path(ResolvedPath),
+    Alias(usize),
+    Scalar(String),
+}
+
+/// Resolves the `GROUP BY` keys, checks that every non-aggregated
+/// projection is a key, and renders the physical `GROUP BY` list.
+fn compile_group_keys(
+    ast: &SelectAst<'_, '_>,
+    selected: &[SelectedProjection],
+    context: &mut CompilationContext<'_, '_>,
+) -> Result<Vec<String>, QueryDiagnostic> {
+    if ast.group.is_empty() {
+        return Ok(Vec::new());
+    }
+    let mut keys = Vec::with_capacity(ast.group.len());
+    let mut sql = Vec::new();
+    let mut push = |expression: String| {
+        if !sql.contains(&expression) {
+            sql.push(expression);
+        }
+    };
+    for key in &ast.group {
+        context.catalog.charge(1, None)?;
+        let target = match &key.expression {
+            Expression::Field(reference) => match context.resolve(reference) {
+                Ok(resolved) => GroupKeyTarget::Path(resolved),
+                Err(error) => match aliased_projection(ast, reference) {
+                    Some(index) if error.kind() == QueryDiagnosticKind::UnknownField => {
+                        GroupKeyTarget::Alias(index)
+                    }
+                    _ => return Err(error),
+                },
+            },
+            expression => {
+                if contains_aggregate(expression) {
+                    return Err(QueryDiagnostic::at(
+                        QueryDiagnosticKind::UnsupportedFeature,
+                        Some(key.token),
+                        "GROUP BY key cannot contain aggregate functions",
+                    ));
+                }
+                let compiled = compile_expression(expression, context)?;
+                push(compiled);
+                GroupKeyTarget::Scalar(expression_fingerprint(expression))
+            }
+        };
+        match &target {
+            GroupKeyTarget::Path(resolved) => {
+                for column in &resolved.field().columns {
+                    push(context.sql_column(resolved, column));
+                }
+            }
+            GroupKeyTarget::Alias(index) => match &selected[*index] {
+                SelectedProjection::Field(resolved) => {
+                    for column in &resolved.field().columns {
+                        push(context.sql_column(resolved, column));
+                    }
+                }
+                SelectedProjection::Generated {
+                    sql: expression, ..
+                } => {
+                    if projection_is_aggregated(&ast.projection[*index].expression) {
+                        return Err(QueryDiagnostic::at(
+                            QueryDiagnosticKind::UnsupportedFeature,
+                            Some(key.token),
+                            "GROUP BY key cannot be an aggregate projection",
+                        ));
+                    }
+                    push(expression.clone());
+                }
+            },
+            GroupKeyTarget::Scalar(_) => {}
+        }
+        keys.push(target);
+    }
+
+    for (index, (item, projection)) in ast.projection.iter().zip(selected).enumerate() {
+        if projection_is_aggregated(&item.expression) {
+            continue;
+        }
+        let matched = keys
+            .iter()
+            .any(|key| match (key, projection, &item.expression) {
+                (GroupKeyTarget::Alias(alias), _, _) => *alias == index,
+                (GroupKeyTarget::Path(key), SelectedProjection::Field(resolved), _) => {
+                    key.same_path(resolved)
+                }
+                (
+                    GroupKeyTarget::Path(key),
+                    SelectedProjection::Generated { .. },
+                    Projection::Presentation {
+                        argument: PresentationArgument::Field(reference),
+                        ..
+                    },
+                ) => context
+                    .resolve(reference)
+                    .is_ok_and(|resolved| key.same_path(&resolved)),
+                (GroupKeyTarget::Scalar(fingerprint), _, Projection::Scalar(expression)) => {
+                    *fingerprint == expression_fingerprint(expression)
+                }
+                _ => false,
+            });
+        if !matched {
+            return Err(QueryDiagnostic::at_or_unpositioned(
+                QueryDiagnosticKind::UnsupportedFeature,
+                projection_token(&item.expression),
+                format!(
+                    "field {:?} must be grouped or aggregated",
+                    projection_label(item, projection)
+                ),
+            ));
+        }
+        // An inline presentation of a key reads joined columns that must be
+        // grouped as well; grouping by the rendered expression covers them.
+        if let (
+            SelectedProjection::Generated {
+                sql: expression, ..
+            },
+            Projection::Presentation { .. },
+        ) = (projection, &item.expression)
+        {
+            push(expression.clone());
+        }
+    }
+    Ok(sql)
+}
+
+fn projection_label(item: &ProjectionItem<'_, '_>, projection: &SelectedProjection) -> String {
+    item.alias.map_or_else(
+        || match projection {
+            SelectedProjection::Field(resolved) => resolved.field_label(),
+            SelectedProjection::Generated { label, .. } => label.clone(),
+        },
+        |alias| alias.lexeme.to_owned(),
+    )
+}
+
+/// A case- and whitespace-insensitive structural rendering used to match
+/// `GROUP BY` expressions with projected expressions.
+fn expression_fingerprint(expression: &Expression<'_, '_>) -> String {
+    let mut output = String::new();
+    fingerprint_into(expression, &mut output);
+    output
+}
+
+fn fingerprint_into(expression: &Expression<'_, '_>, output: &mut String) {
+    let upper = |token: &Token<'_>| token.lexeme.to_uppercase();
+    match expression {
+        Expression::Field(reference) => {
+            output.push_str("F(");
+            for segment in &reference.segments {
+                output.push_str(&upper(segment));
+                output.push('.');
+            }
+            output.push(')');
+        }
+        Expression::Literal(token) | Expression::Parameter(token) => {
+            output.push_str("L(");
+            output.push_str(&upper(token));
+            output.push(')');
+        }
+        Expression::DateTime { value, .. } => {
+            output.push_str(&format!("D({value:?})"));
+        }
+        Expression::BeginOfPeriod { value, period, .. } => {
+            output.push_str(&format!("BOP({period:?},"));
+            fingerprint_into(value, output);
+            output.push(')');
+        }
+        Expression::MetadataValue {
+            kind,
+            object,
+            value,
+            ..
+        } => {
+            output.push_str(&format!(
+                "V({}.{}.{})",
+                upper(kind),
+                upper(object),
+                upper(value)
+            ));
+        }
+        Expression::Uuid { argument, .. } => {
+            output.push_str("UUID(");
+            fingerprint_into(&Expression::Field(argument.clone()), output);
+            output.push(')');
+        }
+        Expression::Cast {
+            argument,
+            target,
+            path,
+            ..
+        } => {
+            output.push_str("CAST(");
+            fingerprint_into(argument, output);
+            output.push_str(&match target {
+                CastTarget::String { length } => format!(",S{length:?}"),
+                CastTarget::Number { precision, scale } => format!(",N{precision:?}{scale:?}"),
+                CastTarget::Boolean => ",B".to_owned(),
+                CastTarget::Date => ",D".to_owned(),
+                CastTarget::Reference { kind, object } => {
+                    format!(",R{}.{}", upper(kind), upper(object))
+                }
+            });
+            if let Some(path) = path {
+                output.push('.');
+                output.push_str(&upper(path));
+            }
+            output.push(')');
+        }
+        Expression::Unary { operator, value } => {
+            output.push_str(&format!("U({},", upper(operator)));
+            fingerprint_into(value, output);
+            output.push(')');
+        }
+        Expression::Binary {
+            left,
+            operator,
+            right,
+        } => {
+            output.push_str(&format!("B({},", upper(operator)));
+            fingerprint_into(left, output);
+            output.push(',');
+            fingerprint_into(right, output);
+            output.push(')');
+        }
+        Expression::InList { value, items } => {
+            output.push_str("IN(");
+            fingerprint_into(value, output);
+            for item in items {
+                output.push(',');
+                fingerprint_into(item, output);
+            }
+            output.push(')');
+        }
+        Expression::IsNull { value, negated } => {
+            output.push_str(&format!("ISNULL({negated},"));
+            fingerprint_into(value, output);
+            output.push(')');
+        }
+        Expression::Case {
+            branches,
+            otherwise,
+            ..
+        } => {
+            output.push_str("CASE(");
+            for branch in branches {
+                fingerprint_into(&branch.when, output);
+                output.push(':');
+                fingerprint_into(&branch.then, output);
+                output.push(',');
+            }
+            if let Some(otherwise) = otherwise {
+                output.push_str("ELSE:");
+                fingerprint_into(otherwise, output);
+            }
+            output.push(')');
+        }
+        Expression::IsNullFunction {
+            value, fallback, ..
+        } => {
+            output.push_str("COALESCE(");
+            fingerprint_into(value, output);
+            output.push(',');
+            fingerprint_into(fallback, output);
+            output.push(')');
+        }
+        Expression::Like {
+            value,
+            pattern,
+            escape,
+            negated,
+            ..
+        } => {
+            output.push_str(&format!("LIKE({negated},"));
+            fingerprint_into(value, output);
+            output.push(',');
+            fingerprint_into(pattern, output);
+            if let Some(escape) = escape {
+                output.push(',');
+                fingerprint_into(escape, output);
+            }
+            output.push(')');
+        }
+        Expression::Aggregate {
+            kind,
+            distinct,
+            argument,
+            ..
+        } => {
+            output.push_str(&format!("AGG({kind:?},{distinct},"));
+            match argument {
+                AggregateArgument::All => output.push('*'),
+                AggregateArgument::Expression(expression) => fingerprint_into(expression, output),
+            }
+            output.push(')');
+        }
+    }
 }
 
 fn compile_branch_sql(
