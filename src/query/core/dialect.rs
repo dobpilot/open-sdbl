@@ -389,6 +389,22 @@ impl SqlDialect {
 
     /// Concatenates the `RTRef` discriminator and the `RRRef` value into the
     /// 20-byte runtime-typed reference payload.
+    /// The 4-byte `RTRef` prefix of an `RTRef ‖ RRRef` payload.
+    pub(super) fn payload_type(self, payload: &str) -> String {
+        match self {
+            Self::Postgres => format!("substring({payload} from 1 for 4)"),
+            Self::MsSql { .. } => format!("SUBSTRING({payload}, 1, 4)"),
+        }
+    }
+
+    /// The 16-byte `RRRef` suffix of an `RTRef ‖ RRRef` payload.
+    pub(super) fn payload_reference(self, payload: &str) -> String {
+        match self {
+            Self::Postgres => format!("substring({payload} from 5 for 16)"),
+            Self::MsSql { .. } => format!("SUBSTRING({payload}, 5, 16)"),
+        }
+    }
+
     pub(super) fn reference_payload(self, type_value: &str, reference: &str) -> String {
         match self {
             Self::Postgres => format!("({type_value} || {reference})"),

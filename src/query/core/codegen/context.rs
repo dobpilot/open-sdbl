@@ -4,13 +4,14 @@ use super::expression::{
     matching_fields, reference_column, reference_type_column, resolve_named_field, single_column,
 };
 use super::orchestrate::PresentationCompilation;
+use super::select::derived_owner;
 use super::sources::{
     ReferencePresentationTargets, compile_deferred_reference_presentation, compile_live_relation,
     presentation_targets, wrap_reference_presentation,
 };
 use super::virtual_tables::compile_presentation_plan;
 use crate::Token;
-use crate::metadata::{MetadataSnapshot, ObjectId};
+use crate::metadata::{MetadataKind, MetadataSnapshot, ObjectId, StandardFieldId};
 use crate::query::core::ast::{FieldReference, PresentationArgument, PresentationOperation};
 use crate::query::core::dialect::{SqlDialect, compile_literal};
 use crate::query::core::names::names_equal;
@@ -93,6 +94,10 @@ pub(super) struct JoinPlan {
     pub(super) target_relation: String,
     pub(super) target_id_column: String,
     pub(super) alias: String,
+    /// Rendered key expressions when the source members are not plain
+    /// columns, as for the payload column of a derived source.
+    pub(super) source_value_sql: Option<String>,
+    pub(super) source_type_sql: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -156,6 +161,9 @@ pub(super) struct ResolvedPath {
     field_index: usize,
     pub(super) sql_alias: String,
     pub(super) path_label: Option<String>,
+    /// Rendered value replacing `alias.column`, used by a dereference that
+    /// selects across several reference targets.
+    pub(super) expression: Option<String>,
 }
 
 impl ResolvedPath {
@@ -173,6 +181,7 @@ impl ResolvedPath {
             field_index,
             sql_alias: source.sql_alias.clone(),
             path_label: None,
+            expression: None,
         }
     }
 
@@ -213,6 +222,10 @@ impl ResolvedPath {
 }
 
 impl CompilationContext<'_, '_> {
+    /// Reference targets one dereference may reach before the query is
+    /// asked to narrow the field with `ВЫРАЗИТЬ`.
+    const MAX_DEREFERENCE_TARGETS: usize = 32;
+
     pub(super) fn source(&self, scope: ScopeId) -> &SourceScope {
         &self.sources[scope.0]
     }
@@ -267,6 +280,7 @@ impl CompilationContext<'_, '_> {
             field_index,
             sql_alias: source.sql_alias.clone(),
             path_label: None,
+            expression: None,
         })
     }
 
@@ -413,21 +427,18 @@ impl CompilationContext<'_, '_> {
             self.source(scope).fields.len().saturating_add(1),
             Some(reference_token),
         )?;
-        let (target_table, source_field, source_column) = {
+        let single_target = {
             let (_, reference_field) =
                 resolve_named_field(&self.source(scope).fields, reference_token)?;
-            let target_table = reference_field.reference_target.as_deref().ok_or_else(|| {
-                QueryDiagnostic::at(
-                    QueryDiagnosticKind::Metadata,
-                    Some(reference_token),
-                    format!(
-                        "field {:?} has no unique SchemaStorage reference target",
-                        reference_token.lexeme
-                    ),
-                )
-            })?;
+            reference_field.reference_target.clone()
+        };
+        let Some(target_table) = single_target else {
+            return self.resolve_composite_dereference(scope, reference_token, target_token);
+        };
+        let (source_field, source_column) = {
+            let (_, reference_field) =
+                resolve_named_field(&self.source(scope).fields, reference_token)?;
             (
-                target_table.to_owned(),
                 reference_field.schema_name.clone(),
                 reference_column(reference_field, reference_token)?
                     .physical_name
@@ -523,6 +534,8 @@ impl CompilationContext<'_, '_> {
                 target_relation,
                 target_id_column,
                 alias: alias.clone(),
+                source_value_sql: None,
+                source_type_sql: None,
             });
             alias
         };
@@ -540,7 +553,425 @@ impl CompilationContext<'_, '_> {
                 "{}.{}",
                 reference_token.lexeme, target_token.lexeme
             )),
+            expression: None,
         })
+    }
+
+    /// Dereferences a composite reference: every candidate target is
+    /// joined under its own type guard and the value is selected by the
+    /// reference type, exactly as the platform resolves `ЛюбаяСсылка`.
+    fn resolve_composite_dereference(
+        &mut self,
+        scope: ScopeId,
+        reference_token: &Token<'_>,
+        target_token: &Token<'_>,
+    ) -> Result<ResolvedPath, QueryDiagnostic> {
+        let source = self.composite_source(scope, reference_token)?;
+        let candidates = self.dereference_candidates(&source, target_token)?;
+        let mut branches = Vec::new();
+        for candidate in candidates {
+            if let Some(branch) =
+                self.dereference_branch(scope, &source, candidate, reference_token, target_token)?
+            {
+                branches.push(branch);
+            }
+        }
+        if branches.is_empty() {
+            return Err(QueryDiagnostic::at(
+                QueryDiagnosticKind::UnknownField,
+                Some(target_token),
+                format!(
+                    "field {:?} was not found in any target of {:?}",
+                    target_token.lexeme, reference_token.lexeme
+                ),
+            ));
+        }
+        let kind = unify_dereference_kinds(&branches, target_token)?;
+        let widen = matches!(kind, ColumnKind::Reference { .. })
+            && branches.iter().any(|branch| branch.kind != kind);
+        let mut arms = Vec::with_capacity(branches.len());
+        for branch in &branches {
+            let value = self.branch_value(branch, widen, target_token)?;
+            arms.push((branch.database_type, value));
+        }
+        let expression = if let [(_, value)] = arms.as_slice() {
+            value.clone()
+        } else {
+            let mut sql = String::from("CASE");
+            for (database_type, value) in &arms {
+                sql.push_str(&format!(
+                    " WHEN {} = {} THEN {value}",
+                    source.type_sql,
+                    self.dialect.binary_u32(*database_type)
+                ));
+            }
+            sql.push_str(" END");
+            sql
+        };
+        let first = branches.first().expect("a branch was compiled");
+        let field = QueryableField {
+            name: first.field_name.clone(),
+            schema_name: first.schema_name.clone(),
+            aliases: vec![first.field_name.clone()],
+            columns: vec![QueryableColumn {
+                physical_name: first.physical_name.clone(),
+                data_type: first.data_type.clone(),
+                output_label: target_token.lexeme.to_owned(),
+                kind,
+            }],
+            reference_target: None,
+            reference_targets: Vec::new(),
+        };
+        if self.compiling_join_condition {
+            self.dereference_in_join = true;
+        }
+        Ok(ResolvedPath {
+            scope,
+            owner: derived_owner(),
+            identity_is_base: false,
+            fields: Arc::from(vec![field]),
+            field_index: 0,
+            sql_alias: self.source(scope).sql_alias.clone(),
+            path_label: Some(format!(
+                "{}.{}",
+                reference_token.lexeme, target_token.lexeme
+            )),
+            expression: Some(expression),
+        })
+    }
+
+    /// The type and identifier expressions of a composite reference field
+    /// or of the payload column a derived source projects for one.
+    fn composite_source(
+        &self,
+        scope: ScopeId,
+        reference_token: &Token<'_>,
+    ) -> Result<CompositeSource, QueryDiagnostic> {
+        let alias = self.source(scope).sql_alias.clone();
+        let (_, field) = resolve_named_field(&self.source(scope).fields, reference_token)?;
+        let missing_target = || {
+            QueryDiagnostic::at(
+                QueryDiagnosticKind::Metadata,
+                Some(reference_token),
+                format!(
+                    "field {:?} has no unique SchemaStorage reference target",
+                    reference_token.lexeme
+                ),
+            )
+        };
+        let declared = field
+            .reference_targets
+            .iter()
+            .filter(|target| !target.is_empty())
+            .cloned()
+            .collect::<Vec<_>>();
+        if let [column] = field.columns.as_slice() {
+            let ColumnKind::Reference {
+                targets,
+                runtime_typed: true,
+            } = &column.kind
+            else {
+                return Err(missing_target());
+            };
+            let payload = self
+                .dialect
+                .qualified_column(Some(&alias), &column.physical_name);
+            return Ok(CompositeSource {
+                schema_name: field.schema_name.clone(),
+                value_sql: self.dialect.payload_reference(&payload),
+                type_sql: self.dialect.payload_type(&payload),
+                value_column: None,
+                type_column: None,
+                known_targets: targets.clone(),
+                declared,
+            });
+        }
+        let value_column =
+            reference_column(field, reference_token).map_err(|_| missing_target())?;
+        let type_column =
+            reference_type_column(field, reference_token).map_err(|_| missing_target())?;
+        Ok(CompositeSource {
+            schema_name: field.schema_name.clone(),
+            value_sql: self
+                .dialect
+                .qualified_column(Some(&alias), &value_column.physical_name),
+            type_sql: self
+                .dialect
+                .qualified_column(Some(&alias), &type_column.physical_name),
+            value_column: Some(value_column.physical_name.clone()),
+            type_column: Some(type_column.physical_name.clone()),
+            known_targets: Vec::new(),
+            declared,
+        })
+    }
+
+    /// The objects a composite dereference may reach: the column's known
+    /// targets, the field's declared targets, or the objects that define an
+    /// attribute of this name.
+    fn dereference_candidates(
+        &self,
+        source: &CompositeSource,
+        target_token: &Token<'_>,
+    ) -> Result<Vec<ObjectId>, QueryDiagnostic> {
+        let mut candidates = Vec::new();
+        if !source.known_targets.is_empty() {
+            candidates.extend(source.known_targets.iter().copied());
+        } else if !source.declared.is_empty() {
+            for target in &source.declared {
+                let physical = format!("_{}", target.strip_prefix('_').unwrap_or(target));
+                let object = self
+                    .snapshot
+                    .objects()
+                    .iter()
+                    .find(|object| {
+                        object
+                            .physical_table
+                            .as_deref()
+                            .is_some_and(|table| names_equal(table, &physical))
+                    })
+                    .ok_or_else(|| {
+                        QueryDiagnostic::at(
+                            QueryDiagnosticKind::UnknownObject,
+                            Some(target_token),
+                            format!("reference target {physical:?} was not resolved"),
+                        )
+                    })?;
+                candidates.push(ObjectId::from(&object.guid));
+            }
+        } else {
+            candidates = self.scan_dereference_candidates(target_token)?;
+        }
+        candidates.dedup();
+        if candidates.len() > Self::MAX_DEREFERENCE_TARGETS {
+            return Err(QueryDiagnostic::at(
+                QueryDiagnosticKind::UnsupportedFeature,
+                Some(target_token),
+                format!(
+                    "field {:?} is defined by more than {} reference targets; narrow the reference with ВЫРАЗИТЬ",
+                    target_token.lexeme,
+                    Self::MAX_DEREFERENCE_TARGETS
+                ),
+            ));
+        }
+        Ok(candidates)
+    }
+
+    /// Objects that may define the attribute: owners of a configuration
+    /// attribute of that name and, for a standard field name, every
+    /// reference-kind object.
+    fn scan_dereference_candidates(
+        &self,
+        target_token: &Token<'_>,
+    ) -> Result<Vec<ObjectId>, QueryDiagnostic> {
+        let standard = StandardFieldId::from_name(target_token.lexeme).is_some();
+        let mut tables = Vec::new();
+        for field in self.snapshot.fields() {
+            if field
+                .name
+                .as_deref()
+                .is_some_and(|name| names_equal(name, target_token.lexeme))
+            {
+                tables.extend(field.owner_tables.iter().cloned());
+            }
+        }
+        let mut candidates = Vec::new();
+        for object in self.snapshot.objects() {
+            if !object.kind.is_some_and(is_reference_kind) {
+                continue;
+            }
+            let Some(physical) = object.physical_table.as_deref() else {
+                continue;
+            };
+            let owns = tables.iter().any(|table| names_equal(table, physical));
+            if !owns && !standard {
+                continue;
+            }
+            self.catalog.charge(1, Some(target_token))?;
+            candidates.push(ObjectId::from(&object.guid));
+            if candidates.len() > Self::MAX_DEREFERENCE_TARGETS {
+                break;
+            }
+        }
+        Ok(candidates)
+    }
+
+    /// Plans the guarded join of one candidate and describes its attribute,
+    /// or `None` when the candidate does not define it.
+    fn dereference_branch(
+        &mut self,
+        scope: ScopeId,
+        source: &CompositeSource,
+        candidate: ObjectId,
+        reference_token: &Token<'_>,
+        target_token: &Token<'_>,
+    ) -> Result<Option<DereferenceBranch>, QueryDiagnostic> {
+        let Some(object) = self.snapshot.object_by_id(candidate) else {
+            return Ok(None);
+        };
+        let (Some(physical), Some(database_type)) = (object.physical_table.clone(), object.number)
+        else {
+            return Ok(None);
+        };
+        let Some(live_table) = self.snapshot.live_table(&physical) else {
+            return Ok(None);
+        };
+        let fields = self.catalog.fields(object, Some(target_token))?;
+        let matches = matching_fields(&fields, target_token);
+        let (field_index, field) = match matches.as_slice() {
+            [candidate] => *candidate,
+            [] => return Ok(None),
+            _ => {
+                return Err(QueryDiagnostic::at(
+                    QueryDiagnosticKind::AmbiguousField,
+                    Some(target_token),
+                    format!(
+                        "field {:?} is ambiguous in reference target {:?}",
+                        target_token.lexeme, physical
+                    ),
+                ));
+            }
+        };
+        let column = match field.columns.as_slice() {
+            [column] => DereferenceMember::Single(column.clone()),
+            _ => {
+                let value = reference_column(field, target_token)?.clone();
+                let member_type = reference_type_column(field, target_token)?.clone();
+                DereferenceMember::Reference(member_type, value)
+            }
+        };
+        let id_column = fields
+            .iter()
+            .find(|candidate| names_equal(&candidate.schema_name, "ID"))
+            .and_then(|id| id.columns.first())
+            .ok_or_else(|| {
+                QueryDiagnostic::at(
+                    QueryDiagnosticKind::Metadata,
+                    Some(reference_token),
+                    format!("reference target {physical:?} has no ID field"),
+                )
+            })?
+            .physical_name
+            .clone();
+        let target_relation =
+            compile_live_relation(self.snapshot, live_table, &fields, self.dialect);
+        let source_alias = self.source(scope).sql_alias.clone();
+        let join_key = JoinKey {
+            source_alias: &source_alias,
+            source_field: &source.schema_name,
+            target_object: candidate,
+            database_type: Some(database_type),
+        };
+        let alias = if let Some(join) = self
+            .source(scope)
+            .reference_joins
+            .iter()
+            .find(|join| join.matches(join_key))
+        {
+            join.alias.clone()
+        } else {
+            let alias = self.next_reference_alias(scope);
+            self.source_mut(scope).reference_joins.push(JoinPlan {
+                source_alias,
+                source_field: source.schema_name.clone(),
+                source_column: source.value_column.clone().unwrap_or_default(),
+                source_type_column: source.type_column.clone(),
+                database_type: Some(database_type),
+                target_object: candidate,
+                target_relation,
+                target_id_column: id_column,
+                alias: alias.clone(),
+                source_value_sql: source
+                    .value_column
+                    .is_none()
+                    .then(|| source.value_sql.clone()),
+                source_type_sql: source
+                    .type_column
+                    .is_none()
+                    .then(|| source.type_sql.clone()),
+            });
+            alias
+        };
+        let _ = field_index;
+        Ok(Some(DereferenceBranch {
+            database_type,
+            alias,
+            kind: column.kind(),
+            member: column,
+            field_name: field.name.clone(),
+            schema_name: field.schema_name.clone(),
+            physical_name: field
+                .columns
+                .first()
+                .map(|column| column.physical_name.clone())
+                .unwrap_or_default(),
+            data_type: field
+                .columns
+                .first()
+                .map(|column| column.data_type.clone())
+                .unwrap_or_default(),
+            reference_target: field.reference_target.clone(),
+        }))
+    }
+
+    /// The value one branch contributes, widened to a payload when the
+    /// branches disagree on the reference target.
+    fn branch_value(
+        &self,
+        branch: &DereferenceBranch,
+        widen: bool,
+        target_token: &Token<'_>,
+    ) -> Result<String, QueryDiagnostic> {
+        match &branch.member {
+            DereferenceMember::Single(column) => {
+                let sql = self
+                    .dialect
+                    .qualified_column(Some(&branch.alias), &column.physical_name);
+                if !widen {
+                    return Ok(sql);
+                }
+                let target = branch.reference_target.as_deref().ok_or_else(|| {
+                    QueryDiagnostic::at(
+                        QueryDiagnosticKind::Metadata,
+                        Some(target_token),
+                        format!(
+                            "reference field {:?} has no unique target to widen",
+                            branch.field_name
+                        ),
+                    )
+                })?;
+                let physical = format!("_{}", target.strip_prefix('_').unwrap_or(target));
+                let number = self
+                    .snapshot
+                    .objects()
+                    .iter()
+                    .find(|object| {
+                        object
+                            .physical_table
+                            .as_deref()
+                            .is_some_and(|table| names_equal(table, &physical))
+                    })
+                    .and_then(|object| object.number)
+                    .ok_or_else(|| {
+                        QueryDiagnostic::at(
+                            QueryDiagnosticKind::Metadata,
+                            Some(target_token),
+                            format!("reference target {physical:?} has no database type"),
+                        )
+                    })?;
+                Ok(self
+                    .dialect
+                    .reference_payload(&self.dialect.binary_u32(number), &sql))
+            }
+            DereferenceMember::Reference(type_column, value_column) => {
+                let type_sql = self
+                    .dialect
+                    .qualified_column(Some(&branch.alias), &type_column.physical_name);
+                let value_sql = self
+                    .dialect
+                    .qualified_column(Some(&branch.alias), &value_column.physical_name);
+                Ok(self.dialect.reference_payload(&type_sql, &value_sql))
+            }
+        }
     }
 
     fn next_reference_alias(&self, scope: ScopeId) -> String {
@@ -570,6 +1001,9 @@ impl CompilationContext<'_, '_> {
     }
 
     pub(super) fn sql_column(&self, resolved: &ResolvedPath, column: &QueryableColumn) -> String {
+        if let Some(expression) = &resolved.expression {
+            return expression.clone();
+        }
         self.dialect
             .qualified_column(Some(&resolved.sql_alias), &column.physical_name)
     }
@@ -650,6 +1084,8 @@ impl CompilationContext<'_, '_> {
             target_relation,
             target_id_column,
             alias: alias.clone(),
+            source_value_sql: None,
+            source_type_sql: None,
         });
         Ok(alias)
     }
@@ -678,6 +1114,13 @@ pub(super) fn compile_presentation(
         return Ok((context.dialect.scalar_text(&value), label, false));
     };
     let resolved = context.resolve(reference)?;
+    if resolved.expression.is_some() {
+        return Err(QueryDiagnostic::at(
+            QueryDiagnosticKind::UnsupportedFeature,
+            Some(token),
+            "a value dereferenced across reference targets cannot be presented; narrow the reference with ВЫРАЗИТЬ",
+        ));
+    }
     let owner = resolved.owner;
     let source_identity_is_base = resolved.identity_is_base;
     let source_alias = resolved.sql_alias.clone();
@@ -763,4 +1206,149 @@ pub(super) fn compile_presentation(
         label,
         false,
     ))
+}
+
+/// The reference side of a composite dereference.
+struct CompositeSource {
+    schema_name: String,
+    value_sql: String,
+    type_sql: String,
+    value_column: Option<String>,
+    type_column: Option<String>,
+    known_targets: Vec<ObjectId>,
+    declared: Vec<String>,
+}
+
+/// The attribute members one candidate contributes.
+enum DereferenceMember {
+    Single(QueryableColumn),
+    Reference(QueryableColumn, QueryableColumn),
+}
+
+impl DereferenceMember {
+    fn kind(&self) -> ColumnKind {
+        match self {
+            Self::Single(column) => column.kind.clone(),
+            Self::Reference(_, value) => match &value.kind {
+                ColumnKind::Reference { targets, .. } => ColumnKind::Reference {
+                    targets: targets.clone(),
+                    runtime_typed: true,
+                },
+                other => other.clone(),
+            },
+        }
+    }
+}
+
+struct DereferenceBranch {
+    database_type: u32,
+    alias: String,
+    member: DereferenceMember,
+    kind: ColumnKind,
+    field_name: String,
+    schema_name: String,
+    physical_name: String,
+    data_type: String,
+    reference_target: Option<String>,
+}
+
+fn is_reference_kind(kind: MetadataKind) -> bool {
+    matches!(
+        kind,
+        MetadataKind::Catalog
+            | MetadataKind::Document
+            | MetadataKind::Enumeration
+            | MetadataKind::ChartOfCharacteristicTypes
+            | MetadataKind::ChartOfCalculationTypes
+            | MetadataKind::ChartOfAccounts
+            | MetadataKind::ExchangePlan
+            | MetadataKind::BusinessProcess
+            | MetadataKind::Task
+    )
+}
+
+/// The kind every branch of a composite dereference must agree on:
+/// the same variant, the widest string, and references widened to one
+/// runtime-typed payload when the targets differ.
+fn unify_dereference_kinds(
+    branches: &[DereferenceBranch],
+    token: &Token<'_>,
+) -> Result<ColumnKind, QueryDiagnostic> {
+    let mut common: Option<ColumnKind> = None;
+    for branch in branches {
+        let kind = branch.kind.clone();
+        common = Some(match common {
+            None => kind,
+            Some(current) if current.is_wildcard() => kind,
+            Some(current) if kind.is_wildcard() => current,
+            Some(current) => match (&current, &kind) {
+                (ColumnKind::String { length: left }, ColumnKind::String { length: right }) => {
+                    ColumnKind::String {
+                        length: match (left, right) {
+                            (Some(left), Some(right)) => Some(*left.max(right)),
+                            _ => None,
+                        },
+                    }
+                }
+                (ColumnKind::Number { .. }, ColumnKind::Number { .. }) => ColumnKind::Number {
+                    precision: None,
+                    scale: None,
+                },
+                (ColumnKind::Binary { length: left }, ColumnKind::Binary { length: right }) => {
+                    ColumnKind::Binary {
+                        length: match (left, right) {
+                            (Some(left), Some(right)) => Some(*left.max(right)),
+                            _ => None,
+                        },
+                    }
+                }
+                (
+                    ColumnKind::Reference {
+                        targets: left,
+                        runtime_typed: left_runtime,
+                    },
+                    ColumnKind::Reference {
+                        targets: right,
+                        runtime_typed: right_runtime,
+                    },
+                ) => {
+                    if left == right && left_runtime == right_runtime {
+                        current.clone()
+                    } else {
+                        let mut targets = left.clone();
+                        for target in right {
+                            if !targets.contains(target) {
+                                targets.push(*target);
+                            }
+                        }
+                        ColumnKind::Reference {
+                            targets,
+                            runtime_typed: true,
+                        }
+                    }
+                }
+                (left, right) if left == right => current.clone(),
+                (left, right) => {
+                    return Err(QueryDiagnostic::at(
+                        QueryDiagnosticKind::UnsupportedFeature,
+                        Some(token),
+                        format!(
+                            "field {:?} is {left:?} in one reference target and {right:?} in another",
+                            token.lexeme
+                        ),
+                    ));
+                }
+            },
+        });
+    }
+    common.ok_or_else(|| {
+        QueryDiagnostic::at(
+            QueryDiagnosticKind::UnknownField,
+            Some(token),
+            format!(
+                "field {:?} was not found in any reference target",
+                token.lexeme
+            ),
+        )
+    })
 }

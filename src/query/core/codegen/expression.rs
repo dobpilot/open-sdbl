@@ -32,9 +32,7 @@ pub(super) fn compile_predicate(
         Expression::Field(reference) => {
             let resolved = context.resolve(reference)?;
             let column = single_column(resolved.field(), reference.last())?;
-            let sql = context
-                .dialect
-                .qualified_column(Some(&resolved.sql_alias), &column.physical_name);
+            let sql = context.sql_column(&resolved, column);
             Ok(if column.kind == ColumnKind::Boolean {
                 context.dialect.boolean_predicate(&sql)
             } else {
@@ -920,9 +918,7 @@ pub(super) fn compile_expression(
         Expression::Field(reference) => {
             let resolved = context.resolve(reference)?;
             let column = single_column(resolved.field(), reference.last())?;
-            Ok(context
-                .dialect
-                .qualified_column(Some(&resolved.sql_alias), &column.physical_name))
+            Ok(context.sql_column(&resolved, column))
         }
         Expression::Literal(token) => compile_literal(token, context.dialect),
         Expression::DateTime { token, value } => {
@@ -1472,9 +1468,7 @@ fn compile_date_operand(
                 "BEGINOFPERIOD first argument must resolve to a date field",
             ));
         }
-        return Ok(context
-            .dialect
-            .qualified_column(Some(&resolved.sql_alias), &column.physical_name));
+        return Ok(context.sql_column(&resolved, column));
     }
     let sql = compile_expression(expression, context)?;
     if expression_kind(expression, context)? == ColumnKind::DateTime {

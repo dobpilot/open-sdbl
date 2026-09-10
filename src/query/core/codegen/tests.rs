@@ -23,6 +23,8 @@ fn join_reuse_requires_the_complete_reference_identity() {
         target_object: target,
         target_relation: "_Reference57".to_owned(),
         target_id_column: "_IDRRef".to_owned(),
+        source_value_sql: None,
+        source_type_sql: None,
         alias: "__ref1".to_owned(),
     };
     let matching = JoinKey {

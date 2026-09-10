@@ -1109,26 +1109,7 @@ fn compile_branch_sql(
         sql.push_str(" AS ");
         sql.push_str(&dialect.quote_identifier(context.base_alias()));
         for reference_join in &context.sources[0].reference_joins {
-            sql.push_str(" LEFT JOIN ");
-            sql.push_str(&reference_join.target_relation);
-            sql.push_str(" AS ");
-            sql.push_str(&dialect.quote_identifier(&reference_join.alias));
-            sql.push_str(" ON ");
-            sql.push_str(&dialect.qualified_column(
-                Some(&reference_join.source_alias),
-                &reference_join.source_column,
-            ));
-            sql.push_str(" = ");
-            sql.push_str(&dialect.qualified_column(
-                Some(&reference_join.alias),
-                &reference_join.target_id_column,
-            ));
-            append_type_guard(
-                &mut sql,
-                &reference_join.source_alias,
-                reference_join,
-                dialect,
-            );
+            append_reference_join(&mut sql, reference_join, dialect);
         }
         if let Some(filter) = filter {
             sql.push_str(" WHERE ");
@@ -1871,19 +1852,29 @@ fn append_reference_join(sql: &mut String, join: &JoinPlan, dialect: SqlDialect)
     sql.push_str(" AS ");
     sql.push_str(&dialect.quote_identifier(&join.alias));
     sql.push_str(" ON ");
-    sql.push_str(&dialect.qualified_column(Some(&join.source_alias), &join.source_column));
+    sql.push_str(&join.source_value_sql.clone().unwrap_or_else(|| {
+        dialect.qualified_column(Some(&join.source_alias), &join.source_column)
+    }));
     sql.push_str(" = ");
     sql.push_str(&dialect.qualified_column(Some(&join.alias), &join.target_id_column));
     append_type_guard(sql, &join.source_alias, join, dialect);
 }
 
 fn append_type_guard(sql: &mut String, source_alias: &str, join: &JoinPlan, dialect: SqlDialect) {
-    if let (Some(column), Some(number)) = (&join.source_type_column, join.database_type) {
-        sql.push_str(" AND ");
-        sql.push_str(&dialect.qualified_column(Some(source_alias), column));
-        sql.push_str(" = ");
-        sql.push_str(&dialect.binary_u32(number));
-    }
+    let Some(number) = join.database_type else {
+        return;
+    };
+    let Some(type_sql) = join.source_type_sql.clone().or_else(|| {
+        join.source_type_column
+            .as_ref()
+            .map(|column| dialect.qualified_column(Some(source_alias), column))
+    }) else {
+        return;
+    };
+    sql.push_str(" AND ");
+    sql.push_str(&type_sql);
+    sql.push_str(" = ");
+    sql.push_str(&dialect.binary_u32(number));
 }
 
 fn selected_column_position(

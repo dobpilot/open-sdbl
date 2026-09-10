@@ -5021,12 +5021,14 @@ fn diagnoses_invalid_nested_queries() {
     .unwrap_err();
     assert!(deferred.message().contains("deferred"));
 
+    // A runtime-typed derived column is dereferenced across its targets.
     let runtime_typed = postgres_compile!(
         "SELECT Т.ProbeAttribute.Code FROM (SELECT ProbeAttribute FROM Catalog.OpenSdblMetadataProbe) AS Т;",
         &presentation_reference_snapshot(true),
     )
-    .unwrap_err();
-    assert_eq!(runtime_typed.kind(), QueryDiagnosticKind::Metadata);
+    .unwrap();
+    assert_eq!(labels(&runtime_typed), ["ProbeAttribute.Code"]);
+    assert_eq!(runtime_typed.sql.matches("LEFT JOIN").count(), 2);
 
     let mut deep = String::from("SELECT Code FROM Catalog.OpenSdblMetadataProbe");
     for level in 0..17 {
@@ -5853,4 +5855,91 @@ fn dereferences_references_inside_join_conditions() {
             .contains("FROM \"_reference53\" AS \"p\" LEFT JOIN \"_reference57\" AS \"t\" ON")
     );
     assert!(flat.sql.ends_with("LEFT JOIN \"_reference57\" AS \"__left_ref1\" ON \"p\".\"_fld54\" = \"__left_ref1\".\"_idrref\""));
+}
+
+#[test]
+fn dereferences_composite_references_across_targets() {
+    let snapshot = presentation_reference_snapshot(true);
+
+    // Declared targets are joined under their own type guards and the value
+    // is selected by the reference type.
+    let (postgres, mssql) = for_each_backend!(
+        "ВЫБРАТЬ ProbeAttribute.Code КАК Код ИЗ Catalog.OpenSdblMetadataProbe;",
+        &snapshot,
+    );
+    let postgres = postgres.unwrap();
+    assert_eq!(labels(&postgres), ["Код"]);
+    assert!(postgres.sql.contains(
+        "CASE WHEN \"__src\".\"_fld54_rtref\" = decode('00000039', 'hex') THEN \"__ref1\".\"_code\" WHEN \"__src\".\"_fld54_rtref\" = decode('0000003a', 'hex') THEN \"__ref2\".\"_code\" END"
+    ));
+    assert!(postgres.sql.contains(
+        "LEFT JOIN \"_reference57\" AS \"__ref1\" ON \"__src\".\"_fld54_rrref\" = \"__ref1\".\"_idrref\" AND \"__src\".\"_fld54_rtref\" = decode('00000039', 'hex')"
+    ));
+    let mssql = mssql.unwrap();
+    assert!(mssql.sql.contains(
+        "CASE WHEN [__src].[_fld54_rtref] = 0x00000039 THEN [__ref1].[_code] WHEN [__src].[_fld54_rtref] = 0x0000003a THEN [__ref2].[_code] END"
+    ));
+
+    // The dereferenced value works in filters, grouping, and ordering.
+    let filtered = postgres_compile!(
+        "ВЫБРАТЬ ProbeAttribute.Code КАК Код, КОЛИЧЕСТВО(*) КАК N
+         ИЗ Catalog.OpenSdblMetadataProbe
+         ГДЕ ProbeAttribute.Code = \"A\"
+         СГРУППИРОВАТЬ ПО ProbeAttribute.Code
+         УПОРЯДОЧИТЬ ПО Код;",
+        &snapshot,
+    )
+    .unwrap();
+    assert_eq!(filtered.sql.matches("CASE WHEN").count(), 3);
+    assert!(filtered.sql.contains("GROUP BY CASE WHEN"));
+
+    // The payload column of a temporary table is split for the joins.
+    let mut session = BatchSession::new();
+    session
+        .compile(
+            &snapshot,
+            "ВЫБРАТЬ ProbeAttribute КАК Объект ПОМЕСТИТЬ ВТ ИЗ Catalog.OpenSdblMetadataProbe;",
+        )
+        .0
+        .unwrap();
+    let temporary = session
+        .compile(&snapshot, "ВЫБРАТЬ Т.Объект.Code КАК Код ИЗ ВТ КАК Т;")
+        .0
+        .unwrap()
+        .unwrap();
+    assert!(temporary.sql.contains(
+        "LEFT JOIN \"_reference57\" AS \"__ref1\" ON substring(\"Т\".\"Объект\" from 5 for 16) = \"__ref1\".\"_idrref\" AND substring(\"Т\".\"Объект\" from 1 for 4) = decode('00000039', 'hex')"
+    ));
+
+    // A composite dereference is also allowed in a join condition.
+    let joined = postgres_compile!(
+        "ВЫБРАТЬ p.Ссылка ИЗ Catalog.OpenSdblMetadataProbe КАК p
+         ЛЕВОЕ СОЕДИНЕНИЕ Catalog.OpenSdblMetadataProbe КАК t
+         ПО p.ProbeAttribute.Code = t.ProbeAttribute.Code;",
+        &snapshot,
+    )
+    .unwrap();
+    assert!(
+        joined
+            .sql
+            .contains("FROM (\"_reference53\" AS \"p\" LEFT JOIN")
+    );
+    assert!(joined.sql.contains("ON CASE WHEN"));
+
+    // Presenting the dereferenced value is rejected.
+    let presented = postgres_compile!(
+        "ВЫБРАТЬ ПРЕДСТАВЛЕНИЕ(ProbeAttribute.Code) ИЗ Catalog.OpenSdblMetadataProbe;",
+        &snapshot,
+    )
+    .unwrap_err();
+    assert_eq!(presented.kind(), QueryDiagnosticKind::UnsupportedFeature);
+    assert!(presented.message().contains("cannot be presented"));
+
+    // An attribute defined by no target is an unknown field.
+    let missing = postgres_compile!(
+        "ВЫБРАТЬ ProbeAttribute.НетТакого ИЗ Catalog.OpenSdblMetadataProbe;",
+        &snapshot,
+    )
+    .unwrap_err();
+    assert_eq!(missing.kind(), QueryDiagnosticKind::UnknownField);
 }
