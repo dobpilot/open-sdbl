@@ -537,9 +537,10 @@ impl CompilationContext<'_, '_> {
 
     fn next_reference_alias(&self, scope: ScopeId) -> String {
         let prefix = match (self.sources.len(), scope.0) {
-            (1, _) => "__ref",
-            (_, 0) => "__left_ref",
-            _ => "__right_ref",
+            (1, _) => "__ref".to_owned(),
+            (_, 0) => "__left_ref".to_owned(),
+            (_, 1) => "__right_ref".to_owned(),
+            (_, index) => format!("__join{}_ref", index + 1),
         };
         let mut number = self.source(scope).reference_joins.len() + 1;
         loop {

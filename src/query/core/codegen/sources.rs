@@ -35,7 +35,7 @@ pub(super) fn compile_source_free_branch(
     widen: &BTreeSet<usize>,
     parameters: Parameters<'_>,
 ) -> Result<CompiledBranch, QueryDiagnostic> {
-    if ast.join.is_some() {
+    if !ast.joins.is_empty() {
         return Err(QueryDiagnostic::unpositioned(
             QueryDiagnosticKind::UnsupportedFeature,
             "JOIN requires FROM",

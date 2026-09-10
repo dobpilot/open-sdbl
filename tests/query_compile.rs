@@ -2651,7 +2651,7 @@ fn rejects_unsafe_or_ambiguous_join_shapes() {
     assert!(
         inequality
             .message()
-            .contains("top-level cross-source field equality")
+            .contains("top-level direct-field equality")
     );
 
     let nested_anchor = postgres_compile!(
@@ -2664,7 +2664,7 @@ fn rejects_unsafe_or_ambiguous_join_shapes() {
     assert!(
         nested_anchor
             .message()
-            .contains("top-level cross-source field equality")
+            .contains("top-level direct-field equality")
     );
 
     let same_alias = postgres_compile!(
@@ -4706,4 +4706,123 @@ fn diagnoses_invalid_grouping() {
     )
     .unwrap_err();
     assert!(mixed.message().contains("without GROUP BY"));
+}
+
+#[test]
+fn chains_several_joins_in_source_order() {
+    let snapshot = tabular_section_snapshot();
+    let source = "SELECT Док.Ссылка AS Документ, строки.НомерСтроки AS Строка, цфо.Сам_БизнесРегион AS Регион
+         FROM Документ.бит_ДополнительныеУсловияПоДоговору КАК Док
+         INNER JOIN Документ.бит_ДополнительныеУсловияПоДоговору.ГрафикНачислений КАК строки
+             ON строки.Ссылка = Док.Ссылка
+         LEFT JOIN Справочник.ЦентрыФинансовойОтветственности КАК цфо
+             ON цфо.Ссылка = строки.ЦФО AND Док.Ссылка ЕСТЬ НЕ NULL
+         WHERE строки.НомерСтроки > 0
+         ORDER BY Строка DESC;";
+    let (postgres, mssql) = for_each_backend!(source, &snapshot);
+    let postgres = postgres.unwrap();
+    assert_eq!(labels(&postgres), ["Документ", "Строка", "Регион"]);
+    assert!(postgres.sql.contains(
+        "FROM \"_document53\" AS \"Док\" INNER JOIN \"_document53_vt54X1\" AS \"строки\" ON \"строки\".\"_document53_idrref\" = \"Док\".\"_idrref\" LEFT JOIN \"_reference62\" AS \"цфо\" ON \"цфо\".\"_idrref\" = \"строки\".\"_fld55\" AND (\"Док\".\"_idrref\" IS NOT NULL) WHERE (\"строки\".\"_lineno54\" > 0) ORDER BY 2 DESC"
+    ));
+    let mssql = mssql.unwrap();
+    assert!(mssql.sql.contains(
+        "FROM [_document53] AS [Док] INNER JOIN [_document53_vt54X1] AS [строки] ON [строки].[_document53_idrref] = [Док].[_idrref] LEFT JOIN [_reference62] AS [цфо] ON [цфо].[_idrref] = [строки].[_fld55] AND ([Док].[_idrref] IS NOT NULL) WHERE ([строки].[_lineno54] > 0) ORDER BY 2 DESC"
+    ));
+}
+
+#[test]
+fn joins_the_same_object_under_several_aliases_with_dereference() {
+    let snapshot = reference_snapshot();
+    let compiled = postgres_compile!(
+        "SELECT a.Code, b.Code AS Second, c.Организация.Код AS Owner
+         FROM Catalog.OpenSdblMetadataProbe a
+         RIGHT JOIN Catalog.OpenSdblMetadataProbe b ON a.Code = b.Code
+         LEFT JOIN Catalog.OpenSdblMetadataProbe c ON c.Code = a.Code AND c.Code = b.Code
+         ORDER BY Second;",
+        &snapshot,
+    )
+    .unwrap();
+    assert!(compiled.sql.contains(
+        "FROM \"_reference53\" AS \"a\" RIGHT JOIN \"_reference53\" AS \"b\" ON \"a\".\"_code\" = \"b\".\"_code\" LEFT JOIN \"_reference53\" AS \"c\" ON \"c\".\"_code\" = \"a\".\"_code\" AND \"c\".\"_code\" = \"b\".\"_code\" LEFT JOIN \"_reference57\" AS \"__join3_ref1\" ON \"c\".\"_fld54\" = \"__join3_ref1\".\"_idrref\""
+    ));
+    assert!(
+        compiled
+            .sql
+            .contains("\"__join3_ref1\".\"_code\"::text AS \"Owner\"")
+    );
+    assert!(compiled.sql.ends_with("ORDER BY 2 ASC"));
+
+    let unaliased = postgres_compile!(
+        "SELECT Code FROM Catalog.OpenSdblMetadataProbe
+         JOIN Catalog.Организации ON OpenSdblMetadataProbe.Code = Организации.Code
+         JOIN Catalog.Организации о ON о.Code = Организации.Code;",
+        &snapshot,
+    );
+    assert_eq!(
+        unaliased.unwrap_err().kind(),
+        QueryDiagnosticKind::AmbiguousField
+    );
+
+    let defaults = postgres_compile!(
+        "SELECT бит_ДополнительныеУсловияПоДоговору.Ссылка
+         FROM Документ.бит_ДополнительныеУсловияПоДоговору
+         JOIN РегистрСведений.бит_СтатусыОбъектов
+             ON бит_СтатусыОбъектов.Объект = бит_ДополнительныеУсловияПоДоговору.Ссылка
+         JOIN Справочник.ЦентрыФинансовойОтветственности
+             ON ЦентрыФинансовойОтветственности.Ссылка = бит_ДополнительныеУсловияПоДоговору.ДоговорКонтрагента;",
+        &tabular_section_snapshot(),
+    )
+    .unwrap();
+    assert!(
+        defaults
+            .sql
+            .contains("AS \"__left\" INNER JOIN \"_inforg60\" AS \"__right\" ON")
+    );
+    assert!(defaults.sql.contains(
+        "INNER JOIN \"_reference62\" AS \"__join3\" ON \"__join3\".\"_idrref\" = \"__left\".\"_fld59\""
+    ));
+}
+
+#[test]
+fn diagnoses_invalid_join_chains() {
+    let snapshot = snapshot();
+    let forward = postgres_compile!(
+        "SELECT a.Code FROM Catalog.OpenSdblMetadataProbe a
+         JOIN Catalog.OpenSdblMetadataProbe b ON a.Code = c.Code
+         JOIN Catalog.OpenSdblMetadataProbe c ON c.Code = a.Code;",
+        &snapshot,
+    )
+    .unwrap_err();
+    assert_eq!(forward.kind(), QueryDiagnosticKind::UnsupportedFeature);
+    assert!(forward.message().contains("joined later"));
+    assert_eq!((forward.line(), forward.column()), (2, 61));
+
+    let no_anchor = postgres_compile!(
+        "SELECT a.Code FROM Catalog.OpenSdblMetadataProbe a
+         JOIN Catalog.OpenSdblMetadataProbe b ON a.Code = b.Code
+         JOIN Catalog.OpenSdblMetadataProbe c ON a.Code = b.Code;",
+        &snapshot,
+    )
+    .unwrap_err();
+    assert!(no_anchor.message().contains("earlier source"));
+
+    let full = postgres_compile!(
+        "SELECT a.Code FROM Catalog.OpenSdblMetadataProbe a
+         FULL JOIN Catalog.OpenSdblMetadataProbe b ON a.Code = b.Code
+         JOIN Catalog.OpenSdblMetadataProbe c ON c.Code = a.Code;",
+        &snapshot,
+    )
+    .unwrap_err();
+    assert!(full.message().contains("only join"));
+    assert_eq!((full.line(), full.column()), (2, 10));
+
+    let duplicate_alias = postgres_compile!(
+        "SELECT a.Code FROM Catalog.OpenSdblMetadataProbe a
+         JOIN Catalog.OpenSdblMetadataProbe b ON a.Code = b.Code
+         JOIN Catalog.OpenSdblMetadataProbe a ON a.Code = b.Code;",
+        &snapshot,
+    )
+    .unwrap_err();
+    assert!(duplicate_alias.message().contains("distinct aliases"));
 }

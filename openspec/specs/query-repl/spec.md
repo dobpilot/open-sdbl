@@ -15,18 +15,20 @@ authoritative resolved metadata. Branches MAY be connected with
 branch SHALL support projection or `*`, one metadata source, an optional source
 alias with or without `КАК`/`AS`, one-hop reference property paths,
 `РАЗЛИЧНЫЕ`/`DISTINCT`, `ПЕРВЫЕ`/`TOP`, and basic `ГДЕ`/`WHERE`
-expressions. A branch MAY instead contain one two-source
+expressions. A branch MAY instead chain one or more
 `[ВНУТРЕННЕЕ] СОЕДИНЕНИЕ` / `[INNER] JOIN`, `ЛЕВОЕ [ВНЕШНЕЕ]
-СОЕДИНЕНИЕ` / `LEFT [OUTER] JOIN`, `ПРАВОЕ [ВНЕШНЕЕ] СОЕДИНЕНИЕ` /
-`RIGHT [OUTER] JOIN`, or `ПОЛНОЕ [ВНЕШНЕЕ] СОЕДИНЕНИЕ` / `FULL
+СОЕДИНЕНИЕ` / `LEFT [OUTER] JOIN`, and `ПРАВОЕ [ВНЕШНЕЕ] СОЕДИНЕНИЕ` /
+`RIGHT [OUTER] JOIN` in source order, each introducing one more source
+scope, or contain exactly one `ПОЛНОЕ [ВНЕШНЕЕ] СОЕДИНЕНИЕ` / `FULL
 [OUTER] JOIN`. Joined branches SHALL support named direct fields and one-hop
-reference properties. A join condition SHALL contain at least one top-level
-scalar cross-source direct-field equality and MAY combine that anchor with
-additional supported scalar direct-field predicates by top-level `И`/`AND`.
-Additional predicates SHALL remain in ON. Final `УПОРЯДОЧИТЬ ПО`/`ORDER BY`
-SHALL support `ВОЗР`/`ASC` and `УБЫВ`/`DESC`. One or more trailing
-semicolons SHALL terminate the query. Unsupported syntax SHALL fail before
-execution.
+reference properties. Each join condition SHALL contain at least one top-level
+scalar direct-field equality between the joined source and an earlier source
+and MAY combine that anchor with additional supported scalar direct-field
+predicates over the joined source and earlier sources by top-level
+`И`/`AND`. Additional predicates SHALL remain in ON. Final `УПОРЯДОЧИТЬ
+ПО`/`ORDER BY` SHALL support `ВОЗР`/`ASC` and `УБЫВ`/`DESC`. One or more
+trailing semicolons SHALL terminate the query. Unsupported syntax SHALL fail
+before execution.
 
 #### Scenario: Logical catalog query
 - **WHEN** a query selects `Код` and a custom attribute from
@@ -97,6 +99,19 @@ execution.
 - **THEN** generated PostgreSQL preserves every right row with NULL values for
   an absent left side
 
+#### Scenario: Chained joins
+- **WHEN** a branch joins a document, its tabular section, and a catalog with
+  three sources in a row, the last condition referencing the first source
+- **THEN** generated SQL emits the joins in source order with their own ON
+  conditions, followed by any reference-property joins, and every source is
+  addressable by its alias
+
+#### Scenario: Same object under two aliases
+- **WHEN** a branch joins `Справочник.Контрагенты` twice under different
+  aliases
+- **THEN** each alias resolves to its own scope and generated SQL contains two
+  joins on that table
+
 #### Scenario: FULL JOIN matched and unmatched rows
 - **WHEN** two aliased metadata sources are connected by a supported FULL JOIN
 - **THEN** the result contains all matching combinations and every unmatched
@@ -128,9 +143,11 @@ execution.
   anti-match marker and applies the complete ON condition in both branches
 
 #### Scenario: Unsupported join shape
-- **WHEN** a query uses more than one join, wildcard joined projection,
-  non-scalar join fields, reference properties in ON, lacks a top-level
-  cross-source direct-field equality, or nests its only equality under OR
+- **WHEN** a query combines FULL JOIN with another join in the same branch,
+  references a later source from an earlier join condition, uses wildcard
+  joined projection, non-scalar join fields, reference properties in ON,
+  lacks a top-level direct-field equality with an earlier source, or nests
+  its only equality under OR
 - **THEN** compilation returns a positional diagnostic and no SQL is produced
 
 #### Scenario: Repeated query terminator

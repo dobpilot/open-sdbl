@@ -46,23 +46,24 @@ pub(super) fn compile_branch(
             catalog.parameters,
         );
     };
-    let join = ast.join.as_ref();
-    validate_join_projection(ast, join)?;
+    let joins = ast.joins.as_slice();
+    validate_join_projection(ast, joins)?;
     let grouped = !ast.group.is_empty() || ast.having.is_some();
-    if grouped && let Some(join) = join.filter(|join| join.kind == JoinKind::Full) {
+    if grouped && let Some(join) = joins.iter().find(|join| join.kind == JoinKind::Full) {
         return Err(QueryDiagnostic::at(
             QueryDiagnosticKind::UnsupportedFeature,
             Some(join.token),
             "GROUP BY and HAVING are not supported together with FULL JOIN",
         ));
     }
-    let mut context = compile_branch_context(source, join, snapshot, catalog, dialect)?;
+    let mut context = compile_branch_context(source, joins, snapshot, catalog, dialect)?;
     context.aggregates_allowed = grouped
         || ast
             .projection
             .iter()
             .any(|projection| projection_is_aggregated(&projection.expression));
-    let selected = compile_branch_projections(ast, source, join, &mut context, presentations)?;
+    let selected =
+        compile_branch_projections(ast, source, joins.first(), &mut context, presentations)?;
     let group_by = compile_group_keys(ast, &selected, &mut context)?;
     context.aggregates_allowed = grouped;
     let having = ast
@@ -78,12 +79,21 @@ pub(super) fn compile_branch(
         deferred_presentations,
     } = render_selected_projections(&selected, &context, widen)?;
     if projections.is_empty() {
-        return Err(empty_projection_diagnostic(source, join));
+        return Err(empty_projection_diagnostic(source, joins.first()));
     }
 
-    let condition = join
-        .map(|join| compile_full_join_condition(&join.condition, &mut context, join.token))
-        .transpose()?;
+    let conditions = joins
+        .iter()
+        .enumerate()
+        .map(|(index, join)| {
+            compile_join_condition(
+                &join.condition,
+                &mut context,
+                join.token,
+                ScopeId(index + 1),
+            )
+        })
+        .collect::<Result<Vec<_>, _>>()?;
     let filter = ast
         .filter
         .as_ref()
@@ -94,10 +104,10 @@ pub(super) fn compile_branch(
         ast,
         &selected,
         &mut context,
-        union_order || join.is_some() || grouped,
+        union_order || !joins.is_empty() || grouped,
         if grouped {
             "GROUP BY ORDER BY field must be a key or a projection alias"
-        } else if join.is_some() {
+        } else if !joins.is_empty() {
             "JOIN ORDER BY field must occur in the projection"
         } else {
             "UNION ORDER BY field must occur in the first branch projection"
@@ -106,10 +116,10 @@ pub(super) fn compile_branch(
 
     let mut sql = compile_branch_sql(
         ast,
-        join,
+        joins,
         &context,
         &projections,
-        condition.as_ref(),
+        &conditions,
         filter.as_deref(),
     );
     if !group_by.is_empty() {
@@ -136,22 +146,30 @@ pub(super) fn compile_branch(
 
 fn validate_join_projection(
     ast: &SelectAst<'_, '_>,
-    join: Option<&JoinAst<'_, '_>>,
+    joins: &[JoinAst<'_, '_>],
 ) -> Result<(), QueryDiagnostic> {
-    let Some(join) = join else {
+    let Some(first) = joins.first() else {
         return Ok(());
     };
-    if join.kind == JoinKind::Full
-        && ast
+    if let Some(full) = joins.iter().find(|join| join.kind == JoinKind::Full) {
+        if joins.len() > 1 {
+            return Err(QueryDiagnostic::at(
+                QueryDiagnosticKind::UnsupportedFeature,
+                Some(full.token),
+                "FULL JOIN must be the only join of a branch",
+            ));
+        }
+        if ast
             .projection
             .iter()
-            .any(|projection| matches!(projection.expression, Projection::Aggregate { .. }))
-    {
-        return Err(QueryDiagnostic::at(
-            QueryDiagnosticKind::UnsupportedFeature,
-            Some(join.token),
-            "aggregates over a transposed FULL JOIN are not supported",
-        ));
+            .any(|projection| projection_is_aggregated(&projection.expression))
+        {
+            return Err(QueryDiagnostic::at(
+                QueryDiagnosticKind::UnsupportedFeature,
+                Some(full.token),
+                "aggregates over a transposed FULL JOIN are not supported",
+            ));
+        }
     }
     if ast
         .projection
@@ -160,7 +178,7 @@ fn validate_join_projection(
     {
         return Err(QueryDiagnostic::at(
             QueryDiagnosticKind::UnsupportedFeature,
-            Some(join.token),
+            Some(first.token),
             "wildcard projection in JOIN is not supported",
         ));
     }
@@ -169,28 +187,44 @@ fn validate_join_projection(
 
 fn compile_branch_context<'snapshot, 'catalog>(
     source: &SourceAst<'_, '_>,
-    join: Option<&JoinAst<'_, '_>>,
+    joins: &[JoinAst<'_, '_>],
     snapshot: &'snapshot MetadataSnapshot,
     catalog: &'catalog CompilationCatalog<'snapshot>,
     dialect: SqlDialect,
 ) -> Result<CompilationContext<'snapshot, 'catalog>, QueryDiagnostic> {
-    if let Some(join) = join {
-        let left = resolve_join_source(source, snapshot, catalog, "__left", dialect)?;
-        let right = resolve_join_source(&join.source, snapshot, catalog, "__right", dialect)?;
-        if names_equal(&left.sql_alias, &right.sql_alias) {
-            return Err(QueryDiagnostic::at(
-                QueryDiagnosticKind::Metadata,
-                Some(join.token),
-                format!(
-                    "JOIN sources must have distinct aliases; both resolve to {:?}",
-                    left.sql_alias
-                ),
-            ));
+    if !joins.is_empty() {
+        let mut sources = vec![resolve_join_source(
+            source, snapshot, catalog, "__left", dialect,
+        )?];
+        for (index, join) in joins.iter().enumerate() {
+            // Sources are numbered from one: the base is `__left`, the first
+            // joined source `__right`, later ones `__join3`, `__join4`, …
+            let default_alias = if index == 0 {
+                "__right".to_owned()
+            } else {
+                format!("__join{}", index + 2)
+            };
+            let scope =
+                resolve_join_source(&join.source, snapshot, catalog, &default_alias, dialect)?;
+            if let Some(previous) = sources
+                .iter()
+                .find(|previous: &&SourceScope| names_equal(&previous.sql_alias, &scope.sql_alias))
+            {
+                return Err(QueryDiagnostic::at(
+                    QueryDiagnosticKind::Metadata,
+                    Some(join.token),
+                    format!(
+                        "JOIN sources must have distinct aliases; both resolve to {:?}",
+                        previous.sql_alias
+                    ),
+                ));
+            }
+            sources.push(scope);
         }
         return Ok(CompilationContext {
             snapshot,
             catalog,
-            sources: vec![left, right],
+            sources,
             dialect,
             aggregates_allowed: false,
         });
@@ -835,13 +869,13 @@ fn fingerprint_into(expression: &Expression<'_, '_>, output: &mut String) {
 
 fn compile_branch_sql(
     ast: &SelectAst<'_, '_>,
-    join: Option<&JoinAst<'_, '_>>,
+    joins: &[JoinAst<'_, '_>],
     context: &CompilationContext<'_, '_>,
     projections: &[String],
-    condition: Option<&FullJoinCondition>,
+    conditions: &[FullJoinCondition],
     filter: Option<&str>,
 ) -> String {
-    let Some(join) = join else {
+    let Some(join) = joins.first() else {
         let dialect = context.dialect;
         let mut sql = dialect.select_prefix(ast.distinct, ast.top);
         sql.push_str(&projections.join(", "));
@@ -877,7 +911,9 @@ fn compile_branch_sql(
         }
         return sql;
     };
-    let condition = condition.expect("a JOIN branch always compiles its condition");
+    let condition = conditions
+        .first()
+        .expect("a JOIN branch always compiles its conditions");
     let dialect = context.dialect;
     if join.kind == JoinKind::Full {
         let first = compile_directional_full_join(
@@ -917,7 +953,7 @@ fn compile_branch_sql(
         sql.push_str(&dialect.quote_identifier("__full"));
         sql
     } else {
-        compile_native_join(ast, join.kind, context, projections, &condition.sql, filter)
+        compile_native_join(ast, joins, context, projections, conditions, filter)
     }
 }
 
@@ -952,19 +988,23 @@ fn resolve_join_source(
     })
 }
 
-fn compile_full_join_condition(
+/// Compiles the `ON` condition of the join that introduces scope `joined`.
+/// The condition must contain a top-level direct-field equality between the
+/// joined source and an earlier one and may not reference later sources.
+fn compile_join_condition(
     expression: &Expression<'_, '_>,
     context: &mut CompilationContext<'_, '_>,
     token: &Token<'_>,
+    joined: ScopeId,
 ) -> Result<FullJoinCondition, QueryDiagnostic> {
     let mut parts = Vec::new();
     let mut left_marker = None;
-    compile_join_condition_parts(expression, context, &mut parts, &mut left_marker)?;
+    compile_join_condition_parts(expression, context, &mut parts, &mut left_marker, joined)?;
     let left_marker = left_marker.ok_or_else(|| {
         QueryDiagnostic::at(
             QueryDiagnosticKind::UnsupportedFeature,
             Some(token),
-            "JOIN condition requires at least one top-level cross-source field equality combined by AND",
+            "JOIN condition requires at least one top-level direct-field equality between the joined source and an earlier source combined by AND",
         )
     })?;
     Ok(FullJoinCondition {
@@ -978,6 +1018,7 @@ fn compile_join_condition_parts(
     context: &mut CompilationContext<'_, '_>,
     parts: &mut Vec<String>,
     left_marker: &mut Option<String>,
+    joined: ScopeId,
 ) -> Result<(), QueryDiagnostic> {
     let mut pending = vec![expression];
     while let Some(expression) = pending.pop() {
@@ -993,7 +1034,9 @@ fn compile_join_condition_parts(
             continue;
         }
 
-        if let Some((equality, marker)) = compile_cross_source_join_equality(expression, context)? {
+        if let Some((equality, marker)) =
+            compile_cross_source_join_equality(expression, context, joined)?
+        {
             if left_marker.is_none() {
                 *left_marker = Some(marker);
             }
@@ -1001,7 +1044,7 @@ fn compile_join_condition_parts(
             continue;
         }
 
-        validate_direct_join_condition_fields(expression, context)?;
+        validate_direct_join_condition_fields(expression, context, joined)?;
         parts.push(compile_predicate(expression, context)?);
     }
     Ok(())
@@ -1010,6 +1053,7 @@ fn compile_join_condition_parts(
 fn compile_cross_source_join_equality(
     expression: &Expression<'_, '_>,
     context: &CompilationContext<'_, '_>,
+    joined: ScopeId,
 ) -> Result<Option<(String, String)>, QueryDiagnostic> {
     let Expression::Binary {
         left,
@@ -1029,7 +1073,13 @@ fn compile_cross_source_join_equality(
     };
     let left_field = context.resolve_direct(left_reference)?;
     let right_field = context.resolve_direct(right_reference)?;
-    if left_field.scope == right_field.scope {
+    check_join_scope(left_field.scope, left_reference.last(), joined)?;
+    check_join_scope(right_field.scope, right_reference.last(), joined)?;
+    // Only an equality that binds the joined source to an earlier one is the
+    // anchor; equalities between earlier sources are ordinary predicates.
+    if left_field.scope == right_field.scope
+        || (left_field.scope != joined && right_field.scope != joined)
+    {
         return Ok(None);
     }
     let equality = compile_join_field_equality(
@@ -1047,18 +1097,40 @@ fn compile_cross_source_join_equality(
     Ok(Some((equality.sql, marker)))
 }
 
+/// A join condition may reference the joined source and earlier ones only.
+fn check_join_scope(
+    scope: ScopeId,
+    token: &Token<'_>,
+    joined: ScopeId,
+) -> Result<(), QueryDiagnostic> {
+    if scope.0 > joined.0 {
+        return Err(QueryDiagnostic::at(
+            QueryDiagnosticKind::UnsupportedFeature,
+            Some(token),
+            format!(
+                "JOIN condition cannot reference {:?}, which is joined later",
+                token.lexeme
+            ),
+        ));
+    }
+    Ok(())
+}
+
 fn validate_direct_join_condition_fields(
     expression: &Expression<'_, '_>,
     context: &CompilationContext<'_, '_>,
+    joined: ScopeId,
 ) -> Result<(), QueryDiagnostic> {
     let mut pending = vec![expression];
     while let Some(expression) = pending.pop() {
         match expression {
             Expression::Field(reference) => {
-                context.resolve_direct(reference)?;
+                let resolved = context.resolve_direct(reference)?;
+                check_join_scope(resolved.scope, reference.last(), joined)?;
             }
             Expression::Uuid { argument, .. } => {
-                context.resolve_direct(argument)?;
+                let resolved = context.resolve_direct(argument)?;
+                check_join_scope(resolved.scope, argument.last(), joined)?;
             }
             Expression::Cast {
                 argument,
@@ -1291,18 +1363,12 @@ fn compile_directional_full_join(
 
 fn compile_native_join(
     ast: &SelectAst<'_, '_>,
-    kind: JoinKind,
+    joins: &[JoinAst<'_, '_>],
     context: &CompilationContext<'_, '_>,
     projections: &[String],
-    condition: &str,
+    conditions: &[FullJoinCondition],
     filter: Option<&str>,
 ) -> String {
-    let operator = match kind {
-        JoinKind::Inner => "INNER JOIN",
-        JoinKind::Left => "LEFT JOIN",
-        JoinKind::Right => "RIGHT JOIN",
-        JoinKind::Full => unreachable!("FULL JOIN is transposed separately"),
-    };
     let mut sql = context.dialect.select_prefix(ast.distinct, ast.top);
     sql.push_str(&projections.join(", "));
     sql.push_str(" FROM ");
@@ -1313,18 +1379,22 @@ fn compile_native_join(
             .dialect
             .quote_identifier(&context.sources[0].sql_alias),
     );
-    sql.push(' ');
-    sql.push_str(operator);
-    sql.push(' ');
-    sql.push_str(&context.sources[1].relation);
-    sql.push_str(" AS ");
-    sql.push_str(
-        &context
-            .dialect
-            .quote_identifier(&context.sources[1].sql_alias),
-    );
-    sql.push_str(" ON ");
-    sql.push_str(condition);
+    for ((join, condition), source) in joins.iter().zip(conditions).zip(&context.sources[1..]) {
+        let operator = match join.kind {
+            JoinKind::Inner => "INNER JOIN",
+            JoinKind::Left => "LEFT JOIN",
+            JoinKind::Right => "RIGHT JOIN",
+            JoinKind::Full => unreachable!("FULL JOIN is transposed separately"),
+        };
+        sql.push(' ');
+        sql.push_str(operator);
+        sql.push(' ');
+        sql.push_str(&source.relation);
+        sql.push_str(" AS ");
+        sql.push_str(&context.dialect.quote_identifier(&source.sql_alias));
+        sql.push_str(" ON ");
+        sql.push_str(&condition.sql);
+    }
     append_joined_reference_joins(&mut sql, context);
     if let Some(filter) = filter {
         sql.push_str(" WHERE ");

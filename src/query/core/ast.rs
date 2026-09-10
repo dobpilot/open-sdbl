@@ -22,7 +22,7 @@ pub(super) struct SelectAst<'tokens, 'source> {
     pub(super) top: Option<u32>,
     pub(super) projection: Vec<ProjectionItem<'tokens, 'source>>,
     pub(super) source: Option<SourceAst<'tokens, 'source>>,
-    pub(super) join: Option<JoinAst<'tokens, 'source>>,
+    pub(super) joins: Vec<JoinAst<'tokens, 'source>>,
     pub(super) filter: Option<Expression<'tokens, 'source>>,
     pub(super) group: Vec<GroupKey<'tokens, 'source>>,
     pub(super) having: Option<Expression<'tokens, 'source>>,

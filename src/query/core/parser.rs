@@ -160,11 +160,13 @@ impl<'tokens, 'source> Parser<'tokens, 'source> {
         } else {
             None
         };
-        let join = if source.is_some() {
-            self.parse_join()?
-        } else {
-            None
-        };
+        let mut joins = Vec::new();
+        if source.is_some() {
+            while let Some(join) = self.parse_join()? {
+                self.record_binary_operator(join.token)?;
+                joins.push(join);
+            }
+        }
         let filter = if self.consume_keyword(Keyword::Where) {
             Some(self.parse_or()?)
         } else {
@@ -196,7 +198,7 @@ impl<'tokens, 'source> Parser<'tokens, 'source> {
             top,
             projection,
             source,
-            join,
+            joins,
             filter,
             group,
             having,
