@@ -5,7 +5,7 @@ resolver = "3"
 
 [package]
 name = "open-sdbl"
-version = "0.3.4"
+version = "0.3.5"
 edition = "2024"
 rust-version = "1.85"
 description = "Open tooling for the 1C query language (SDBL)"
