@@ -1,13 +1,14 @@
 use std::collections::BTreeSet;
 use std::sync::Arc;
 
-use super::context::{CompilationContext, CompiledBranch, SourceScope};
+use super::context::{CompilationContext, CompiledBranch, JoinPlan, SourceScope};
 use super::expression::{
     Operand, binary_operator_sql, check_like_operand, compile_case, compile_expression,
-    left_binary_spine, operand_token, reference_column, reference_type_column, render_coalesce,
-    render_like, single_column, source_free_expression_kind, widen_reference,
+    compile_predicate, left_binary_spine, operand_token, reference_column, reference_type_column,
+    render_coalesce, render_like, single_column, source_free_expression_kind, widen_reference,
 };
 use super::params::render_scalar_parameter;
+use super::select::append_reference_join;
 use super::virtual_tables::{
     compile_accumulation_relation, compile_constant_date_expression, compile_date_parameter,
 };
@@ -21,11 +22,121 @@ use crate::query::core::ast::{
 use crate::query::core::dialect::{OutputLabelAllocator, SqlDialect, compile_literal};
 use crate::query::core::names::names_equal;
 use crate::query::core::params::Parameters;
+use crate::query::core::parser::Parser;
 use crate::query::core::resolve::{
     ColumnKind, CompilationCatalog, CompiledColumn, QueryableField, kind_from_query_name,
 };
+use crate::query::core::restrict::AccessRestriction;
 use crate::query::core::{QueryDiagnostic, QueryDiagnosticKind};
-use crate::{Keyword, Token, TokenKind};
+use crate::{Keyword, Token, TokenKind, tokenize};
+
+/// The access restriction applied to the source being compiled.
+pub(super) struct SourceRestriction<'restriction> {
+    pub(super) restriction: &'restriction AccessRestriction,
+    /// `Справочник.Номенклатура`, for diagnostics.
+    pub(super) label: String,
+    /// Whether the source's identity column is its base `ID`; copied to
+    /// the scope the restriction text resolves against.
+    pub(super) identity_is_base: bool,
+}
+
+/// The compiled text of a restriction: a predicate over `alias` plus the
+/// dereference joins it needs.
+pub(super) struct RestrictionPredicate {
+    pub(super) sql: String,
+    pub(super) reference_joins: Vec<JoinPlan>,
+}
+
+/// Compiles restriction text as a `ГДЕ` over one source scope aliased
+/// `alias`. Query parameters are hidden and sources read by the text stay
+/// unrestricted; any failure is re-labelled as a `Restriction` diagnostic
+/// positioned inside the text.
+#[allow(clippy::too_many_arguments)]
+pub(super) fn compile_restriction_predicate(
+    restriction: &SourceRestriction<'_>,
+    snapshot: &MetadataSnapshot,
+    catalog: &CompilationCatalog<'_>,
+    object: &MetadataObject,
+    object_name: &str,
+    fields: &[QueryableField],
+    alias: &str,
+    dialect: SqlDialect,
+) -> Result<RestrictionPredicate, QueryDiagnostic> {
+    let text = restriction.restriction.condition();
+    catalog
+        .in_restriction(|| {
+            let tokens = tokenize(text)?
+                .into_iter()
+                .filter(|token| token.kind != TokenKind::Comment)
+                .collect::<Vec<_>>();
+            let expression = Parser::new(&tokens, text).parse_condition()?;
+            let mut context = CompilationContext {
+                snapshot,
+                catalog,
+                sources: vec![SourceScope {
+                    object: ObjectId::from(&object.guid),
+                    fields: fields.to_vec().into(),
+                    relation: String::new(),
+                    sql_alias: alias.to_owned(),
+                    object_name: object_name.to_owned(),
+                    source_alias: None,
+                    identity_is_base: restriction.identity_is_base,
+                    reference_joins: Vec::new(),
+                }],
+                dialect,
+                aggregates_allowed: false,
+                compiling_join_condition: false,
+                dereference_in_join: false,
+            };
+            let sql = compile_predicate(&expression, &mut context)?;
+            let scope = context
+                .sources
+                .pop()
+                .expect("the restriction context has one source");
+            Ok(RestrictionPredicate {
+                sql,
+                reference_joins: scope.reference_joins,
+            })
+        })
+        .map_err(|error: QueryDiagnostic| error.into_restriction(&restriction.label))
+}
+
+/// Wraps a live relation in a derived table that keeps only the rows the
+/// restriction allows. Every physical column of the scope is projected
+/// under its own name, so the outer statement is unaware of the wrapper.
+fn wrap_restricted_relation(
+    relation: &str,
+    fields: &[QueryableField],
+    predicate: &RestrictionPredicate,
+    dialect: SqlDialect,
+) -> String {
+    let alias = "__restricted";
+    let mut seen = BTreeSet::new();
+    let projection = fields
+        .iter()
+        .flat_map(|field| &field.columns)
+        .filter(|column| seen.insert(column.physical_name.to_ascii_lowercase()))
+        .map(|column| {
+            format!(
+                "{} AS {}",
+                dialect.qualified_column(Some(alias), &column.physical_name),
+                dialect.quote_identifier(&column.physical_name)
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(", ");
+    let mut sql = format!(
+        "(SELECT {projection} FROM {relation} AS {}",
+        dialect.quote_identifier(alias)
+    );
+    for join in &predicate.reference_joins {
+        append_reference_join(&mut sql, join, dialect);
+    }
+    sql.push_str(" WHERE ");
+    sql.push_str(&predicate.sql);
+    sql.push(')');
+    sql
+}
 
 pub(super) fn compile_source_free_branch(
     ast: &SelectAst<'_, '_>,
@@ -920,6 +1031,7 @@ fn extension_table_base(candidate: &str) -> Option<&str> {
         .map(|()| prefix)
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(super) fn compile_source_relation(
     source: &SourceAst<'_, '_>,
     snapshot: &MetadataSnapshot,
@@ -927,6 +1039,7 @@ pub(super) fn compile_source_relation(
     object: &MetadataObject,
     live_table: &LiveTable,
     fields: &[QueryableField],
+    restriction: Option<&SourceRestriction<'_>>,
     dialect: SqlDialect,
 ) -> Result<CompiledSourceRelation, QueryDiagnostic> {
     if let Some(accumulation) = &source.accumulation {
@@ -938,12 +1051,30 @@ pub(super) fn compile_source_relation(
             object,
             live_table,
             fields,
+            restriction,
             dialect,
         );
     }
     let Some(slice) = &source.slice else {
+        let relation = compile_live_relation(snapshot, live_table, fields, dialect);
+        let sql = match restriction {
+            Some(restriction) => {
+                let predicate = compile_restriction_predicate(
+                    restriction,
+                    snapshot,
+                    catalog,
+                    object,
+                    source.object.lexeme,
+                    fields,
+                    "__restricted",
+                    dialect,
+                )?;
+                wrap_restricted_relation(&relation, fields, &predicate, dialect)
+            }
+            None => relation,
+        };
         return Ok(CompiledSourceRelation {
-            sql: compile_live_relation(snapshot, live_table, fields, dialect),
+            sql,
             fields: fields.to_vec().into(),
         });
     };
@@ -1032,7 +1163,7 @@ pub(super) fn compile_source_relation(
                 compile_constant_date_expression(expression, dialect)
             }
             Expression::Parameter(token) => {
-                compile_date_parameter(token, catalog.parameters, dialect)
+                compile_date_parameter(token, catalog.parameters(), dialect)
             }
             _ => Err(QueryDiagnostic::at(
                 QueryDiagnosticKind::UnsupportedFeature,
@@ -1087,6 +1218,29 @@ pub(super) fn compile_source_relation(
     }
     if let Some(condition) = virtual_condition {
         predicates.push(condition);
+    }
+    if let Some(restriction) = restriction {
+        let predicate = compile_restriction_predicate(
+            restriction,
+            snapshot,
+            catalog,
+            object,
+            source.object.lexeme,
+            fields,
+            "__slice_base",
+            dialect,
+        )?;
+        if !predicate.reference_joins.is_empty() {
+            return Err(QueryDiagnostic::unpositioned(
+                QueryDiagnosticKind::UnsupportedFeature,
+                format!(
+                    "{} condition supports direct fields only",
+                    slice.kind.name()
+                ),
+            )
+            .into_restriction(&restriction.label));
+        }
+        predicates.push(predicate.sql);
     }
     let partition = if partition_columns.is_empty() {
         String::new()

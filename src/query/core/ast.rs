@@ -25,6 +25,9 @@ pub(super) struct QueryAst<'tokens, 'source> {
     pub(super) order: Vec<OrderTerm<'tokens, 'source>>,
     /// `ПОМЕСТИТЬ`/`ДОБАВИТЬ` hoisted from the first branch.
     pub(super) into: Option<IntoAst<'tokens, 'source>>,
+    /// `РАЗРЕШЕННЫЕ` hoisted from the first branch; applies to every
+    /// source the statement reads, nested queries included.
+    pub(super) allowed: Option<&'tokens Token<'source>>,
     /// A trailing `ИНДЕКСИРОВАТЬ ПО` clause, validated but not generated.
     pub(super) index: Option<IndexAst<'tokens, 'source>>,
 }
@@ -54,6 +57,9 @@ pub(super) struct UnionLink<'tokens, 'source> {
 
 #[derive(Debug)]
 pub(super) struct SelectAst<'tokens, 'source> {
+    /// `РАЗРЕШЕННЫЕ` of this branch; only the first branch of a statement
+    /// may carry one.
+    pub(super) allowed: Option<&'tokens Token<'source>>,
     pub(super) distinct: bool,
     /// `ПОМЕСТИТЬ`/`ДОБАВИТЬ` of this branch; only the first branch of a
     /// statement may carry one.

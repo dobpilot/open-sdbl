@@ -8,7 +8,7 @@ use super::expression::{
 };
 use super::orchestrate::{PresentationCompilation, compile_query_ast};
 use super::sources::{
-    compile_source_free_branch, compile_source_relation, contains_aggregate,
+    SourceRestriction, compile_source_free_branch, compile_source_relation, contains_aggregate,
     projection_is_aggregated, projection_token, validate_aggregate_projection,
 };
 use crate::metadata::{Guid, MetadataSnapshot, ObjectId};
@@ -23,7 +23,7 @@ use std::str::FromStr;
 
 use crate::query::core::resolve::{
     ColumnKind, CompilationCatalog, CompiledColumn, QueryableColumn, QueryableField,
-    resolve_source_metadata,
+    resolve_source_metadata, restriction_label,
 };
 use crate::query::core::{QueryDiagnostic, QueryDiagnosticKind};
 use crate::{Keyword, Token, TokenKind};
@@ -61,7 +61,7 @@ pub(super) fn compile_branch(
             snapshot,
             dialect,
             widen,
-            catalog.parameters,
+            catalog.parameters(),
         );
     };
     let joins = ast.joins.as_slice();
@@ -1178,6 +1178,15 @@ fn resolve_join_source(
         return temporary_source_scope(source, snapshot, catalog, dialect);
     }
     let resolved = resolve_source_metadata(source, snapshot, catalog)?;
+    let target = resolved.restriction_target();
+    let restriction =
+        catalog
+            .restriction_for(target.clone())
+            .map(|restriction| SourceRestriction {
+                restriction,
+                label: restriction_label(snapshot, &target),
+                identity_is_base: resolved.identity_is_base,
+            });
     let compiled_source = compile_source_relation(
         source,
         snapshot,
@@ -1185,6 +1194,7 @@ fn resolve_join_source(
         resolved.object,
         resolved.live_table,
         &resolved.fields,
+        restriction.as_ref(),
         dialect,
     )?;
     Ok(SourceScope {
@@ -1846,7 +1856,7 @@ fn append_joined_reference_joins(sql: &mut String, context: &CompilationContext<
     }
 }
 
-fn append_reference_join(sql: &mut String, join: &JoinPlan, dialect: SqlDialect) {
+pub(super) fn append_reference_join(sql: &mut String, join: &JoinPlan, dialect: SqlDialect) {
     sql.push_str(" LEFT JOIN ");
     sql.push_str(&join.target_relation);
     sql.push_str(" AS ");

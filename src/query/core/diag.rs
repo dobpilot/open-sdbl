@@ -65,6 +65,10 @@ pub enum QueryDiagnosticKind {
     /// A temporary table is unknown, already defined, structurally
     /// incompatible, or unusable with the supplied manager.
     TemporaryTable,
+    /// An access restriction is invalid, unused, duplicated, or its
+    /// condition text failed to compile; the position then lies inside
+    /// the restriction text.
+    Restriction,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -120,6 +124,16 @@ impl QueryDiagnostic {
             column: position.column,
             source: None,
         }
+    }
+
+    /// Re-labels a failure raised while compiling the text of an access
+    /// restriction: the kind becomes [`QueryDiagnosticKind::Restriction`],
+    /// the message names the target, and the position (inside the
+    /// restriction text) and source are preserved.
+    pub(super) fn into_restriction(mut self, target: &str) -> Self {
+        self.kind = QueryDiagnosticKind::Restriction;
+        self.message = format!("restriction of {target}: {}", self.message);
+        self
     }
 
     pub(super) fn unpositioned(kind: QueryDiagnosticKind, message: impl Into<String>) -> Self {

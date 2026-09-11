@@ -74,7 +74,9 @@ fn compile_statement(
     manager: &TempTablesManager,
     into: Option<&IntoAst<'_, '_>>,
 ) -> Result<CompiledStatement, QueryDiagnostic> {
-    let catalog = CompilationCatalog::with_temporary(snapshot, presentations.parameters, manager);
+    let mut catalog =
+        CompilationCatalog::with_temporary(snapshot, presentations.parameters, manager);
+    catalog.set_restrictions(presentations.restrictions, query.allowed.is_some());
     let compiled = compile_query_ast(
         query,
         snapshot,
@@ -82,6 +84,12 @@ fn compile_statement(
         presentations,
         into.map(|into| into.token),
     )?;
+    presentations
+        .restriction_targets
+        .extend(catalog.restriction_targets());
+    presentations
+        .used_restrictions
+        .extend(catalog.used_restrictions());
     if let Some(index) = &query.index {
         check_index_fields(index, &compiled.columns)?;
     }

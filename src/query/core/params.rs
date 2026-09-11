@@ -7,6 +7,7 @@ use crate::metadata::ObjectId;
 use crate::query::core::ast::days_in_month;
 use crate::query::core::names::names_equal;
 use crate::query::core::resolve::PresentationPlan;
+use crate::query::core::restrict::AccessRestriction;
 use crate::query::core::{QueryDiagnostic, QueryDiagnosticKind};
 
 /// A calendar date and time supplied as a query parameter.
@@ -194,6 +195,81 @@ impl QueryParameter {
     }
 }
 
+/// Parameters of a session: values every query and every access
+/// restriction of the session may reference as `&Имя`.
+///
+/// A query parameter of the same name takes precedence; a session
+/// parameter that a query never references is not an error, unlike a
+/// query parameter. Names are unique case-insensitively.
+///
+/// ```
+/// use open_sdbl::query::{ParameterValue, QueryParameter, SessionParameters};
+///
+/// let mut session = SessionParameters::new();
+/// session.set(QueryParameter::new("ТекущийПользователь", ParameterValue::Null));
+/// session.set(QueryParameter::new("текущийпользователь", ParameterValue::Boolean(true)));
+/// assert_eq!(session.iter().count(), 1);
+/// assert!(session.remove("ТЕКУЩИЙПОЛЬЗОВАТЕЛЬ"));
+/// assert!(session.is_empty());
+/// ```
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct SessionParameters {
+    values: Vec<QueryParameter>,
+}
+
+impl SessionParameters {
+    /// An empty parameter set.
+    #[must_use]
+    pub const fn new() -> Self {
+        Self { values: Vec::new() }
+    }
+
+    /// Stores a parameter, replacing the value of the same name in place.
+    pub fn set(&mut self, parameter: QueryParameter) {
+        match self
+            .values
+            .iter_mut()
+            .find(|existing| names_equal(existing.name(), parameter.name()))
+        {
+            Some(existing) => *existing = parameter,
+            None => self.values.push(parameter),
+        }
+    }
+
+    /// Removes the parameter of that name; `false` when there was none.
+    pub fn remove(&mut self, name: &str) -> bool {
+        let before = self.values.len();
+        self.values
+            .retain(|existing| !names_equal(existing.name(), name));
+        self.values.len() != before
+    }
+
+    /// Finds a parameter by name.
+    #[must_use]
+    pub fn get(&self, name: &str) -> Option<&QueryParameter> {
+        self.values
+            .iter()
+            .find(|existing| names_equal(existing.name(), name))
+    }
+
+    /// The parameters in insertion order.
+    pub fn iter(&self) -> impl Iterator<Item = &QueryParameter> {
+        self.values.iter()
+    }
+
+    /// Whether no parameter is stored.
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.values.is_empty()
+    }
+
+    pub(super) fn values(&self) -> &[QueryParameter] {
+        &self.values
+    }
+}
+
+static EMPTY_SESSION: SessionParameters = SessionParameters::new();
+
 /// Inputs beyond the source text that a compilation may need.
 ///
 /// ```
@@ -203,21 +279,64 @@ impl QueryParameter {
 /// let options = CompileOptions::new().parameters(&parameters);
 /// assert_eq!(options.parameter_values().len(), 1);
 /// ```
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Copy)]
 #[non_exhaustive]
 pub struct CompileOptions<'a> {
     presentations: &'a [PresentationPlan],
     parameters: &'a [QueryParameter],
+    session: &'a SessionParameters,
+    restrictions: &'a [AccessRestriction],
+}
+
+impl Default for CompileOptions<'_> {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl<'a> CompileOptions<'a> {
-    /// Options without presentation plans or parameters.
+    /// Options without presentation plans, parameters, or restrictions.
     #[must_use]
     pub const fn new() -> Self {
         Self {
             presentations: &[],
             parameters: &[],
+            session: &EMPTY_SESSION,
+            restrictions: &[],
         }
+    }
+
+    /// Supplies the session parameters every query and restriction sees.
+    #[must_use]
+    pub const fn session(mut self, session: &'a SessionParameters) -> Self {
+        self.session = session;
+        self
+    }
+
+    /// Supplies the access restrictions applied to `РАЗРЕШЕННЫЕ`
+    /// statements; see [`crate::query::Prepared::restriction_request`].
+    #[must_use]
+    pub const fn restrictions(mut self, restrictions: &'a [AccessRestriction]) -> Self {
+        self.restrictions = restrictions;
+        self
+    }
+
+    /// The session parameters in effect.
+    #[must_use]
+    pub const fn session_parameters(&self) -> &'a SessionParameters {
+        self.session
+    }
+
+    /// The access restrictions in effect.
+    #[must_use]
+    pub const fn access_restrictions(&self) -> &'a [AccessRestriction] {
+        self.restrictions
+    }
+
+    /// The bound parameter values: query values first, then session
+    /// values.
+    pub(super) fn bound_parameters(&self) -> Parameters<'a> {
+        Parameters::bound(self.parameters, self.session.values())
     }
 
     /// Supplies application presentation plans.
@@ -249,17 +368,20 @@ impl<'a> CompileOptions<'a> {
 
 /// The parameter values of one compilation. Preparation runs unbound: every
 /// parameter then has a wildcard kind and renders as `NULL`, which is enough
-/// to collect presentation targets.
+/// to collect presentation and restriction targets.
 #[derive(Debug, Clone, Copy)]
 pub(super) struct Parameters<'a> {
     values: &'a [QueryParameter],
+    /// Session parameters, consulted after `values`.
+    session: &'a [QueryParameter],
     bound: bool,
 }
 
 impl<'a> Parameters<'a> {
-    pub(super) const fn bound(values: &'a [QueryParameter]) -> Self {
+    pub(super) const fn bound(values: &'a [QueryParameter], session: &'a [QueryParameter]) -> Self {
         Self {
             values,
+            session,
             bound: true,
         }
     }
@@ -267,8 +389,27 @@ impl<'a> Parameters<'a> {
     pub(super) const fn unbound() -> Self {
         Self {
             values: &[],
+            session: &[],
             bound: false,
         }
+    }
+
+    /// The same binding without the query values: what an access
+    /// restriction sees.
+    pub(super) const fn session_only(self) -> Self {
+        Self {
+            values: &[],
+            session: self.session,
+            bound: self.bound,
+        }
+    }
+
+    /// Whether some parameter of that name is supplied.
+    pub(super) fn contains(&self, name: &str) -> bool {
+        self.values
+            .iter()
+            .chain(self.session)
+            .any(|parameter| names_equal(parameter.name(), name))
     }
 
     /// Finds the value of a parameter token; `None` while unbound.
@@ -282,6 +423,7 @@ impl<'a> Parameters<'a> {
         let name = parameter_name(token);
         self.values
             .iter()
+            .chain(self.session)
             .find(|parameter| names_equal(parameter.name(), name))
             .map(|parameter| Some(parameter.value()))
             .ok_or_else(|| {

@@ -21,11 +21,12 @@ mod postgres;
 use crate::metadata::{MetadataSnapshot, SnapshotFingerprint};
 
 pub use core::{
-    ColumnKind, CompileOptions, CompiledColumn, CompiledQuery, InvalidParameterDate, ParameterDate,
-    ParameterValue, PresentationExpression, PresentationPlan, PresentationRequest,
-    PresentationTarget, QueryDiagnostic, QueryDiagnosticKind, QueryParameter, QueryableColumn,
-    QueryableField, QueryableFieldCatalog, TempTable, TempTablesManager, find_metadata_object,
-    queryable_field_catalog, queryable_fields,
+    AccessRestriction, ColumnKind, CompileOptions, CompiledColumn, CompiledQuery,
+    InvalidParameterDate, ParameterDate, ParameterValue, PresentationExpression, PresentationPlan,
+    PresentationRequest, PresentationTarget, QueryDiagnostic, QueryDiagnosticKind, QueryParameter,
+    QueryableColumn, QueryableField, QueryableFieldCatalog, RestrictionRequest, RestrictionTarget,
+    SessionParameters, TempTable, TempTablesManager, find_metadata_object, queryable_field_catalog,
+    queryable_fields,
 };
 pub use mssql::{InvalidMsSqlYearOffset, MsSqlBackend, MsSqlDialectLevel};
 pub use postgres::PostgresBackend;
@@ -85,13 +86,7 @@ impl<B: Backend> QueryCompiler<'_, B> {
         source: &str,
         options: &CompileOptions<'_>,
     ) -> Result<CompiledQuery, QueryDiagnostic> {
-        core::compile_query(
-            source,
-            self.snapshot,
-            options.presentation_plans(),
-            options.parameter_values(),
-            self.backend.dialect(),
-        )
+        core::compile_query(source, self.snapshot, options, self.backend.dialect())
     }
 
     /// Compiles a batch of `;`-separated statements, updating `manager`.
@@ -115,14 +110,14 @@ impl<B: Backend> QueryCompiler<'_, B> {
         core::compile_batch(
             source,
             self.snapshot,
-            options.presentation_plans(),
-            options.parameter_values(),
+            options,
             self.backend.dialect(),
             manager,
         )
     }
 
-    /// Resolves a query and collects its presentation target request.
+    /// Resolves a query and collects its presentation and restriction
+    /// requests.
     ///
     /// [`Prepared::compile`] recompiles the source after the application has
     /// supplied presentation plans because the parser AST borrows its tokens.
@@ -132,11 +127,12 @@ impl<B: Backend> QueryCompiler<'_, B> {
     /// Returns a positional diagnostic when the query cannot be safely
     /// resolved.
     pub fn prepare(&self, source: &str) -> Result<Prepared<B>, QueryDiagnostic> {
-        let request = core::prepare_query(source, self.snapshot, self.backend.dialect())?;
+        let requests = core::prepare_query(source, self.snapshot, self.backend.dialect())?;
         Ok(Prepared {
             source: source.to_owned(),
             backend: self.backend,
-            request,
+            request: requests.presentations,
+            restrictions: requests.restrictions,
             snapshot_fingerprint: self.snapshot.fingerprint(),
         })
     }
@@ -156,12 +152,13 @@ impl<B: Backend> QueryCompiler<'_, B> {
         source: &str,
         manager: &TempTablesManager,
     ) -> Result<Prepared<B>, QueryDiagnostic> {
-        let request =
+        let requests =
             core::prepare_query_with(source, self.snapshot, self.backend.dialect(), manager)?;
         Ok(Prepared {
             source: source.to_owned(),
             backend: self.backend,
-            request,
+            request: requests.presentations,
+            restrictions: requests.restrictions,
             snapshot_fingerprint: self.snapshot.fingerprint(),
         })
     }
@@ -194,12 +191,14 @@ impl<B: Backend> QueryCompiler<'_, B> {
     }
 }
 
-/// Query resolved far enough to request application presentation plans.
+/// Query resolved far enough to request application presentation plans
+/// and access restrictions.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Prepared<B: Backend> {
     source: String,
     backend: B,
     request: PresentationRequest,
+    restrictions: RestrictionRequest,
     snapshot_fingerprint: SnapshotFingerprint,
 }
 
@@ -209,6 +208,15 @@ impl<B: Backend> Prepared<B> {
     #[must_use]
     pub fn presentation_request(&self) -> &PresentationRequest {
         &self.request
+    }
+
+    /// Returns the tables that `РАЗРЕШЕННЫЕ` statements of the batch read,
+    /// so that the application can answer with
+    /// [`CompileOptions::restrictions`]. It is empty when no statement
+    /// carries the keyword.
+    #[must_use]
+    pub fn restriction_request(&self) -> &RestrictionRequest {
+        &self.restrictions
     }
 
     /// Recompiles the source with application-provided presentation plans.
@@ -241,13 +249,7 @@ impl<B: Backend> Prepared<B> {
         if snapshot.fingerprint() != self.snapshot_fingerprint {
             return Err(QueryDiagnostic::snapshot_mismatch());
         }
-        core::compile_query(
-            &self.source,
-            snapshot,
-            options.presentation_plans(),
-            options.parameter_values(),
-            self.backend.dialect(),
-        )
+        core::compile_query(&self.source, snapshot, options, self.backend.dialect())
     }
 
     /// Recompiles the prepared batch, updating `manager`.
@@ -269,8 +271,7 @@ impl<B: Backend> Prepared<B> {
         core::compile_batch(
             &self.source,
             snapshot,
-            options.presentation_plans(),
-            options.parameter_values(),
+            options,
             self.backend.dialect(),
             manager,
         )

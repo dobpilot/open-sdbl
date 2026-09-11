@@ -3,7 +3,7 @@ use std::collections::BTreeSet;
 use super::context::{CompilationContext, SourceScope};
 use super::expression::{compile_expression, single_column, single_column_at};
 use super::params::render_scalar_parameter;
-use super::sources::CompiledSourceRelation;
+use super::sources::{CompiledSourceRelation, SourceRestriction, compile_restriction_predicate};
 use crate::Token;
 use crate::metadata::{
     ConfigFieldPurpose, FieldId, LiveColumn, LiveTable, MetadataKind, MetadataObject,
@@ -28,6 +28,7 @@ pub(super) fn compile_accumulation_relation(
     object: &MetadataObject,
     live_table: &LiveTable,
     fields: &[QueryableField],
+    restriction: Option<&SourceRestriction<'_>>,
     dialect: SqlDialect,
 ) -> Result<CompiledSourceRelation, QueryDiagnostic> {
     if object.kind != Some(MetadataKind::AccumulationRegister) {
@@ -156,6 +157,7 @@ pub(super) fn compile_accumulation_relation(
             active_column,
             period_column,
             record_kind.expect("a balance register has RecordKind"),
+            restriction,
             dialect,
         );
     }
@@ -220,6 +222,7 @@ pub(super) fn compile_accumulation_relation(
         object,
         &dimension_fields,
         "__aggregate_base",
+        restriction,
         dialect,
     )? {
         predicates.push(sql);
@@ -293,6 +296,7 @@ fn compile_accumulation_balance_relation(
     active_column: &QueryableColumn,
     movement_period: &QueryableColumn,
     record_kind: &QueryableColumn,
+    restriction: Option<&SourceRestriction<'_>>,
     dialect: SqlDialect,
 ) -> Result<CompiledSourceRelation, QueryDiagnostic> {
     let totals = resolve_balance_totals(
@@ -324,6 +328,7 @@ fn compile_accumulation_balance_relation(
         object,
         dimension_fields,
         "__totals_base",
+        restriction,
         dialect,
     )?;
 
@@ -337,6 +342,7 @@ fn compile_accumulation_balance_relation(
             object,
             dimension_fields,
             "__movement_base",
+            restriction,
             dialect,
         )?;
         compile_historical_balance_sql(
@@ -490,10 +496,35 @@ fn compile_accumulation_condition(
     object: &MetadataObject,
     dimension_fields: &[QueryableField],
     alias: &str,
+    restriction: Option<&SourceRestriction<'_>>,
     dialect: SqlDialect,
 ) -> Result<Option<String>, QueryDiagnostic> {
+    let mut predicates = Vec::new();
+    if let Some(restriction) = restriction {
+        let predicate = compile_restriction_predicate(
+            restriction,
+            snapshot,
+            catalog,
+            object,
+            source.object.lexeme,
+            dimension_fields,
+            alias,
+            dialect,
+        )?;
+        if !predicate.reference_joins.is_empty() {
+            return Err(QueryDiagnostic::unpositioned(
+                QueryDiagnosticKind::UnsupportedFeature,
+                format!(
+                    "{} condition supports direct dimensions and separators only",
+                    virtual_table.kind.name()
+                ),
+            )
+            .into_restriction(&restriction.label));
+        }
+        predicates.push(predicate.sql);
+    }
     let Some(condition) = condition else {
-        return Ok(None);
+        return Ok(conjunction(predicates));
     };
     let mut context = CompilationContext {
         snapshot,
@@ -524,7 +555,14 @@ fn compile_accumulation_condition(
             ),
         ));
     }
-    Ok(Some(sql))
+    predicates.push(sql);
+    Ok(conjunction(predicates))
+}
+
+/// `None` for no predicate, otherwise the predicates joined by `AND`; each
+/// one is already parenthesized by the expression compiler.
+fn conjunction(predicates: Vec<String>) -> Option<String> {
+    (!predicates.is_empty()).then(|| predicates.join(" AND "))
 }
 
 fn compile_current_balance_sql(
@@ -799,7 +837,9 @@ fn compile_virtual_period_literal(
         Expression::DateTime { .. } | Expression::BeginOfPeriod { .. } => {
             compile_constant_date_expression(expression, dialect)
         }
-        Expression::Parameter(token) => compile_date_parameter(token, catalog.parameters, dialect),
+        Expression::Parameter(token) => {
+            compile_date_parameter(token, catalog.parameters(), dialect)
+        }
         _ => Err(QueryDiagnostic::at(
             QueryDiagnosticKind::Metadata,
             Some(virtual_table.token),

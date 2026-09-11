@@ -393,7 +393,7 @@ pub(super) fn expression_kind(
         Expression::Like { .. } => Ok(ColumnKind::Boolean),
         Expression::Parameter(token) => Ok(context
             .catalog
-            .parameters
+            .parameters()
             .lookup(token)?
             .map_or_else(unknown_kind, parameter_kind)),
         Expression::Aggregate { kind, argument, .. } => match (kind, argument) {
@@ -415,7 +415,7 @@ pub(super) fn expression_kind(
         _ => Ok(source_free_expression_kind(
             expression,
             context.snapshot,
-            context.catalog.parameters,
+            context.catalog.parameters(),
         )),
     }
 }
@@ -1028,7 +1028,7 @@ pub(super) fn compile_expression(
             let mut item_sql = Vec::with_capacity(items.len());
             for item in items {
                 if let Expression::Parameter(token) = item
-                    && let Some(value) = context.catalog.parameters.lookup(token)?
+                    && let Some(value) = context.catalog.parameters().lookup(token)?
                     && let Some(elements) = list_elements(value, token)?
                 {
                     for element in elements {
@@ -1053,7 +1053,7 @@ pub(super) fn compile_expression(
                 sql
             })
         }
-        Expression::Parameter(token) => match context.catalog.parameters.lookup(token)? {
+        Expression::Parameter(token) => match context.catalog.parameters().lookup(token)? {
             Some(value) => render_scalar_parameter(value, token, context.dialect, true),
             None => Ok("NULL".to_owned()),
         },
@@ -1171,7 +1171,7 @@ fn reference_constant(
     context: &mut CompilationContext<'_, '_>,
 ) -> Result<Option<ReferenceConstant>, QueryDiagnostic> {
     match expression {
-        Expression::Parameter(token) => match context.catalog.parameters.lookup(token)? {
+        Expression::Parameter(token) => match context.catalog.parameters().lookup(token)? {
             Some(value) => {
                 reference_constant_of_value(value, token, context.snapshot, context.dialect)
             }
@@ -1256,7 +1256,7 @@ fn compile_reference_pair_in_list(
     let mut constants = Vec::new();
     for item in items {
         if let Expression::Parameter(token) = item
-            && let Some(value) = context.catalog.parameters.lookup(token)?
+            && let Some(value) = context.catalog.parameters().lookup(token)?
             && let Some(elements) = list_elements(value, token)?
         {
             for element in elements {
@@ -1311,7 +1311,7 @@ fn compile_in_query(
     let snapshot = context.snapshot;
     let dialect = context.dialect;
     let mut presentations =
-        PresentationCompilation::strict(&[], context.catalog.parameters, dialect);
+        PresentationCompilation::strict(&[], context.catalog.parameters(), dialect);
     let inner = compile_query_ast(
         query,
         snapshot,

@@ -155,6 +155,14 @@ impl<'tokens, 'source> Parser<'tokens, 'source> {
                 "INTO is allowed only in the first branch of a statement",
             ));
         }
+        let allowed = branches[0].allowed.take();
+        if let Some(token) = branches[1..].iter().find_map(|branch| branch.allowed) {
+            return Err(QueryDiagnostic::at(
+                QueryDiagnosticKind::Syntax,
+                Some(token),
+                "ALLOWED is allowed only in the first branch of a statement",
+            ));
+        }
         // The Syntax Assistant lists clauses out of textual order, so the
         // index clause is accepted on either side of the final ordering.
         let mut index = self.parse_index()?;
@@ -167,8 +175,35 @@ impl<'tokens, 'source> Parser<'tokens, 'source> {
             unions,
             order,
             into,
+            allowed,
             index,
         })
+    }
+
+    /// Parses one boolean expression that must span the whole input; used
+    /// for access-restriction text, which is a condition without a query.
+    pub(super) fn parse_condition(
+        mut self,
+    ) -> Result<Expression<'tokens, 'source>, QueryDiagnostic> {
+        if self.peek().is_none() {
+            return Err(self.diagnostic(
+                QueryDiagnosticKind::Syntax,
+                None,
+                "restriction condition is empty",
+            ));
+        }
+        let expression = self.parse_or()?;
+        if let Some(token) = self.peek() {
+            return Err(QueryDiagnostic::at(
+                QueryDiagnosticKind::Syntax,
+                Some(token),
+                format!(
+                    "unexpected {:?} after the restriction condition",
+                    token.lexeme
+                ),
+            ));
+        }
+        Ok(expression)
     }
 
     /// Parses `ИНДЕКСИРОВАТЬ ПО <поля>` and
@@ -254,6 +289,13 @@ impl<'tokens, 'source> Parser<'tokens, 'source> {
                     "INDEX BY is not allowed inside a nested query",
                 ));
             }
+            if let Some(allowed) = query.allowed {
+                return Err(QueryDiagnostic::at(
+                    QueryDiagnosticKind::Syntax,
+                    Some(allowed),
+                    "ALLOWED applies to the whole statement; write it after the outermost SELECT",
+                ));
+            }
             self.expect_lexeme(")")?;
             Ok(query)
         })();
@@ -283,6 +325,7 @@ impl<'tokens, 'source> Parser<'tokens, 'source> {
 
     fn parse_select(&mut self) -> Result<SelectAst<'tokens, 'source>, QueryDiagnostic> {
         self.expect_keyword(Keyword::Select)?;
+        let allowed = self.consume_keyword_token(Keyword::Allowed);
         let distinct = self.consume_keyword(Keyword::Distinct);
         let top = if self.consume_keyword(Keyword::Top) {
             let token = self.expect_kind(TokenKind::Number, "expected TOP row count")?;
@@ -383,6 +426,7 @@ impl<'tokens, 'source> Parser<'tokens, 'source> {
         };
 
         Ok(SelectAst {
+            allowed,
             distinct,
             into,
             top,

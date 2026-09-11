@@ -7,6 +7,7 @@ use crate::query::core::params::Parameters;
 use crate::query::core::resolve::{
     ColumnKind, CompilationCatalog, CompiledColumn, CompiledQuery, PresentationPlan,
 };
+use crate::query::core::restrict::{AccessRestriction, RestrictionTarget};
 use crate::query::core::{QueryDiagnostic, QueryDiagnosticKind, SqlDialect};
 use std::collections::BTreeSet;
 
@@ -63,6 +64,12 @@ pub(super) struct PresentationCompilation<'plans> {
     collect_only: bool,
     pub(super) dialect: SqlDialect,
     pub(super) parameters: Parameters<'plans>,
+    /// Access restrictions handed to every statement's catalog.
+    pub(super) restrictions: &'plans [AccessRestriction],
+    /// Targets read under `РАЗРЕШЕННЫЕ` across the batch.
+    pub(super) restriction_targets: BTreeSet<RestrictionTarget>,
+    /// Positions in `restrictions` that some statement applied.
+    pub(super) used_restrictions: BTreeSet<usize>,
 }
 
 impl<'plans> PresentationCompilation<'plans> {
@@ -77,7 +84,15 @@ impl<'plans> PresentationCompilation<'plans> {
             collect_only: false,
             dialect,
             parameters,
+            restrictions: &[],
+            restriction_targets: BTreeSet::new(),
+            used_restrictions: BTreeSet::new(),
         }
+    }
+
+    pub(super) fn with_restrictions(mut self, restrictions: &'plans [AccessRestriction]) -> Self {
+        self.restrictions = restrictions;
+        self
     }
 
     pub(super) fn collect(dialect: SqlDialect) -> Self {
@@ -87,6 +102,9 @@ impl<'plans> PresentationCompilation<'plans> {
             collect_only: true,
             dialect,
             parameters: Parameters::unbound(),
+            restrictions: &[],
+            restriction_targets: BTreeSet::new(),
+            used_restrictions: BTreeSet::new(),
         }
     }
 

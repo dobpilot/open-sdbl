@@ -12,6 +12,7 @@ use crate::metadata::{
 use crate::query::core::ast::SourceAst;
 use crate::query::core::names::{folded_name, names_equal};
 use crate::query::core::params::Parameters;
+use crate::query::core::restrict::{AccessRestriction, RestrictionTarget};
 use crate::query::core::temp_tables::{TempTableSource, TempTablesManager};
 use crate::query::core::{QueryDiagnostic, QueryDiagnosticKind};
 
@@ -436,11 +437,23 @@ pub(super) struct CompilationCatalog<'snapshot> {
     fields: RefCell<HashMap<String, Arc<[QueryableField]>>>,
     work: Cell<usize>,
     /// Named parameter values of this compilation.
-    pub(super) parameters: Parameters<'snapshot>,
+    parameters: Parameters<'snapshot>,
     /// Temporary tables visible to the statement being compiled.
     temporary: &'snapshot TempTablesManager,
     /// The CTEs the statement reads, with their own dependencies.
     used_temporary: RefCell<BTreeSet<u32>>,
+    /// Access restrictions supplied by the application.
+    restrictions: &'snapshot [AccessRestriction],
+    /// Whether the statement carries `РАЗРЕШЕННЫЕ`; cleared while a
+    /// restriction's own text compiles so its nested queries stay free.
+    restricting: Cell<bool>,
+    /// Targets read under the keyword.
+    restriction_targets: RefCell<BTreeSet<RestrictionTarget>>,
+    /// Positions in `restrictions` that matched a target.
+    used_restrictions: RefCell<BTreeSet<usize>>,
+    /// Set while a restriction's text compiles: query parameters are then
+    /// hidden so the text sees session parameters only.
+    restriction_mode: Cell<bool>,
 }
 
 impl<'snapshot> CompilationCatalog<'snapshot> {
@@ -468,7 +481,79 @@ impl<'snapshot> CompilationCatalog<'snapshot> {
             parameters,
             temporary,
             used_temporary: RefCell::new(BTreeSet::new()),
+            restrictions: &[],
+            restricting: Cell::new(false),
+            restriction_targets: RefCell::new(BTreeSet::new()),
+            used_restrictions: RefCell::new(BTreeSet::new()),
+            restriction_mode: Cell::new(false),
         }
+    }
+
+    /// The parameter values currently in effect: session values only while
+    /// a restriction's text compiles.
+    pub(super) fn parameters(&self) -> Parameters<'snapshot> {
+        if self.restriction_mode.get() {
+            self.parameters.session_only()
+        } else {
+            self.parameters
+        }
+    }
+
+    /// Arms the statement's restriction state: `restricting` is whether it
+    /// carries `РАЗРЕШЕННЫЕ`.
+    pub(super) fn set_restrictions(
+        &mut self,
+        restrictions: &'snapshot [AccessRestriction],
+        restricting: bool,
+    ) {
+        self.restrictions = restrictions;
+        self.restricting.set(restricting);
+    }
+
+    /// Records that the statement reads `target` and returns the
+    /// restriction to apply, if the statement is restricted and the
+    /// application supplied one.
+    pub(super) fn restriction_for(
+        &self,
+        target: RestrictionTarget,
+    ) -> Option<&'snapshot AccessRestriction> {
+        if !self.restricting.get() {
+            return None;
+        }
+        let (index, restriction) = self
+            .restrictions
+            .iter()
+            .enumerate()
+            .find(|(_, restriction)| target.matches(restriction))
+            .map_or((None, None), |(index, restriction)| {
+                (Some(index), Some(restriction))
+            });
+        self.restriction_targets.borrow_mut().insert(target);
+        if let Some(index) = index {
+            self.used_restrictions.borrow_mut().insert(index);
+        }
+        restriction
+    }
+
+    /// Runs `compile` the way a restriction's text is compiled: query
+    /// parameters hidden, and sources read by the text unrestricted.
+    pub(super) fn in_restriction<T>(&self, compile: impl FnOnce() -> T) -> T {
+        let mode = self.restriction_mode.replace(true);
+        let restricting = self.restricting.replace(false);
+        let result = compile();
+        self.restriction_mode.set(mode);
+        self.restricting.set(restricting);
+        result
+    }
+
+    /// Targets read under the keyword so far.
+    pub(super) fn restriction_targets(&self) -> BTreeSet<RestrictionTarget> {
+        self.restriction_targets.borrow().clone()
+    }
+
+    /// Positions of the supplied restrictions that matched a target.
+    pub(super) fn used_restrictions(&self) -> BTreeSet<usize> {
+        self.used_restrictions.borrow().clone()
     }
 
     /// Resolves a temporary-table source and records it, with everything it
@@ -862,7 +947,57 @@ pub(super) struct ResolvedSourceMetadata<'snapshot> {
     pub(super) live_table: &'snapshot LiveTable,
     pub(super) fields: Arc<[QueryableField]>,
     pub(super) qualifier_name: String,
+    /// The tabular-section name as the metadata spells it, when the source
+    /// is a section of `object`.
+    pub(super) table_part: Option<String>,
     pub(super) identity_is_base: bool,
+}
+
+impl ResolvedSourceMetadata<'_> {
+    /// The access-restriction target this source reads.
+    pub(super) fn restriction_target(&self) -> RestrictionTarget {
+        RestrictionTarget {
+            object: ObjectId::from(&self.object.guid),
+            table_part: self.table_part.clone(),
+        }
+    }
+}
+
+/// The query spelling of a metadata kind, for messages that name a table
+/// the way the query writes it.
+pub(super) fn kind_query_name(kind: Option<MetadataKind>) -> &'static str {
+    match kind {
+        Some(MetadataKind::Catalog) => "Справочник",
+        Some(MetadataKind::Document) => "Документ",
+        Some(MetadataKind::Enumeration) => "Перечисление",
+        Some(MetadataKind::InformationRegister) => "РегистрСведений",
+        Some(MetadataKind::AccumulationRegister) => "РегистрНакопления",
+        Some(MetadataKind::AccountingRegister) => "РегистрБухгалтерии",
+        Some(MetadataKind::CalculationRegister) => "РегистрРасчета",
+        Some(MetadataKind::ChartOfCharacteristicTypes) => "ПланВидовХарактеристик",
+        Some(MetadataKind::ChartOfCalculationTypes) => "ПланВидовРасчета",
+        Some(MetadataKind::ChartOfAccounts) => "ПланСчетов",
+        Some(MetadataKind::Constant) => "Константа",
+        Some(MetadataKind::ExchangePlan) => "ПланОбмена",
+        Some(MetadataKind::BusinessProcess) => "БизнесПроцесс",
+        Some(MetadataKind::Task) => "Задача",
+        Some(MetadataKind::Sequence) => "Последовательность",
+        _ => "Метаданные",
+    }
+}
+
+/// `Справочник.Номенклатура` or `Документ.Реализация.Товары`, for
+/// restriction diagnostics.
+pub(super) fn restriction_label(snapshot: &MetadataSnapshot, target: &RestrictionTarget) -> String {
+    let object = snapshot.object_by_id(target.object);
+    let kind = kind_query_name(object.and_then(|object| object.kind));
+    let name = object
+        .and_then(|object| object.name.clone())
+        .unwrap_or_else(|| target.object.to_string());
+    match &target.table_part {
+        Some(section) => format!("{kind}.{name}.{section}"),
+        None => format!("{kind}.{name}"),
+    }
 }
 
 pub(super) fn resolve_source_metadata<'snapshot>(
@@ -902,6 +1037,7 @@ pub(super) fn resolve_source_metadata<'snapshot>(
             live_table,
             fields: catalog.fields(object, Some(source.object))?,
             qualifier_name: source.object.lexeme.to_owned(),
+            table_part: None,
             identity_is_base: true,
         });
     };
@@ -1060,6 +1196,7 @@ pub(super) fn resolve_source_metadata<'snapshot>(
         live_table,
         fields: fields.into(),
         qualifier_name: table_part.lexeme.to_owned(),
+        table_part: Some(descriptors[0].name.clone()),
         identity_is_base: false,
     })
 }
@@ -1198,6 +1335,7 @@ fn resolve_service_table_part<'snapshot>(
         live_table,
         fields: fields.into(),
         qualifier_name: token.lexeme.to_owned(),
+        table_part: Some(token.lexeme.to_owned()),
         identity_is_base: false,
     })
 }

@@ -200,3 +200,13 @@ with those names keep resolving.
 #### Scenario: Keyword used as a field name
 - **WHEN** a query projects a field named `Уникально`
 - **THEN** the parser resolves it as a field reference
+
+### Requirement: Recognize the allowed keyword bilingually
+The lexer SHALL classify `РАЗРЕШЕННЫЕ` and `ALLOWED` case-insensitively as
+one keyword kind whose stable display name is `ALLOWED`, and the exhaustive
+keyword table test SHALL include both spellings.
+
+#### Scenario: Allowed keyword
+- **WHEN** input contains `ВЫБРАТЬ РАЗРЕШЕННЫЕ` or `SELECT allowed`
+- **THEN** the second token is the `ALLOWED` keyword preserving the original
+  lexeme

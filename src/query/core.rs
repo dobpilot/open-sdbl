@@ -8,17 +8,20 @@ mod names;
 mod params;
 mod parser;
 mod resolve;
+mod restrict;
 mod temp_tables;
 
 pub use diag::{QueryDiagnostic, QueryDiagnosticKind};
 pub use params::{
     CompileOptions, InvalidParameterDate, ParameterDate, ParameterValue, QueryParameter,
+    SessionParameters,
 };
 pub use resolve::{
     ColumnKind, CompiledColumn, CompiledQuery, PresentationExpression, PresentationPlan,
     PresentationRequest, PresentationTarget, QueryableColumn, QueryableField,
     QueryableFieldCatalog, find_metadata_object, queryable_field_catalog, queryable_fields,
 };
+pub use restrict::{AccessRestriction, RestrictionRequest, RestrictionTarget};
 pub use temp_tables::{TempTable, TempTablesManager};
 
 pub(super) use codegen::{

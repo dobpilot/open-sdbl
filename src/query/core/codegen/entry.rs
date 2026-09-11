@@ -8,33 +8,41 @@ use super::virtual_tables::compile_presentation_plan;
 use crate::metadata::MetadataSnapshot;
 use crate::query::core::dialect::SqlDialect;
 use crate::query::core::names::names_equal;
-use crate::query::core::params::{Parameters, QueryParameter, parameter_name};
+use crate::query::core::params::{CompileOptions, Parameters, QueryParameter, parameter_name};
 use crate::query::core::parser::Parser;
 use crate::query::core::resolve::{
     ColumnKind, CompilationCatalog, CompiledColumn, CompiledQuery, PresentationPlan,
-    PresentationRequest, PresentationTarget,
+    PresentationRequest, PresentationTarget, restriction_label,
 };
+use crate::query::core::restrict::{AccessRestriction, RestrictionRequest, RestrictionTarget};
 use crate::query::core::temp_tables::TempTablesManager;
 use crate::query::core::{QueryDiagnostic, QueryDiagnosticKind};
 use crate::{TokenKind, tokenize};
+
+/// The application callback requests collected by preparation.
+pub(crate) struct PreparedRequests {
+    pub(crate) presentations: PresentationRequest,
+    pub(crate) restrictions: RestrictionRequest,
+}
 
 pub(crate) fn prepare_query(
     source: &str,
     snapshot: &MetadataSnapshot,
     dialect: SqlDialect,
-) -> Result<PresentationRequest, QueryDiagnostic> {
+) -> Result<PreparedRequests, QueryDiagnostic> {
     prepare_query_with(source, snapshot, dialect, &TempTablesManager::new())
 }
 
-/// Collects presentation targets with the caller's temporary tables
-/// visible. Definitions of the batch are applied to a private copy of the
-/// manager so that preparation stays free of side effects.
+/// Collects presentation and restriction targets with the caller's
+/// temporary tables visible. Definitions of the batch are applied to a
+/// private copy of the manager so that preparation stays free of side
+/// effects.
 pub(crate) fn prepare_query_with(
     source: &str,
     snapshot: &MetadataSnapshot,
     dialect: SqlDialect,
     manager: &TempTablesManager,
-) -> Result<PresentationRequest, QueryDiagnostic> {
+) -> Result<PreparedRequests, QueryDiagnostic> {
     let tokens = tokenize(source)?
         .into_iter()
         .filter(|token| token.kind != TokenKind::Comment)
@@ -43,12 +51,17 @@ pub(crate) fn prepare_query_with(
     let mut presentations = PresentationCompilation::collect(dialect);
     let mut scratch = manager.clone();
     let _ = compile_batch_ast(&ast, snapshot, &mut presentations, &mut scratch)?;
-    Ok(PresentationRequest {
-        targets: presentations
-            .requested
-            .into_iter()
-            .map(|object| PresentationTarget { object })
-            .collect(),
+    Ok(PreparedRequests {
+        presentations: PresentationRequest {
+            targets: presentations
+                .requested
+                .into_iter()
+                .map(|object| PresentationTarget { object })
+                .collect(),
+        },
+        restrictions: RestrictionRequest {
+            targets: presentations.restriction_targets.into_iter().collect(),
+        },
     })
 }
 
@@ -138,12 +151,11 @@ pub(crate) fn compile_presentation_lookup(
 pub(crate) fn compile_query(
     source: &str,
     snapshot: &MetadataSnapshot,
-    plans: &[PresentationPlan],
-    parameters: &[QueryParameter],
+    options: &CompileOptions<'_>,
     dialect: SqlDialect,
 ) -> Result<CompiledQuery, QueryDiagnostic> {
     let mut manager = TempTablesManager::new();
-    compile_batch(source, snapshot, plans, parameters, dialect, &mut manager)?.ok_or_else(|| {
+    compile_batch(source, snapshot, options, dialect, &mut manager)?.ok_or_else(|| {
         QueryDiagnostic::unpositioned(
             QueryDiagnosticKind::TemporaryTable,
             "the batch returns no rows; compile it with a temporary table manager",
@@ -155,8 +167,7 @@ pub(crate) fn compile_query(
 pub(crate) fn compile_batch(
     source: &str,
     snapshot: &MetadataSnapshot,
-    plans: &[PresentationPlan],
-    parameters: &[QueryParameter],
+    options: &CompileOptions<'_>,
     dialect: SqlDialect,
     manager: &mut TempTablesManager,
 ) -> Result<Option<CompiledQuery>, QueryDiagnostic> {
@@ -164,18 +175,68 @@ pub(crate) fn compile_batch(
         .into_iter()
         .filter(|token| token.kind != TokenKind::Comment)
         .collect::<Vec<_>>();
-    check_parameter_binding(&tokens, parameters)?;
+    let parameters = options.bound_parameters();
+    check_parameter_binding(&tokens, options.parameter_values(), parameters)?;
+    let restrictions = options.access_restrictions();
+    check_restriction_uniqueness(snapshot, restrictions)?;
     let ast = Parser::new(&tokens, source).parse()?;
     let mut presentations =
-        PresentationCompilation::strict(plans, Parameters::bound(parameters), dialect);
-    compile_batch_ast(&ast, snapshot, &mut presentations, manager)
+        PresentationCompilation::strict(options.presentation_plans(), parameters, dialect)
+            .with_restrictions(restrictions);
+    let compiled = compile_batch_ast(&ast, snapshot, &mut presentations, manager)?;
+    if let Some(unused) = (0..restrictions.len())
+        .find(|index| !presentations.used_restrictions.contains(index))
+        .map(|index| &restrictions[index])
+    {
+        return Err(QueryDiagnostic::unpositioned(
+            QueryDiagnosticKind::Restriction,
+            format!(
+                "restriction of {} is supplied but no ALLOWED statement reads it",
+                restriction_label(snapshot, &restriction_target(unused))
+            ),
+        ));
+    }
+    Ok(compiled)
 }
 
-/// Every `&Имя` token needs exactly one value and every value must be
-/// referenced; names compare case-insensitively.
+fn restriction_target(restriction: &AccessRestriction) -> RestrictionTarget {
+    RestrictionTarget {
+        object: restriction.object(),
+        table_part: restriction.table_part_name().map(str::to_owned),
+    }
+}
+
+/// Two restrictions of one target would have to be combined by a rule the
+/// application did not state, so they are rejected.
+fn check_restriction_uniqueness(
+    snapshot: &MetadataSnapshot,
+    restrictions: &[AccessRestriction],
+) -> Result<(), QueryDiagnostic> {
+    for (index, restriction) in restrictions.iter().enumerate() {
+        let target = restriction_target(restriction);
+        if restrictions[..index]
+            .iter()
+            .any(|previous| target.matches(previous))
+        {
+            return Err(QueryDiagnostic::unpositioned(
+                QueryDiagnosticKind::Restriction,
+                format!(
+                    "restriction of {} is supplied more than once",
+                    restriction_label(snapshot, &target)
+                ),
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// Every `&Имя` token needs exactly one value and every query value must be
+/// referenced; names compare case-insensitively. Session values are
+/// consulted for the first check only.
 fn check_parameter_binding(
     tokens: &[crate::Token<'_>],
     parameters: &[QueryParameter],
+    bound: Parameters<'_>,
 ) -> Result<(), QueryDiagnostic> {
     for (index, parameter) in parameters.iter().enumerate() {
         if parameters[..index]
@@ -202,6 +263,7 @@ fn check_parameter_binding(
             .position(|parameter| names_equal(parameter.name(), name))
         {
             Some(index) => referenced[index] = true,
+            None if bound.contains(name) => {}
             None => {
                 return Err(QueryDiagnostic::at(
                     QueryDiagnosticKind::Parameter,

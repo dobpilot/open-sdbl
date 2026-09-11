@@ -45,6 +45,8 @@ pub enum Keyword {
     Distinct,
     /// `ПЕРВЫЕ` or `TOP`.
     Top,
+    /// `РАЗРЕШЕННЫЕ` or `ALLOWED`.
+    Allowed,
     /// `УПОРЯДОЧИТЬ` or `ORDER`.
     Order,
     /// `ПО` or `BY`.
@@ -150,6 +152,7 @@ impl Keyword {
             Self::False => "FALSE",
             Self::Distinct => "DISTINCT",
             Self::Top => "TOP",
+            Self::Allowed => "ALLOWED",
             Self::Order => "ORDER",
             Self::By => "BY",
             Self::Group => "GROUP",
@@ -570,7 +573,7 @@ fn is_identifier_continue(character: char) -> bool {
     character == '_' || character.is_alphanumeric()
 }
 
-const KEYWORDS: [(Keyword, &str, &str); 56] = [
+const KEYWORDS: [(Keyword, &str, &str); 57] = [
     (Keyword::Select, "ВЫБРАТЬ", "SELECT"),
     (Keyword::From, "ИЗ", "FROM"),
     (Keyword::Where, "ГДЕ", "WHERE"),
@@ -585,6 +588,7 @@ const KEYWORDS: [(Keyword, &str, &str); 56] = [
     (Keyword::False, "ЛОЖЬ", "FALSE"),
     (Keyword::Distinct, "РАЗЛИЧНЫЕ", "DISTINCT"),
     (Keyword::Top, "ПЕРВЫЕ", "TOP"),
+    (Keyword::Allowed, "РАЗРЕШЕННЫЕ", "ALLOWED"),
     (Keyword::Order, "УПОРЯДОЧИТЬ", "ORDER"),
     (Keyword::By, "ПО", "BY"),
     (Keyword::Group, "СГРУППИРОВАТЬ", "GROUP"),
