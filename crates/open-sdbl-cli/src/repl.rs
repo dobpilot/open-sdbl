@@ -7,9 +7,10 @@ use std::time::{Duration, Instant};
 
 use open_sdbl::metadata::{MetadataKind, MetadataObject, MetadataSnapshot, ObjectId};
 use open_sdbl::query::{
-    ColumnKind, CompileOptions, CompiledQuery, MsSqlBackend, PostgresBackend, Prepared,
-    PresentationExpression, PresentationPlan, PresentationRequest, QueryCompiler, QueryParameter,
-    TempTablesManager, find_metadata_object, queryable_field_catalog, queryable_fields,
+    AccessRestriction, ColumnKind, CompileOptions, CompiledQuery, MsSqlBackend, PostgresBackend,
+    Prepared, PresentationExpression, PresentationPlan, PresentationRequest, QueryCompiler,
+    QueryParameter, RestrictionRequest, SessionParameters, TempTablesManager, find_metadata_object,
+    queryable_field_catalog, queryable_fields,
 };
 use open_sdbl::{TokenKind, tokenize};
 use rustyline::completion::{Completer, Pair};
@@ -24,6 +25,7 @@ use unicode_width::UnicodeWidthStr;
 
 use super::cells::Cell;
 use super::params::{ParameterStore, apply_parameter_command, parse_parameter_command};
+use super::restrict::{RestrictionStore, apply_restriction_command, parse_restriction_command};
 use super::{
     CliError, DatabaseDialect, DatabaseSession, MAX_CELL_WIDTH, MAX_PRINTED_ROWS, QueryRows,
     bounded_field, escape_field, yes_no,
@@ -37,6 +39,12 @@ const CONSOLE_HELP: &str = "Commands:
   \\set <name> <lit>   store a query parameter (&name) from an SDBL literal
   \\params             list stored parameters
   \\unset <name>       remove a stored parameter
+  \\session [<name> [=] <lit> | clear]
+                      store, list, or clear session parameters seen by
+                      every query and access restriction
+  \\restrict [<Вид>.<Объект>[.<ТабЧасть>] <condition> | clear]
+                      store, list, or clear access restrictions applied to
+                      ВЫБРАТЬ РАЗРЕШЕННЫЕ (SDBL condition over the table)
   \\tables             list temporary tables placed in this session
   \\help               show this help
   \\q                  quit
@@ -223,6 +231,8 @@ impl ConsoleHelper {
             "\\set",
             "\\params",
             "\\unset",
+            "\\session",
+            "\\restrict",
             "\\tables",
             "\\help",
             "\\q",
@@ -717,6 +727,13 @@ impl PreparedQuery {
         }
     }
 
+    fn restriction_request(&self) -> &RestrictionRequest {
+        match self {
+            Self::Postgres(query) => query.restriction_request(),
+            Self::MsSql(query) => query.restriction_request(),
+        }
+    }
+
     /// Compiles the prepared batch, updating the session's temporary tables.
     /// `None` means the batch only dropped tables and has nothing to run.
     fn compile_batch(
@@ -724,11 +741,15 @@ impl PreparedQuery {
         snapshot: &MetadataSnapshot,
         plans: &[PresentationPlan],
         parameters: &[QueryParameter],
+        session: &SessionParameters,
+        restrictions: &[AccessRestriction],
         temporary: &mut TempTablesManager,
     ) -> Result<Option<CompiledQuery>, open_sdbl::query::QueryDiagnostic> {
         let options = CompileOptions::new()
             .presentations(plans)
-            .parameters(parameters);
+            .parameters(parameters)
+            .session(session)
+            .restrictions(restrictions);
         match self {
             Self::Postgres(query) => query.compile_batch(snapshot, &options, temporary),
             Self::MsSql(query) => query.compile_batch(snapshot, &options, temporary),
@@ -756,6 +777,8 @@ pub(super) async fn run(
     let mut statement = String::new();
     let mut presentation_cache = HashMap::new();
     let mut parameters = ParameterStore::new();
+    let mut session_parameters = ParameterStore::new();
+    let mut restrictions = RestrictionStore::new();
     let mut temporary_tables = TempTablesManager::new();
 
     if interactive {
@@ -830,15 +853,30 @@ pub(super) async fn run(
         if statement.is_empty() && line.trim_start().starts_with('\\') {
             add_history(&mut editor, line.trim());
             if let Some(command) = parse_parameter_command(line.trim()) {
-                match apply_parameter_command(&mut parameters, command, &snapshot) {
+                match apply_parameter_command(
+                    &mut parameters,
+                    &mut session_parameters,
+                    command,
+                    &snapshot,
+                ) {
                     Ok(text) => {
                         output
                             .write_all(text.as_bytes())
                             .map_err(CliError::standard_output)?;
                         if let Some(helper) = editor.as_mut().and_then(Editor::helper_mut) {
-                            helper.set_parameters(parameters.names());
+                            helper
+                                .set_parameters(parameter_names(&parameters, &session_parameters));
                         }
                     }
+                    Err(error) => eprintln!("error: {}", escape_field(&error.to_string())),
+                }
+                continue;
+            }
+            if let Some(command) = parse_restriction_command(line.trim()) {
+                match apply_restriction_command(&mut restrictions, command, &snapshot) {
+                    Ok(text) => output
+                        .write_all(text.as_bytes())
+                        .map_err(CliError::standard_output)?,
                     Err(error) => eprintln!("error: {}", escape_field(&error.to_string())),
                 }
                 continue;
@@ -864,7 +902,7 @@ pub(super) async fn run(
                     }
                     if let Some(helper) = editor.as_mut().and_then(Editor::helper_mut) {
                         *helper = ConsoleHelper::from_snapshot(&snapshot);
-                        helper.set_parameters(parameters.names());
+                        helper.set_parameters(parameter_names(&parameters, &session_parameters));
                     }
                 }
                 Ok(MetaOutcome::Quit) => return Ok(()),
@@ -900,7 +938,16 @@ pub(super) async fn run(
                     prepared.presentation_request(),
                 );
                 let values = parameters.values_for(&statement);
-                prepared.compile_batch(&snapshot, &plans, &values, &mut temporary_tables)
+                let session = session_parameters.session_parameters();
+                let applied = restrictions.for_request(prepared.restriction_request());
+                prepared.compile_batch(
+                    &snapshot,
+                    &plans,
+                    &values,
+                    &session,
+                    &applied,
+                    &mut temporary_tables,
+                )
             }
             Err(error) => Err(error),
         };
@@ -1381,6 +1428,21 @@ async fn execute_meta_command(
             "unknown console command {command:?}; type \\help"
         ))),
     }
+}
+
+/// Query and session parameter names offered after `&`, without
+/// duplicates.
+fn parameter_names(parameters: &ParameterStore, session: &ParameterStore) -> Vec<String> {
+    let mut names = parameters.names();
+    for name in session.names() {
+        if !names
+            .iter()
+            .any(|existing| existing.eq_ignore_ascii_case(&name))
+        {
+            names.push(name);
+        }
+    }
+    names
 }
 
 fn add_history(editor: &mut Option<ConsoleEditor>, entry: &str) {

@@ -1,17 +1,22 @@
-//! Console query parameters: `\set`, `\params`, `\unset`.
+//! Console query parameters: `\set`, `\params`, `\unset`, and session
+//! parameters: `\session`.
 //!
 //! Values are parsed from SDBL literals with the library lexer and stored
-//! for the session. Before every query the console passes only the
+//! for the session. Before every query the console passes only the query
 //! parameters the statement references, so stale entries never trigger the
-//! compiler's unused-parameter diagnostic.
+//! compiler's unused-parameter diagnostic; session parameters are passed
+//! whole because the compiler exempts them from that check.
 
 use open_sdbl::metadata::{MetadataKind, MetadataSnapshot, ObjectId};
-use open_sdbl::query::{ParameterDate, ParameterValue, QueryParameter, find_metadata_object};
+use open_sdbl::query::{
+    ParameterDate, ParameterValue, QueryParameter, SessionParameters, find_metadata_object,
+};
 use open_sdbl::{Keyword, Token, TokenKind, tokenize};
 
 use super::CliError;
 
 const SET_USAGE: &str = "usage: \\set <name> <literal>  (number, \"string\", ИСТИНА/ЛОЖЬ, NULL, ДАТАВРЕМЯ(y, m, d[, h, m, s]), 0x…, ЗНАЧЕНИЕ(Перечисление.X.Y | <Вид>.<Объект>.ПустаяСсылка), or a (list, of, those))";
+const SESSION_USAGE: &str = "usage: \\session [<name> [=] <literal> | clear]  (literals as in \\set; \\session alone lists the session parameters)";
 
 /// One parameter kept for the console session.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -55,6 +60,19 @@ impl ParameterStore {
         self.items.len() != before
     }
 
+    fn clear(&mut self) {
+        self.items.clear();
+    }
+
+    /// Every stored parameter as the session parameters of a compilation.
+    pub(crate) fn session_parameters(&self) -> SessionParameters {
+        let mut session = SessionParameters::new();
+        for item in &self.items {
+            session.set(QueryParameter::new(item.name.clone(), item.value.clone()));
+        }
+        session
+    }
+
     /// Stored names, for completion after `&`.
     pub(crate) fn names(&self) -> Vec<String> {
         self.items.iter().map(|item| item.name.clone()).collect()
@@ -80,8 +98,12 @@ impl ParameterStore {
 
     /// One line per parameter: name, the literal as entered, the kind.
     pub(crate) fn listing(&self) -> String {
+        self.listing_or("No parameters set.\n")
+    }
+
+    fn listing_or(&self, empty: &str) -> String {
         if self.items.is_empty() {
-            return "No parameters set.\n".to_owned();
+            return empty.to_owned();
         }
         let width = self
             .items
@@ -116,15 +138,41 @@ pub(crate) enum ParameterCommand<'line> {
         name: &'line str,
     },
     UnsetUsage,
+    Session {
+        name: &'line str,
+        literal: &'line str,
+    },
+    SessionList,
+    SessionClear,
+    SessionUsage,
 }
 
-/// Recognizes `\set`, `\params`, and `\unset`; other lines return `None`.
+/// Recognizes `\set`, `\params`, `\unset`, and `\session`; other lines
+/// return `None`.
 pub(crate) fn parse_parameter_command(line: &str) -> Option<ParameterCommand<'_>> {
     let (command, rest) = line
         .split_once(char::is_whitespace)
         .map_or((line, ""), |(command, rest)| (command, rest.trim()));
     match command {
         "\\params" => Some(ParameterCommand::List),
+        "\\session" => {
+            if rest.is_empty() {
+                return Some(ParameterCommand::SessionList);
+            }
+            if rest.eq_ignore_ascii_case("clear") {
+                return Some(ParameterCommand::SessionClear);
+            }
+            let (name, literal) = rest
+                .split_once(|character: char| character.is_whitespace() || character == '=')
+                .map_or((rest, ""), |(name, literal)| {
+                    (name, literal.trim().trim_start_matches('=').trim())
+                });
+            let name = name.trim_start_matches('&');
+            if name.is_empty() || literal.is_empty() || !is_parameter_name(name) {
+                return Some(ParameterCommand::SessionUsage);
+            }
+            Some(ParameterCommand::Session { name, literal })
+        }
         "\\set" => {
             let (name, literal) = rest
                 .split_once(char::is_whitespace)
@@ -146,13 +194,27 @@ pub(crate) fn parse_parameter_command(line: &str) -> Option<ParameterCommand<'_>
     }
 }
 
-/// Applies a parameter command and returns the text to print.
+/// Applies a parameter command to the query store or the session store and
+/// returns the text to print.
 pub(crate) fn apply_parameter_command(
     store: &mut ParameterStore,
+    session: &mut ParameterStore,
     command: ParameterCommand<'_>,
     snapshot: &MetadataSnapshot,
 ) -> Result<String, CliError> {
     match command {
+        ParameterCommand::Session { name, literal } => {
+            let value = parse_parameter_literal(literal, snapshot)?;
+            let label = kind_label(&value);
+            session.set(name, literal, value);
+            Ok(format!("Session parameter {name} set [{label}].\n"))
+        }
+        ParameterCommand::SessionList => Ok(session.listing_or("No session parameters set.\n")),
+        ParameterCommand::SessionClear => {
+            session.clear();
+            Ok("Session parameters cleared.\n".to_owned())
+        }
+        ParameterCommand::SessionUsage => Err(CliError::Data(SESSION_USAGE.to_owned())),
         ParameterCommand::Set { name, literal } => {
             let value = parse_parameter_literal(literal, snapshot)?;
             let label = kind_label(&value);
@@ -461,7 +523,7 @@ fn decode_hex(digits: &str) -> Result<Vec<u8>, CliError> {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::{
         ParameterCommand, ParameterStore, apply_parameter_command, parse_parameter_command,
         parse_parameter_literal,
@@ -470,10 +532,10 @@ mod tests {
         ConfigDescriptor, Guid, LiveColumn, LiveTable, MetadataSnapshot, SchemaStorage,
         parse_db_names, resolve_metadata,
     };
-    use open_sdbl::query::{ParameterDate, ParameterValue};
+    use open_sdbl::query::{ParameterDate, ParameterValue, QueryParameter};
     use std::str::FromStr;
 
-    fn enumeration_snapshot() -> MetadataSnapshot {
+    pub(crate) fn enumeration_snapshot() -> MetadataSnapshot {
         let owner = Guid::from_str("c8b21fea-1e3d-4ae9-8719-7ff4db08af97").unwrap();
         let value = Guid::from_str("d2f8bde9-fadd-4be8-9022-249e3a1ac4b9").unwrap();
         let db_names = parse_db_names(&crate::hex_test_support::hex(
@@ -595,6 +657,7 @@ mod tests {
     fn stores_lists_and_filters_parameters_by_reference() {
         let snapshot = enumeration_snapshot();
         let mut store = ParameterStore::new();
+        let mut session = ParameterStore::new();
         assert_eq!(
             parse_parameter_command("\\set Период ДАТАВРЕМЯ(2024, 1, 1)"),
             Some(ParameterCommand::Set {
@@ -629,6 +692,7 @@ mod tests {
 
         let output = apply_parameter_command(
             &mut store,
+            &mut session,
             ParameterCommand::Set {
                 name: "Период",
                 literal: "ДАТАВРЕМЯ(2024, 1, 1)",
@@ -639,6 +703,7 @@ mod tests {
         assert_eq!(output, "Parameter Период set [DateTime].\n");
         apply_parameter_command(
             &mut store,
+            &mut session,
             ParameterCommand::Set {
                 name: "Список",
                 literal: "(1, 2)",
@@ -648,6 +713,7 @@ mod tests {
         .unwrap();
         apply_parameter_command(
             &mut store,
+            &mut session,
             ParameterCommand::Set {
                 name: "период",
                 literal: "ДАТАВРЕМЯ(2025, 1, 1)",
@@ -670,6 +736,7 @@ mod tests {
         assert_eq!(
             apply_parameter_command(
                 &mut store,
+                &mut session,
                 ParameterCommand::Unset {
                     name: "СПИСОК"
                 },
@@ -681,6 +748,7 @@ mod tests {
         assert!(
             apply_parameter_command(
                 &mut store,
+                &mut session,
                 ParameterCommand::Unset {
                     name: "Список"
                 },
@@ -689,11 +757,124 @@ mod tests {
             .is_err()
         );
         assert!(
-            apply_parameter_command(&mut store, ParameterCommand::SetUsage, &snapshot).is_err()
+            apply_parameter_command(
+                &mut store,
+                &mut session,
+                ParameterCommand::SetUsage,
+                &snapshot
+            )
+            .is_err()
         );
         assert_eq!(
-            apply_parameter_command(&mut store, ParameterCommand::List, &snapshot).unwrap(),
+            apply_parameter_command(&mut store, &mut session, ParameterCommand::List, &snapshot)
+                .unwrap(),
             "период  ДАТАВРЕМЯ(2025, 1, 1)  [DateTime]\n"
+        );
+    }
+
+    #[test]
+    fn stores_session_parameters_for_every_query() {
+        let snapshot = enumeration_snapshot();
+        let mut store = ParameterStore::new();
+        let mut session = ParameterStore::new();
+        assert_eq!(
+            parse_parameter_command("\\session Орг = \"HQ\""),
+            Some(ParameterCommand::Session {
+                name: "Орг",
+                literal: "\"HQ\""
+            })
+        );
+        assert_eq!(
+            parse_parameter_command("\\session &Лимит 10"),
+            Some(ParameterCommand::Session {
+                name: "Лимит",
+                literal: "10"
+            })
+        );
+        assert_eq!(
+            parse_parameter_command("\\session"),
+            Some(ParameterCommand::SessionList)
+        );
+        assert_eq!(
+            parse_parameter_command("\\session CLEAR"),
+            Some(ParameterCommand::SessionClear)
+        );
+        assert_eq!(
+            parse_parameter_command("\\session Орг"),
+            Some(ParameterCommand::SessionUsage)
+        );
+        assert_eq!(
+            parse_parameter_command("\\session 1 = 2"),
+            Some(ParameterCommand::SessionUsage)
+        );
+
+        let output = apply_parameter_command(
+            &mut store,
+            &mut session,
+            ParameterCommand::Session {
+                name: "Орг",
+                literal: "\"HQ\"",
+            },
+            &snapshot,
+        )
+        .unwrap();
+        assert_eq!(output, "Session parameter Орг set [String].\n");
+        apply_parameter_command(
+            &mut store,
+            &mut session,
+            ParameterCommand::Session {
+                name: "орг",
+                literal: "\"Branch\"",
+            },
+            &snapshot,
+        )
+        .unwrap();
+        assert!(store.names().is_empty());
+        assert_eq!(session.names(), ["орг"]);
+        let parameters = session.session_parameters();
+        assert_eq!(
+            parameters.get("ОРГ").map(QueryParameter::value),
+            Some(&ParameterValue::String("Branch".to_owned()))
+        );
+        assert_eq!(
+            apply_parameter_command(
+                &mut store,
+                &mut session,
+                ParameterCommand::SessionList,
+                &snapshot
+            )
+            .unwrap(),
+            "орг  \"Branch\"  [String]\n"
+        );
+        assert!(
+            apply_parameter_command(
+                &mut store,
+                &mut session,
+                ParameterCommand::SessionUsage,
+                &snapshot
+            )
+            .is_err()
+        );
+        assert_eq!(
+            apply_parameter_command(
+                &mut store,
+                &mut session,
+                ParameterCommand::SessionClear,
+                &snapshot
+            )
+            .unwrap(),
+            "Session parameters cleared.\n"
+        );
+        assert!(session.session_parameters().is_empty());
+        assert_eq!(
+            apply_parameter_command(
+                &mut store,
+                &mut session,
+                ParameterCommand::SessionList,
+                &snapshot
+            )
+            .unwrap(),
+            "No session parameters set.\n"
         );
     }
 }

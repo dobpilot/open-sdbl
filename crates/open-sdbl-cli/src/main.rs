@@ -20,6 +20,7 @@ mod params;
 mod pipeline;
 mod progress;
 mod repl;
+mod restrict;
 
 #[cfg(test)]
 use args::{
