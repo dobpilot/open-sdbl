@@ -117,7 +117,16 @@ pub(crate) fn compile_presentation_lookup(
     let qualified_id = dialect.qualified_column(Some(alias), &id_column.physical_name);
     let expression =
         compile_presentation_plan(snapshot, &catalog, plan.object, alias, plan, None, dialect)?;
-    let relation = compile_live_relation(snapshot, target_table, &fields, dialect);
+    let relation = compile_live_relation(
+        snapshot,
+        &catalog,
+        target_table,
+        &fields,
+        alias,
+        None,
+        dialect,
+    )?
+    .sql;
     let values = references
         .iter()
         .map(|reference| dialect.binary_literal(reference))

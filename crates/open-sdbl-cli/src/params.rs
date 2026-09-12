@@ -552,6 +552,7 @@ pub(crate) mod tests {
                 comment: None,
                 field_purpose: None,
                 enumeration_value,
+                separation: None,
             };
         let status = descriptor(value, "Статус", true);
         let object = descriptor(owner.clone(), "бит_ВидыСтатусовОбъектов", false);

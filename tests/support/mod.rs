@@ -308,6 +308,7 @@ pub(crate) fn descriptor(resource: &Guid, object: &Guid, name: &str) -> ConfigDe
         comment: None,
         field_purpose: None,
         enumeration_value: false,
+        separation: None,
     }
 }
 
@@ -528,6 +529,7 @@ pub(crate) fn accumulation_register_snapshot() -> open_sdbl::metadata::MetadataS
         comment: None,
         field_purpose: Some(ConfigFieldPurpose::AccumulationRegisterResource),
         enumeration_value: false,
+        separation: None,
     });
 
     let mut schema_storage = base.schema().clone();
@@ -770,4 +772,63 @@ pub(crate) fn ambiguous_field_snapshot() -> open_sdbl::metadata::MetadataSnapsho
         vec![live_table("_reference53", &["_idrref", "_fld54", "_fld55"])],
     )
     .snapshot
+}
+
+/// The probe base with two data separators captured under
+/// `tests/fixtures/separators`: catalog `Товары` (`Артикул`, `Поставщик`),
+/// constant `ОсновнойТовар`, common attributes `РазделительНезависимо`
+/// (`Fld56`, `Независимо`) and `РазделительСовместно` (`Fld57`,
+/// `Независимо и совместно`), both bound to the session parameters
+/// `ЗначениеРазделителя` and `ИспользованиеРазделителя`.
+pub(crate) fn separators_resolved() -> open_sdbl::metadata::ResolvedMetadata {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/separators");
+    let db_names = parse_db_names(&std::fs::read(root.join("db_names.deflate")).unwrap()).unwrap();
+    let mut descriptors = Vec::new();
+    let mut entries = std::fs::read_dir(root.join("config"))
+        .unwrap()
+        .map(|entry| entry.unwrap().path())
+        .collect::<Vec<_>>();
+    entries.sort();
+    for path in entries {
+        let file_name = path.file_name().unwrap().to_str().unwrap();
+        let resource = file_name.strip_suffix(".deflate").unwrap();
+        descriptors
+            .extend(parse_config_descriptors(resource, &std::fs::read(&path).unwrap()).unwrap());
+    }
+    let schema =
+        parse_schema_storage(&std::fs::read(root.join("schema_storage.txt")).unwrap()).unwrap();
+    let mut live_tables: Vec<LiveTable> = Vec::new();
+    for line in std::fs::read_to_string(root.join("live_columns.tsv"))
+        .unwrap()
+        .lines()
+        .filter(|line| !line.trim().is_empty())
+    {
+        let mut parts = line.split('\t');
+        let table = parts.next().unwrap();
+        let column = parts.next().unwrap();
+        let data_type = match parts.next().unwrap() {
+            "USER-DEFINED" => "mvarchar",
+            other => other,
+        };
+        let position = match live_tables.iter().position(|live| live.name == table) {
+            Some(position) => position,
+            None => {
+                live_tables.push(LiveTable {
+                    name: table.to_owned(),
+                    columns: Vec::new(),
+                    indexes: Vec::new(),
+                });
+                live_tables.len() - 1
+            }
+        };
+        live_tables[position].columns.push(LiveColumn {
+            name: column.to_owned(),
+            data_type: data_type.to_owned(),
+        });
+    }
+    resolve_metadata(db_names, descriptors, schema, live_tables)
+}
+
+pub(crate) fn separators_snapshot() -> open_sdbl::metadata::MetadataSnapshot {
+    separators_resolved().snapshot
 }

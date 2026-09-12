@@ -11,7 +11,7 @@ use crate::metadata::{
 };
 use crate::query::core::ast::SourceAst;
 use crate::query::core::names::{folded_name, names_equal};
-use crate::query::core::params::Parameters;
+use crate::query::core::params::{ParameterDate, ParameterValue, Parameters};
 use crate::query::core::restrict::{AccessRestriction, RestrictionTarget};
 use crate::query::core::temp_tables::{TempTableSource, TempTablesManager};
 use crate::query::core::{QueryDiagnostic, QueryDiagnosticKind};
@@ -426,6 +426,108 @@ mod extension_table_name_tests {
     }
 }
 
+/// What a statement does about one data separator of the snapshot.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) enum SeparatorState {
+    /// The use-flag session parameter is `ЛОЖЬ`: no predicate anywhere.
+    Disabled,
+    /// Every table declaring the column is filtered by this value.
+    Value(ParameterValue),
+    /// An `Independent` separator without a session value; reading a table
+    /// that declares the column is a `Parameter` diagnostic naming the
+    /// expected session parameter.
+    Missing(String),
+    /// A separator of a kind without an empty value and without a session
+    /// value; reading such a table is a `Metadata` diagnostic.
+    Unsupported,
+}
+
+/// One data separator as resolved for the statement being compiled.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) struct StatementSeparator {
+    /// Physical column, such as `_Fld56`.
+    pub(super) column: String,
+    /// Common attribute name, for diagnostics.
+    pub(super) name: String,
+    pub(super) state: SeparatorState,
+}
+
+fn resolve_statement_separators(
+    snapshot: &MetadataSnapshot,
+    parameters: Parameters<'_>,
+) -> Vec<StatementSeparator> {
+    snapshot
+        .separators()
+        .map(|field| {
+            if !parameters.is_bound() {
+                // Preparation collects presentation and restriction requests
+                // without values; its SQL is discarded, so separators stay
+                // silent until the bound compilation.
+                return StatementSeparator {
+                    column: field.physical_name.clone(),
+                    name: field.name.clone().unwrap_or_default(),
+                    state: SeparatorState::Disabled,
+                };
+            }
+            let name = field
+                .name
+                .clone()
+                .unwrap_or_else(|| field.physical_name.clone());
+            let separation = field.separation.as_ref();
+            let disabled = separation
+                .and_then(|separation| separation.use_parameter.as_deref())
+                .and_then(|parameter| parameters.session_value(parameter))
+                .is_some_and(|value| *value == ParameterValue::Boolean(false));
+            let value_parameter = separation
+                .and_then(|separation| separation.value_parameter.clone())
+                .unwrap_or_else(|| name.clone());
+            let state = if disabled {
+                SeparatorState::Disabled
+            } else if let Some(value) = parameters.session_value(&value_parameter) {
+                SeparatorState::Value(value.clone())
+            } else if separation.is_some_and(|separation| {
+                separation.mode == crate::metadata::SeparatedDataUse::Independent
+            }) {
+                SeparatorState::Missing(value_parameter)
+            } else {
+                separator_empty_value(snapshot, field.number)
+                    .map_or(SeparatorState::Unsupported, SeparatorState::Value)
+            };
+            StatementSeparator {
+                column: field.physical_name.clone(),
+                name,
+                state,
+            }
+        })
+        .collect()
+}
+
+/// The empty value of a separator's storage kind, from the first
+/// SchemaStorage declaration of its column.
+fn separator_empty_value(snapshot: &MetadataSnapshot, number: u32) -> Option<ParameterValue> {
+    let logical = format!("Fld{number}");
+    let tag = snapshot
+        .schema()
+        .tables
+        .iter()
+        .flat_map(|table| table.columns.iter())
+        .find(|column| names_equal(&column.name, &logical))
+        .and_then(|column| column.types.first())
+        .map(|kind| kind.tag.as_str())?;
+    match tag {
+        "N" => Some(ParameterValue::Number {
+            unscaled: 0,
+            scale: 0,
+        }),
+        "S" => Some(ParameterValue::String(String::new())),
+        "L" => Some(ParameterValue::Boolean(false)),
+        "T" => ParameterDate::new(1, 1, 1, 0, 0, 0)
+            .ok()
+            .map(ParameterValue::Date),
+        _ => None,
+    }
+}
+
 /// Per-compilation, demand-populated field catalog.
 ///
 /// Physical table names are used as keys because malformed metadata can
@@ -454,6 +556,8 @@ pub(super) struct CompilationCatalog<'snapshot> {
     /// Set while a restriction's text compiles: query parameters are then
     /// hidden so the text sees session parameters only.
     restriction_mode: Cell<bool>,
+    /// Data separators of the snapshot as resolved for this statement.
+    separators: Vec<StatementSeparator>,
 }
 
 impl<'snapshot> CompilationCatalog<'snapshot> {
@@ -486,7 +590,13 @@ impl<'snapshot> CompilationCatalog<'snapshot> {
             restriction_targets: RefCell::new(BTreeSet::new()),
             used_restrictions: RefCell::new(BTreeSet::new()),
             restriction_mode: Cell::new(false),
+            separators: resolve_statement_separators(snapshot, parameters),
         }
+    }
+
+    /// The data separators of the snapshot as resolved for this statement.
+    pub(super) fn separators(&self) -> &[StatementSeparator] {
+        &self.separators
     }
 
     /// The parameter values currently in effect: session values only while

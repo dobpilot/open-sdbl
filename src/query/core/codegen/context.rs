@@ -98,6 +98,9 @@ pub(super) struct JoinPlan {
     /// columns, as for the payload column of a derived source.
     pub(super) source_value_sql: Option<String>,
     pub(super) source_type_sql: Option<String>,
+    /// Data-separator predicates of the target, qualified with `alias`,
+    /// conjoined to the join condition.
+    pub(super) target_predicates: Vec<String>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -126,6 +129,9 @@ pub(super) struct SourceScope {
     pub(super) source_alias: Option<String>,
     pub(super) identity_is_base: bool,
     pub(super) reference_joins: Vec<JoinPlan>,
+    /// Data-separator predicates of the relation, qualified with
+    /// `sql_alias`, placed by the branch renderer.
+    pub(super) separator_predicates: Vec<String>,
 }
 
 impl SourceScope {
@@ -500,13 +506,6 @@ impl CompilationContext<'_, '_> {
         let target_id_column = single_column(target_id, reference_token)?
             .physical_name
             .clone();
-        let target_relation = compile_live_relation(
-            self.snapshot,
-            target_live_table,
-            &target_fields,
-            self.dialect,
-        );
-
         let source_alias = self.source(scope).sql_alias.clone();
         let join_key = JoinKey {
             source_alias: &source_alias,
@@ -524,6 +523,15 @@ impl CompilationContext<'_, '_> {
             alias
         } else {
             let alias = self.next_reference_alias(scope);
+            let target = compile_live_relation(
+                self.snapshot,
+                self.catalog,
+                target_live_table,
+                &target_fields,
+                &alias,
+                Some(reference_token),
+                self.dialect,
+            )?;
             self.source_mut(scope).reference_joins.push(JoinPlan {
                 source_alias,
                 source_field,
@@ -531,11 +539,12 @@ impl CompilationContext<'_, '_> {
                 source_type_column: None,
                 database_type: None,
                 target_object: target_object_id,
-                target_relation,
+                target_relation: target.sql,
                 target_id_column,
                 alias: alias.clone(),
                 source_value_sql: None,
                 source_type_sql: None,
+                target_predicates: target.separators,
             });
             alias
         };
@@ -852,8 +861,6 @@ impl CompilationContext<'_, '_> {
             })?
             .physical_name
             .clone();
-        let target_relation =
-            compile_live_relation(self.snapshot, live_table, &fields, self.dialect);
         let source_alias = self.source(scope).sql_alias.clone();
         let join_key = JoinKey {
             source_alias: &source_alias,
@@ -870,6 +877,15 @@ impl CompilationContext<'_, '_> {
             join.alias.clone()
         } else {
             let alias = self.next_reference_alias(scope);
+            let target = compile_live_relation(
+                self.snapshot,
+                self.catalog,
+                live_table,
+                &fields,
+                &alias,
+                Some(reference_token),
+                self.dialect,
+            )?;
             self.source_mut(scope).reference_joins.push(JoinPlan {
                 source_alias,
                 source_field: source.schema_name.clone(),
@@ -877,7 +893,7 @@ impl CompilationContext<'_, '_> {
                 source_type_column: source.type_column.clone(),
                 database_type: Some(database_type),
                 target_object: candidate,
-                target_relation,
+                target_relation: target.sql,
                 target_id_column: id_column,
                 alias: alias.clone(),
                 source_value_sql: source
@@ -888,6 +904,7 @@ impl CompilationContext<'_, '_> {
                     .type_column
                     .is_none()
                     .then(|| source.type_sql.clone()),
+                target_predicates: target.separators,
             });
             alias
         };
@@ -1057,8 +1074,6 @@ impl CompilationContext<'_, '_> {
                 )
             })?;
         let target_id_column = single_column(target_id, token)?.physical_name.clone();
-        let target_relation =
-            compile_live_relation(self.snapshot, target_table, &target_fields, self.dialect);
         let join_key = JoinKey {
             source_alias,
             source_field: &reference.schema_name,
@@ -1074,6 +1089,15 @@ impl CompilationContext<'_, '_> {
             return Ok(join.alias.clone());
         }
         let alias = self.next_reference_alias(scope);
+        let target_relation = compile_live_relation(
+            self.snapshot,
+            self.catalog,
+            target_table,
+            &target_fields,
+            &alias,
+            Some(token),
+            self.dialect,
+        )?;
         self.source_mut(scope).reference_joins.push(JoinPlan {
             source_alias: source_alias.to_owned(),
             source_field: reference.schema_name.clone(),
@@ -1081,11 +1105,12 @@ impl CompilationContext<'_, '_> {
             source_type_column,
             database_type,
             target_object: target,
-            target_relation,
+            target_relation: target_relation.sql,
             target_id_column,
             alias: alias.clone(),
             source_value_sql: None,
             source_type_sql: None,
+            target_predicates: target_relation.separators,
         });
         Ok(alias)
     }

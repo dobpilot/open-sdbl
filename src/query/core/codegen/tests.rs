@@ -26,6 +26,7 @@ fn join_reuse_requires_the_complete_reference_identity() {
         source_value_sql: None,
         source_type_sql: None,
         alias: "__ref1".to_owned(),
+        target_predicates: Vec::new(),
     };
     let matching = JoinKey {
         source_alias: "SOURCE",

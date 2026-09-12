@@ -55,6 +55,102 @@ impl ConfigCollectionPurpose {
     }
 }
 
+/// Class id of a common-attribute Config resource (`{1,{5,{27,…}}}`).
+const COMMON_ATTRIBUTE_CLASS_ID: &str = "5";
+
+/// How a data separator treats data written without a separator value.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SeparatedDataUse {
+    /// `Независимо`: every read needs a separator value.
+    Independent,
+    /// `Независимо и совместно`: shared data lives under the empty value.
+    IndependentAndShared,
+}
+
+/// Separation settings of a common attribute in `Разделять` mode, as
+/// stored after the attribute's content list in its Config resource.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DataSeparationSettings {
+    /// Separated-data-use mode.
+    pub mode: SeparatedDataUse,
+    /// Session parameter carrying the separator value, when bound.
+    pub value_parameter: Option<Guid>,
+    /// Session parameter carrying the use flag, when bound.
+    pub use_parameter: Option<Guid>,
+}
+
+/// Tracks the `{1,<guid>}` references and the scalars that follow them in
+/// the body list of a common-attribute resource.
+#[derive(Default)]
+struct SeparationTracker {
+    references: Vec<Guid>,
+    trailing: Vec<Option<u32>>,
+    complete: bool,
+}
+
+impl SeparationTracker {
+    const REFERENCES: usize = 3;
+    const TRAILING: usize = 3;
+
+    fn record(&mut self, candidate: &ConfigCandidate<'_>) {
+        if self.complete {
+            return;
+        }
+        if let Some(guid) = candidate.as_list().and_then(single_reference) {
+            if self.references.len() < Self::REFERENCES {
+                self.references.push(guid);
+            } else {
+                self.complete = true;
+            }
+            return;
+        }
+        if self.references.len() < Self::REFERENCES {
+            self.references.clear();
+            return;
+        }
+        match candidate.as_scalar() {
+            Some(value) => {
+                self.trailing
+                    .push(value.as_str().and_then(|atom| atom.parse().ok()));
+                if self.trailing.len() == Self::TRAILING {
+                    self.complete = true;
+                }
+            }
+            None => self.complete = true,
+        }
+    }
+
+    fn settings(&self) -> Option<DataSeparationSettings> {
+        if self.references.len() != Self::REFERENCES || self.trailing.len() != Self::TRAILING {
+            return None;
+        }
+        let mode = match self.trailing[2]? {
+            0 => SeparatedDataUse::Independent,
+            1 => SeparatedDataUse::IndependentAndShared,
+            _ => return None,
+        };
+        let bound = |guid: &Guid| (!guid.is_nil()).then(|| guid.clone());
+        Some(DataSeparationSettings {
+            mode,
+            value_parameter: bound(&self.references[0]),
+            use_parameter: bound(&self.references[1]),
+        })
+    }
+}
+
+fn single_reference(values: &[SimpleValue<'_>]) -> Option<Guid> {
+    let [marker, guid] = values else {
+        return None;
+    };
+    if marker.as_str() != Some("1") {
+        return None;
+    }
+    let SimpleValue::Atom(guid) = guid else {
+        return None;
+    };
+    Guid::from_str(guid).ok()
+}
+
 /// One localized synonym from a Config descriptor.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Synonym {
@@ -83,6 +179,10 @@ pub struct ConfigDescriptor {
     pub field_purpose: Option<ConfigFieldPurpose>,
     /// Whether the descriptor belongs to the authoritative enum-values collection.
     pub enumeration_value: bool,
+    /// Separation settings of a common attribute in `Разделять` mode; `None`
+    /// for every other descriptor and for a resource whose tail does not
+    /// match the known layout.
+    pub separation: Option<DataSeparationSettings>,
 }
 
 /// One catalog predefined value decoded from an authoritative `.1c` resource.
@@ -286,6 +386,10 @@ struct ConfigParser<'input, 'resource> {
     input: &'input str,
     offset: usize,
     resource_guid: &'resource Guid,
+    /// Class id read from the first scalar of the depth-one list.
+    class_id: Option<&'input str>,
+    /// Separation settings found in a common-attribute body list.
+    separation: Option<DataSeparationSettings>,
 }
 
 struct ProjectedConfigDescriptor {
@@ -353,6 +457,8 @@ impl<'input, 'resource> ConfigParser<'input, 'resource> {
             input,
             offset: 0,
             resource_guid,
+            class_id: None,
+            separation: None,
         }
     }
 
@@ -373,10 +479,18 @@ impl<'input, 'resource> ConfigParser<'input, 'resource> {
                 "unexpected trailing metadata",
             ));
         }
-        Ok(descriptors
+        let mut descriptors = descriptors
             .into_iter()
             .map(|projected| projected.descriptor)
-            .collect())
+            .collect::<Vec<_>>();
+        if let Some(separation) = self.separation.take()
+            && let Some(owner) = descriptors
+                .iter_mut()
+                .find(|descriptor| &descriptor.object_guid == self.resource_guid)
+        {
+            owner.separation = Some(separation);
+        }
+        Ok(descriptors)
     }
 
     fn value(
@@ -418,6 +532,9 @@ impl<'input, 'resource> ConfigParser<'input, 'resource> {
         let mut window = Vec::with_capacity(4);
         let mut value_count = 0usize;
         let mut expecting_value = true;
+        // The class list `{5,{27,…},{3,…},…}` of a common-attribute resource
+        // carries the separation settings after its content list.
+        let mut separation: Option<SeparationTracker> = None;
 
         loop {
             self.skip_whitespace();
@@ -469,6 +586,19 @@ impl<'input, 'resource> ConfigParser<'input, 'resource> {
                 Some(_) if expecting_value => {
                     let candidate =
                         self.value(&mut descendant_descriptors, field_purpose, depth + 1)?;
+                    if depth == 1 && value_count == 0 {
+                        self.class_id = candidate.as_scalar().and_then(|value| match value {
+                            SimpleValue::Atom(atom) => Some(*atom),
+                            SimpleValue::String(_) | SimpleValue::Null => None,
+                        });
+                        if self.class_id == Some(COMMON_ATTRIBUTE_CLASS_ID)
+                            && self.separation.is_none()
+                        {
+                            separation = Some(SeparationTracker::default());
+                        }
+                    } else if let Some(tracker) = &mut separation {
+                        tracker.record(&candidate);
+                    }
                     record_config_candidate(
                         candidate,
                         value_count,
@@ -506,6 +636,9 @@ impl<'input, 'resource> ConfigParser<'input, 'resource> {
         }
         descriptors.append(&mut local_descriptors);
         descriptors.append(&mut descendant_descriptors);
+        if let Some(settings) = separation.as_ref().and_then(SeparationTracker::settings) {
+            self.separation = Some(settings);
+        }
         Ok(simple_values.map_or(ConfigCandidate::Other, ConfigCandidate::List))
     }
 
@@ -690,6 +823,7 @@ fn project_config_descriptor(
             }),
             enumeration_value: field_purpose
                 .is_some_and(|(purpose, _)| purpose == ConfigCollectionPurpose::EnumerationValue),
+            separation: None,
         },
         purpose_depth: field_purpose.map(|(_, depth)| depth),
     });
@@ -764,6 +898,7 @@ fn collect_descriptors(
                 ConfigCollectionPurpose::EnumerationValue => None,
             }),
             enumeration_value: field_purpose == Some(ConfigCollectionPurpose::EnumerationValue),
+            separation: None,
         });
     }
     for value in values {

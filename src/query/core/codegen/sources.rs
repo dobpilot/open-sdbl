@@ -9,6 +9,7 @@ use super::expression::{
 };
 use super::params::render_scalar_parameter;
 use super::select::append_reference_join;
+use super::separators::separator_predicates;
 use super::virtual_tables::{
     compile_accumulation_relation, compile_constant_date_expression, compile_date_parameter,
 };
@@ -24,7 +25,8 @@ use crate::query::core::names::names_equal;
 use crate::query::core::params::Parameters;
 use crate::query::core::parser::Parser;
 use crate::query::core::resolve::{
-    ColumnKind, CompilationCatalog, CompiledColumn, QueryableField, kind_from_query_name,
+    ColumnKind, CompilationCatalog, CompiledColumn, QueryableColumn, QueryableField,
+    kind_from_query_name,
 };
 use crate::query::core::restrict::AccessRestriction;
 use crate::query::core::{QueryDiagnostic, QueryDiagnosticKind};
@@ -82,6 +84,7 @@ pub(super) fn compile_restriction_predicate(
                     source_alias: None,
                     identity_is_base: restriction.identity_is_base,
                     reference_joins: Vec::new(),
+                    separator_predicates: Vec::new(),
                 }],
                 dialect,
                 aggregates_allowed: false,
@@ -108,6 +111,7 @@ fn wrap_restricted_relation(
     relation: &str,
     fields: &[QueryableField],
     predicate: &RestrictionPredicate,
+    separators: &[String],
     dialect: SqlDialect,
 ) -> String {
     let alias = "__restricted";
@@ -133,6 +137,10 @@ fn wrap_restricted_relation(
         append_reference_join(&mut sql, join, dialect);
     }
     sql.push_str(" WHERE ");
+    for separator in separators {
+        sql.push_str(separator);
+        sql.push_str(" AND ");
+    }
     sql.push_str(&predicate.sql);
     sql.push(')');
     sql
@@ -963,14 +971,33 @@ pub(super) fn wrap_reference_presentation(
 pub(super) struct CompiledSourceRelation {
     pub(super) sql: String,
     pub(super) fields: Arc<[QueryableField]>,
+    /// Data-separator predicates the caller places around the relation,
+    /// already qualified with the source alias; empty when the relation
+    /// filters its branches itself.
+    pub(super) separators: Vec<String>,
 }
 
+/// A live table rendered as a relation plus the separator predicates that
+/// still have to be placed by the caller.
+pub(super) struct LiveRelation {
+    pub(super) sql: String,
+    pub(super) separators: Vec<String>,
+}
+
+/// Renders the relation of a live table: the quoted table, or a `UNION ALL`
+/// of the base and extension tables. Data-separator predicates are placed
+/// inside each `UNION ALL` branch that declares the column and otherwise
+/// returned for `alias`; `token` positions their diagnostics, and `None`
+/// (a presentation batch, which reads by primary reference) skips them.
 pub(super) fn compile_live_relation(
     snapshot: &MetadataSnapshot,
+    catalog: &CompilationCatalog<'_>,
     canonical: &LiveTable,
     fields: &[QueryableField],
+    alias: &str,
+    token: Option<&Token<'_>>,
     dialect: SqlDialect,
-) -> String {
+) -> Result<LiveRelation, QueryDiagnostic> {
     let canonical_name = extension_table_base(&canonical.name).unwrap_or(&canonical.name);
     let mut tables = snapshot
         .live_table(canonical_name)
@@ -979,7 +1006,14 @@ pub(super) fn compile_live_relation(
         .collect::<Vec<_>>();
     tables.sort_by_key(|table| table.name.to_ascii_lowercase());
     if tables.len() == 1 {
-        return dialect.quote_identifier(&tables[0].name);
+        let separators = match token {
+            Some(token) => separator_predicates(catalog, tables[0], alias, token, dialect)?,
+            None => Vec::new(),
+        };
+        return Ok(LiveRelation {
+            sql: dialect.quote_identifier(&tables[0].name),
+            separators,
+        });
     }
 
     let mut seen = BTreeSet::new();
@@ -988,9 +1022,33 @@ pub(super) fn compile_live_relation(
         .flat_map(|field| &field.columns)
         .filter(|column| seen.insert(column.physical_name.to_ascii_lowercase()))
         .collect::<Vec<_>>();
-    let branches = tables
-        .into_iter()
-        .map(|table| {
+    let mut branches = Vec::with_capacity(tables.len());
+    for table in tables {
+        let separators = match token {
+            Some(token) => separator_predicates(catalog, table, &table.name, token, dialect)?,
+            None => Vec::new(),
+        };
+        branches.push(compile_extension_branch(
+            table,
+            &columns,
+            &separators,
+            dialect,
+        ));
+    }
+    Ok(LiveRelation {
+        sql: format!("({})", branches.join(" UNION ALL ")),
+        separators: Vec::new(),
+    })
+}
+
+fn compile_extension_branch(
+    table: &LiveTable,
+    columns: &[&QueryableColumn],
+    separators: &[String],
+    dialect: SqlDialect,
+) -> String {
+    {
+        {
             let projection = columns
                 .iter()
                 .map(|column| {
@@ -1009,13 +1067,17 @@ pub(super) fn compile_live_relation(
                 })
                 .collect::<Vec<_>>()
                 .join(", ");
-            format!(
+            let mut sql = format!(
                 "SELECT {projection} FROM {}",
                 dialect.quote_identifier(&table.name)
-            )
-        })
-        .collect::<Vec<_>>();
-    format!("({})", branches.join(" UNION ALL "))
+            );
+            if !separators.is_empty() {
+                sql.push_str(" WHERE ");
+                sql.push_str(&separators.join(" AND "));
+            }
+            sql
+        }
+    }
 }
 
 fn extension_table_base(candidate: &str) -> Option<&str> {
@@ -1039,6 +1101,7 @@ pub(super) fn compile_source_relation(
     object: &MetadataObject,
     live_table: &LiveTable,
     fields: &[QueryableField],
+    alias: &str,
     restriction: Option<&SourceRestriction<'_>>,
     dialect: SqlDialect,
 ) -> Result<CompiledSourceRelation, QueryDiagnostic> {
@@ -1056,9 +1119,17 @@ pub(super) fn compile_source_relation(
         );
     }
     let Some(slice) = &source.slice else {
-        let relation = compile_live_relation(snapshot, live_table, fields, dialect);
-        let sql = match restriction {
+        return match restriction {
             Some(restriction) => {
+                let relation = compile_live_relation(
+                    snapshot,
+                    catalog,
+                    live_table,
+                    fields,
+                    "__restricted",
+                    Some(source.object),
+                    dialect,
+                )?;
                 let predicate = compile_restriction_predicate(
                     restriction,
                     snapshot,
@@ -1069,14 +1140,35 @@ pub(super) fn compile_source_relation(
                     "__restricted",
                     dialect,
                 )?;
-                wrap_restricted_relation(&relation, fields, &predicate, dialect)
+                Ok(CompiledSourceRelation {
+                    sql: wrap_restricted_relation(
+                        &relation.sql,
+                        fields,
+                        &predicate,
+                        &relation.separators,
+                        dialect,
+                    ),
+                    fields: fields.to_vec().into(),
+                    separators: Vec::new(),
+                })
             }
-            None => relation,
+            None => {
+                let relation = compile_live_relation(
+                    snapshot,
+                    catalog,
+                    live_table,
+                    fields,
+                    alias,
+                    Some(source.object),
+                    dialect,
+                )?;
+                Ok(CompiledSourceRelation {
+                    sql: relation.sql,
+                    fields: fields.to_vec().into(),
+                    separators: relation.separators,
+                })
+            }
         };
-        return Ok(CompiledSourceRelation {
-            sql,
-            fields: fields.to_vec().into(),
-        });
     };
     if object.kind != Some(MetadataKind::InformationRegister) {
         return Err(QueryDiagnostic::at(
@@ -1185,6 +1277,7 @@ pub(super) fn compile_source_relation(
                 source_alias: Some("__slice_base".to_owned()),
                 identity_is_base: true,
                 reference_joins: Vec::new(),
+                separator_predicates: Vec::new(),
             }],
             dialect,
             aggregates_allowed: false,
@@ -1209,7 +1302,8 @@ pub(super) fn compile_source_relation(
 
     let qualified_period =
         dialect.qualified_column(Some("__slice_base"), &period_column.physical_name);
-    let mut predicates = Vec::new();
+    let mut predicates =
+        separator_predicates(catalog, live_table, "__slice_base", slice.token, dialect)?;
     if let Some(period_bound) = period_bound {
         predicates.push(format!(
             "({qualified_period} {} {period_bound})",
@@ -1264,5 +1358,6 @@ pub(super) fn compile_source_relation(
     Ok(CompiledSourceRelation {
         sql: relation,
         fields: fields.to_vec().into(),
+        separators: Vec::new(),
     })
 }

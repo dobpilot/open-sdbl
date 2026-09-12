@@ -20,9 +20,9 @@ mod schema;
 mod value;
 
 pub use config::{
-    ConfigDescriptor, ConfigFieldPurpose, ConfigPredefinedValue, ParsedConfigResource, Synonym,
-    parse_config_descriptor, parse_config_descriptors, parse_config_predefined_values,
-    parse_config_resource_bounded,
+    ConfigDescriptor, ConfigFieldPurpose, ConfigPredefinedValue, DataSeparationSettings,
+    ParsedConfigResource, SeparatedDataUse, Synonym, parse_config_descriptor,
+    parse_config_descriptors, parse_config_predefined_values, parse_config_resource_bounded,
 };
 pub use db_names::{DbNameEntry, DbNames, MetadataKind, parse_db_names};
 pub use deflate::{DEFAULT_OUTPUT_LIMIT, inflate_raw_deflate, inflate_raw_deflate_bounded};

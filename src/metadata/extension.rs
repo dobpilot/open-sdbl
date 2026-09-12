@@ -82,6 +82,7 @@ pub fn extension_metadata_from_restructure(
             comment: None,
             field_purpose: None,
             enumeration_value: false,
+            separation: None,
         });
         if let Some(target) = &field.reference_target {
             field_reference_targets.push((field.number, target.clone()));

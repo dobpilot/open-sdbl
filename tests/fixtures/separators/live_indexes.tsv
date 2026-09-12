@@ -1,0 +1,6 @@
+_const61	_const61_1	CREATE UNIQUE INDEX _const61_1 ON public._const61 USING btree (_fld56, _fld57, _recordkey)
+_reference53	_reference53_1	CREATE INDEX _reference53_1 ON public._reference53 USING btree (_fld56, _fld57, _predefinedid)
+_reference53	_reference53_2	CREATE UNIQUE INDEX _reference53_2 ON public._reference53 USING btree (_fld56, _fld57, _code, _idrref)
+_reference53	_reference53_3	CREATE UNIQUE INDEX _reference53_3 ON public._reference53 USING btree (_fld56, _fld57, _description, _idrref)
+_reference53	_reference53_s_hpk	CREATE UNIQUE INDEX _reference53_s_hpk ON public._reference53 USING btree (_fld56, _fld57, _idrref)
+_reference53	_reference53_s_pk	CREATE UNIQUE INDEX _reference53_s_pk ON public._reference53 USING btree (_fld56, _idrref)

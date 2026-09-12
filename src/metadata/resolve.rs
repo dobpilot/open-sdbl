@@ -9,7 +9,8 @@ use super::normalize::{normalize_logical_name, normalize_standard_field_name};
 use super::{
     AttributeId, ConfigDescriptor, ConfigFieldPurpose, ConfigPredefinedValue, DbNameEntry, DbNames,
     FieldId, Guid, LookupError, MetadataKind, ObjectId, SchemaStorage, SchemaTable,
-    StandardFieldId, collapse_logical_fields, normalize_index_key, recase_postgres_identifier,
+    SeparatedDataUse, StandardFieldId, collapse_logical_fields, normalize_index_key,
+    recase_postgres_identifier,
 };
 
 #[derive(Debug, Clone, Copy)]
@@ -117,6 +118,10 @@ pub struct MetadataField {
     pub owner_tables: Vec<String>,
     /// Whether this field is a data separator.
     pub data_separator: bool,
+    /// Separation settings resolved from Config for a data separator;
+    /// `None` for ordinary fields and for a separator whose resource could
+    /// not be decoded (reported as [`ResolutionFinding::SeparatorSettingsMissing`]).
+    pub separation: Option<DataSeparation>,
     /// Whether SchemaStorage declares the field in at least one table.
     pub declared: bool,
     /// Whether at least one matching physical column exists in PostgreSQL.
@@ -125,6 +130,20 @@ pub struct MetadataField {
     pub extension_origin: Option<String>,
     /// Canonical reference target for a reference-typed extension attribute.
     pub reference_target: Option<String>,
+}
+
+/// Separation settings of a data separator with its session parameters
+/// resolved to names.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DataSeparation {
+    /// Separated-data-use mode from Config.
+    pub mode: SeparatedDataUse,
+    /// Name of the session parameter bound as the separator value, when
+    /// Config binds one and its descriptor is known.
+    pub value_parameter: Option<String>,
+    /// Name of the session parameter bound as the use flag, when Config
+    /// binds one and its descriptor is known.
+    pub use_parameter: Option<String>,
 }
 
 /// Caller-provided, already decoded resources belonging to one extension.
@@ -291,6 +310,15 @@ pub enum ResolutionFinding {
         /// SchemaStorage index name.
         index: String,
     },
+    /// A data separator's Config resource carries no decodable separation
+    /// settings; the separator is treated as `IndependentAndShared` without
+    /// session-parameter bindings.
+    SeparatorSettingsMissing {
+        /// Common attribute GUID from DBNames.
+        guid: Guid,
+        /// Physical separator column, such as `_Fld56`.
+        column: String,
+    },
 }
 
 impl fmt::Display for ResolutionFinding {
@@ -340,6 +368,10 @@ impl fmt::Display for ResolutionFinding {
                     "index {table}.{index} differs from the live catalog"
                 )
             }
+            Self::SeparatorSettingsMissing { guid, column } => write!(
+                formatter,
+                "data separator {column} ({guid}) has no decodable separation settings in Config"
+            ),
         }
     }
 }
@@ -452,6 +484,11 @@ impl MetadataSnapshot {
     #[must_use]
     pub fn fields(&self) -> &[MetadataField] {
         &self.fields
+    }
+
+    /// Returns the data-separator fields in deterministic source order.
+    pub fn separators(&self) -> impl Iterator<Item = &MetadataField> {
+        self.fields.iter().filter(|field| field.data_separator)
     }
 
     /// Returns resolved predefined values in deterministic source order.
@@ -772,7 +809,8 @@ pub fn resolve_metadata_with_predefined_values_and_extensions(
     }
     let live_table_by_name = index_live_tables(&live_tables);
     let indexes = compare_indexes(&schema, &live_tables, &live_table_by_name, &db_names);
-    let report = build_resolution_report(
+    let mut separator_findings = Vec::new();
+    let mut report = build_resolution_report(
         &db_names,
         &descriptors,
         &schema,
@@ -938,6 +976,32 @@ pub fn resolve_metadata_with_predefined_values_and_extensions(
             .cloned()
             .unwrap_or_default();
         let live = live_fields.contains(&logical_name);
+        let data_separator = db_names.is_data_separator(entry.number);
+        let separation = data_separator
+            .then(|| {
+                descriptor_by_guid
+                    .get(&entry.guid)
+                    .and_then(|descriptor| descriptor.separation.as_ref())
+                    .map(|settings| {
+                        let parameter_name = |guid: &Option<Guid>| {
+                            guid.as_ref()
+                                .and_then(|guid| descriptor_by_guid.get(guid))
+                                .map(|descriptor| descriptor.name.clone())
+                        };
+                        DataSeparation {
+                            mode: settings.mode,
+                            value_parameter: parameter_name(&settings.value_parameter),
+                            use_parameter: parameter_name(&settings.use_parameter),
+                        }
+                    })
+            })
+            .flatten();
+        if data_separator && separation.is_none() {
+            separator_findings.push(ResolutionFinding::SeparatorSettingsMissing {
+                guid: entry.guid.clone(),
+                column: physical_name.clone(),
+            });
+        }
         fields.push(MetadataField {
             guid: entry.guid.clone(),
             name: descriptor_by_guid
@@ -951,7 +1015,8 @@ pub fn resolve_metadata_with_predefined_values_and_extensions(
             declared: !owner_tables.is_empty(),
             live,
             owner_tables,
-            data_separator: db_names.is_data_separator(entry.number),
+            data_separator,
+            separation,
             extension_origin: extension_origins.get(&entry.number).cloned(),
             reference_target: schema_field_targets
                 .get(&logical_name)
@@ -1031,7 +1096,10 @@ pub fn resolve_metadata_with_predefined_values_and_extensions(
             index,
             fingerprint,
         },
-        report,
+        report: {
+            report.findings.extend(separator_findings);
+            report
+        },
     }
 }
 

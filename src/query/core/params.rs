@@ -404,6 +404,21 @@ impl<'a> Parameters<'a> {
         }
     }
 
+    /// Whether values are bound at all: preparation runs unbound and only
+    /// collects requests, so nothing value-dependent may fail there.
+    pub(super) const fn is_bound(&self) -> bool {
+        self.bound
+    }
+
+    /// The session parameter of that name, if supplied; query values never
+    /// participate, as data separators are session state.
+    pub(super) fn session_value(&self, name: &str) -> Option<&'a ParameterValue> {
+        self.session
+            .iter()
+            .find(|parameter| names_equal(parameter.name(), name))
+            .map(QueryParameter::value)
+    }
+
     /// Whether some parameter of that name is supplied.
     pub(super) fn contains(&self, name: &str) -> bool {
         self.values

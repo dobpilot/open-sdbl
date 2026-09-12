@@ -328,6 +328,7 @@ fn derived_source_scope(
         source_alias: Some(alias),
         identity_is_base: false,
         reference_joins: Vec::new(),
+        separator_predicates: Vec::new(),
     })
 }
 
@@ -358,6 +359,7 @@ fn temporary_source_scope(
         source_alias: Some(alias),
         identity_is_base: false,
         reference_joins: Vec::new(),
+        separator_predicates: Vec::new(),
     })
 }
 
@@ -1111,10 +1113,11 @@ fn compile_branch_sql(
         for reference_join in &context.sources[0].reference_joins {
             append_reference_join(&mut sql, reference_join, dialect);
         }
-        if let Some(filter) = filter {
-            sql.push_str(" WHERE ");
-            sql.push_str(filter);
-        }
+        append_where(
+            &mut sql,
+            context.sources[0].separator_predicates.iter().cloned(),
+            filter,
+        );
         return sql;
     };
     let condition = conditions
@@ -1187,6 +1190,9 @@ fn resolve_join_source(
                 label: restriction_label(snapshot, &target),
                 identity_is_base: resolved.identity_is_base,
             });
+    let sql_alias = source
+        .alias
+        .map_or_else(|| default_alias.to_owned(), |token| token.lexeme.to_owned());
     let compiled_source = compile_source_relation(
         source,
         snapshot,
@@ -1194,6 +1200,7 @@ fn resolve_join_source(
         resolved.object,
         resolved.live_table,
         &resolved.fields,
+        &sql_alias,
         restriction.as_ref(),
         dialect,
     )?;
@@ -1201,13 +1208,12 @@ fn resolve_join_source(
         object: ObjectId::from(&resolved.object.guid),
         fields: compiled_source.fields,
         relation: compiled_source.sql,
-        sql_alias: source
-            .alias
-            .map_or_else(|| default_alias.to_owned(), |token| token.lexeme.to_owned()),
+        sql_alias,
         object_name: resolved.qualifier_name,
         source_alias: source.alias.map(|token| token.lexeme.to_owned()),
         identity_is_base: resolved.identity_is_base,
         reference_joins: Vec::new(),
+        separator_predicates: compiled_source.separators,
     })
 }
 
@@ -1772,8 +1778,14 @@ fn compile_directional_full_join(
         context.dialect.quote_identifier(&joined.sql_alias),
         condition,
     );
+    // The joined side is null-extended, so its separator filter belongs
+    // to the join condition; the base side is preserved and filtered below.
+    for predicate in &joined.separator_predicates {
+        sql.push_str(" AND ");
+        sql.push_str(predicate);
+    }
     append_joined_reference_joins(&mut sql, context);
-    let mut predicates = Vec::new();
+    let mut predicates = base.separator_predicates.clone();
     if let Some(anti_match) = anti_match {
         predicates.push(format!("({anti_match} IS NULL)"));
     }
@@ -1799,11 +1811,17 @@ fn compile_native_join(
     // before it, so every source carries its own dereference joins in a
     // parenthesized group. Without such a condition the flat list is kept.
     let grouped = context.dereference_in_join;
+    let placement = place_separator_predicates(joins, &context.sources);
     let mut sql = context.dialect.select_prefix(ast.distinct, ast.top);
     sql.push_str(&projections.join(", "));
     sql.push_str(" FROM ");
     sql.push_str(&render_join_source(context, &context.sources[0], grouped));
-    for ((join, condition), source) in joins.iter().zip(conditions).zip(&context.sources[1..]) {
+    for (index, ((join, condition), source)) in joins
+        .iter()
+        .zip(conditions)
+        .zip(&context.sources[1..])
+        .enumerate()
+    {
         let operator = match join.kind {
             JoinKind::Inner => "INNER JOIN",
             JoinKind::Left => "LEFT JOIN",
@@ -1816,15 +1834,69 @@ fn compile_native_join(
         sql.push_str(&render_join_source(context, source, grouped));
         sql.push_str(" ON ");
         sql.push_str(&condition.sql);
+        for predicate in &placement.on[index] {
+            sql.push_str(" AND ");
+            sql.push_str(predicate);
+        }
     }
     if !grouped {
         append_joined_reference_joins(&mut sql, context);
     }
-    if let Some(filter) = filter {
-        sql.push_str(" WHERE ");
-        sql.push_str(filter);
-    }
+    append_where(&mut sql, placement.filter.into_iter(), filter);
     sql
+}
+
+/// Where the separator predicates of a join chain go: `on[i]` extends the
+/// condition of join `i`, `filter` extends the statement `WHERE`.
+struct SeparatorPlacement {
+    on: Vec<Vec<String>>,
+    filter: Vec<String>,
+}
+
+/// A source keeps its own rows only until a later `RIGHT JOIN` null-extends
+/// it. A source introduced by `INNER`/`LEFT` is filtered in its own `ON`;
+/// the base source and a `RIGHT`-joined source are filtered in the `ON` of
+/// the next `RIGHT JOIN` that null-extends them, or in `WHERE` when none
+/// follows, so rows of other areas never survive as unmatched rows.
+fn place_separator_predicates(
+    joins: &[JoinAst<'_, '_>],
+    sources: &[SourceScope],
+) -> SeparatorPlacement {
+    let mut on = vec![Vec::new(); joins.len()];
+    let mut filter = Vec::new();
+    for (position, source) in sources.iter().enumerate() {
+        if source.separator_predicates.is_empty() {
+            continue;
+        }
+        let own_join = position.checked_sub(1);
+        let target = match own_join.map(|index| joins[index].kind) {
+            Some(JoinKind::Inner | JoinKind::Left) => own_join,
+            _ => joins
+                .iter()
+                .enumerate()
+                .skip(position)
+                .find(|(_, join)| join.kind == JoinKind::Right)
+                .map(|(index, _)| index),
+        };
+        match target {
+            Some(index) => on[index].extend(source.separator_predicates.iter().cloned()),
+            None => filter.extend(source.separator_predicates.iter().cloned()),
+        }
+    }
+    SeparatorPlacement { on, filter }
+}
+
+/// Appends `WHERE` with the separator predicates followed by the query's
+/// own filter, when any of them is present.
+fn append_where(sql: &mut String, separators: impl Iterator<Item = String>, filter: Option<&str>) {
+    let mut predicates = separators.collect::<Vec<_>>();
+    if let Some(filter) = filter {
+        predicates.push(filter.to_owned());
+    }
+    if !predicates.is_empty() {
+        sql.push_str(" WHERE ");
+        sql.push_str(&predicates.join(" AND "));
+    }
 }
 
 /// One source of a native join: bare, or grouped with its dereference
@@ -1868,6 +1940,10 @@ pub(super) fn append_reference_join(sql: &mut String, join: &JoinPlan, dialect: 
     sql.push_str(" = ");
     sql.push_str(&dialect.qualified_column(Some(&join.alias), &join.target_id_column));
     append_type_guard(sql, &join.source_alias, join, dialect);
+    for predicate in &join.target_predicates {
+        sql.push_str(" AND ");
+        sql.push_str(predicate);
+    }
 }
 
 fn append_type_guard(sql: &mut String, source_alias: &str, join: &JoinPlan, dialect: SqlDialect) {

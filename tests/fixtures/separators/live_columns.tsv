@@ -1,0 +1,14 @@
+_const61	_fld62rref	bytea	
+_const61	_fld56	numeric	7,0
+_const61	_fld57	numeric	7,0
+_const61	_recordkey	bytea	
+_reference53	_idrref	bytea	
+_reference53	_version	integer	32,0
+_reference53	_marked	boolean	
+_reference53	_predefinedid	bytea	
+_reference53	_code	USER-DEFINED	
+_reference53	_description	USER-DEFINED	
+_reference53	_fld54	USER-DEFINED	
+_reference53	_fld55rref	bytea	
+_reference53	_fld56	numeric	7,0
+_reference53	_fld57	numeric	7,0

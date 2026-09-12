@@ -3,6 +3,7 @@ use std::collections::BTreeSet;
 use super::context::{CompilationContext, SourceScope};
 use super::expression::{compile_expression, single_column, single_column_at};
 use super::params::render_scalar_parameter;
+use super::separators::separator_predicates;
 use super::sources::{CompiledSourceRelation, SourceRestriction, compile_restriction_predicate};
 use crate::Token;
 use crate::metadata::{
@@ -153,7 +154,7 @@ pub(super) fn compile_accumulation_relation(
             object,
             &dimension_fields,
             &resource_fields,
-            &live_table.name,
+            live_table,
             active_column,
             period_column,
             record_kind.expect("a balance register has RecordKind"),
@@ -221,6 +222,7 @@ pub(super) fn compile_accumulation_relation(
         catalog,
         object,
         &dimension_fields,
+        live_table,
         "__aggregate_base",
         restriction,
         dialect,
@@ -275,6 +277,7 @@ pub(super) fn compile_accumulation_relation(
     Ok(CompiledSourceRelation {
         sql: relation,
         fields: dimension_fields.into(),
+        separators: Vec::new(),
     })
 }
 
@@ -292,7 +295,7 @@ fn compile_accumulation_balance_relation(
     object: &MetadataObject,
     dimension_fields: &[QueryableField],
     resource_fields: &[QueryableField],
-    movement_table: &str,
+    movement_table: &LiveTable,
     active_column: &QueryableColumn,
     movement_period: &QueryableColumn,
     record_kind: &QueryableColumn,
@@ -327,6 +330,7 @@ fn compile_accumulation_balance_relation(
         catalog,
         object,
         dimension_fields,
+        totals.table,
         "__totals_base",
         restriction,
         dialect,
@@ -341,6 +345,7 @@ fn compile_accumulation_balance_relation(
             catalog,
             object,
             dimension_fields,
+            movement_table,
             "__movement_base",
             restriction,
             dialect,
@@ -353,7 +358,7 @@ fn compile_accumulation_balance_relation(
             active_column,
             movement_period,
             record_kind,
-            movement_table,
+            &movement_table.name,
             totals_condition.as_deref(),
             movement_condition.as_deref(),
             dialect,
@@ -377,6 +382,7 @@ fn compile_accumulation_balance_relation(
     Ok(CompiledSourceRelation {
         sql: relation,
         fields: fields.into(),
+        separators: Vec::new(),
     })
 }
 
@@ -495,11 +501,12 @@ fn compile_accumulation_condition(
     catalog: &CompilationCatalog<'_>,
     object: &MetadataObject,
     dimension_fields: &[QueryableField],
+    table: &LiveTable,
     alias: &str,
     restriction: Option<&SourceRestriction<'_>>,
     dialect: SqlDialect,
 ) -> Result<Option<String>, QueryDiagnostic> {
-    let mut predicates = Vec::new();
+    let mut predicates = separator_predicates(catalog, table, alias, virtual_table.token, dialect)?;
     if let Some(restriction) = restriction {
         let predicate = compile_restriction_predicate(
             restriction,
@@ -538,6 +545,7 @@ fn compile_accumulation_condition(
             source_alias: Some(alias.to_owned()),
             identity_is_base: true,
             reference_joins: Vec::new(),
+            separator_predicates: Vec::new(),
         }],
         dialect,
         aggregates_allowed: false,

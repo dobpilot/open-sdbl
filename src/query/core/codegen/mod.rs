@@ -7,6 +7,7 @@ mod expression;
 mod orchestrate;
 mod params;
 mod select;
+mod separators;
 mod sources;
 mod virtual_tables;
 

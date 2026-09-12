@@ -207,6 +207,7 @@ fn descriptor(resource: &str, object: &str, name: &str) -> ConfigDescriptor {
         comment: None,
         field_purpose: None,
         enumeration_value: false,
+        separation: None,
     }
 }
 
