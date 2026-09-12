@@ -6,13 +6,12 @@ use super::expression::{compile_expression, single_column, single_column_at};
 use super::params::render_scalar_parameter;
 use super::separators::separator_predicates;
 use super::sources::{CompiledSourceRelation, SourceRestriction, compile_restriction_predicate};
-use crate::Token;
 use crate::metadata::{
     ConfigFieldPurpose, FieldId, LiveColumn, LiveTable, MetadataKind, MetadataObject,
     MetadataSnapshot, ObjectId,
 };
 use crate::query::core::ast::{AccumulationAst, AccumulationKind, Expression, SourceAst};
-use crate::query::core::dialect::SqlDialect;
+use crate::query::core::dialect::{SqlDialect, compile_literal};
 use crate::query::core::names::names_equal;
 use crate::query::core::params::{ParameterValue, Parameters};
 use crate::query::core::resolve::{
@@ -20,6 +19,7 @@ use crate::query::core::resolve::{
     logical_column_name,
 };
 use crate::query::core::{QueryDiagnostic, QueryDiagnosticKind};
+use crate::{Token, TokenKind};
 
 #[allow(clippy::too_many_arguments)]
 pub(super) fn compile_accumulation_relation(
@@ -845,11 +845,12 @@ fn compile_virtual_period_literal(
 ) -> Result<String, QueryDiagnostic> {
     match expression {
         Expression::Literal(token) => dialect.datetime_literal(token),
-        Expression::DateTime { .. } | Expression::BeginOfPeriod { .. } => {
-            compile_constant_date_expression(expression, dialect)
-        }
-        Expression::Parameter(token) => {
-            compile_date_parameter(token, catalog.parameters(), dialect)
+        Expression::DateTime { .. }
+        | Expression::BeginOfPeriod { .. }
+        | Expression::EndOfPeriod { .. }
+        | Expression::DateAdd { .. }
+        | Expression::Parameter(_) => {
+            compile_constant_date_expression(expression, catalog.parameters(), dialect)
         }
         _ => Err(QueryDiagnostic::at(
             QueryDiagnosticKind::Metadata,
@@ -862,23 +863,73 @@ fn compile_virtual_period_literal(
     }
 }
 
+/// Compiles a virtual-table period in the storage date domain: `ДАТАВРЕМЯ`,
+/// a date parameter, or `НАЧАЛОПЕРИОДА`/`КОНЕЦПЕРИОДА`/`ДОБАВИТЬКДАТЕ` over
+/// those, the count of `ДОБАВИТЬКДАТЕ` being a numeric literal or parameter.
 pub(super) fn compile_constant_date_expression(
     expression: &Expression<'_, '_>,
+    parameters: Parameters<'_>,
     dialect: SqlDialect,
 ) -> Result<String, QueryDiagnostic> {
     match expression {
         Expression::DateTime { token, value } => dialect.datetime_expression(*value, true, token),
-        Expression::BeginOfPeriod {
-            token: _,
+        Expression::Parameter(token) => compile_date_parameter(token, parameters, dialect),
+        Expression::BeginOfPeriod { value, period, .. } => {
+            let value = compile_constant_date_expression(value, parameters, dialect)?;
+            Ok(dialect.begin_of_period(&value, *period))
+        }
+        Expression::EndOfPeriod { value, period, .. } => {
+            let value = compile_constant_date_expression(value, parameters, dialect)?;
+            Ok(dialect.end_of_period(&value, *period))
+        }
+        Expression::DateAdd {
+            token,
             value,
             period,
+            count,
         } => {
-            let value = compile_constant_date_expression(value, dialect)?;
-            Ok(dialect.begin_of_period(&value, *period))
+            let value = compile_constant_date_expression(value, parameters, dialect)?;
+            let count = compile_constant_count(count, token, parameters, dialect)?;
+            Ok(dialect.date_add(&value, *period, &count))
         }
         _ => Err(QueryDiagnostic::unpositioned(
             QueryDiagnosticKind::Metadata,
-            "date expression must be a constant DATETIME or BEGINOFPERIOD value",
+            "date expression must be a constant DATETIME, BEGINOFPERIOD, ENDOFPERIOD, or DATEADD value or a date parameter",
+        )),
+    }
+}
+
+/// The count of a `ДОБАВИТЬКДАТЕ` inside a virtual-table period: a numeric
+/// literal, optionally negated, or a numeric parameter.
+fn compile_constant_count(
+    count: &Expression<'_, '_>,
+    token: &Token<'_>,
+    parameters: Parameters<'_>,
+    dialect: SqlDialect,
+) -> Result<String, QueryDiagnostic> {
+    match count {
+        Expression::Literal(literal) if literal.kind == TokenKind::Number => {
+            compile_literal(literal, dialect)
+        }
+        Expression::Unary { operator, value } if operator.lexeme == "-" => {
+            let inner = compile_constant_count(value, token, parameters, dialect)?;
+            Ok(format!("(-{inner})"))
+        }
+        Expression::Parameter(parameter) => match parameters.lookup(parameter)? {
+            None => Ok("NULL".to_owned()),
+            Some(value @ ParameterValue::Number { .. }) => {
+                render_scalar_parameter(value, parameter, dialect, true)
+            }
+            Some(_) => Err(QueryDiagnostic::at(
+                QueryDiagnosticKind::Parameter,
+                Some(parameter),
+                format!("parameter {:?} must be a number", parameter.lexeme),
+            )),
+        },
+        _ => Err(QueryDiagnostic::at(
+            QueryDiagnosticKind::Metadata,
+            Some(token),
+            "DATEADD count in a virtual-table period must be a numeric literal or parameter",
         )),
     }
 }

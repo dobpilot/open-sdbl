@@ -435,6 +435,9 @@ pub(super) fn operand_token<'tokens, 'source>(
         Expression::Literal(token)
         | Expression::DateTime { token, .. }
         | Expression::BeginOfPeriod { token, .. }
+        | Expression::EndOfPeriod { token, .. }
+        | Expression::DateAdd { token, .. }
+        | Expression::DateDiff { token, .. }
         | Expression::MetadataValue { token, .. }
         | Expression::Uuid { token, .. }
         | Expression::Cast { token, .. }
@@ -803,7 +806,14 @@ pub(super) fn source_free_expression_kind(
             data_type: String::new(),
         },
         Expression::Literal(token) => literal_kind(token),
-        Expression::DateTime { .. } | Expression::BeginOfPeriod { .. } => ColumnKind::DateTime,
+        Expression::DateTime { .. }
+        | Expression::BeginOfPeriod { .. }
+        | Expression::EndOfPeriod { .. }
+        | Expression::DateAdd { .. } => ColumnKind::DateTime,
+        Expression::DateDiff { .. } => ColumnKind::Number {
+            precision: None,
+            scale: None,
+        },
         Expression::Uuid { .. } => ColumnKind::Uuid,
         Expression::Cast { target, .. } => scalar_cast_kind(*target),
         Expression::MetadataValue { kind, object, .. } => ColumnKind::Reference {
@@ -929,8 +939,36 @@ pub(super) fn compile_expression(
             value,
             period,
         } => {
-            let value = compile_date_operand(value, context, token)?;
+            let value = compile_date_operand(value, context, token, "first")?;
             Ok(context.dialect.begin_of_period(&value, *period))
+        }
+        Expression::EndOfPeriod {
+            token,
+            value,
+            period,
+        } => {
+            let value = compile_date_operand(value, context, token, "first")?;
+            Ok(context.dialect.end_of_period(&value, *period))
+        }
+        Expression::DateAdd {
+            token,
+            value,
+            period,
+            count,
+        } => {
+            let value = compile_date_operand(value, context, token, "first")?;
+            let count = compile_count_operand(count, context, token)?;
+            Ok(context.dialect.date_add(&value, *period, &count))
+        }
+        Expression::DateDiff {
+            token,
+            from,
+            to,
+            period,
+        } => {
+            let from = compile_date_operand(from, context, token, "first")?;
+            let to = compile_date_operand(to, context, token, "second")?;
+            Ok(context.dialect.date_diff(&from, &to, *period, true))
         }
         Expression::MetadataValue {
             token,
@@ -1457,15 +1495,17 @@ fn compile_date_operand(
     expression: &Expression<'_, '_>,
     context: &mut CompilationContext<'_, '_>,
     token: &Token<'_>,
+    position: &str,
 ) -> Result<String, QueryDiagnostic> {
+    let name = function_name(token);
     if let Expression::Field(reference) = expression {
         let resolved = context.resolve(reference)?;
         let column = single_column(resolved.field(), reference.last())?;
-        if !is_date_sql_type(&column.data_type) {
+        if column.kind != ColumnKind::DateTime && !is_date_sql_type(&column.data_type) {
             return Err(QueryDiagnostic::at(
                 QueryDiagnosticKind::Syntax,
                 Some(token),
-                "BEGINOFPERIOD first argument must resolve to a date field",
+                format!("{name} {position} argument must resolve to a date field"),
             ));
         }
         return Ok(context.sql_column(&resolved, column));
@@ -1477,8 +1517,47 @@ fn compile_date_operand(
     Err(QueryDiagnostic::at(
         QueryDiagnosticKind::Syntax,
         Some(token),
-        "BEGINOFPERIOD first argument must be a date expression",
+        format!("{name} {position} argument must be a date expression"),
     ))
+}
+
+/// Compiles the count of `ДОБАВИТЬКДАТЕ`, which must be numeric: a number
+/// kind, a parameter of unknown value, or a `NULL`.
+fn compile_count_operand(
+    expression: &Expression<'_, '_>,
+    context: &mut CompilationContext<'_, '_>,
+    token: &Token<'_>,
+) -> Result<String, QueryDiagnostic> {
+    let sql = compile_expression(expression, context)?;
+    let kind = expression_kind(expression, context)?;
+    if is_count_kind(&kind) {
+        return Ok(sql);
+    }
+    Err(count_diagnostic(token))
+}
+
+/// Whether a kind may serve as the count of `ДОБАВИТЬКДАТЕ`.
+pub(super) fn is_count_kind(kind: &ColumnKind) -> bool {
+    matches!(
+        kind,
+        ColumnKind::Number { .. } | ColumnKind::Null | ColumnKind::Unknown { .. }
+    )
+}
+
+pub(super) fn count_diagnostic(token: &Token<'_>) -> QueryDiagnostic {
+    QueryDiagnostic::at(
+        QueryDiagnosticKind::Syntax,
+        Some(token),
+        format!("{} count must be a number", function_name(token)),
+    )
+}
+
+/// The stable English name of a function keyword token, for diagnostics.
+pub(super) fn function_name(token: &Token<'_>) -> &'static str {
+    match token.kind {
+        TokenKind::Keyword(keyword) => keyword.as_str(),
+        _ => "function",
+    }
 }
 
 fn is_date_sql_type(data_type: &str) -> bool {

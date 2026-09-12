@@ -155,6 +155,41 @@ pub(super) fn compile_literal(
     }
 }
 
+/// The PostgreSQL interval spelling of one period.
+const fn postgres_interval(period: PeriodKind) -> &'static str {
+    match period {
+        PeriodKind::Second => "1 second",
+        PeriodKind::Minute => "1 minute",
+        PeriodKind::Hour => "1 hour",
+        PeriodKind::Day => "1 day",
+        PeriodKind::Week => "7 days",
+        PeriodKind::TenDays => "10 days",
+        PeriodKind::Month => "1 month",
+        PeriodKind::Quarter => "3 months",
+        PeriodKind::HalfYear => "6 months",
+        PeriodKind::Year => "1 year",
+    }
+}
+
+/// The `DATEADD`/`DATEDIFF` unit of a period SQL Server knows natively;
+/// ten-day and half-year periods are composed from days and months by the
+/// callers.
+fn mssql_unit(period: PeriodKind) -> &'static str {
+    match period {
+        PeriodKind::Second => "second",
+        PeriodKind::Minute => "minute",
+        PeriodKind::Hour => "hour",
+        PeriodKind::Day => "day",
+        PeriodKind::Week => "week",
+        PeriodKind::Month => "month",
+        PeriodKind::Quarter => "quarter",
+        PeriodKind::Year => "year",
+        PeriodKind::TenDays | PeriodKind::HalfYear => {
+            unreachable!("composed from days and months by the caller")
+        }
+    }
+}
+
 impl SqlDialect {
     pub(crate) const fn mssql(year_offset: i32, dialect_level: MsSqlDialectLevel) -> Self {
         Self::MsSql {
@@ -230,6 +265,9 @@ impl SqlDialect {
         const BASE: &str = "CONVERT(datetime2, '00010101', 112)";
         let day = format!("CONVERT(datetime2, CONVERT(date, {value}))");
         match period {
+            PeriodKind::Second => {
+                format!("DATEADD(second, DATEDIFF(second, {day}, {value}), {day})")
+            }
             PeriodKind::Minute => {
                 format!("DATEADD(minute, DATEDIFF(minute, {day}, {value}), {day})")
             }
@@ -475,6 +513,9 @@ impl SqlDialect {
                 ..
             } => Self::begin_of_period_sql_2008(value, period),
             Self::MsSql { .. } => match period {
+                PeriodKind::Second => format!(
+                    "DATETIME2FROMPARTS(YEAR({value}), MONTH({value}), DAY({value}), DATEPART(hour, {value}), DATEPART(minute, {value}), DATEPART(second, {value}), 0, 0)"
+                ),
                 PeriodKind::Minute => format!(
                     "DATETIME2FROMPARTS(YEAR({value}), MONTH({value}), DAY({value}), DATEPART(hour, {value}), DATEPART(minute, {value}), 0, 0, 0)"
                 ),
@@ -503,6 +544,140 @@ impl SqlDialect {
                     format!("DATETIME2FROMPARTS(YEAR({value}), 1, 1, 0, 0, 0, 0, 0)")
                 }
             },
+        }
+    }
+
+    /// `КОНЕЦПЕРИОДА`: the last second of the period, rendered as the
+    /// beginning of the next period minus one second. A ten-day period ends
+    /// on the 10th, the 20th, or the last day of the month.
+    pub(super) fn end_of_period(self, value: &str, period: PeriodKind) -> String {
+        let begin = self.begin_of_period(value, period);
+        match self {
+            Self::Postgres => {
+                let next = match period {
+                    PeriodKind::TenDays => format!(
+                        "CASE WHEN EXTRACT(DAY FROM {value}) > 20 THEN date_trunc('month', {value}) + INTERVAL '1 month' ELSE {begin} + INTERVAL '10 days' END"
+                    ),
+                    other => format!("{begin} + INTERVAL '{}'", postgres_interval(other)),
+                };
+                format!("({next} - INTERVAL '1 second')")
+            }
+            Self::MsSql { .. } => {
+                let next = match period {
+                    PeriodKind::TenDays => format!(
+                        "CASE WHEN DAY({value}) <= 20 THEN DATEADD(day, 10, {begin}) ELSE DATEADD(month, 1, {}) END",
+                        self.begin_of_period(value, PeriodKind::Month)
+                    ),
+                    PeriodKind::HalfYear => format!("DATEADD(month, 6, {begin})"),
+                    other => format!("DATEADD({}, 1, {begin})", mssql_unit(other)),
+                };
+                format!("DATEADD(second, -1, {next})")
+            }
+        }
+    }
+
+    /// `ДОБАВИТЬКДАТЕ`: shifts a date by `count` periods. The count is
+    /// rounded half away from zero for second through month and truncated
+    /// for ten-day, quarter, half-year, and year periods, as the platform
+    /// does; month-based shifts clamp to the end of the target month.
+    pub(super) fn date_add(self, value: &str, period: PeriodKind, count: &str) -> String {
+        let truncates = matches!(
+            period,
+            PeriodKind::TenDays | PeriodKind::Quarter | PeriodKind::HalfYear | PeriodKind::Year
+        );
+        match self {
+            Self::Postgres => {
+                let count = if truncates {
+                    format!("CAST(trunc(CAST({count} AS numeric)) AS integer)")
+                } else {
+                    format!("CAST({count} AS integer)")
+                };
+                format!(
+                    "({value} + {count} * INTERVAL '{}')",
+                    postgres_interval(period)
+                )
+            }
+            Self::MsSql { .. } => {
+                let count = if truncates {
+                    format!("CONVERT(int, ROUND(CONVERT(numeric(38, 10), {count}), 0, 1))")
+                } else {
+                    format!("CONVERT(int, ROUND(CONVERT(numeric(38, 10), {count}), 0))")
+                };
+                match period {
+                    PeriodKind::TenDays => format!("DATEADD(day, {count} * 10, {value})"),
+                    PeriodKind::HalfYear => format!("DATEADD(month, {count} * 6, {value})"),
+                    other => format!("DATEADD({}, {count}, {value})", mssql_unit(other)),
+                }
+            }
+        }
+    }
+
+    /// `РАЗНОСТЬДАТ`: the number of period boundaries crossed from `from`
+    /// to `to`, negative when `to` is earlier, as SQL Server's `DATEDIFF`
+    /// counts them. Seconds, minutes, and hours are assembled from a day
+    /// difference so that they fit 64 bits over the whole 1C date range on
+    /// every dialect level. On MSSQL with a year offset the operands of a
+    /// storage-domain expression are shifted to the logical date first.
+    pub(super) fn date_diff(
+        self,
+        from: &str,
+        to: &str,
+        period: PeriodKind,
+        storage_domain: bool,
+    ) -> String {
+        match self {
+            Self::Postgres => match period {
+                PeriodKind::Second => {
+                    format!("CAST(EXTRACT(EPOCH FROM ({to} - {from})) AS bigint)")
+                }
+                PeriodKind::Minute => format!(
+                    "(CAST(EXTRACT(EPOCH FROM (date_trunc('minute', {to}) - date_trunc('minute', {from}))) AS bigint) / 60)"
+                ),
+                PeriodKind::Hour => format!(
+                    "(CAST(EXTRACT(EPOCH FROM (date_trunc('hour', {to}) - date_trunc('hour', {from}))) AS bigint) / 3600)"
+                ),
+                PeriodKind::Day => format!("(CAST({to} AS date) - CAST({from} AS date))"),
+                PeriodKind::Month => format!(
+                    "CAST((EXTRACT(YEAR FROM {to}) - EXTRACT(YEAR FROM {from})) * 12 + EXTRACT(MONTH FROM {to}) - EXTRACT(MONTH FROM {from}) AS integer)"
+                ),
+                PeriodKind::Quarter => format!(
+                    "CAST((EXTRACT(YEAR FROM {to}) - EXTRACT(YEAR FROM {from})) * 4 + EXTRACT(QUARTER FROM {to}) - EXTRACT(QUARTER FROM {from}) AS integer)"
+                ),
+                PeriodKind::Year => {
+                    format!("CAST(EXTRACT(YEAR FROM {to}) - EXTRACT(YEAR FROM {from}) AS integer)")
+                }
+                PeriodKind::Week | PeriodKind::TenDays | PeriodKind::HalfYear => {
+                    unreachable!("the parser accepts only DIFFERENCE periods")
+                }
+            },
+            Self::MsSql { .. } => {
+                let (from, to) = if storage_domain {
+                    (self.date_scalar(from), self.date_scalar(to))
+                } else {
+                    (from.to_owned(), to.to_owned())
+                };
+                match period {
+                    PeriodKind::Second | PeriodKind::Minute | PeriodKind::Hour => {
+                        let (unit, per_day) = match period {
+                            PeriodKind::Second => ("second", 86_400),
+                            PeriodKind::Minute => ("minute", 1_440),
+                            _ => ("hour", 24),
+                        };
+                        format!(
+                            "(DATEDIFF(day, CONVERT(date, {from}), CONVERT(date, {to})) * CAST({per_day} AS bigint) + DATEDIFF({unit}, CONVERT(date, {to}), {to}) - DATEDIFF({unit}, CONVERT(date, {from}), {from}))"
+                        )
+                    }
+                    PeriodKind::Day
+                    | PeriodKind::Month
+                    | PeriodKind::Quarter
+                    | PeriodKind::Year => {
+                        format!("DATEDIFF({}, {from}, {to})", mssql_unit(period))
+                    }
+                    PeriodKind::Week | PeriodKind::TenDays | PeriodKind::HalfYear => {
+                        unreachable!("the parser accepts only DIFFERENCE periods")
+                    }
+                }
+            }
         }
     }
 

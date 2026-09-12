@@ -43,6 +43,9 @@ fn is_contextual_identifier(kind: TokenKind) -> bool {
                     | Keyword::Turnovers
                     | Keyword::DateTime
                     | Keyword::BeginOfPeriod
+                    | Keyword::EndOfPeriod
+                    | Keyword::DateAdd
+                    | Keyword::DateDiff
                     | Keyword::Value
                     | Keyword::Uuid
                     | Keyword::Cast
@@ -1001,7 +1004,16 @@ impl<'tokens, 'source> Parser<'tokens, 'source> {
                 return self.parse_datetime(token);
             }
             if let Some(token) = self.consume_keyword_token(Keyword::BeginOfPeriod) {
-                return self.parse_begin_of_period(token);
+                return self.parse_period_boundary(token, false);
+            }
+            if let Some(token) = self.consume_keyword_token(Keyword::EndOfPeriod) {
+                return self.parse_period_boundary(token, true);
+            }
+            if let Some(token) = self.consume_keyword_token(Keyword::DateAdd) {
+                return self.parse_date_add(token);
+            }
+            if let Some(token) = self.consume_keyword_token(Keyword::DateDiff) {
+                return self.parse_date_diff(token);
             }
             if let Some(token) = self.consume_keyword_token(Keyword::Value) {
                 return self.parse_metadata_value(token);
@@ -1245,10 +1257,92 @@ impl<'tokens, 'source> Parser<'tokens, 'source> {
         Ok(Expression::DateTime { token, value })
     }
 
-    fn parse_begin_of_period(
+    /// Parses `НАЧАЛОПЕРИОДА(<date>, <period>)` or `КОНЕЦПЕРИОДА(<date>,
+    /// <period>)` after the keyword.
+    fn parse_period_boundary(
+        &mut self,
+        token: &'tokens Token<'source>,
+        end: bool,
+    ) -> Result<Expression<'tokens, 'source>, QueryDiagnostic> {
+        self.enter_function(token)?;
+        let result = (|| {
+            self.expect_lexeme("(")?;
+            let value = self.parse_or()?;
+            self.expect_lexeme(",")?;
+            let period = self.expect_period_kind(token, &PeriodKind::BOUNDARY)?;
+            self.expect_lexeme(")")?;
+            let value = Box::new(value);
+            Ok(if end {
+                Expression::EndOfPeriod {
+                    token,
+                    value,
+                    period,
+                }
+            } else {
+                Expression::BeginOfPeriod {
+                    token,
+                    value,
+                    period,
+                }
+            })
+        })();
+        self.depth -= 1;
+        result
+    }
+
+    /// Parses `ДОБАВИТЬКДАТЕ(<date>, <period>, <count>)` after the keyword.
+    fn parse_date_add(
         &mut self,
         token: &'tokens Token<'source>,
     ) -> Result<Expression<'tokens, 'source>, QueryDiagnostic> {
+        self.enter_function(token)?;
+        let result = (|| {
+            self.expect_lexeme("(")?;
+            let value = self.parse_or()?;
+            self.expect_lexeme(",")?;
+            let period = self.expect_period_kind(token, &PeriodKind::SHIFT)?;
+            self.expect_lexeme(",")?;
+            let count = self.parse_or()?;
+            self.expect_lexeme(")")?;
+            Ok(Expression::DateAdd {
+                token,
+                value: Box::new(value),
+                period,
+                count: Box::new(count),
+            })
+        })();
+        self.depth -= 1;
+        result
+    }
+
+    /// Parses `РАЗНОСТЬДАТ(<from>, <to>, <unit>)` after the keyword.
+    fn parse_date_diff(
+        &mut self,
+        token: &'tokens Token<'source>,
+    ) -> Result<Expression<'tokens, 'source>, QueryDiagnostic> {
+        self.enter_function(token)?;
+        let result = (|| {
+            self.expect_lexeme("(")?;
+            let from = self.parse_or()?;
+            self.expect_lexeme(",")?;
+            let to = self.parse_or()?;
+            self.expect_lexeme(",")?;
+            let period = self.expect_period_kind(token, &PeriodKind::DIFFERENCE)?;
+            self.expect_lexeme(")")?;
+            Ok(Expression::DateDiff {
+                token,
+                from: Box::new(from),
+                to: Box::new(to),
+                period,
+            })
+        })();
+        self.depth -= 1;
+        result
+    }
+
+    /// Charges one nesting level for a function whose arguments recurse into
+    /// expressions; the caller restores the depth after parsing.
+    fn enter_function(&mut self, token: &'tokens Token<'source>) -> Result<(), QueryDiagnostic> {
         if self.depth >= Self::MAX_DEPTH {
             return Err(QueryDiagnostic::at(
                 QueryDiagnosticKind::TooDeep,
@@ -1257,34 +1351,41 @@ impl<'tokens, 'source> Parser<'tokens, 'source> {
             ));
         }
         self.depth += 1;
-        let result = (|| {
-            self.expect_lexeme("(")?;
-            let value = self.parse_or()?;
-            self.expect_lexeme(",")?;
-            Ok(Expression::BeginOfPeriod {
-                token,
-                value: Box::new(value),
-                period: self.expect_period_kind()?,
-            })
-        })();
-        self.depth -= 1;
-        result
+        Ok(())
     }
 
-    /// The period-kind argument and closing parenthesis of
-    /// `НАЧАЛОПЕРИОДА`. Extracted so that its diagnostics do not enlarge the
-    /// frame of the deep expression recursion.
+    /// The period-kind argument of a date function: an unknown name is an
+    /// `UnsupportedFeature`, a known period the function does not accept is
+    /// a `Syntax` diagnostic. Extracted so that its diagnostics do not
+    /// enlarge the frame of the deep expression recursion.
     #[inline(never)]
-    fn expect_period_kind(&mut self) -> Result<PeriodKind, QueryDiagnostic> {
+    fn expect_period_kind(
+        &mut self,
+        function: &Token<'_>,
+        allowed: &[PeriodKind],
+    ) -> Result<PeriodKind, QueryDiagnostic> {
+        let name = match function.kind {
+            TokenKind::Keyword(keyword) => keyword.as_str(),
+            _ => "date function",
+        };
         let token = self.expect_identifier("expected period kind after ','")?;
         let period = PeriodKind::from_name(token.lexeme).ok_or_else(|| {
             QueryDiagnostic::at(
                 QueryDiagnosticKind::UnsupportedFeature,
                 Some(token),
-                format!("unsupported BEGINOFPERIOD period {:?}", token.lexeme),
+                format!("unsupported {name} period {:?}", token.lexeme),
             )
         })?;
-        self.expect_lexeme(")")?;
+        if !allowed.contains(&period) {
+            return Err(QueryDiagnostic::at(
+                QueryDiagnosticKind::Syntax,
+                Some(token),
+                format!(
+                    "{name} does not accept the {} period",
+                    period.display_name()
+                ),
+            ));
+        }
         Ok(period)
     }
 

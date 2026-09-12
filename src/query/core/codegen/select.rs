@@ -64,6 +64,7 @@ pub(super) fn compile_branch(
             dialect,
             widen,
             catalog.parameters(),
+            storage_domain,
         );
     };
     let joins = ast.joins.as_slice();
@@ -449,7 +450,7 @@ fn derived_data_type(kind: &ColumnKind, dialect: SqlDialect) -> String {
         }
         ColumnKind::DateTime => {
             if postgres {
-                "timestamp"
+                "timestamp without time zone"
             } else {
                 "datetime2"
             }
@@ -962,6 +963,32 @@ fn fingerprint_into(expression: &Expression<'_, '_>, output: &mut String) {
             fingerprint_into(value, output);
             output.push(')');
         }
+        Expression::EndOfPeriod { value, period, .. } => {
+            output.push_str(&format!("EOP({period:?},"));
+            fingerprint_into(value, output);
+            output.push(')');
+        }
+        Expression::DateAdd {
+            value,
+            period,
+            count,
+            ..
+        } => {
+            output.push_str(&format!("DADD({period:?},"));
+            fingerprint_into(value, output);
+            output.push(',');
+            fingerprint_into(count, output);
+            output.push(')');
+        }
+        Expression::DateDiff {
+            from, to, period, ..
+        } => {
+            output.push_str(&format!("DDIFF({period:?},"));
+            fingerprint_into(from, output);
+            output.push(',');
+            fingerprint_into(to, output);
+            output.push(')');
+        }
         Expression::MetadataValue {
             kind,
             object,
@@ -1400,8 +1427,17 @@ fn validate_direct_join_condition_fields(
                 ));
             }
             Expression::BeginOfPeriod { value, .. }
+            | Expression::EndOfPeriod { value, .. }
             | Expression::Unary { value, .. }
             | Expression::IsNull { value, .. } => pending.push(value),
+            Expression::DateAdd { value, count, .. } => {
+                pending.push(count);
+                pending.push(value);
+            }
+            Expression::DateDiff { from, to, .. } => {
+                pending.push(to);
+                pending.push(from);
+            }
             Expression::Binary { left, right, .. } => {
                 pending.push(right);
                 pending.push(left);

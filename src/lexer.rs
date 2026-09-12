@@ -109,6 +109,12 @@ pub enum Keyword {
     DateTime,
     /// `НАЧАЛОПЕРИОДА` or `BEGINOFPERIOD`.
     BeginOfPeriod,
+    /// `КОНЕЦПЕРИОДА` or `ENDOFPERIOD`.
+    EndOfPeriod,
+    /// `ДОБАВИТЬКДАТЕ` or `DATEADD`.
+    DateAdd,
+    /// `РАЗНОСТЬДАТ` or `DATEDIFF`.
+    DateDiff,
     /// `ЗНАЧЕНИЕ` or `VALUE`.
     Value,
     /// `УНИКАЛЬНЫЙИДЕНТИФИКАТОР` or `UUID`.
@@ -184,6 +190,9 @@ impl Keyword {
             Self::Turnovers => "TURNOVERS",
             Self::DateTime => "DATETIME",
             Self::BeginOfPeriod => "BEGINOFPERIOD",
+            Self::EndOfPeriod => "ENDOFPERIOD",
+            Self::DateAdd => "DATEADD",
+            Self::DateDiff => "DATEDIFF",
             Self::Value => "VALUE",
             Self::Uuid => "UUID",
             Self::Cast => "CAST",
@@ -573,7 +582,7 @@ fn is_identifier_continue(character: char) -> bool {
     character == '_' || character.is_alphanumeric()
 }
 
-const KEYWORDS: [(Keyword, &str, &str); 57] = [
+const KEYWORDS: [(Keyword, &str, &str); 60] = [
     (Keyword::Select, "ВЫБРАТЬ", "SELECT"),
     (Keyword::From, "ИЗ", "FROM"),
     (Keyword::Where, "ГДЕ", "WHERE"),
@@ -624,6 +633,9 @@ const KEYWORDS: [(Keyword, &str, &str); 57] = [
     (Keyword::Turnovers, "ОБОРОТЫ", "TURNOVERS"),
     (Keyword::DateTime, "ДАТАВРЕМЯ", "DATETIME"),
     (Keyword::BeginOfPeriod, "НАЧАЛОПЕРИОДА", "BEGINOFPERIOD"),
+    (Keyword::EndOfPeriod, "КОНЕЦПЕРИОДА", "ENDOFPERIOD"),
+    (Keyword::DateAdd, "ДОБАВИТЬКДАТЕ", "DATEADD"),
+    (Keyword::DateDiff, "РАЗНОСТЬДАТ", "DATEDIFF"),
     (Keyword::Value, "ЗНАЧЕНИЕ", "VALUE"),
     (Keyword::Uuid, "УНИКАЛЬНЫЙИДЕНТИФИКАТОР", "UUID"),
     (Keyword::Cast, "ВЫРАЗИТЬ", "CAST"),

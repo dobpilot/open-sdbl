@@ -276,6 +276,26 @@ pub(super) enum Expression<'tokens, 'source> {
         value: Box<Self>,
         period: PeriodKind,
     },
+    /// `КОНЕЦПЕРИОДА(<date>, <period>)`.
+    EndOfPeriod {
+        token: &'tokens Token<'source>,
+        value: Box<Self>,
+        period: PeriodKind,
+    },
+    /// `ДОБАВИТЬКДАТЕ(<date>, <period>, <count>)`.
+    DateAdd {
+        token: &'tokens Token<'source>,
+        value: Box<Self>,
+        period: PeriodKind,
+        count: Box<Self>,
+    },
+    /// `РАЗНОСТЬДАТ(<from>, <to>, <period>)`.
+    DateDiff {
+        token: &'tokens Token<'source>,
+        from: Box<Self>,
+        to: Box<Self>,
+        period: PeriodKind,
+    },
     MetadataValue {
         token: &'tokens Token<'source>,
         kind: &'tokens Token<'source>,
@@ -393,6 +413,7 @@ pub(super) struct DateTimeValue {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum PeriodKind {
+    Second,
     Minute,
     Hour,
     Day,
@@ -405,8 +426,47 @@ pub(super) enum PeriodKind {
 }
 
 impl PeriodKind {
+    /// The periods `НАЧАЛОПЕРИОДА` and `КОНЕЦПЕРИОДА` accept.
+    pub(super) const BOUNDARY: [Self; 9] = [
+        Self::Minute,
+        Self::Hour,
+        Self::Day,
+        Self::Week,
+        Self::TenDays,
+        Self::Month,
+        Self::Quarter,
+        Self::HalfYear,
+        Self::Year,
+    ];
+
+    /// The periods `ДОБАВИТЬКДАТЕ` accepts.
+    pub(super) const SHIFT: [Self; 10] = [
+        Self::Second,
+        Self::Minute,
+        Self::Hour,
+        Self::Day,
+        Self::Week,
+        Self::TenDays,
+        Self::Month,
+        Self::Quarter,
+        Self::HalfYear,
+        Self::Year,
+    ];
+
+    /// The units `РАЗНОСТЬДАТ` accepts.
+    pub(super) const DIFFERENCE: [Self; 7] = [
+        Self::Second,
+        Self::Minute,
+        Self::Hour,
+        Self::Day,
+        Self::Month,
+        Self::Quarter,
+        Self::Year,
+    ];
+
     pub(super) fn from_name(name: &str) -> Option<Self> {
         match name.to_uppercase().as_str() {
+            "СЕКУНДА" | "SECOND" => Some(Self::Second),
             "МИНУТА" | "MINUTE" => Some(Self::Minute),
             "ЧАС" | "HOUR" => Some(Self::Hour),
             "ДЕНЬ" | "DAY" => Some(Self::Day),
@@ -420,8 +480,25 @@ impl PeriodKind {
         }
     }
 
+    /// The English spelling used in diagnostics.
+    pub(super) const fn display_name(self) -> &'static str {
+        match self {
+            Self::Second => "SECOND",
+            Self::Minute => "MINUTE",
+            Self::Hour => "HOUR",
+            Self::Day => "DAY",
+            Self::Week => "WEEK",
+            Self::TenDays => "TENDAYS",
+            Self::Month => "MONTH",
+            Self::Quarter => "QUARTER",
+            Self::HalfYear => "HALFYEAR",
+            Self::Year => "YEAR",
+        }
+    }
+
     pub(super) const fn postgres_name(self) -> Option<&'static str> {
         match self {
+            Self::Second => Some("second"),
             Self::Minute => Some("minute"),
             Self::Hour => Some("hour"),
             Self::Day => Some("day"),

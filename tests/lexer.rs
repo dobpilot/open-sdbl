@@ -1,6 +1,6 @@
 use open_sdbl::{DiagnosticKind, Keyword, Lexer, TokenKind, tokenize};
 
-const KEYWORD_ALIASES: [(Keyword, &str, &str); 57] = [
+const KEYWORD_ALIASES: [(Keyword, &str, &str); 60] = [
     (Keyword::Select, "ВЫБРАТЬ", "SELECT"),
     (Keyword::From, "ИЗ", "FROM"),
     (Keyword::Where, "ГДЕ", "WHERE"),
@@ -51,6 +51,9 @@ const KEYWORD_ALIASES: [(Keyword, &str, &str); 57] = [
     (Keyword::Turnovers, "ОБОРОТЫ", "TURNOVERS"),
     (Keyword::DateTime, "ДАТАВРЕМЯ", "DATETIME"),
     (Keyword::BeginOfPeriod, "НАЧАЛОПЕРИОДА", "BEGINOFPERIOD"),
+    (Keyword::EndOfPeriod, "КОНЕЦПЕРИОДА", "ENDOFPERIOD"),
+    (Keyword::DateAdd, "ДОБАВИТЬКДАТЕ", "DATEADD"),
+    (Keyword::DateDiff, "РАЗНОСТЬДАТ", "DATEDIFF"),
     (Keyword::Value, "ЗНАЧЕНИЕ", "VALUE"),
     (Keyword::Uuid, "УНИКАЛЬНЫЙИДЕНТИФИКАТОР", "UUID"),
     (Keyword::Cast, "ВЫРАЗИТЬ", "CAST"),
@@ -94,7 +97,7 @@ fn recognizes_russian_and_english_keywords_case_insensitively() {
 
 #[test]
 fn recognizes_the_complete_bilingual_keyword_table() {
-    assert_eq!(KEYWORD_ALIASES.len(), 57);
+    assert_eq!(KEYWORD_ALIASES.len(), 60);
     for (index, (keyword, russian, english)) in KEYWORD_ALIASES.into_iter().enumerate() {
         assert!(
             KEYWORD_ALIASES[..index]
@@ -203,6 +206,23 @@ fn recognizes_date_functions_bilingually() {
     assert_eq!(tokens[1].kind, TokenKind::Keyword(Keyword::DateTime));
     assert_eq!(tokens[2].kind, TokenKind::Keyword(Keyword::BeginOfPeriod));
     assert_eq!(tokens[3].kind, TokenKind::Keyword(Keyword::BeginOfPeriod));
+}
+
+#[test]
+fn recognizes_period_arithmetic_keywords_bilingually() {
+    let tokens =
+        tokenize("КонецПериода ENDOFPERIOD ДобавитьКДате dateadd РазностьДат DATEDIFF").unwrap();
+
+    assert_eq!(tokens[0].kind, TokenKind::Keyword(Keyword::EndOfPeriod));
+    assert_eq!(tokens[1].kind, TokenKind::Keyword(Keyword::EndOfPeriod));
+    assert_eq!(tokens[2].kind, TokenKind::Keyword(Keyword::DateAdd));
+    assert_eq!(tokens[3].kind, TokenKind::Keyword(Keyword::DateAdd));
+    assert_eq!(tokens[4].kind, TokenKind::Keyword(Keyword::DateDiff));
+    assert_eq!(tokens[5].kind, TokenKind::Keyword(Keyword::DateDiff));
+    assert_eq!(tokens[0].lexeme, "КонецПериода");
+    assert_eq!(Keyword::EndOfPeriod.as_str(), "ENDOFPERIOD");
+    assert_eq!(Keyword::DateAdd.as_str(), "DATEADD");
+    assert_eq!(Keyword::DateDiff.as_str(), "DATEDIFF");
 }
 
 #[test]
