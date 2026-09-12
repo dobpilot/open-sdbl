@@ -95,6 +95,8 @@ pub(super) struct SourceAst<'tokens, 'source> {
     pub(super) nested: Option<Box<QueryAst<'tokens, 'source>>>,
     /// A bare identifier naming a temporary table of the batch.
     pub(super) temporary: bool,
+    /// The `Константы`/`Constants` table: one row with every constant.
+    pub(super) constants: bool,
 }
 
 #[derive(Debug)]

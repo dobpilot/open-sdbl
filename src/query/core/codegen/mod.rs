@@ -1,6 +1,7 @@
 //! Backend-neutral SQL generation.
 
 mod batch;
+mod constants;
 mod context;
 mod entry;
 mod expression;

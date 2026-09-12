@@ -25,8 +25,8 @@ pub use core::{
     InvalidParameterDate, ParameterDate, ParameterValue, PresentationExpression, PresentationPlan,
     PresentationRequest, PresentationTarget, QueryDiagnostic, QueryDiagnosticKind, QueryParameter,
     QueryableColumn, QueryableField, QueryableFieldCatalog, RestrictionRequest, RestrictionTarget,
-    SessionParameters, TempTable, TempTablesManager, find_metadata_object, queryable_field_catalog,
-    queryable_fields,
+    SessionParameters, TempTable, TempTablesManager, constants_table_fields, find_metadata_object,
+    queryable_field_catalog, queryable_fields,
 };
 pub use mssql::{InvalidMsSqlYearOffset, MsSqlBackend, MsSqlDialectLevel};
 pub use postgres::PostgresBackend;

@@ -306,6 +306,18 @@ impl<'tokens, 'source> Parser<'tokens, 'source> {
 
     /// A bare identifier without a following `.` names a temporary table;
     /// metadata sources are always written as `Вид.Имя`.
+    /// `Константы`/`Constants` not followed by `.`: the constants table.
+    fn next_is_constants_source(&self) -> bool {
+        self.peek().is_some_and(|token| {
+            is_contextual_identifier(token.kind)
+                && (names_equal(token.lexeme, "Константы")
+                    || names_equal(token.lexeme, "Constants"))
+        }) && self
+            .tokens
+            .get(self.offset + 1)
+            .is_none_or(|token| token.lexeme != ".")
+    }
+
     fn next_is_temporary_source(&self) -> bool {
         self.peek()
             .is_some_and(|token| is_contextual_identifier(token.kind))
@@ -570,6 +582,31 @@ impl<'tokens, 'source> Parser<'tokens, 'source> {
                 alias: Some(alias),
                 nested: Some(Box::new(nested)),
                 temporary: false,
+                constants: false,
+            });
+        }
+        if self.next_is_constants_source() {
+            let name = self.next().expect("checked identifier");
+            let alias = if self.consume_keyword(Keyword::As) {
+                Some(self.expect_identifier("expected source alias after AS")?)
+            } else if self
+                .peek()
+                .is_some_and(|token| token.kind == TokenKind::Identifier)
+            {
+                self.next()
+            } else {
+                None
+            };
+            return Ok(SourceAst {
+                kind: name,
+                object: name,
+                table_part: None,
+                slice: None,
+                accumulation: None,
+                alias,
+                nested: None,
+                temporary: false,
+                constants: true,
             });
         }
         if self.next_is_temporary_source() {
@@ -593,6 +630,7 @@ impl<'tokens, 'source> Parser<'tokens, 'source> {
                 alias,
                 nested: None,
                 temporary: true,
+                constants: false,
             });
         }
         let kind = self.expect_identifier("expected metadata kind after FROM")?;
@@ -657,6 +695,7 @@ impl<'tokens, 'source> Parser<'tokens, 'source> {
             table_part,
             nested: None,
             temporary: false,
+            constants: false,
             slice,
             accumulation,
             alias,

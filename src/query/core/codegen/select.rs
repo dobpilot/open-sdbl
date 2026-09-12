@@ -1,3 +1,4 @@
+use super::constants::{constants_source_scope, finalize_constants_relation};
 use super::context::{
     CompilationContext, CompiledBranch, JoinPlan, ProjectedMember, ResolvedPath, ScopeId,
     SelectedProjection, SourceScope, compile_presentation, projected_members,
@@ -27,6 +28,7 @@ use crate::query::core::resolve::{
 };
 use crate::query::core::{QueryDiagnostic, QueryDiagnosticKind};
 use crate::{Keyword, Token, TokenKind};
+use std::cell::RefCell;
 use std::collections::BTreeSet;
 
 /// How a branch is rendered within its statement.
@@ -150,6 +152,13 @@ pub(super) fn compile_branch(
         },
     )?;
 
+    for (scope, source) in context
+        .sources
+        .iter_mut()
+        .zip(std::iter::once(source).chain(joins.iter().map(|join| &join.source)))
+    {
+        finalize_constants_relation(scope, source.object, dialect)?;
+    }
     let mut sql = compile_branch_sql(
         ast,
         joins,
@@ -329,6 +338,8 @@ fn derived_source_scope(
         identity_is_base: false,
         reference_joins: Vec::new(),
         separator_predicates: Vec::new(),
+        constants: None,
+        used_fields: RefCell::new(BTreeSet::new()),
     })
 }
 
@@ -360,6 +371,8 @@ fn temporary_source_scope(
         identity_is_base: false,
         reference_joins: Vec::new(),
         separator_predicates: Vec::new(),
+        constants: None,
+        used_fields: RefCell::new(BTreeSet::new()),
     })
 }
 
@@ -1180,6 +1193,9 @@ fn resolve_join_source(
     if source.temporary {
         return temporary_source_scope(source, snapshot, catalog, dialect);
     }
+    if source.constants {
+        return constants_source_scope(source, snapshot, catalog, default_alias, dialect);
+    }
     let resolved = resolve_source_metadata(source, snapshot, catalog)?;
     let target = resolved.restriction_target();
     let restriction =
@@ -1214,6 +1230,8 @@ fn resolve_join_source(
         identity_is_base: resolved.identity_is_base,
         reference_joins: Vec::new(),
         separator_predicates: compiled_source.separators,
+        constants: None,
+        used_fields: RefCell::new(BTreeSet::new()),
     })
 }
 

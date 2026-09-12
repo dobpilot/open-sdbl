@@ -599,6 +599,20 @@ impl<'snapshot> CompilationCatalog<'snapshot> {
         &self.separators
     }
 
+    /// Whether parameter values are bound; preparation runs unbound and
+    /// must not fail on value-dependent checks.
+    pub(super) fn is_bound(&self) -> bool {
+        self.parameters.is_bound()
+    }
+
+    /// Every live constant with its value field, for the `Константы` source.
+    pub(super) fn constants_fields(
+        &self,
+        token: Option<&Token<'_>>,
+    ) -> Result<Vec<(&'snapshot MetadataObject, QueryableField)>, QueryDiagnostic> {
+        constant_value_fields(self.snapshot, |object| self.fields(object, token))
+    }
+
     /// The parameter values currently in effect: session values only while
     /// a restriction's text compiles.
     pub(super) fn parameters(&self) -> Parameters<'snapshot> {
@@ -924,6 +938,51 @@ pub(super) fn find_metadata_object_at<'snapshot>(
             format!("metadata object name {name:?} is ambiguous; use <kind>.<name>"),
         )),
     }
+}
+
+/// Lists every live constant of the snapshot with the field carrying its
+/// value, sorted by constant name: the fields of the `Константы` table.
+///
+/// # Errors
+///
+/// Returns a diagnostic when a constant's live table cannot be projected.
+pub fn constants_table_fields(
+    snapshot: &MetadataSnapshot,
+) -> Result<Vec<(&MetadataObject, QueryableField)>, QueryDiagnostic> {
+    constant_value_fields(snapshot, |object| {
+        queryable_fields(snapshot, object).map(Arc::from)
+    })
+}
+
+fn constant_value_fields(
+    snapshot: &MetadataSnapshot,
+    mut fields_of: impl FnMut(&MetadataObject) -> Result<Arc<[QueryableField]>, QueryDiagnostic>,
+) -> Result<Vec<(&MetadataObject, QueryableField)>, QueryDiagnostic> {
+    let mut constants = Vec::new();
+    for object in snapshot
+        .objects()
+        .iter()
+        .filter(|object| object.kind == Some(MetadataKind::Constant) && object.live)
+    {
+        let Some(value_number) = snapshot
+            .fields()
+            .iter()
+            .find(|field| field.guid == object.guid && !field.data_separator)
+            .map(|field| field.number)
+        else {
+            continue;
+        };
+        let schema_name = format!("Fld{value_number}");
+        let fields = fields_of(object)?;
+        if let Some(field) = fields
+            .iter()
+            .find(|field| names_equal(&field.schema_name, &schema_name))
+        {
+            constants.push((object, field.clone()));
+        }
+    }
+    constants.sort_by_key(|(_, field)| folded_name(&field.name));
+    Ok(constants)
 }
 
 /// Builds queryable logical fields for one resolved live object.

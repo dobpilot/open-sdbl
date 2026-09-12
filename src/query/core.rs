@@ -19,7 +19,8 @@ pub use params::{
 pub use resolve::{
     ColumnKind, CompiledColumn, CompiledQuery, PresentationExpression, PresentationPlan,
     PresentationRequest, PresentationTarget, QueryableColumn, QueryableField,
-    QueryableFieldCatalog, find_metadata_object, queryable_field_catalog, queryable_fields,
+    QueryableFieldCatalog, constants_table_fields, find_metadata_object, queryable_field_catalog,
+    queryable_fields,
 };
 pub use restrict::{AccessRestriction, RestrictionRequest, RestrictionTarget};
 pub use temp_tables::{TempTable, TempTablesManager};

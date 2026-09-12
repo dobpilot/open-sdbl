@@ -9,8 +9,8 @@ use open_sdbl::metadata::{MetadataKind, MetadataObject, MetadataSnapshot, Object
 use open_sdbl::query::{
     AccessRestriction, ColumnKind, CompileOptions, CompiledQuery, MsSqlBackend, PostgresBackend,
     Prepared, PresentationExpression, PresentationPlan, PresentationRequest, QueryCompiler,
-    QueryParameter, RestrictionRequest, SessionParameters, TempTablesManager, find_metadata_object,
-    queryable_field_catalog, queryable_fields,
+    QueryParameter, RestrictionRequest, SessionParameters, TempTablesManager,
+    constants_table_fields, find_metadata_object, queryable_field_catalog, queryable_fields,
 };
 use open_sdbl::{TokenKind, tokenize};
 use rustyline::completion::{Completer, Pair};
@@ -260,6 +260,15 @@ impl ConsoleHelper {
             }
         }
 
+        if snapshot
+            .objects()
+            .iter()
+            .any(|object| object.kind == Some(MetadataKind::Constant) && object.live)
+        {
+            for name in CONSTANTS_TABLE_NAMES {
+                push_unique(&mut candidates, &mut candidate_keys, name);
+            }
+        }
         for object in snapshot.objects() {
             let (Some(kind), Some(name)) = (object.kind, object.name.as_deref()) else {
                 continue;
@@ -1589,11 +1598,62 @@ fn print_indexes(output: &mut impl Write, snapshot: &MetadataSnapshot) -> io::Re
     writeln!(output, "({} indexes)", rows.len())
 }
 
+/// Spellings of the constants table accepted by `\d` and offered by
+/// completion.
+const CONSTANTS_TABLE_NAMES: [&str; 2] = ["Константы", "Constants"];
+
+fn is_constants_table_name(name: &str) -> bool {
+    let name = name.to_lowercase();
+    CONSTANTS_TABLE_NAMES
+        .iter()
+        .any(|candidate| candidate.to_lowercase() == name)
+}
+
+/// `\d Константы`: every live constant with its value field.
+fn print_constants_description(
+    output: &mut impl Write,
+    snapshot: &MetadataSnapshot,
+) -> Result<(), CliError> {
+    let constants =
+        constants_table_fields(snapshot).map_err(|error| CliError::Data(error.to_string()))?;
+    writeln!(
+        output,
+        "Константы  constants={}  one row: UNION ALL of the referenced _Const tables aggregated with MAX",
+        constants.len()
+    )
+    .map_err(CliError::standard_output)?;
+    let rows: Vec<Vec<String>> = constants
+        .into_iter()
+        .map(|(object, field)| {
+            vec![
+                field.name,
+                object.physical_table.clone().unwrap_or_default(),
+                field
+                    .columns
+                    .into_iter()
+                    .map(|column| format!("{}:{}", column.physical_name, column.data_type))
+                    .collect::<Vec<_>>()
+                    .join(", "),
+                field.reference_target.unwrap_or_default(),
+            ]
+        })
+        .collect();
+    print_table(
+        output,
+        &["Name", "Table", "Physical members", "Reference target"],
+        &rows,
+    )
+    .map_err(CliError::standard_output)
+}
+
 fn print_description(
     output: &mut impl Write,
     snapshot: &MetadataSnapshot,
     name: &str,
 ) -> Result<(), CliError> {
+    if is_constants_table_name(name) {
+        return print_constants_description(output, snapshot);
+    }
     let object =
         find_metadata_object(snapshot, name).map_err(|error| CliError::Data(error.to_string()))?;
     let fields =

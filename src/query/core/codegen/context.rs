@@ -1,5 +1,8 @@
+use std::cell::RefCell;
+use std::collections::BTreeSet;
 use std::sync::Arc;
 
+use super::constants::ConstantsSource;
 use super::expression::{
     matching_fields, reference_column, reference_type_column, resolve_named_field, single_column,
 };
@@ -132,6 +135,11 @@ pub(super) struct SourceScope {
     /// Data-separator predicates of the relation, qualified with
     /// `sql_alias`, placed by the branch renderer.
     pub(super) separator_predicates: Vec<String>,
+    /// Set for the `Константы` source, whose relation is rendered from the
+    /// fields the statement resolves against it.
+    pub(super) constants: Option<ConstantsSource>,
+    /// Indexes into `fields` the statement resolved, in any role.
+    pub(super) used_fields: RefCell<BTreeSet<usize>>,
 }
 
 impl SourceScope {
@@ -179,6 +187,7 @@ impl ResolvedPath {
         field: (usize, &QueryableField),
     ) -> Self {
         let (field_index, _) = field;
+        source.used_fields.borrow_mut().insert(field_index);
         Self {
             scope,
             owner: source.object,
@@ -278,6 +287,7 @@ impl CompilationContext<'_, '_> {
     ) -> Result<ResolvedPath, QueryDiagnostic> {
         let source = self.source(scope);
         let (field_index, _) = resolve_named_field(&source.fields, field)?;
+        source.used_fields.borrow_mut().insert(field_index);
         Ok(ResolvedPath {
             scope,
             owner: source.object,
@@ -434,8 +444,12 @@ impl CompilationContext<'_, '_> {
             Some(reference_token),
         )?;
         let single_target = {
-            let (_, reference_field) =
+            let (field_index, reference_field) =
                 resolve_named_field(&self.source(scope).fields, reference_token)?;
+            self.source(scope)
+                .used_fields
+                .borrow_mut()
+                .insert(field_index);
             reference_field.reference_target.clone()
         };
         let Some(target_table) = single_target else {

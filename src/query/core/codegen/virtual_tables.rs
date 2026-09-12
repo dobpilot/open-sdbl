@@ -1,3 +1,4 @@
+use std::cell::RefCell;
 use std::collections::BTreeSet;
 
 use super::context::{CompilationContext, SourceScope};
@@ -546,6 +547,8 @@ fn compile_accumulation_condition(
             identity_is_base: true,
             reference_joins: Vec::new(),
             separator_predicates: Vec::new(),
+            constants: None,
+            used_fields: RefCell::new(BTreeSet::new()),
         }],
         dialect,
         aggregates_allowed: false,

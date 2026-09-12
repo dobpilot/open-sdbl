@@ -1,3 +1,4 @@
+use std::cell::RefCell;
 use std::collections::BTreeSet;
 use std::sync::Arc;
 
@@ -85,6 +86,8 @@ pub(super) fn compile_restriction_predicate(
                     identity_is_base: restriction.identity_is_base,
                     reference_joins: Vec::new(),
                     separator_predicates: Vec::new(),
+                    constants: None,
+                    used_fields: RefCell::new(BTreeSet::new()),
                 }],
                 dialect,
                 aggregates_allowed: false,
@@ -1278,6 +1281,8 @@ pub(super) fn compile_source_relation(
                 identity_is_base: true,
                 reference_joins: Vec::new(),
                 separator_predicates: Vec::new(),
+                constants: None,
+                used_fields: RefCell::new(BTreeSet::new()),
             }],
             dialect,
             aggregates_allowed: false,
