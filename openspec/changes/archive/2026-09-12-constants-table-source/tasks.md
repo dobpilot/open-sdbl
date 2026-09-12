@@ -26,10 +26,11 @@
   catalog, nested query, separated base, disabled-separator diagnostic,
   unknown constant name diagnostic.
 - [x] 4.2 Run `ВЫБРАТЬ * ИЗ Константы` on the PostgreSQL demo base (562
-  constants, one row, 1.45 s) and a typed selection with a reference
-  constant, its dereference, and `ПРЕДСТАВЛЕНИЕ`; the MSSQL demo base was
-  not reachable in this session (no `MSSQL_PASSWORD`), so `MAX` over
-  `binary(1)` booleans and `varbinary(max)` stays unverified there.
+  constants, one row, 1.45 s) and on the MSSQL demo base (SQL Server 2019,
+  257 constants, one row, 13.5 s), plus typed selections with a reference
+  constant, its dereference, and `ПРЕДСТАВЛЕНИЕ`; `MAX` accepted
+  `numeric`, `nvarchar(max)`, `varbinary(max)`, `binary(16)`, `binary(1)`,
+  and `datetime2` on SQL Server.
 - [x] 4.3 Update README and `docs/query-language-support.md`; run
   formatting, Clippy, workspace tests, rustdoc, and strict OpenSpec
   validation.

@@ -77,8 +77,8 @@ checks behave as for `Константа.Имя`.
   a 1C base always has them, a hand-made schema might not. The generated
   text stays plain SQL, so the 9.0 portability requirement is kept.
 - `MAX` over `varbinary(max)` on SQL Server is documented loosely; task 4.2
-  verifies it on the MSSQL demo before the change is archived, and a
-  value-storage constant is excluded from the table if it fails.
+  verified it on the MSSQL demo (SQL Server 2019) together with every
+  other storage type present.
 - `ВЫБРАТЬ *` on a base with hundreds of constants reads hundreds of
   single-row tables in one `UNION ALL`; this is linear work without join
   planning, which is why aggregation was chosen.
