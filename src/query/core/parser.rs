@@ -2,9 +2,9 @@
 
 use crate::query::core::ast::{
     AccumulationAst, AccumulationKind, AggregateArgument, AggregateKind, BatchAst, CaseBranch,
-    CastTarget, Expression, FieldReference, GroupKey, IndexAst, IntoAst, JoinAst, JoinKind,
-    OrderTerm, PeriodKind, PresentationArgument, PresentationOperation, Projection, ProjectionItem,
-    QueryAst, SelectAst, SliceAst, SliceKind, SourceAst, StatementAst, UnionLink,
+    CastTarget, DatePart, Expression, FieldReference, GroupKey, IndexAst, IntoAst, JoinAst,
+    JoinKind, OrderTerm, PeriodKind, PresentationArgument, PresentationOperation, Projection,
+    ProjectionItem, QueryAst, SelectAst, SliceAst, SliceKind, SourceAst, StatementAst, UnionLink,
     parse_datetime_value,
 };
 use crate::query::core::diag::SourcePosition;
@@ -46,6 +46,16 @@ fn is_contextual_identifier(kind: TokenKind) -> bool {
                     | Keyword::EndOfPeriod
                     | Keyword::DateAdd
                     | Keyword::DateDiff
+                    | Keyword::Year
+                    | Keyword::Quarter
+                    | Keyword::Month
+                    | Keyword::DayOfYear
+                    | Keyword::Day
+                    | Keyword::Week
+                    | Keyword::WeekDay
+                    | Keyword::Hour
+                    | Keyword::Minute
+                    | Keyword::Second
                     | Keyword::Value
                     | Keyword::Uuid
                     | Keyword::Cast
@@ -1015,6 +1025,9 @@ impl<'tokens, 'source> Parser<'tokens, 'source> {
             if let Some(token) = self.consume_keyword_token(Keyword::DateDiff) {
                 return self.parse_date_diff(token);
             }
+            if let Some((token, part)) = self.consume_date_part_keyword() {
+                return self.parse_date_part(token, part);
+            }
             if let Some(token) = self.consume_keyword_token(Keyword::Value) {
                 return self.parse_metadata_value(token);
             }
@@ -1334,6 +1347,45 @@ impl<'tokens, 'source> Parser<'tokens, 'source> {
                 from: Box::new(from),
                 to: Box::new(to),
                 period,
+            })
+        })();
+        self.depth -= 1;
+        result
+    }
+
+    fn consume_date_part_keyword(&mut self) -> Option<(&'tokens Token<'source>, DatePart)> {
+        let part = match self.peek()?.kind {
+            TokenKind::Keyword(Keyword::Year) => DatePart::Year,
+            TokenKind::Keyword(Keyword::Quarter) => DatePart::Quarter,
+            TokenKind::Keyword(Keyword::Month) => DatePart::Month,
+            TokenKind::Keyword(Keyword::DayOfYear) => DatePart::DayOfYear,
+            TokenKind::Keyword(Keyword::Day) => DatePart::Day,
+            TokenKind::Keyword(Keyword::Week) => DatePart::Week,
+            TokenKind::Keyword(Keyword::WeekDay) => DatePart::WeekDay,
+            TokenKind::Keyword(Keyword::Hour) => DatePart::Hour,
+            TokenKind::Keyword(Keyword::Minute) => DatePart::Minute,
+            TokenKind::Keyword(Keyword::Second) => DatePart::Second,
+            _ => return None,
+        };
+        self.next().map(|token| (token, part))
+    }
+
+    /// Parses `ГОД(<date>)` and the other date-part functions after the
+    /// keyword.
+    fn parse_date_part(
+        &mut self,
+        token: &'tokens Token<'source>,
+        part: DatePart,
+    ) -> Result<Expression<'tokens, 'source>, QueryDiagnostic> {
+        self.enter_function(token)?;
+        let result = (|| {
+            self.expect_lexeme("(")?;
+            let value = self.parse_or()?;
+            self.expect_lexeme(")")?;
+            Ok(Expression::DatePart {
+                token,
+                part,
+                value: Box::new(value),
             })
         })();
         self.depth -= 1;

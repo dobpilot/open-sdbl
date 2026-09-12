@@ -438,6 +438,7 @@ pub(super) fn operand_token<'tokens, 'source>(
         | Expression::EndOfPeriod { token, .. }
         | Expression::DateAdd { token, .. }
         | Expression::DateDiff { token, .. }
+        | Expression::DatePart { token, .. }
         | Expression::MetadataValue { token, .. }
         | Expression::Uuid { token, .. }
         | Expression::Cast { token, .. }
@@ -810,7 +811,7 @@ pub(super) fn source_free_expression_kind(
         | Expression::BeginOfPeriod { .. }
         | Expression::EndOfPeriod { .. }
         | Expression::DateAdd { .. } => ColumnKind::DateTime,
-        Expression::DateDiff { .. } => ColumnKind::Number {
+        Expression::DateDiff { .. } | Expression::DatePart { .. } => ColumnKind::Number {
             precision: None,
             scale: None,
         },
@@ -969,6 +970,10 @@ pub(super) fn compile_expression(
             let from = compile_date_operand(from, context, token, "first")?;
             let to = compile_date_operand(to, context, token, "second")?;
             Ok(context.dialect.date_diff(&from, &to, *period, true))
+        }
+        Expression::DatePart { token, part, value } => {
+            let value = compile_date_operand(value, context, token, "first")?;
+            Ok(context.dialect.date_part(*part, &value, true))
         }
         Expression::MetadataValue {
             token,
@@ -1511,7 +1516,7 @@ fn compile_date_operand(
         return Ok(context.sql_column(&resolved, column));
     }
     let sql = compile_expression(expression, context)?;
-    if expression_kind(expression, context)? == ColumnKind::DateTime {
+    if is_date_operand_kind(&expression_kind(expression, context)?) {
         return Ok(sql);
     }
     Err(QueryDiagnostic::at(
@@ -1534,6 +1539,15 @@ fn compile_count_operand(
         return Ok(sql);
     }
     Err(count_diagnostic(token))
+}
+
+/// Whether a kind may serve as the date argument of a date function: a
+/// date, or a value of unknown kind such as an unbound parameter.
+pub(super) fn is_date_operand_kind(kind: &ColumnKind) -> bool {
+    matches!(
+        kind,
+        ColumnKind::DateTime | ColumnKind::Null | ColumnKind::Unknown { .. }
+    )
 }
 
 /// Whether a kind may serve as the count of `ДОБАВИТЬКДАТЕ`.

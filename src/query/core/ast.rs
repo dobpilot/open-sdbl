@@ -296,6 +296,12 @@ pub(super) enum Expression<'tokens, 'source> {
         to: Box<Self>,
         period: PeriodKind,
     },
+    /// `ГОД(<date>)` and the other date-part functions.
+    DatePart {
+        token: &'tokens Token<'source>,
+        part: DatePart,
+        value: Box<Self>,
+    },
     MetadataValue {
         token: &'tokens Token<'source>,
         kind: &'tokens Token<'source>,
@@ -409,6 +415,24 @@ pub(super) struct DateTimeValue {
     pub(super) hour: u8,
     pub(super) minute: u8,
     pub(super) second: u8,
+}
+
+/// The calendar part a date-part function extracts.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum DatePart {
+    Year,
+    Quarter,
+    Month,
+    DayOfYear,
+    Day,
+    /// Platform week numbering: the week containing 1 January is week 1,
+    /// weeks start on Monday, numbering restarts on 1 January.
+    Week,
+    /// 1 for Monday through 7 for Sunday.
+    WeekDay,
+    Hour,
+    Minute,
+    Second,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

@@ -490,6 +490,65 @@ fn nested_source_free_dates_stay_in_the_storage_domain() {
 }
 
 #[test]
+fn date_functions_accept_parameters_bound_or_not() {
+    let snapshot = snapshot();
+    let query = "ВЫБРАТЬ РАЗНОСТЬДАТ(&А, &Б, ДЕНЬ) КАК Д, КОНЕЦПЕРИОДА(&А, МЕСЯЦ) КАК К, ДОБАВИТЬКДАТЕ(&А, ДЕНЬ, &Н) КАК П
+         ИЗ Справочник.OpenSdblMetadataProbe
+         ГДЕ НАЧАЛОПЕРИОДА(&А, МЕСЯЦ) <= Date;";
+    QueryCompiler::new(&snapshot, PostgresBackend)
+        .prepare(query)
+        .unwrap();
+    let bound = compile(
+        &snapshot,
+        PostgresBackend,
+        query,
+        &[
+            QueryParameter::new("А", date(2020, 12, 31)),
+            QueryParameter::new("Б", date(2021, 1, 1)),
+            QueryParameter::new(
+                "Н",
+                ParameterValue::Number {
+                    unscaled: 3,
+                    scale: 0,
+                },
+            ),
+        ],
+    )
+    .unwrap();
+    assert_contains(
+        &bound.sql,
+        "(CAST(TIMESTAMP '2021-01-01 00:00:00' AS date) - CAST(TIMESTAMP '2020-12-31 00:00:00' AS date)) AS \"Д\"",
+    );
+    assert_contains(
+        &bound.sql,
+        "(TIMESTAMP '2020-12-31 00:00:00' + CAST(3 AS integer) * INTERVAL '1 day') AS \"П\"",
+    );
+
+    let source_free = compile(
+        &snapshot,
+        PostgresBackend,
+        "SELECT DATEDIFF(&А, DATETIME(2021, 1, 1), YEAR) AS Y;",
+        &[QueryParameter::new("А", date(2020, 12, 31))],
+    )
+    .unwrap();
+    assert_contains(
+        &source_free.sql,
+        "CAST(EXTRACT(YEAR FROM TIMESTAMP '2021-01-01 00:00:00') - EXTRACT(YEAR FROM TIMESTAMP '2020-12-31 00:00:00') AS integer) AS \"Y\"",
+    );
+    let wrong = compile(
+        &snapshot,
+        PostgresBackend,
+        "SELECT DATEDIFF(&А, DATETIME(2021, 1, 1), YEAR) AS Y;",
+        &[QueryParameter::new(
+            "А",
+            ParameterValue::String("x".to_owned()),
+        )],
+    )
+    .unwrap_err();
+    assert_eq!(wrong.kind(), QueryDiagnosticKind::Syntax);
+}
+
+#[test]
 fn period_keywords_remain_usable_as_names() {
     let compiled = postgres(
         &snapshot(),

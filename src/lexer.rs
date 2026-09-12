@@ -115,6 +115,26 @@ pub enum Keyword {
     DateAdd,
     /// `РАЗНОСТЬДАТ` or `DATEDIFF`.
     DateDiff,
+    /// `ГОД` or `YEAR`.
+    Year,
+    /// `КВАРТАЛ` or `QUARTER`.
+    Quarter,
+    /// `МЕСЯЦ` or `MONTH`.
+    Month,
+    /// `ДЕНЬГОДА` or `DAYOFYEAR`.
+    DayOfYear,
+    /// `ДЕНЬ` or `DAY`.
+    Day,
+    /// `НЕДЕЛЯ` or `WEEK`.
+    Week,
+    /// `ДЕНЬНЕДЕЛИ` or `WEEKDAY`.
+    WeekDay,
+    /// `ЧАС` or `HOUR`.
+    Hour,
+    /// `МИНУТА` or `MINUTE`.
+    Minute,
+    /// `СЕКУНДА` or `SECOND`.
+    Second,
     /// `ЗНАЧЕНИЕ` or `VALUE`.
     Value,
     /// `УНИКАЛЬНЫЙИДЕНТИФИКАТОР` or `UUID`.
@@ -193,6 +213,16 @@ impl Keyword {
             Self::EndOfPeriod => "ENDOFPERIOD",
             Self::DateAdd => "DATEADD",
             Self::DateDiff => "DATEDIFF",
+            Self::Year => "YEAR",
+            Self::Quarter => "QUARTER",
+            Self::Month => "MONTH",
+            Self::DayOfYear => "DAYOFYEAR",
+            Self::Day => "DAY",
+            Self::Week => "WEEK",
+            Self::WeekDay => "WEEKDAY",
+            Self::Hour => "HOUR",
+            Self::Minute => "MINUTE",
+            Self::Second => "SECOND",
             Self::Value => "VALUE",
             Self::Uuid => "UUID",
             Self::Cast => "CAST",
@@ -582,7 +612,7 @@ fn is_identifier_continue(character: char) -> bool {
     character == '_' || character.is_alphanumeric()
 }
 
-const KEYWORDS: [(Keyword, &str, &str); 60] = [
+const KEYWORDS: [(Keyword, &str, &str); 70] = [
     (Keyword::Select, "ВЫБРАТЬ", "SELECT"),
     (Keyword::From, "ИЗ", "FROM"),
     (Keyword::Where, "ГДЕ", "WHERE"),
@@ -636,6 +666,16 @@ const KEYWORDS: [(Keyword, &str, &str); 60] = [
     (Keyword::EndOfPeriod, "КОНЕЦПЕРИОДА", "ENDOFPERIOD"),
     (Keyword::DateAdd, "ДОБАВИТЬКДАТЕ", "DATEADD"),
     (Keyword::DateDiff, "РАЗНОСТЬДАТ", "DATEDIFF"),
+    (Keyword::Year, "ГОД", "YEAR"),
+    (Keyword::Quarter, "КВАРТАЛ", "QUARTER"),
+    (Keyword::Month, "МЕСЯЦ", "MONTH"),
+    (Keyword::DayOfYear, "ДЕНЬГОДА", "DAYOFYEAR"),
+    (Keyword::Day, "ДЕНЬ", "DAY"),
+    (Keyword::Week, "НЕДЕЛЯ", "WEEK"),
+    (Keyword::WeekDay, "ДЕНЬНЕДЕЛИ", "WEEKDAY"),
+    (Keyword::Hour, "ЧАС", "HOUR"),
+    (Keyword::Minute, "МИНУТА", "MINUTE"),
+    (Keyword::Second, "СЕКУНДА", "SECOND"),
     (Keyword::Value, "ЗНАЧЕНИЕ", "VALUE"),
     (Keyword::Uuid, "УНИКАЛЬНЫЙИДЕНТИФИКАТОР", "UUID"),
     (Keyword::Cast, "ВЫРАЗИТЬ", "CAST"),

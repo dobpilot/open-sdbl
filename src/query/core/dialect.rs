@@ -2,7 +2,7 @@
 
 use std::collections::HashSet;
 
-use crate::query::core::ast::{CastTarget, DateTimeValue, PeriodKind};
+use crate::query::core::ast::{CastTarget, DatePart, DateTimeValue, PeriodKind};
 use crate::query::core::resolve::ColumnKind;
 use crate::query::core::{QueryDiagnostic, QueryDiagnosticKind};
 use crate::query::mssql::MsSqlDialectLevel;
@@ -676,6 +676,58 @@ impl SqlDialect {
                     PeriodKind::Week | PeriodKind::TenDays | PeriodKind::HalfYear => {
                         unreachable!("the parser accepts only DIFFERENCE periods")
                     }
+                }
+            }
+        }
+    }
+
+    /// A date-part function: an integer calendar part of `value`. Weekdays
+    /// run from Monday (1) to Sunday (7) and weeks are numbered the platform
+    /// way (the week containing 1 January is week 1, weeks start on Monday,
+    /// numbering restarts on 1 January). On MSSQL with a year offset the
+    /// parts of a storage-domain value are taken from the logical date.
+    pub(super) fn date_part(self, part: DatePart, value: &str, storage_domain: bool) -> String {
+        match self {
+            Self::Postgres => {
+                let extract =
+                    |field: &str| format!("CAST(EXTRACT({field} FROM {value}) AS integer)");
+                match part {
+                    DatePart::Year => extract("YEAR"),
+                    DatePart::Quarter => extract("QUARTER"),
+                    DatePart::Month => extract("MONTH"),
+                    DatePart::DayOfYear => extract("DOY"),
+                    DatePart::Day => extract("DAY"),
+                    DatePart::WeekDay => extract("ISODOW"),
+                    DatePart::Hour => extract("HOUR"),
+                    DatePart::Minute => extract("MINUTE"),
+                    DatePart::Second => extract("SECOND"),
+                    DatePart::Week => format!(
+                        "((CAST(EXTRACT(DOY FROM {value}) AS integer) + CAST(EXTRACT(ISODOW FROM date_trunc('year', {value})) AS integer) - 2) / 7 + 1)"
+                    ),
+                }
+            }
+            Self::MsSql { .. } => {
+                let value = if storage_domain {
+                    self.date_scalar(value)
+                } else {
+                    value.to_owned()
+                };
+                let day_number = format!(
+                    "DATEDIFF(day, CONVERT(date, '19000101', 112), CONVERT(date, {value}))"
+                );
+                match part {
+                    DatePart::Year => format!("DATEPART(year, {value})"),
+                    DatePart::Quarter => format!("DATEPART(quarter, {value})"),
+                    DatePart::Month => format!("DATEPART(month, {value})"),
+                    DatePart::DayOfYear => format!("DATEPART(dayofyear, {value})"),
+                    DatePart::Day => format!("DATEPART(day, {value})"),
+                    DatePart::Hour => format!("DATEPART(hour, {value})"),
+                    DatePart::Minute => format!("DATEPART(minute, {value})"),
+                    DatePart::Second => format!("DATEPART(second, {value})"),
+                    DatePart::WeekDay => format!("(({day_number} % 7 + 7) % 7 + 1)"),
+                    DatePart::Week => format!(
+                        "((DATEPART(dayofyear, {value}) - 1 + (({day_number} - DATEPART(dayofyear, {value}) + 1) % 7 + 7) % 7) / 7 + 1)"
+                    ),
                 }
             }
         }

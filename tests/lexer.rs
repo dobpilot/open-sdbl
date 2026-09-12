@@ -1,6 +1,6 @@
 use open_sdbl::{DiagnosticKind, Keyword, Lexer, TokenKind, tokenize};
 
-const KEYWORD_ALIASES: [(Keyword, &str, &str); 60] = [
+const KEYWORD_ALIASES: [(Keyword, &str, &str); 70] = [
     (Keyword::Select, "ВЫБРАТЬ", "SELECT"),
     (Keyword::From, "ИЗ", "FROM"),
     (Keyword::Where, "ГДЕ", "WHERE"),
@@ -54,6 +54,16 @@ const KEYWORD_ALIASES: [(Keyword, &str, &str); 60] = [
     (Keyword::EndOfPeriod, "КОНЕЦПЕРИОДА", "ENDOFPERIOD"),
     (Keyword::DateAdd, "ДОБАВИТЬКДАТЕ", "DATEADD"),
     (Keyword::DateDiff, "РАЗНОСТЬДАТ", "DATEDIFF"),
+    (Keyword::Year, "ГОД", "YEAR"),
+    (Keyword::Quarter, "КВАРТАЛ", "QUARTER"),
+    (Keyword::Month, "МЕСЯЦ", "MONTH"),
+    (Keyword::DayOfYear, "ДЕНЬГОДА", "DAYOFYEAR"),
+    (Keyword::Day, "ДЕНЬ", "DAY"),
+    (Keyword::Week, "НЕДЕЛЯ", "WEEK"),
+    (Keyword::WeekDay, "ДЕНЬНЕДЕЛИ", "WEEKDAY"),
+    (Keyword::Hour, "ЧАС", "HOUR"),
+    (Keyword::Minute, "МИНУТА", "MINUTE"),
+    (Keyword::Second, "СЕКУНДА", "SECOND"),
     (Keyword::Value, "ЗНАЧЕНИЕ", "VALUE"),
     (Keyword::Uuid, "УНИКАЛЬНЫЙИДЕНТИФИКАТОР", "UUID"),
     (Keyword::Cast, "ВЫРАЗИТЬ", "CAST"),
@@ -97,7 +107,7 @@ fn recognizes_russian_and_english_keywords_case_insensitively() {
 
 #[test]
 fn recognizes_the_complete_bilingual_keyword_table() {
-    assert_eq!(KEYWORD_ALIASES.len(), 60);
+    assert_eq!(KEYWORD_ALIASES.len(), 70);
     for (index, (keyword, russian, english)) in KEYWORD_ALIASES.into_iter().enumerate() {
         assert!(
             KEYWORD_ALIASES[..index]
@@ -223,6 +233,23 @@ fn recognizes_period_arithmetic_keywords_bilingually() {
     assert_eq!(Keyword::EndOfPeriod.as_str(), "ENDOFPERIOD");
     assert_eq!(Keyword::DateAdd.as_str(), "DATEADD");
     assert_eq!(Keyword::DateDiff.as_str(), "DATEDIFF");
+}
+
+#[test]
+fn recognizes_date_part_keywords_bilingually() {
+    let tokens = tokenize("Год YEAR ДеньНедели weekday Неделя WEEK Секунда SECOND").unwrap();
+
+    assert_eq!(tokens[0].kind, TokenKind::Keyword(Keyword::Year));
+    assert_eq!(tokens[1].kind, TokenKind::Keyword(Keyword::Year));
+    assert_eq!(tokens[2].kind, TokenKind::Keyword(Keyword::WeekDay));
+    assert_eq!(tokens[3].kind, TokenKind::Keyword(Keyword::WeekDay));
+    assert_eq!(tokens[4].kind, TokenKind::Keyword(Keyword::Week));
+    assert_eq!(tokens[5].kind, TokenKind::Keyword(Keyword::Week));
+    assert_eq!(tokens[6].kind, TokenKind::Keyword(Keyword::Second));
+    assert_eq!(tokens[7].kind, TokenKind::Keyword(Keyword::Second));
+    assert_eq!(tokens[2].lexeme, "ДеньНедели");
+    assert_eq!(Keyword::DayOfYear.as_str(), "DAYOFYEAR");
+    assert_eq!(Keyword::WeekDay.as_str(), "WEEKDAY");
 }
 
 #[test]

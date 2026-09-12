@@ -5,9 +5,9 @@ use std::sync::Arc;
 use super::context::{CompilationContext, CompiledBranch, JoinPlan, SourceScope};
 use super::expression::{
     Operand, binary_operator_sql, check_like_operand, compile_case, compile_expression,
-    compile_predicate, count_diagnostic, function_name, is_count_kind, left_binary_spine,
-    operand_token, reference_column, reference_type_column, render_coalesce, render_like,
-    single_column, source_free_expression_kind, widen_reference,
+    compile_predicate, count_diagnostic, function_name, is_count_kind, is_date_operand_kind,
+    left_binary_spine, operand_token, reference_column, reference_type_column, render_coalesce,
+    render_like, single_column, source_free_expression_kind, widen_reference,
 };
 use super::params::render_scalar_parameter;
 use super::select::append_reference_join;
@@ -294,7 +294,9 @@ fn compile_source_free_date(
     parameters: Parameters<'_>,
     storage_domain: bool,
 ) -> Result<String, QueryDiagnostic> {
-    if source_free_expression_kind(expression, snapshot, parameters) != ColumnKind::DateTime {
+    if !is_date_operand_kind(&source_free_expression_kind(
+        expression, snapshot, parameters,
+    )) {
         return Err(QueryDiagnostic::at(
             QueryDiagnosticKind::Syntax,
             Some(token),
@@ -408,6 +410,18 @@ fn compile_source_free_expression(
                 storage_domain,
             )?;
             Ok(dialect.date_diff(&from, &to, *period, storage_domain))
+        }
+        Expression::DatePart { token, part, value } => {
+            let value = compile_source_free_date(
+                value,
+                token,
+                "first",
+                snapshot,
+                dialect,
+                parameters,
+                storage_domain,
+            )?;
+            Ok(dialect.date_part(*part, &value, storage_domain))
         }
         Expression::MetadataValue {
             token,
@@ -952,6 +966,7 @@ pub(super) fn contains_aggregate(expression: &Expression<'_, '_>) -> bool {
             | Expression::Uuid { .. } => {}
             Expression::BeginOfPeriod { value, .. }
             | Expression::EndOfPeriod { value, .. }
+            | Expression::DatePart { value, .. }
             | Expression::Unary { value, .. }
             | Expression::IsNull { value, .. }
             | Expression::Cast {
