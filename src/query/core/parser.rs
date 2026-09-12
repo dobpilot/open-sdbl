@@ -35,6 +35,7 @@ fn is_contextual_identifier(kind: TokenKind) -> bool {
                     | Keyword::Sum
                     | Keyword::Min
                     | Keyword::Max
+                    | Keyword::Avg
                     | Keyword::Presentation
                     | Keyword::RefPresentation
                     | Keyword::SliceFirst
@@ -1111,6 +1112,7 @@ impl<'tokens, 'source> Parser<'tokens, 'source> {
             TokenKind::Keyword(Keyword::Sum) => AggregateKind::Sum,
             TokenKind::Keyword(Keyword::Min) => AggregateKind::Min,
             TokenKind::Keyword(Keyword::Max) => AggregateKind::Max,
+            TokenKind::Keyword(Keyword::Avg) => AggregateKind::Avg,
             _ => return None,
         };
         self.next().map(|token| (token, kind))

@@ -137,6 +137,8 @@ const COMPLETION_KEYWORDS: &[&str] = &[
     "MIN",
     "МАКСИМУМ",
     "MAX",
+    "СРЕДНЕЕ",
+    "AVG",
     "СРЕЗПОСЛЕДНИХ",
     "SLICELAST",
     "СРЕЗПЕРВЫХ",

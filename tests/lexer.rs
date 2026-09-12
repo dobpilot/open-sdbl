@@ -1,6 +1,6 @@
 use open_sdbl::{DiagnosticKind, Keyword, Lexer, TokenKind, tokenize};
 
-const KEYWORD_ALIASES: [(Keyword, &str, &str); 70] = [
+const KEYWORD_ALIASES: [(Keyword, &str, &str); 71] = [
     (Keyword::Select, "ВЫБРАТЬ", "SELECT"),
     (Keyword::From, "ИЗ", "FROM"),
     (Keyword::Where, "ГДЕ", "WHERE"),
@@ -45,6 +45,7 @@ const KEYWORD_ALIASES: [(Keyword, &str, &str); 70] = [
     (Keyword::Sum, "СУММА", "SUM"),
     (Keyword::Min, "МИНИМУМ", "MIN"),
     (Keyword::Max, "МАКСИМУМ", "MAX"),
+    (Keyword::Avg, "СРЕДНЕЕ", "AVG"),
     (Keyword::SliceLast, "СРЕЗПОСЛЕДНИХ", "SLICELAST"),
     (Keyword::SliceFirst, "СРЕЗПЕРВЫХ", "SLICEFIRST"),
     (Keyword::Balance, "ОСТАТКИ", "BALANCE"),
@@ -107,7 +108,7 @@ fn recognizes_russian_and_english_keywords_case_insensitively() {
 
 #[test]
 fn recognizes_the_complete_bilingual_keyword_table() {
-    assert_eq!(KEYWORD_ALIASES.len(), 70);
+    assert_eq!(KEYWORD_ALIASES.len(), 71);
     for (index, (keyword, russian, english)) in KEYWORD_ALIASES.into_iter().enumerate() {
         assert!(
             KEYWORD_ALIASES[..index]
@@ -171,14 +172,18 @@ fn recognizes_count_bilingually() {
 }
 
 #[test]
-fn recognizes_sum_min_and_max_bilingually() {
-    let tokens = tokenize("sum Сумма min Минимум max Максимум").unwrap();
+fn recognizes_sum_min_max_and_avg_bilingually() {
+    let tokens = tokenize("sum Сумма min Минимум max Максимум avg Среднее").unwrap();
     assert_eq!(tokens[0].kind, TokenKind::Keyword(Keyword::Sum));
     assert_eq!(tokens[1].kind, TokenKind::Keyword(Keyword::Sum));
     assert_eq!(tokens[2].kind, TokenKind::Keyword(Keyword::Min));
     assert_eq!(tokens[3].kind, TokenKind::Keyword(Keyword::Min));
     assert_eq!(tokens[4].kind, TokenKind::Keyword(Keyword::Max));
     assert_eq!(tokens[5].kind, TokenKind::Keyword(Keyword::Max));
+    assert_eq!(tokens[6].kind, TokenKind::Keyword(Keyword::Avg));
+    assert_eq!(tokens[7].kind, TokenKind::Keyword(Keyword::Avg));
+    assert_eq!(tokens[7].lexeme, "Среднее");
+    assert_eq!(Keyword::Avg.as_str(), "AVG");
 }
 
 #[test]

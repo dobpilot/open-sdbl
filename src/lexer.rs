@@ -97,6 +97,8 @@ pub enum Keyword {
     Min,
     /// `МАКСИМУМ` or `MAX`.
     Max,
+    /// `СРЕДНЕЕ` or `AVG`.
+    Avg,
     /// `СРЕЗПОСЛЕДНИХ` or `SLICELAST`.
     SliceLast,
     /// `СРЕЗПЕРВЫХ` or `SLICEFIRST`.
@@ -204,6 +206,7 @@ impl Keyword {
             Self::Sum => "SUM",
             Self::Min => "MIN",
             Self::Max => "MAX",
+            Self::Avg => "AVG",
             Self::SliceLast => "SLICELAST",
             Self::SliceFirst => "SLICEFIRST",
             Self::Balance => "BALANCE",
@@ -612,7 +615,7 @@ fn is_identifier_continue(character: char) -> bool {
     character == '_' || character.is_alphanumeric()
 }
 
-const KEYWORDS: [(Keyword, &str, &str); 70] = [
+const KEYWORDS: [(Keyword, &str, &str); 71] = [
     (Keyword::Select, "ВЫБРАТЬ", "SELECT"),
     (Keyword::From, "ИЗ", "FROM"),
     (Keyword::Where, "ГДЕ", "WHERE"),
@@ -657,6 +660,7 @@ const KEYWORDS: [(Keyword, &str, &str); 70] = [
     (Keyword::Sum, "СУММА", "SUM"),
     (Keyword::Min, "МИНИМУМ", "MIN"),
     (Keyword::Max, "МАКСИМУМ", "MAX"),
+    (Keyword::Avg, "СРЕДНЕЕ", "AVG"),
     (Keyword::SliceLast, "СРЕЗПОСЛЕДНИХ", "SLICELAST"),
     (Keyword::SliceFirst, "СРЕЗПЕРВЫХ", "SLICEFIRST"),
     (Keyword::Balance, "ОСТАТКИ", "BALANCE"),

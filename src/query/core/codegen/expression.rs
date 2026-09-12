@@ -397,12 +397,11 @@ pub(super) fn expression_kind(
             .lookup(token)?
             .map_or_else(unknown_kind, parameter_kind)),
         Expression::Aggregate { kind, argument, .. } => match (kind, argument) {
-            (AggregateKind::Count | AggregateKind::Sum, _) | (_, AggregateArgument::All) => {
-                Ok(ColumnKind::Number {
-                    precision: None,
-                    scale: None,
-                })
-            }
+            (AggregateKind::Count | AggregateKind::Sum | AggregateKind::Avg, _)
+            | (_, AggregateArgument::All) => Ok(ColumnKind::Number {
+                precision: None,
+                scale: None,
+            }),
             (_, AggregateArgument::Expression(argument)) => match argument.as_ref() {
                 Expression::Field(reference) => {
                     let resolved = context.resolve(reference)?;
@@ -892,12 +891,11 @@ pub(super) fn source_free_expression_kind(
             )
         }
         Expression::Aggregate { kind, argument, .. } => match (kind, argument) {
-            (AggregateKind::Count | AggregateKind::Sum, _) | (_, AggregateArgument::All) => {
-                ColumnKind::Number {
-                    precision: None,
-                    scale: None,
-                }
-            }
+            (AggregateKind::Count | AggregateKind::Sum | AggregateKind::Avg, _)
+            | (_, AggregateArgument::All) => ColumnKind::Number {
+                precision: None,
+                scale: None,
+            },
             (_, AggregateArgument::Expression(argument)) => {
                 source_free_expression_kind(argument, snapshot, parameters)
             }
@@ -1609,7 +1607,7 @@ pub(super) fn compile_aggregate(
     context.aggregates_allowed = outer_allowed;
     let (argument, argument_kind) = compiled?;
     let output_kind = match kind {
-        AggregateKind::Count | AggregateKind::Sum => number,
+        AggregateKind::Count | AggregateKind::Sum | AggregateKind::Avg => number,
         _ => argument_kind,
     };
     Ok((

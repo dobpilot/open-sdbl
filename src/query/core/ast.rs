@@ -217,6 +217,7 @@ pub(super) enum AggregateKind {
     Sum,
     Min,
     Max,
+    Avg,
 }
 
 impl AggregateKind {
@@ -226,6 +227,7 @@ impl AggregateKind {
             Self::Sum => "SUM",
             Self::Min => "MIN",
             Self::Max => "MAX",
+            Self::Avg => "AVG",
         }
     }
 }
