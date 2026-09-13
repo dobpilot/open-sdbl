@@ -7,7 +7,7 @@ use super::expression::{
     matching_fields, reference_column, reference_type_column, resolve_named_field, single_column,
 };
 use super::orchestrate::PresentationCompilation;
-use super::select::derived_owner;
+use super::select::{derived_data_type, derived_owner};
 use super::sources::{
     ReferencePresentationTargets, compile_deferred_reference_presentation, compile_live_relation,
     presentation_targets, wrap_reference_presentation,
@@ -351,15 +351,22 @@ impl CompilationContext<'_, '_> {
 
     /// The standard fields the platform computes instead of storing:
     /// `ЭтоГруппа` is the negation of the `Folder` column, which holds
-    /// true for an item, and `Предопределенный` says the `PredefinedID`
-    /// column is not the empty reference. Both are measured against the
-    /// platform.
+    /// true for an item, `Предопределенный` says the `PredefinedID`
+    /// column is not the empty reference, and `ИмяПредопределенныхДанных`
+    /// names the predefined item that column identifies. All three are
+    /// measured against the platform.
     fn computed_standard_field(
         &self,
+        owner: ObjectId,
         fields: &[QueryableField],
         alias: &str,
         token: &Token<'_>,
     ) -> Option<(QueryableField, String)> {
+        if names_equal(token.lexeme, "ИмяПредопределенныхДанных")
+            || names_equal(token.lexeme, "PredefinedDataName")
+        {
+            return self.predefined_data_name(owner, fields, alias, token);
+        }
         let (schema_name, negated) = if names_equal(token.lexeme, "ЭтоГруппа")
             || names_equal(token.lexeme, "IsFolder")
         {
@@ -400,11 +407,68 @@ impl CompilationContext<'_, '_> {
         Some((field, self.dialect.boolean_value(&predicate)))
     }
 
+    /// `ИмяПредопределенныхДанных` names the predefined item a row is. The
+    /// platform stores only its GUID in `PredefinedID` and maps it back to
+    /// the name declared in the configuration, answering an empty string
+    /// for a row that is not predefined; that mapping is spelled here as a
+    /// conditional over the stored identifier.
+    fn predefined_data_name(
+        &self,
+        owner: ObjectId,
+        fields: &[QueryableField],
+        alias: &str,
+        token: &Token<'_>,
+    ) -> Option<(QueryableField, String)> {
+        let source = fields
+            .iter()
+            .find(|field| names_equal(&field.schema_name, "PredefinedID"))?;
+        let column = source.columns.first()?;
+        let qualified = self
+            .dialect
+            .qualified_column(Some(alias), &column.physical_name);
+        let empty = self.dialect.string_literal("");
+        // A row the outer join missed keeps NULL, as it does on the
+        // platform, which reads the stored identifier itself.
+        let mut branches = format!(
+            "WHEN {qualified} IS NULL THEN {} ",
+            self.dialect.null_text()
+        );
+        for value in self
+            .snapshot
+            .values()
+            .iter()
+            .filter(|value| value.owner == owner)
+        {
+            branches.push_str(&format!(
+                "WHEN {qualified} = {} THEN {} ",
+                self.dialect.binary_literal(&value.guid.to_1c_bytes()),
+                self.dialect.string_literal(&value.name),
+            ));
+        }
+        let expression = format!("CASE {branches}ELSE {empty} END");
+        let name = token.lexeme.to_owned();
+        let kind = ColumnKind::String { length: None };
+        let field = QueryableField {
+            name: name.clone(),
+            schema_name: "PredefinedDataName".to_owned(),
+            aliases: vec![name.clone()],
+            columns: vec![QueryableColumn {
+                physical_name: column.physical_name.clone(),
+                data_type: derived_data_type(&kind, self.dialect),
+                output_label: name,
+                kind,
+            }],
+            reference_target: None,
+            reference_targets: Vec::new(),
+        };
+        Some((field, expression))
+    }
+
     /// Resolves a computed standard field of one source scope.
     fn computed_scope_field(&self, scope: ScopeId, token: &Token<'_>) -> Option<ResolvedPath> {
         let source = self.source(scope);
         let (field, expression) =
-            self.computed_standard_field(&source.fields, &source.sql_alias, token)?;
+            self.computed_standard_field(source.object, &source.fields, &source.sql_alias, token)?;
         Some(ResolvedPath {
             scope,
             owner: source.object,
@@ -714,7 +778,7 @@ impl CompilationContext<'_, '_> {
         }
         // The joined table may expose a computed standard field too.
         let computed = computed.then(|| {
-            self.computed_standard_field(&target_fields, &alias, target_token)
+            self.computed_standard_field(target_object_id, &target_fields, &alias, target_token)
                 .ok_or_else(|| {
                     QueryDiagnostic::at(
                         QueryDiagnosticKind::UnknownField,

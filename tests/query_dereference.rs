@@ -223,4 +223,58 @@ fn resolves_the_computed_standard_fields() {
         &dereferenced.sql,
         "(\"__ref1\".\"_folder\" = FALSE) AS \"Гр\"",
     );
+
+    // `ИмяПредопределенныхДанных` names the predefined item the row is,
+    // read from the predefined values of the owning catalog. A row that is
+    // not predefined answers an empty string, and a row an outer join
+    // missed keeps NULL, both measured on the platform.
+    let named = compile_separated(
+        &snapshot,
+        "ВЫБРАТЬ Т.ИмяПредопределенныхДанных КАК П ИЗ Справочник.ГруппыДоступа КАК Т;",
+    );
+    assert_contains(
+        &named.sql,
+        "CASE WHEN \"Т\".\"_predefinedid\" IS NULL THEN NULL::text \
+         WHEN \"Т\".\"_predefinedid\" = decode('b5786f0d29e6182246ca59783c39be2b', 'hex') \
+         THEN 'Администраторы' ELSE '' END AS \"П\"",
+    );
+    assert_eq!(
+        named.columns[0].kind,
+        open_sdbl::query::ColumnKind::String { length: None }
+    );
+
+    // The English spelling answers the same, and the name reads through a
+    // reference as well.
+    let english = compile_separated(
+        &snapshot,
+        "ВЫБРАТЬ Т.Родитель.PredefinedDataName КАК П ИЗ Справочник.ГруппыДоступа КАК Т
+         ГДЕ Т.ИмяПредопределенныхДанных = \"Администраторы\";",
+    );
+    assert_contains(
+        &english.sql,
+        "CASE WHEN \"__ref1\".\"_predefinedid\" IS NULL",
+    );
+    assert_contains(
+        &english.sql,
+        "THEN 'Администраторы' ELSE '' END = 'Администраторы')",
+    );
+
+    // SQL Server spells the literals as national strings.
+    let mssql = QueryCompiler::new(&snapshot, MsSqlBackend::new(0).unwrap())
+        .compile_with(
+            "ВЫБРАТЬ Т.ИмяПредопределенныхДанных КАК П ИЗ Справочник.ГруппыДоступа КАК Т;",
+            &open_sdbl::query::CompileOptions::new().session(&session),
+        )
+        .unwrap();
+    assert_contains(&mssql.sql, "THEN N'Администраторы' ELSE N'' END AS [П]");
+
+    // A document stores no predefined identity, so the name is unknown
+    // there, as it is on the platform.
+    let error = QueryCompiler::new(&snapshot, PostgresBackend)
+        .compile("ВЫБРАТЬ Д.ИмяПредопределенныхДанных ИЗ Документ.ВходящееПисьмо КАК Д;")
+        .unwrap_err();
+    assert!(
+        format!("{error}").contains("ИмяПредопределенныхДанных"),
+        "{error}"
+    );
 }
