@@ -6206,3 +6206,76 @@ fn compiles_range_predicates() {
     .unwrap();
     assert_eq!(labels(&identifier), ["Между"]);
 }
+
+#[test]
+fn negation_binds_looser_than_a_comparison() {
+    // Measured on the platform: `ГДЕ НЕ Цена = 10` answers every row whose
+    // price differs from ten, so the negation covers the comparison.
+    let snapshot = snapshot();
+    let compiled = postgres_compile!(
+        "ВЫБРАТЬ Код ИЗ Справочник.OpenSdblMetadataProbe КАК Т ГДЕ НЕ Т.Код = \"а\";",
+        &snapshot,
+    )
+    .unwrap();
+    assert!(
+        compiled
+            .sql
+            .ends_with("WHERE (NOT (\"Т\".\"_code\" = 'а'))"),
+        "{}",
+        compiled.sql
+    );
+
+    // It groups before a conjunction, so only the first comparison is
+    // negated, and it also covers ПОДОБНО, В and ЕСТЬ NULL.
+    let conjunction = postgres_compile!(
+        "ВЫБРАТЬ Код ИЗ Справочник.OpenSdblMetadataProbe КАК Т
+         ГДЕ НЕ Т.Код = \"а\" И Т.Код = \"б\";",
+        &snapshot,
+    )
+    .unwrap();
+    assert!(
+        conjunction
+            .sql
+            .ends_with("WHERE ((NOT (\"Т\".\"_code\" = 'а')) AND (\"Т\".\"_code\" = 'б'))"),
+        "{}",
+        conjunction.sql
+    );
+
+    let like = postgres_compile!(
+        "ВЫБРАТЬ Код ИЗ Справочник.OpenSdblMetadataProbe КАК Т ГДЕ НЕ Т.Код ПОДОБНО \"а%\";",
+        &snapshot,
+    )
+    .unwrap();
+    assert!(
+        like.sql
+            .ends_with("WHERE (NOT (\"Т\".\"_code\" LIKE 'а%'))"),
+        "{}",
+        like.sql
+    );
+
+    let membership = postgres_compile!(
+        "ВЫБРАТЬ Код ИЗ Справочник.OpenSdblMetadataProbe КАК Т ГДЕ НЕ Т.Код В (\"а\", \"б\");",
+        &snapshot,
+    )
+    .unwrap();
+    assert!(
+        membership
+            .sql
+            .ends_with("WHERE (NOT (\"Т\".\"_code\" IN ('а', 'б')))"),
+        "{}",
+        membership.sql
+    );
+
+    let null_test = postgres_compile!(
+        "ВЫБРАТЬ Код ИЗ Справочник.OpenSdblMetadataProbe КАК Т ГДЕ НЕ Т.Код ЕСТЬ NULL;",
+        &snapshot,
+    )
+    .unwrap();
+    assert!(
+        null_test
+            .sql
+            .ends_with("WHERE (NOT (\"Т\".\"_code\" IS NULL))"),
+        "{}",
+        null_test.sql
+    );
+}

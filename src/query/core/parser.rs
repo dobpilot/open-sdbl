@@ -982,13 +982,39 @@ impl<'tokens, 'source> Parser<'tokens, 'source> {
     }
 
     fn parse_and(&mut self) -> Result<Expression<'tokens, 'source>, QueryDiagnostic> {
-        let mut expression = self.parse_comparison()?;
+        let mut expression = self.parse_not()?;
         while let Some(operator) = self.consume_keyword_token(Keyword::And) {
             self.record_binary_operator(operator)?;
             expression = Expression::Binary {
                 left: Box::new(expression),
                 operator,
-                right: Box::new(self.parse_comparison()?),
+                right: Box::new(self.parse_not()?),
+            };
+        }
+        Ok(expression)
+    }
+
+    /// `НЕ` binds looser than every comparison and tighter than `И`, so it
+    /// negates the comparison, `ПОДОБНО`, `В`, `ССЫЛКА` or `ЕСТЬ NULL`
+    /// written to its right and groups before a conjunction. Measured on
+    /// the platform, where `ГДЕ НЕ Цена = 10` answers every other price.
+    fn parse_not(&mut self) -> Result<Expression<'tokens, 'source>, QueryDiagnostic> {
+        let mut operators = Vec::new();
+        while let Some(operator) = self.consume_keyword_token(Keyword::Not) {
+            if self.depth + operators.len() >= Self::MAX_DEPTH {
+                return Err(QueryDiagnostic::at(
+                    QueryDiagnosticKind::TooDeep,
+                    Some(operator),
+                    format!("query nesting depth exceeds limit of {}", Self::MAX_DEPTH),
+                ));
+            }
+            operators.push(operator);
+        }
+        let mut expression = self.parse_comparison()?;
+        for operator in operators.into_iter().rev() {
+            expression = Expression::Unary {
+                operator,
+                value: Box::new(expression),
             };
         }
         Ok(expression)
@@ -1218,11 +1244,10 @@ impl<'tokens, 'source> Parser<'tokens, 'source> {
     fn parse_unary(&mut self) -> Result<Expression<'tokens, 'source>, QueryDiagnostic> {
         let mut operators = Vec::new();
         loop {
-            let operator = self.consume_keyword_token(Keyword::Not).or_else(|| {
-                self.peek()
-                    .is_some_and(|token| matches!(token.lexeme, "+" | "-"))
-                    .then(|| self.next().expect("peeked token"))
-            });
+            let operator = self
+                .peek()
+                .is_some_and(|token| matches!(token.lexeme, "+" | "-"))
+                .then(|| self.next().expect("peeked token"));
             let Some(operator) = operator else {
                 break;
             };
