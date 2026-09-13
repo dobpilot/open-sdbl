@@ -566,6 +566,22 @@ pub(crate) fn accumulation_register_snapshot() -> open_sdbl::metadata::MetadataS
                 reference_target: None,
             }],
         },
+        // The standard fields a register writes beside its own: the
+        // document that wrote the record and its line number.
+        SchemaColumn {
+            name: "Recorder".to_owned(),
+            types: vec![ColumnType {
+                tag: "R".to_owned(),
+                reference_target: Some("Document53".to_owned()),
+            }],
+        },
+        SchemaColumn {
+            name: "LineNo".to_owned(),
+            types: vec![ColumnType {
+                tag: "N".to_owned(),
+                reference_target: None,
+            }],
+        },
     ]);
 
     let mut live_tables = base.live_tables().to_vec();
@@ -591,6 +607,14 @@ pub(crate) fn accumulation_register_snapshot() -> open_sdbl::metadata::MetadataS
         LiveColumn {
             name: "_fld55".to_owned(),
             data_type: "numeric(10,2)".to_owned(),
+        },
+        LiveColumn {
+            name: "_recorderrref".to_owned(),
+            data_type: "bytea".to_owned(),
+        },
+        LiveColumn {
+            name: "_lineno".to_owned(),
+            data_type: "numeric(9,0)".to_owned(),
         },
     ]);
 

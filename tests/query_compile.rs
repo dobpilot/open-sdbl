@@ -1515,12 +1515,23 @@ fn rejects_invalid_accumulation_virtual_table_shapes() {
         "{}",
         periodicity.sql
     );
+    // The recorder periodicities compile; an unknown name does not.
     let recorder = postgres_compile!(
         "SELECT КоличествоОборот FROM AccumulationRegister.Остатки.Turnovers(,,Регистратор,);",
         &register,
     )
+    .unwrap();
+    assert!(
+        recorder.sql.contains("\"_recorderrref\""),
+        "{}",
+        recorder.sql
+    );
+    let unknown = postgres_compile!(
+        "SELECT КоличествоОборот FROM AccumulationRegister.Остатки.Turnovers(,,Пятилетка,);",
+        &register,
+    )
     .unwrap_err();
-    assert!(recorder.message().contains("periodicity"), "{recorder}");
+    assert!(unknown.message().contains("periodicity"), "{unknown}");
 
     let resource_condition = postgres_compile!(
         "SELECT КоличествоОстаток FROM AccumulationRegister.Остатки.Balance(, Количество > 0);",

@@ -119,17 +119,17 @@ fn groups_turnovers_by_the_requested_period() {
         "DATETIME2FROMPARTS(YEAR([__aggregate_base].[_period]), 1, 1, 0, 0, 0, 0, 0)",
     );
 
-    let recorder = QueryCompiler::new(&snapshot, PostgresBackend)
+    let unknown = QueryCompiler::new(&snapshot, PostgresBackend)
         .compile(
             "ВЫБРАТЬ О.КоличествоОборот КАК Кол
-             ИЗ РегистрНакопления.Остатки.Обороты(, , Регистратор, ) КАК О;",
+             ИЗ РегистрНакопления.Остатки.Обороты(, , Пятилетка, ) КАК О;",
         )
         .unwrap_err();
     assert_eq!(
-        recorder.kind(),
+        unknown.kind(),
         open_sdbl::query::QueryDiagnosticKind::UnsupportedFeature
     );
-    assert!(recorder.message().contains("periodicity"), "{recorder}");
+    assert!(unknown.message().contains("periodicity"), "{unknown}");
 }
 
 #[test]
@@ -201,4 +201,49 @@ fn compiles_the_balance_and_turnovers_table() {
         );
         assert!(error.message().contains(message), "{source}: {error}");
     }
+}
+
+#[test]
+fn groups_turnovers_by_recorder_and_record() {
+    let snapshot = accumulation_register_snapshot();
+    let recorder = postgres(
+        &snapshot,
+        "ВЫБРАТЬ О.Период КАК П, О.Регистратор КАК Р, О.КоличествоОборот КАК Кол
+         ИЗ РегистрНакопления.Остатки.Обороты(, , Регистратор, ) КАК О;",
+    );
+    // The record's own period is kept, not a truncated one.
+    assert_contains(
+        &recorder.sql,
+        "\"__aggregate_base\".\"_period\" AS \"_period\", \"__aggregate_base\".\"_recorderrref\" AS \"_recorderrref\"",
+    );
+    assert_contains(
+        &recorder.sql,
+        "GROUP BY \"__aggregate_base\".\"_period\", \"__aggregate_base\".\"_recorderrref\", \"__aggregate_base\".\"_fld54\"",
+    );
+    assert!(!recorder.sql.contains("_lineno"), "{}", recorder.sql);
+
+    // The record periodicity adds the line number.
+    let record = postgres(
+        &snapshot,
+        "ВЫБРАТЬ О.НомерСтроки КАК Н, О.КоличествоОборот КАК Кол
+         ИЗ РегистрНакопления.Остатки.Обороты(, , Запись, ) КАК О;",
+    );
+    assert_contains(
+        &record.sql,
+        "\"__aggregate_base\".\"_lineno\" AS \"_lineno\"",
+    );
+    // The statement reads no dimension, so the dimension is summed away
+    // while the record split stays.
+    assert_contains(
+        &record.sql,
+        "\"__aggregate_used\".\"_lineno\" AS \"_lineno\"",
+    );
+
+    // `НомерСтроки` belongs to the record periodicity alone.
+    let missing = QueryCompiler::new(&snapshot, PostgresBackend)
+        .compile(
+            "ВЫБРАТЬ О.НомерСтроки КАК Н ИЗ РегистрНакопления.Остатки.Обороты(, , Регистратор, ) КАК О;",
+        )
+        .unwrap_err();
+    assert!(missing.message().contains("was not found"), "{missing}");
 }

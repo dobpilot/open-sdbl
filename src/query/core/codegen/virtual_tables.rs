@@ -254,13 +254,44 @@ pub(super) fn compile_accumulation_relation(
 
     let mut projections = Vec::new();
     let mut grouping = Vec::new();
-    if let Some(periodicity) = periodicity {
-        let truncated = dialect.begin_of_period(&qualified_period, periodicity);
-        projections.push(format!(
-            "{truncated} AS {}",
-            dialect.quote_identifier(&period_column.physical_name)
-        ));
-        grouping.push(truncated);
+    // Every periodicity is a grouping level of its own: the platform
+    // keeps it even when the statement never reads the column.
+    let mut split_fields = Vec::new();
+    match periodicity {
+        Some(TurnoverPeriodicity::Calendar(unit)) => {
+            let truncated = dialect.begin_of_period(&qualified_period, unit);
+            projections.push(format!(
+                "{truncated} AS {}",
+                dialect.quote_identifier(&period_column.physical_name)
+            ));
+            grouping.push(truncated);
+            split_fields.push(turnovers_period_field(period));
+        }
+        Some(periodicity @ (TurnoverPeriodicity::Recorder | TurnoverPeriodicity::Record)) => {
+            projections.push(format!(
+                "{qualified_period} AS {}",
+                dialect.quote_identifier(&period_column.physical_name)
+            ));
+            grouping.push(qualified_period.clone());
+            split_fields.push(turnovers_period_field(period));
+            let mut standard = vec![register_standard_field(fields, "Recorder", virtual_table)?];
+            if periodicity == TurnoverPeriodicity::Record {
+                standard.push(register_standard_field(fields, "LineNo", virtual_table)?);
+            }
+            for field in standard {
+                for column in &field.columns {
+                    let sql =
+                        dialect.qualified_column(Some("__aggregate_base"), &column.physical_name);
+                    projections.push(format!(
+                        "{sql} AS {}",
+                        dialect.quote_identifier(&column.physical_name)
+                    ));
+                    grouping.push(sql);
+                }
+                split_fields.push(field.clone());
+            }
+        }
+        None => {}
     }
     for field in &dimension_fields {
         for column in &field.columns {
@@ -304,10 +335,12 @@ pub(super) fn compile_accumulation_relation(
     relation.push(')');
 
     let mut aggregate = aggregate_source(&dimension_fields, &resource_fields);
-    if periodicity.is_some() {
-        dimension_fields.push(turnovers_period_field(period));
-        aggregate.period = Some(period_column.physical_name.clone());
-    }
+    aggregate.split = split_fields
+        .iter()
+        .flat_map(|field| field.columns.iter())
+        .map(|column| column.physical_name.clone())
+        .collect();
+    dimension_fields.extend(split_fields);
     dimension_fields.extend(virtual_resources);
     Ok(CompiledSourceRelation {
         sql: relation,
@@ -510,26 +543,65 @@ fn balance_and_turnover_field(
     result
 }
 
-/// Reads the periodicity of `Обороты`: the platform writes a bare period
-/// name there, which parses as a one-segment field path.
+/// How `Обороты` splits its rows: by a calendar period, by the document
+/// that wrote the records, or by the record itself.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum TurnoverPeriodicity {
+    Calendar(PeriodKind),
+    Recorder,
+    Record,
+}
+
+/// Reads the periodicity of `Обороты`: the platform writes a bare name
+/// there, which parses as a one-segment field path.
 fn turnovers_periodicity(
     expression: &Expression<'_, '_>,
     virtual_table: &AccumulationAst<'_, '_>,
-) -> Result<PeriodKind, QueryDiagnostic> {
+) -> Result<TurnoverPeriodicity, QueryDiagnostic> {
     let token = match expression {
         Expression::Field(reference) if reference.segments.len() == 1 => reference.last(),
         other => operand_token(other).unwrap_or(virtual_table.token),
     };
-    PeriodKind::from_name(token.lexeme).ok_or_else(|| {
-        QueryDiagnostic::at(
-            QueryDiagnosticKind::UnsupportedFeature,
-            Some(token),
-            format!(
-                "Turnovers periodicity {:?} is not supported; use a calendar period from SECOND to YEAR",
-                token.lexeme
-            ),
-        )
-    })
+    if names_equal(token.lexeme, "Регистратор") || names_equal(token.lexeme, "Recorder")
+    {
+        return Ok(TurnoverPeriodicity::Recorder);
+    }
+    if names_equal(token.lexeme, "Запись") || names_equal(token.lexeme, "Record") {
+        return Ok(TurnoverPeriodicity::Record);
+    }
+    PeriodKind::from_name(token.lexeme)
+        .map(TurnoverPeriodicity::Calendar)
+        .ok_or_else(|| {
+            QueryDiagnostic::at(
+                QueryDiagnosticKind::UnsupportedFeature,
+                Some(token),
+                format!(
+                    "Turnovers periodicity {:?} is not supported; use a calendar period, Регистратор or Запись",
+                    token.lexeme
+                ),
+            )
+        })
+}
+
+/// A standard field of the register exposed by a periodic `Обороты`.
+fn register_standard_field<'fields>(
+    fields: &'fields [QueryableField],
+    schema_name: &str,
+    virtual_table: &AccumulationAst<'_, '_>,
+) -> Result<&'fields QueryableField, QueryDiagnostic> {
+    fields
+        .iter()
+        .find(|field| names_equal(&field.schema_name, schema_name))
+        .ok_or_else(|| {
+            QueryDiagnostic::at(
+                QueryDiagnosticKind::NotLive,
+                Some(virtual_table.token),
+                format!(
+                    "{} by {schema_name} requires a live {schema_name} field",
+                    virtual_table.kind.name()
+                ),
+            )
+        })
 }
 
 /// The `Период` field a periodic `Обороты` exposes: the beginning of the
@@ -555,11 +627,11 @@ pub(super) struct AggregateSource {
     /// Physical column of every resource; they are summed when a
     /// dimension is dropped.
     pub(super) resources: Vec<String>,
-    /// Physical column of the period of a periodic `Обороты`. The
-    /// periodicity is an explicit request to split by period, so the
-    /// platform keeps that grouping even when the statement never reads
-    /// the column.
-    pub(super) period: Option<String>,
+    /// Physical columns a periodicity splits `Обороты` by: the period,
+    /// and the recorder and line number of the record periodicities. A
+    /// periodicity is an explicit request to split, so the platform keeps
+    /// those groupings even when the statement never reads the columns.
+    pub(super) split: Vec<String>,
 }
 
 /// Sums away the dimensions the statement never reads, as the platform
@@ -583,7 +655,7 @@ pub(super) fn finalize_aggregate_relation(scope: &mut SourceScope, dialect: SqlD
         .iter()
         .filter(|(index, _)| used.contains(index))
         .flat_map(|(_, columns)| columns.iter())
-        .chain(aggregate.period.iter())
+        .chain(aggregate.split.iter())
         .collect::<Vec<_>>();
     let kept = columns
         .iter()
@@ -642,7 +714,7 @@ fn aggregate_source(
             .flat_map(|field| field.columns.iter())
             .map(|column| column.physical_name.clone())
             .collect(),
-        period: None,
+        split: Vec::new(),
     }
 }
 
