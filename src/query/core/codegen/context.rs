@@ -330,7 +330,12 @@ impl CompilationContext<'_, '_> {
         field: &Token<'_>,
     ) -> Result<ResolvedPath, QueryDiagnostic> {
         let source = self.source(scope);
-        let (field_index, _) = resolve_named_field(&source.fields, field)?;
+        let (field_index, _) = match resolve_named_field(&source.fields, field) {
+            Ok(resolved) => resolved,
+            Err(error) => {
+                return self.computed_scope_field(scope, field).ok_or(error);
+            }
+        };
         source.used_fields.borrow_mut().insert(field_index);
         Ok(ResolvedPath {
             scope,
@@ -341,6 +346,74 @@ impl CompilationContext<'_, '_> {
             sql_alias: source.sql_alias.clone(),
             path_label: None,
             expression: None,
+        })
+    }
+
+    /// The standard fields the platform computes instead of storing:
+    /// `ЭтоГруппа` is the negation of the `Folder` column, which holds
+    /// true for an item, and `Предопределенный` says the `PredefinedID`
+    /// column is not the empty reference. Both are measured against the
+    /// platform.
+    fn computed_standard_field(
+        &self,
+        fields: &[QueryableField],
+        alias: &str,
+        token: &Token<'_>,
+    ) -> Option<(QueryableField, String)> {
+        let (schema_name, negated) = if names_equal(token.lexeme, "ЭтоГруппа")
+            || names_equal(token.lexeme, "IsFolder")
+        {
+            ("Folder", true)
+        } else if names_equal(token.lexeme, "Предопределенный")
+            || names_equal(token.lexeme, "Предопределённый")
+        {
+            ("PredefinedID", false)
+        } else {
+            return None;
+        };
+        let source = fields
+            .iter()
+            .find(|field| names_equal(&field.schema_name, schema_name))?;
+        let column = source.columns.first()?;
+        let qualified = self
+            .dialect
+            .qualified_column(Some(alias), &column.physical_name);
+        let predicate = if negated {
+            format!("{qualified} = {}", self.dialect.boolean_literal(false))
+        } else {
+            format!("{qualified} <> {}", self.dialect.binary_literal(&[0; 16]))
+        };
+        let name = token.lexeme.to_owned();
+        let field = QueryableField {
+            name: name.clone(),
+            schema_name: schema_name.to_owned(),
+            aliases: vec![name.clone()],
+            columns: vec![QueryableColumn {
+                physical_name: column.physical_name.clone(),
+                data_type: "boolean".to_owned(),
+                output_label: name,
+                kind: ColumnKind::Boolean,
+            }],
+            reference_target: None,
+            reference_targets: Vec::new(),
+        };
+        Some((field, self.dialect.boolean_value(&predicate)))
+    }
+
+    /// Resolves a computed standard field of one source scope.
+    fn computed_scope_field(&self, scope: ScopeId, token: &Token<'_>) -> Option<ResolvedPath> {
+        let source = self.source(scope);
+        let (field, expression) =
+            self.computed_standard_field(&source.fields, &source.sql_alias, token)?;
+        Some(ResolvedPath {
+            scope,
+            owner: source.object,
+            identity_is_base: false,
+            fields: Arc::from(vec![field]),
+            field_index: 0,
+            sql_alias: source.sql_alias.clone(),
+            path_label: None,
+            expression: Some(expression),
         })
     }
 
@@ -383,15 +456,19 @@ impl CompilationContext<'_, '_> {
                     .collect::<Vec<_>>();
                 match matches.as_slice() {
                     [(scope, _)] => self.direct_field(*scope, field),
-                    [] => Err(QueryDiagnostic::at(
-                        QueryDiagnosticKind::UnknownField,
-                        Some(field),
-                        format!(
-                            "field {:?} was not found in {}",
-                            field.lexeme,
-                            self.scope_description()
-                        ),
-                    )),
+                    [] => (0..self.sources.len())
+                        .find_map(|index| self.computed_scope_field(ScopeId(index), field))
+                        .ok_or_else(|| {
+                            QueryDiagnostic::at(
+                                QueryDiagnosticKind::UnknownField,
+                                Some(field),
+                                format!(
+                                    "field {:?} was not found in {}",
+                                    field.lexeme,
+                                    self.scope_description()
+                                ),
+                            )
+                        }),
                     _ => Err(QueryDiagnostic::at(
                         QueryDiagnosticKind::AmbiguousField,
                         Some(field),
@@ -571,7 +648,12 @@ impl CompilationContext<'_, '_> {
         })?;
         let target_object_id = ObjectId::from(&target_object.guid);
         let target_fields = self.catalog.fields(target_object, Some(reference_token))?;
-        let (target_field_index, _) = resolve_named_field(&target_fields, target_token)?;
+        let computed = resolve_named_field(&target_fields, target_token).is_err();
+        let (target_field_index, _) = if computed {
+            (0, &target_fields[0])
+        } else {
+            resolve_named_field(&target_fields, target_token)?
+        };
         let target_id = target_fields
             .iter()
             .find(|field| names_equal(&field.schema_name, "ID"))
@@ -630,18 +712,33 @@ impl CompilationContext<'_, '_> {
         if self.compiling_join_condition {
             self.dereference_in_join = true;
         }
+        // The joined table may expose a computed standard field too.
+        let computed = computed.then(|| {
+            self.computed_standard_field(&target_fields, &alias, target_token)
+                .ok_or_else(|| {
+                    QueryDiagnostic::at(
+                        QueryDiagnosticKind::UnknownField,
+                        Some(target_token),
+                        format!("field {:?} was not found", target_token.lexeme),
+                    )
+                })
+        });
+        let (fields, field_index, expression) = match computed.transpose()? {
+            Some((field, expression)) => (Arc::from(vec![field]), 0, Some(expression)),
+            None => (target_fields, target_field_index, None),
+        };
         Ok(ResolvedPath {
             scope,
             owner: target_object_id,
             identity_is_base: true,
-            fields: target_fields,
-            field_index: target_field_index,
+            fields,
+            field_index,
             sql_alias: alias,
             path_label: Some(format!(
                 "{}.{}",
                 reference_token.lexeme, target_token.lexeme
             )),
-            expression: None,
+            expression,
         })
     }
 

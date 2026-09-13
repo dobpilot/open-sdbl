@@ -90,6 +90,63 @@ fn options(text: &str) -> (Vec<QueryParameter>, SessionParameters) {
     (parameters, session)
 }
 
+/// Rewrites `expected.jsonl` from the current compiler. Run it after a
+/// change that the corpus test reports, and commit the diff:
+/// `cargo test -p open-sdbl --test query_corpus -- --ignored`.
+#[test]
+#[ignore = "maintenance: rewrites the recorded results"]
+fn rerecord_the_demo_corpus() {
+    let root = fixture();
+    let snapshot = support::demo_resolved_at(&root).snapshot;
+    let corpus = std::fs::read_to_string(root.join("corpus.jsonl")).unwrap();
+    let mut expected = String::new();
+    let mut compiled = 0usize;
+    for line in corpus.lines().filter(|line| !line.trim().is_empty()) {
+        let query = json_field(line, "text");
+        let (parameters, session) = options(&query);
+        let outcome = match QueryCompiler::new(&snapshot, PostgresBackend).compile_with(
+            &query,
+            &CompileOptions::new()
+                .parameters(&parameters)
+                .session(&session),
+        ) {
+            Ok(result) => {
+                compiled += 1;
+                result.sql
+            }
+            Err(error) => format!("!{:?}: {}", error.kind(), error.message()),
+        };
+        expected.push_str(&escape(&outcome));
+        expected.push('\n');
+    }
+    std::fs::write(root.join("expected.jsonl"), expected).unwrap();
+    println!(
+        "recorded {compiled} compiling queries of {}",
+        corpus.lines().count()
+    );
+}
+
+/// Writes a JSON string the way the corpus files spell one.
+fn escape(value: &str) -> String {
+    let mut out = String::with_capacity(value.len() + 2);
+    out.push('"');
+    for character in value.chars() {
+        match character {
+            '"' => out.push_str("\\\""),
+            '\\' => out.push_str("\\\\"),
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            '\t' => out.push_str("\\t"),
+            control if (control as u32) < 0x20 => {
+                out.push_str(&format!("\\u{:04x}", control as u32));
+            }
+            other => out.push(other),
+        }
+    }
+    out.push('"');
+    out
+}
+
 #[test]
 fn compiles_the_demo_corpus_as_recorded() {
     let root = fixture();
@@ -151,5 +208,5 @@ fn compiles_the_demo_corpus_as_recorded() {
             .join("\n")
     );
     // The share that compiles is recorded so an improvement is visible.
-    assert_eq!(compiled, 116, "queries that compile");
+    assert_eq!(compiled, 151, "queries that compile");
 }

@@ -348,6 +348,19 @@ impl SqlDialect {
         }
     }
 
+    /// Renders a predicate as a value of boolean kind: PostgreSQL has a
+    /// boolean type, SQL Server needs the bit spelled out.
+    pub(super) fn boolean_value(self, predicate: &str) -> String {
+        match self {
+            Self::Postgres => format!("({predicate})"),
+            Self::MsSql { .. } => format!(
+                "CASE WHEN {predicate} THEN {} ELSE {} END",
+                self.boolean_literal(true),
+                self.boolean_literal(false)
+            ),
+        }
+    }
+
     /// Renders one call of the scalar string and arithmetic library.
     /// PostgreSQL keeps to 9.0: `left`/`right` arrived in 9.1, so both are
     /// spelled with `substring`, and `round`/`trunc` take `numeric`.

@@ -143,3 +143,84 @@ fn dereferences_standard_fields_through_a_composite_reference() {
         .unwrap_err();
     assert!(unknown.message().contains("was not found"), "{unknown}");
 }
+
+#[test]
+fn resolves_the_computed_standard_fields() {
+    fn compile_separated(snapshot: &MetadataSnapshot, source: &str) -> CompiledQuery {
+        let mut session = open_sdbl::query::SessionParameters::new();
+        session.set(open_sdbl::query::QueryParameter::new(
+            "ЗначениеРазделителя",
+            open_sdbl::query::ParameterValue::Number {
+                unscaled: 0,
+                scale: 0,
+            },
+        ));
+        session.set(open_sdbl::query::QueryParameter::new(
+            "ИспользованиеРазделителя",
+            open_sdbl::query::ParameterValue::Boolean(false),
+        ));
+        QueryCompiler::new(snapshot, PostgresBackend)
+            .compile_with(
+                source,
+                &open_sdbl::query::CompileOptions::new().session(&session),
+            )
+            .unwrap_or_else(|error| panic!("{source}: {error}"))
+    }
+
+    // `ЭтоГруппа` is the negation of the stored `Folder` column, which is
+    // true for an item, and `Предопределенный` says the item has a
+    // predefined identity.
+    let snapshot = support::demo_resolved_at(
+        &std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/demo"),
+    )
+    .snapshot;
+    let compiled = compile_separated(
+        &snapshot,
+        "ВЫБРАТЬ Т.Наименование КАК Имя, Т.ЭтоГруппа КАК Гр, Т.Предопределенный КАК Пред
+         ИЗ Справочник.ГруппыДоступа КАК Т ГДЕ Т.ЭтоГруппа;",
+    );
+    assert_contains(&compiled.sql, "(\"Т\".\"_folder\" = FALSE) AS \"Гр\"");
+    assert_contains(
+        &compiled.sql,
+        "(\"Т\".\"_predefinedid\" <> decode('00000000000000000000000000000000', 'hex')) AS \"Пред\"",
+    );
+    assert_contains(&compiled.sql, "AND (\"Т\".\"_folder\" = FALSE)");
+    assert_eq!(
+        compiled.columns[1].kind,
+        open_sdbl::query::ColumnKind::Boolean
+    );
+
+    // SQL Server has no boolean type, so the value is spelled as a bit.
+    let mut session = open_sdbl::query::SessionParameters::new();
+    session.set(open_sdbl::query::QueryParameter::new(
+        "ЗначениеРазделителя",
+        open_sdbl::query::ParameterValue::Number {
+            unscaled: 0,
+            scale: 0,
+        },
+    ));
+    session.set(open_sdbl::query::QueryParameter::new(
+        "ИспользованиеРазделителя",
+        open_sdbl::query::ParameterValue::Boolean(false),
+    ));
+    let mssql = QueryCompiler::new(&snapshot, MsSqlBackend::new(0).unwrap())
+        .compile_with(
+            "ВЫБРАТЬ Т.ЭтоГруппа КАК Гр ИЗ Справочник.ГруппыДоступа КАК Т;",
+            &open_sdbl::query::CompileOptions::new().session(&session),
+        )
+        .unwrap();
+    assert_contains(
+        &mssql.sql,
+        "CASE WHEN [Т].[_folder] = 0x00 THEN 0x01 ELSE 0x00 END AS [Гр]",
+    );
+
+    // They also answer through a reference.
+    let dereferenced = compile_separated(
+        &snapshot,
+        "ВЫБРАТЬ Т.Родитель.ЭтоГруппа КАК Гр ИЗ Справочник.ГруппыДоступа КАК Т;",
+    );
+    assert_contains(
+        &dereferenced.sql,
+        "(\"__ref1\".\"_folder\" = FALSE) AS \"Гр\"",
+    );
+}
