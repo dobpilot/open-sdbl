@@ -370,3 +370,33 @@ fn renders_hierarchy_totals_with_recursive_ctes() {
         batch.sql
     );
 }
+
+#[test]
+fn projects_expression_order_keys_as_hidden_columns() {
+    let snapshot = support::snapshot();
+    let compiled = compile(
+        &snapshot,
+        PostgresBackend,
+        "ВЫБРАТЬ Ссылка КАК Товар, Code КАК Код ИЗ Справочник.OpenSdblMetadataProbe
+         УПОРЯДОЧИТЬ ПО ЕСТЬNULL(Code, \"\") УБЫВ
+         ИТОГИ КОЛИЧЕСТВО(Код) ПО Товар;",
+        false,
+    )
+    .unwrap();
+    // The totals wrapper re-orders the rows, so the key travels as a
+    // column of the wrapped statement.
+    assert_contains(
+        &compiled.sql,
+        "COALESCE(\"__src\".\"_code\", '') AS \"__order_1\"",
+    );
+    assert_contains(
+        &compiled.sql,
+        "ROW_NUMBER() OVER (ORDER BY \"__order_1\" DESC)",
+    );
+    assert!(
+        !compiled
+            .columns
+            .iter()
+            .any(|column| column.label == "__order_1")
+    );
+}

@@ -188,7 +188,7 @@ pub(super) fn compile_source_free_branch(
     if !order_terms.is_empty() {
         return Err(QueryDiagnostic::at(
             QueryDiagnosticKind::UnsupportedFeature,
-            Some(order_terms[0].field.last()),
+            Some(order_terms[0].token),
             "ORDER BY requires FROM for a source-free SELECT",
         ));
     }

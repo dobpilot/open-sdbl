@@ -14,8 +14,8 @@ use super::sources::{
 };
 use crate::metadata::{Guid, MetadataSnapshot, ObjectId};
 use crate::query::core::ast::{
-    AggregateArgument, CastTarget, Expression, FieldReference, JoinAst, JoinKind, OrderTerm,
-    PresentationArgument, Projection, ProjectionItem, SelectAst, SourceAst, TypeName,
+    AggregateArgument, CastTarget, Expression, FieldReference, JoinAst, JoinKind, OrderKeyAst,
+    OrderTerm, PresentationArgument, Projection, ProjectionItem, SelectAst, SourceAst, TypeName,
 };
 use crate::query::core::dialect::{OutputLabelAllocator, SqlDialect};
 use crate::query::core::names::names_equal;
@@ -811,7 +811,24 @@ fn compile_order_terms(
     order_terms
         .iter()
         .map(|term| {
-            if let Some(index) = aliased_projection(ast, &term.field) {
+            let field = match &term.key {
+                OrderKeyAst::Field(field) => field,
+                OrderKeyAst::Expression(expression) => {
+                    if positional {
+                        return Err(QueryDiagnostic::at(
+                            QueryDiagnosticKind::UnsupportedFeature,
+                            Some(term.token),
+                            missing_message,
+                        ));
+                    }
+                    return Ok(OrderKey {
+                        sql: compile_expression(expression, context)?,
+                        position: None,
+                        descending: term.descending,
+                    });
+                }
+            };
+            if let Some(index) = aliased_projection(ast, field) {
                 if positional {
                     return Ok(OrderKey {
                         sql: String::new(),
@@ -824,7 +841,7 @@ fn compile_order_terms(
                 let sql = match &selected[index] {
                     SelectedProjection::Generated { sql, .. } => sql.clone(),
                     SelectedProjection::Field(resolved) => {
-                        let column = single_column(resolved.field(), term.field.last())?;
+                        let column = single_column(resolved.field(), field.last())?;
                         context.sql_column(resolved, column)
                     }
                 };
@@ -834,14 +851,14 @@ fn compile_order_terms(
                     descending: term.descending,
                 });
             }
-            let resolved = context.resolve(&term.field)?;
-            let column = single_column(resolved.field(), term.field.last())?;
+            let resolved = context.resolve(field)?;
+            let column = single_column(resolved.field(), field.last())?;
             if positional {
                 let position = selected_column_position(selected, &resolved, &column.physical_name)
                     .ok_or_else(|| {
                         QueryDiagnostic::at(
                             QueryDiagnosticKind::UnsupportedFeature,
-                            Some(term.field.last()),
+                            Some(term.token),
                             missing_message,
                         )
                     })?;

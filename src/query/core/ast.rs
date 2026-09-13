@@ -309,10 +309,20 @@ impl<'tokens, 'source> FieldReference<'tokens, 'source> {
     }
 }
 
+/// One `УПОРЯДОЧИТЬ ПО` key: a field path (which may also name a
+/// projection alias) or any other supported expression. `token` is the
+/// first token of the key and positions its diagnostics.
 #[derive(Debug)]
 pub(super) struct OrderTerm<'tokens, 'source> {
-    pub(super) field: FieldReference<'tokens, 'source>,
+    pub(super) token: &'tokens Token<'source>,
+    pub(super) key: OrderKeyAst<'tokens, 'source>,
     pub(super) descending: bool,
+}
+
+#[derive(Debug)]
+pub(super) enum OrderKeyAst<'tokens, 'source> {
+    Field(FieldReference<'tokens, 'source>),
+    Expression(Expression<'tokens, 'source>),
 }
 
 /// The argument of `ТИП(…)`.

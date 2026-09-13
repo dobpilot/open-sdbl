@@ -6021,3 +6021,76 @@ fn casts_character_expressions_to_text_on_postgres() {
         mssql.sql
     );
 }
+
+/// `УПОРЯДОЧИТЬ ПО` accepts any expression in a branch whose ordering is
+/// rendered physically; positional ordering still needs a projected
+/// column or an alias.
+#[test]
+fn orders_by_computed_expressions() {
+    let snapshot = snapshot();
+    let compiled = postgres_compile!(
+        "ВЫБРАТЬ Код КАК Код ИЗ Справочник.OpenSdblMetadataProbe
+         УПОРЯДОЧИТЬ ПО ВЫБОР КОГДА Код = \"A\" ТОГДА 0 ИНАЧЕ 1 КОНЕЦ, ЕСТЬNULL(Код, \"\") УБЫВ;",
+        &snapshot,
+    )
+    .unwrap();
+    assert!(
+        compiled.sql.ends_with(
+            "ORDER BY CASE WHEN (\"__src\".\"_code\" = 'A') THEN 0 ELSE 1 END ASC, COALESCE(\"__src\".\"_code\", '') DESC"
+        ),
+        "{}",
+        compiled.sql
+    );
+
+    let mssql = compile_backend_generic(
+        &snapshot,
+        MsSqlBackend::new(0).unwrap(),
+        "ВЫБРАТЬ Код КАК Код ИЗ Справочник.OpenSdblMetadataProbe УПОРЯДОЧИТЬ ПО Код = \"A\";",
+    )
+    .unwrap();
+    assert!(
+        mssql.sql.ends_with("ORDER BY ([__src].[_code] = N'A') ASC"),
+        "{}",
+        mssql.sql
+    );
+
+    // A field path and a projection alias keep their own meaning.
+    let alias = postgres_compile!(
+        "ВЫБРАТЬ Код КАК Метка ИЗ Справочник.OpenSdblMetadataProbe УПОРЯДОЧИТЬ ПО Метка УБЫВ;",
+        &snapshot,
+    )
+    .unwrap();
+    assert!(
+        alias.sql.ends_with("ORDER BY \"__src\".\"_code\" DESC"),
+        "{}",
+        alias.sql
+    );
+
+    for (source, message) in [
+        (
+            "ВЫБРАТЬ a.Код КАК Код ИЗ Справочник.OpenSdblMetadataProbe КАК a
+             ВНУТРЕННЕЕ СОЕДИНЕНИЕ Справочник.OpenSdblMetadataProbe КАК b ПО b.Ссылка = a.Ссылка
+             УПОРЯДОЧИТЬ ПО ЕСТЬNULL(a.Код, \"\");",
+            "JOIN ORDER BY field must occur in the projection",
+        ),
+        (
+            "ВЫБРАТЬ Код КАК Код ИЗ Справочник.OpenSdblMetadataProbe
+             СГРУППИРОВАТЬ ПО Код УПОРЯДОЧИТЬ ПО ЕСТЬNULL(Код, \"\");",
+            "GROUP BY ORDER BY field must be a key or a projection alias",
+        ),
+        (
+            "ВЫБРАТЬ Код КАК Код ИЗ Справочник.OpenSdblMetadataProbe
+             ОБЪЕДИНИТЬ ВСЕ ВЫБРАТЬ Код ИЗ Справочник.OpenSdblMetadataProbe
+             УПОРЯДОЧИТЬ ПО ЕСТЬNULL(Код, \"\");",
+            "UNION ORDER BY field must occur in the first branch projection",
+        ),
+    ] {
+        let error = postgres_compile!(source, &snapshot).unwrap_err();
+        assert_eq!(
+            error.kind(),
+            open_sdbl::query::QueryDiagnosticKind::UnsupportedFeature,
+            "{source}: {error}"
+        );
+        assert!(error.message().contains(message), "{source}: {error}");
+    }
+}

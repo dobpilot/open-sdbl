@@ -3,10 +3,10 @@
 use crate::query::core::ast::{
     AccumulationAst, AccumulationKind, AggregateArgument, AggregateKind, BatchAst, CaseBranch,
     CastTarget, ControlPoint, DatePart, Expression, FieldReference, GroupKey, HierarchyTotals,
-    IndexAst, IntoAst, JoinAst, JoinKind, OrderTerm, PeriodKind, PeriodsAst, PresentationArgument,
-    PresentationOperation, PrimitiveType, Projection, ProjectionItem, QueryAst, SelectAst,
-    SliceAst, SliceKind, SourceAst, StatementAst, TotalsAst, TotalsField, TypeName, UnionLink,
-    parse_datetime_value,
+    IndexAst, IntoAst, JoinAst, JoinKind, OrderKeyAst, OrderTerm, PeriodKind, PeriodsAst,
+    PresentationArgument, PresentationOperation, PrimitiveType, Projection, ProjectionItem,
+    QueryAst, SelectAst, SliceAst, SliceKind, SourceAst, StatementAst, TotalsAst, TotalsField,
+    TypeName, UnionLink, parse_datetime_value,
 };
 use crate::query::core::diag::SourcePosition;
 use crate::query::core::names::names_equal;
@@ -906,14 +906,30 @@ impl<'tokens, 'source> Parser<'tokens, 'source> {
         if self.consume_keyword(Keyword::Order) {
             self.expect_keyword(Keyword::By)?;
             loop {
-                let field = self.parse_field_reference()?;
+                let token = self.peek().ok_or_else(|| {
+                    QueryDiagnostic::at_kind(
+                        QueryDiagnosticKind::Syntax,
+                        None,
+                        "expected an ORDER BY key",
+                    )
+                })?;
+                // A bare field path keeps naming a projection alias, so the
+                // common form is recognized before anything else.
+                let key = match self.parse_or()? {
+                    Expression::Field(field) => OrderKeyAst::Field(field),
+                    expression => OrderKeyAst::Expression(expression),
+                };
                 let descending = self.peek().is_some_and(|token| {
                     names_equal(token.lexeme, "DESC") || names_equal(token.lexeme, "УБЫВ")
                 });
                 if descending || self.peek().is_some_and(is_ascending_order) {
                     self.offset += 1;
                 }
-                order.push(OrderTerm { field, descending });
+                order.push(OrderTerm {
+                    token,
+                    key,
+                    descending,
+                });
                 if !self.consume_lexeme(",") {
                     break;
                 }

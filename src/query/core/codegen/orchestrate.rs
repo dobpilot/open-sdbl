@@ -175,7 +175,7 @@ pub(super) fn compile_query_ast(
         {
             return Err(QueryDiagnostic::at(
                 QueryDiagnosticKind::UnsupportedFeature,
-                Some(term.field.last()),
+                Some(term.token),
                 "ORDER BY inside a nested query requires TOP on a single branch",
             ));
         }
