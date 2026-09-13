@@ -894,6 +894,65 @@ pub(crate) fn separators_resolved() -> open_sdbl::metadata::ResolvedMetadata {
     resolve_metadata(db_names, descriptors, schema, live_tables)
 }
 
+/// Resolves a metadata fixture laid out like `tests/fixtures/demo`:
+/// the DBNames blob, the Config resources, the SchemaStorage text and the
+/// live columns of the tables the fixture keeps.
+pub(crate) fn demo_resolved_at(root: &std::path::Path) -> open_sdbl::metadata::ResolvedMetadata {
+    let db_names = parse_db_names(&std::fs::read(root.join("db_names.deflate")).unwrap()).unwrap();
+    // The Config resources travel in one pack: `<resource>\t<length>\n`
+    // followed by the raw deflate bytes of that resource.
+    let pack = std::fs::read(root.join("config.pack")).unwrap();
+    let mut descriptors = Vec::new();
+    let mut offset = 0usize;
+    while offset < pack.len() {
+        let newline = offset
+            + pack[offset..]
+                .iter()
+                .position(|byte| *byte == b'\n')
+                .expect("pack header");
+        let header = std::str::from_utf8(&pack[offset..newline]).expect("header text");
+        let (resource, length) = header.split_once('\t').expect("header fields");
+        let length: usize = length.parse().expect("header length");
+        let start = newline + 1;
+        if let Ok(parsed) = parse_config_descriptors(resource, &pack[start..start + length]) {
+            descriptors.extend(parsed);
+        }
+        offset = start + length;
+    }
+    let schema =
+        parse_schema_storage(&std::fs::read(root.join("schema_storage.txt")).unwrap()).unwrap();
+    let mut live_tables: Vec<LiveTable> = Vec::new();
+    for line in std::fs::read_to_string(root.join("live_columns.tsv"))
+        .unwrap()
+        .lines()
+        .filter(|line| !line.trim().is_empty())
+    {
+        let mut parts = line.split('\t');
+        let table = parts.next().unwrap();
+        let column = parts.next().unwrap();
+        let data_type = match parts.next().unwrap() {
+            "USER-DEFINED" => "mvarchar",
+            other => other,
+        };
+        let position = match live_tables.iter().position(|live| live.name == table) {
+            Some(position) => position,
+            None => {
+                live_tables.push(LiveTable {
+                    name: table.to_owned(),
+                    columns: Vec::new(),
+                    indexes: Vec::new(),
+                });
+                live_tables.len() - 1
+            }
+        };
+        live_tables[position].columns.push(LiveColumn {
+            name: column.to_owned(),
+            data_type: data_type.to_owned(),
+        });
+    }
+    resolve_metadata(db_names, descriptors, schema, live_tables)
+}
+
 pub(crate) fn separators_snapshot() -> open_sdbl::metadata::MetadataSnapshot {
     separators_resolved().snapshot
 }
