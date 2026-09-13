@@ -286,3 +286,28 @@ fn decodes_type_values_by_name() {
         "Ссылка.9999"
     );
 }
+
+#[test]
+fn tests_compound_fields_for_null() {
+    let snapshot = universal_dereferenced_presentation_snapshot();
+    let compiled = postgres(
+        &snapshot,
+        &format!("ВЫБРАТЬ Ссылка ИЗ {DOCUMENT} ГДЕ ДоговорКонтрагента ЕСТЬ NULL;"),
+    );
+    // The discriminator is written for every row of the table itself, so
+    // the test only answers true for a missing join row, as on the platform.
+    assert_contains(&compiled.sql, "WHERE (\"__src\".\"_fld59_type\" IS NULL)");
+
+    let negated = mssql(
+        &snapshot,
+        &format!("ВЫБРАТЬ Ссылка ИЗ {DOCUMENT} ГДЕ ДоговорКонтрагента ЕСТЬ НЕ NULL;"),
+    );
+    assert_contains(&negated.sql, "WHERE ([__src].[_fld59_type] IS NOT NULL)");
+
+    // A single-member field keeps testing its own column.
+    let single = postgres(
+        &snapshot,
+        &format!("ВЫБРАТЬ Ссылка ИЗ {DOCUMENT} ГДЕ Ссылка ЕСТЬ NULL;"),
+    );
+    assert_contains(&single.sql, "WHERE (\"__src\".\"_idrref\" IS NULL)");
+}

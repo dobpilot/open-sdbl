@@ -2291,12 +2291,27 @@ fn expands_a_compound_projection_and_rejects_it_in_predicates() {
     .unwrap();
     assert_eq!(labels(&aliased), ["Value"]);
 
-    let error = postgres_compile!(
+    // `IS NULL` is the one predicate a compound field answers: the test
+    // runs on its reference value member.
+    let is_null = postgres_compile!(
         "SELECT Code FROM Catalog.OpenSdblMetadataProbe WHERE ProbeAttribute IS NULL;",
         &snapshot,
     )
+    .unwrap();
+    assert!(
+        is_null
+            .sql
+            .ends_with("WHERE (\"__src\".\"_fld54_rrref\" IS NULL)"),
+        "{}",
+        is_null.sql
+    );
+
+    let error = postgres_compile!(
+        "SELECT Code FROM Catalog.OpenSdblMetadataProbe WHERE ProbeAttribute = \"A\";",
+        &snapshot,
+    )
     .unwrap_err();
-    assert!(error.message().contains("compound field"));
+    assert!(error.message().contains("compound field"), "{error}");
 }
 
 #[test]

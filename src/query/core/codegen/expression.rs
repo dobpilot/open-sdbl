@@ -430,6 +430,31 @@ pub(super) fn value_type_sql(
     ))
 }
 
+/// The member that stands for a compound field in `ЕСТЬ NULL`: the
+/// `_TYPE` discriminator, or the reference value member. Both are `NULL`
+/// exactly when the row is missing, which is what the platform reports.
+/// `None` leaves the expression to the ordinary compiler.
+fn compound_null_member(
+    value: &Expression<'_, '_>,
+    context: &mut CompilationContext<'_, '_>,
+) -> Result<Option<String>, QueryDiagnostic> {
+    let Expression::Field(reference) = value else {
+        return Ok(None);
+    };
+    let resolved = context.resolve(reference)?;
+    if resolved.field().columns.len() < 2 {
+        return Ok(None);
+    }
+    let member = composite_type_member(resolved.field()).or_else(|| {
+        resolved
+            .field()
+            .columns
+            .iter()
+            .find(|column| column.is_reference_value_member())
+    });
+    Ok(member.map(|member| context.sql_column(&resolved, member)))
+}
+
 /// Whether `ТИПЗНАЧЕНИЯ` can name the type of a value of this kind.
 fn is_classifiable_kind(kind: &ColumnKind) -> bool {
     match kind {
@@ -1544,11 +1569,16 @@ pub(super) fn compile_expression(
             Some(value) => render_scalar_parameter(value, token, context.dialect, true),
             None => Ok("NULL".to_owned()),
         },
-        Expression::IsNull { value, negated } => Ok(format!(
-            "({} IS {}NULL)",
-            compile_expression(value, context)?,
-            if *negated { "NOT " } else { "" }
-        )),
+        Expression::IsNull { value, negated } => {
+            let sql = match compound_null_member(value, context)? {
+                Some(sql) => sql,
+                None => compile_expression(value, context)?,
+            };
+            Ok(format!(
+                "({sql} IS {}NULL)",
+                if *negated { "NOT " } else { "" }
+            ))
+        }
         Expression::Case {
             branches,
             otherwise,
