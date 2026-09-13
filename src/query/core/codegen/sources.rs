@@ -442,6 +442,34 @@ fn compile_source_free_expression(
             Some(token),
             "REFS requires FROM",
         )),
+        Expression::Between {
+            value,
+            low,
+            high,
+            negated,
+            ..
+        } => {
+            let operand = |expression| {
+                compile_source_free_expression(
+                    expression,
+                    snapshot,
+                    dialect,
+                    parameters,
+                    storage_domain,
+                )
+            };
+            let sql = format!(
+                "({} BETWEEN {} AND {})",
+                operand(value)?,
+                operand(low)?,
+                operand(high)?
+            );
+            Ok(if *negated {
+                format!("(NOT {sql})")
+            } else {
+                sql
+            })
+        }
         Expression::TypeLiteral { token, name } => {
             Ok(dialect.binary_literal(&type_literal_value(name, snapshot, token)?.encode()))
         }
@@ -997,6 +1025,13 @@ pub(super) fn contains_aggregate(expression: &Expression<'_, '_>) -> bool {
             | Expression::MetadataValue { .. }
             | Expression::TypeLiteral { .. }
             | Expression::Uuid { .. } => {}
+            Expression::Between {
+                value, low, high, ..
+            } => {
+                pending.push(value);
+                pending.push(low);
+                pending.push(high);
+            }
             Expression::BeginOfPeriod { value, .. }
             | Expression::EndOfPeriod { value, .. }
             | Expression::DatePart { value, .. }

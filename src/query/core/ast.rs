@@ -418,6 +418,14 @@ pub(super) enum Expression<'tokens, 'source> {
         token: &'tokens Token<'source>,
         argument: FieldReference<'tokens, 'source>,
     },
+    /// `<value> [НЕ] МЕЖДУ <low> И <high>`.
+    Between {
+        token: &'tokens Token<'source>,
+        value: Box<Self>,
+        low: Box<Self>,
+        high: Box<Self>,
+        negated: bool,
+    },
     /// `ТИП(<type name>)`: a constant type value.
     TypeLiteral {
         token: &'tokens Token<'source>,

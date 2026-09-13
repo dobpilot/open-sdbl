@@ -286,3 +286,13 @@ so attributes named `Тип` keep parsing in field positions.
 - **WHEN** input contains `ВЫБРАТЬ Т.Тип ИЗ Справочник.Товары КАК Т ГДЕ ТИПЗНАЧЕНИЯ(Т.Тип) = ТИП(Строка)`
 - **THEN** `Т.Тип` is a field path and the two function keywords are
   recognized
+
+### Requirement: Recognize the range keyword bilingually
+The lexer SHALL classify `МЕЖДУ` and `BETWEEN` case-insensitively as one
+keyword kind whose stable display name is `BETWEEN`, and the exhaustive
+keyword table test SHALL include both spellings. The parser SHALL treat
+the keyword as a contextual identifier.
+
+#### Scenario: Range predicate
+- **WHEN** input contains `ГДЕ Т.Цена МЕЖДУ 8 И 22`
+- **THEN** `МЕЖДУ` is the keyword and `И` keeps being the conjunction

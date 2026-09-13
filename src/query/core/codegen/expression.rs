@@ -835,6 +835,7 @@ pub(super) fn expression_kind(
             Ok(common_kind(&operands)?.kind)
         }
         Expression::Like { .. } => Ok(ColumnKind::Boolean),
+        Expression::Between { .. } => Ok(ColumnKind::Boolean),
         Expression::TypeLiteral { .. } | Expression::ValueType { .. } => Ok(ColumnKind::Type),
         Expression::Parameter(token) => Ok(context
             .catalog
@@ -886,6 +887,7 @@ pub(super) fn operand_token<'tokens, 'source>(
         | Expression::Refs { token, .. }
         | Expression::MetadataValue { token, .. }
         | Expression::Uuid { token, .. }
+        | Expression::Between { token, .. }
         | Expression::TypeLiteral { token, .. }
         | Expression::ValueType { token, .. }
         | Expression::Cast { token, .. }
@@ -1292,6 +1294,7 @@ pub(super) fn source_free_expression_kind(
             },
             _ => ColumnKind::Boolean,
         },
+        Expression::Between { .. } => ColumnKind::Boolean,
         Expression::TypeLiteral { .. } | Expression::ValueType { .. } => ColumnKind::Type,
         Expression::InList { .. }
         | Expression::InQuery { .. }
@@ -1439,6 +1442,25 @@ pub(super) fn compile_expression(
             kind,
             object,
         } => compile_refs(context, token, value, kind, object),
+        Expression::Between {
+            value,
+            low,
+            high,
+            negated,
+            ..
+        } => {
+            let sql = format!(
+                "({} BETWEEN {} AND {})",
+                compile_expression_operand(value, low, context)?,
+                compile_expression_operand(low, value, context)?,
+                compile_expression_operand(high, value, context)?
+            );
+            Ok(if *negated {
+                format!("(NOT {sql})")
+            } else {
+                sql
+            })
+        }
         Expression::TypeLiteral { token, name } => Ok(type_constant(
             type_literal_value(name, context.snapshot, token)?,
             context.dialect,

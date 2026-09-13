@@ -101,6 +101,8 @@ pub enum Keyword {
     Avg,
     /// `ССЫЛКА` or `REFS`.
     Refs,
+    /// `МЕЖДУ` or `BETWEEN`.
+    Between,
     /// `ТИП` or `TYPE`.
     Type,
     /// `ТИПЗНАЧЕНИЯ` or `VALUETYPE`.
@@ -226,6 +228,7 @@ impl Keyword {
             Self::Max => "MAX",
             Self::Avg => "AVG",
             Self::Refs => "REFS",
+            Self::Between => "BETWEEN",
             Self::Type => "TYPE",
             Self::ValueType => "VALUETYPE",
             Self::Undefined => "UNDEFINED",
@@ -642,7 +645,7 @@ fn is_identifier_continue(character: char) -> bool {
     character == '_' || character.is_alphanumeric()
 }
 
-const KEYWORDS: [(Keyword, &str, &str); 80] = [
+const KEYWORDS: [(Keyword, &str, &str); 81] = [
     (Keyword::Select, "ВЫБРАТЬ", "SELECT"),
     (Keyword::From, "ИЗ", "FROM"),
     (Keyword::Where, "ГДЕ", "WHERE"),
@@ -689,6 +692,7 @@ const KEYWORDS: [(Keyword, &str, &str); 80] = [
     (Keyword::Max, "МАКСИМУМ", "MAX"),
     (Keyword::Avg, "СРЕДНЕЕ", "AVG"),
     (Keyword::Refs, "ССЫЛКА", "REFS"),
+    (Keyword::Between, "МЕЖДУ", "BETWEEN"),
     (Keyword::Type, "ТИП", "TYPE"),
     (Keyword::ValueType, "ТИПЗНАЧЕНИЯ", "VALUETYPE"),
     (Keyword::Undefined, "НЕОПРЕДЕЛЕНО", "UNDEFINED"),

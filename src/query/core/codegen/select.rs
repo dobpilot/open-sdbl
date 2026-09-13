@@ -1108,6 +1108,21 @@ fn fingerprint_into(expression: &Expression<'_, '_>, output: &mut String) {
             fingerprint_into(&Expression::Field(argument.clone()), output);
             output.push(')');
         }
+        Expression::Between {
+            value,
+            low,
+            high,
+            negated,
+            ..
+        } => {
+            output.push_str(if *negated { "NBTW(" } else { "BTW(" });
+            fingerprint_into(value, output);
+            output.push(',');
+            fingerprint_into(low, output);
+            output.push(',');
+            fingerprint_into(high, output);
+            output.push(')');
+        }
         Expression::TypeLiteral { name, .. } => match name {
             TypeName::Primitive(primitive) => {
                 output.push_str(&format!("TYPE({primitive:?})"));
@@ -1550,6 +1565,13 @@ fn validate_direct_join_condition_fields(
                     Some(token),
                     "JOIN condition supports direct fields only",
                 ));
+            }
+            Expression::Between {
+                value, low, high, ..
+            } => {
+                pending.push(value);
+                pending.push(low);
+                pending.push(high);
             }
             Expression::TypeLiteral { .. } => {}
             Expression::BeginOfPeriod { value, .. }

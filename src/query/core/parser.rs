@@ -38,6 +38,7 @@ fn is_contextual_identifier(kind: TokenKind) -> bool {
                     | Keyword::Max
                     | Keyword::Avg
                     | Keyword::Refs
+                    | Keyword::Between
                     | Keyword::Type
                     | Keyword::ValueType
                     | Keyword::Totals
@@ -975,6 +976,9 @@ impl<'tokens, 'source> Parser<'tokens, 'source> {
         if let Some(is) = self.consume_keyword_token(Keyword::Is) {
             return self.parse_is_null_tail(expression, is);
         }
+        if let Some(between) = self.parse_between_tail(&mut expression)? {
+            return Ok(between);
+        }
         if let Some(token) = self.consume_keyword_token(Keyword::Refs) {
             return self.parse_refs_tail(expression, token);
         }
@@ -1004,6 +1008,45 @@ impl<'tokens, 'source> Parser<'tokens, 'source> {
             };
         }
         Ok(expression)
+    }
+
+    /// The `[НЕ] МЕЖДУ <low> И <high>` tail, when the next tokens spell
+    /// it; otherwise the input is left untouched. The bounds are parsed
+    /// below the conjunction so that `И` separates them.
+    #[inline(never)]
+    fn parse_between_tail(
+        &mut self,
+        value: &mut Expression<'tokens, 'source>,
+    ) -> Result<Option<Expression<'tokens, 'source>>, QueryDiagnostic> {
+        let negated = self
+            .peek()
+            .is_some_and(|token| token.kind == TokenKind::Keyword(Keyword::Not));
+        let offset = if negated {
+            self.offset + 1
+        } else {
+            self.offset
+        };
+        if !self
+            .tokens
+            .get(offset)
+            .is_some_and(|token| token.kind == TokenKind::Keyword(Keyword::Between))
+        {
+            return Ok(None);
+        }
+        self.offset = offset;
+        let token = self.next().expect("checked BETWEEN keyword");
+        self.record_binary_operator(token)?;
+        let low = self.parse_additive()?;
+        self.expect_keyword(Keyword::And)?;
+        let high = self.parse_additive()?;
+        let value = std::mem::replace(value, Expression::Literal(token));
+        Ok(Some(Expression::Between {
+            token,
+            value: Box::new(value),
+            low: Box::new(low),
+            high: Box::new(high),
+            negated,
+        }))
     }
 
     /// The `ССЫЛКА <Вид>.<Объект>` tail.

@@ -141,6 +141,8 @@ const COMPLETION_KEYWORDS: &[&str] = &[
     "AVG",
     "ССЫЛКА",
     "REFS",
+    "МЕЖДУ",
+    "BETWEEN",
     "ТИП",
     "TYPE",
     "ТИПЗНАЧЕНИЯ",

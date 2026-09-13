@@ -6109,3 +6109,70 @@ fn orders_by_computed_expressions() {
         assert!(error.message().contains(message), "{source}: {error}");
     }
 }
+
+/// `МЕЖДУ` is the platform's inclusive range predicate, so it renders as
+/// SQL `BETWEEN` on both providers.
+#[test]
+fn compiles_range_predicates() {
+    let snapshot = snapshot();
+    let compiled = postgres_compile!(
+        "ВЫБРАТЬ Код ИЗ Справочник.OpenSdblMetadataProbe ГДЕ Код МЕЖДУ \"A\" И \"C\";",
+        &snapshot,
+    )
+    .unwrap();
+    assert!(
+        compiled
+            .sql
+            .ends_with("WHERE (\"__src\".\"_code\" BETWEEN 'A' AND 'C')"),
+        "{}",
+        compiled.sql
+    );
+
+    let mssql = compile_backend_generic(
+        &snapshot,
+        MsSqlBackend::new(0).unwrap(),
+        "SELECT Code FROM Catalog.OpenSdblMetadataProbe WHERE Date_Time BETWEEN DATETIME(2024, 1, 1) AND DATETIME(2024, 12, 31);",
+    )
+    .unwrap();
+    assert!(
+        mssql.sql.contains("WHERE ([__src].[_date_time] BETWEEN CONVERT(datetime2, '2024-01-01T00:00:00', 126) AND CONVERT(datetime2, '2024-12-31T00:00:00', 126))"),
+        "{}",
+        mssql.sql
+    );
+
+    // Negation, arbitrary expressions as bounds, and use inside ВЫБОР.
+    let negated = postgres_compile!(
+        "ВЫБРАТЬ Код ИЗ Справочник.OpenSdblMetadataProbe
+         ГДЕ Код НЕ МЕЖДУ ЕСТЬNULL(Код, \"\") И \"C\";",
+        &snapshot,
+    )
+    .unwrap();
+    assert!(
+        negated.sql.ends_with(
+            "WHERE (NOT (\"__src\".\"_code\" BETWEEN COALESCE(\"__src\".\"_code\", '') AND 'C'))"
+        ),
+        "{}",
+        negated.sql
+    );
+
+    let case = postgres_compile!(
+        "ВЫБРАТЬ ВЫБОР КОГДА Код МЕЖДУ \"A\" И \"C\" ТОГДА 1 ИНАЧЕ 0 КОНЕЦ КАК Р
+         ИЗ Справочник.OpenSdblMetadataProbe;",
+        &snapshot,
+    )
+    .unwrap();
+    assert!(
+        case.sql
+            .contains("CASE WHEN (\"__src\".\"_code\" BETWEEN 'A' AND 'C') THEN 1 ELSE 0 END"),
+        "{}",
+        case.sql
+    );
+
+    // A field named `Между` still parses as a field.
+    let identifier = postgres_compile!(
+        "ВЫБРАТЬ Код КАК Между ИЗ Справочник.OpenSdblMetadataProbe УПОРЯДОЧИТЬ ПО Между;",
+        &snapshot,
+    )
+    .unwrap();
+    assert_eq!(labels(&identifier), ["Между"]);
+}
