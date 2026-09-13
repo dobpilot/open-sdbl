@@ -131,3 +131,74 @@ fn groups_turnovers_by_the_requested_period() {
     );
     assert!(recorder.message().contains("periodicity"), "{recorder}");
 }
+
+#[test]
+fn compiles_the_balance_and_turnovers_table() {
+    let snapshot = accumulation_register_snapshot();
+    let whole = postgres(
+        &snapshot,
+        "ВЫБРАТЬ О.Номенклатура КАК Н, О.КоличествоНачальныйОстаток КАК Нач,
+                О.КоличествоПриход КАК Прих, О.КоличествоРасход КАК Расх,
+                О.КоличествоОборот КАК Обор, О.КоличествоКонечныйОстаток КАК Кон
+         ИЗ РегистрНакопления.Остатки.ОстаткиИОбороты КАК О;",
+    );
+    // Receipts carry record kind 0 and expenses 1.
+    assert_contains(
+        &whole.sql,
+        "SUM(CASE WHEN \"__aggregate_base\".\"_recordkind\" = 0 THEN \"__aggregate_base\".\"_fld55\" ELSE 0 END) AS \"_fld55Receipt\"",
+    );
+    assert_contains(&whole.sql, "SUM(0) AS \"_fld55OpeningBalance\"");
+    assert_contains(
+        &whole.sql,
+        "SUM(0 + CASE WHEN \"__aggregate_base\".\"_recordkind\" = 0 THEN \"__aggregate_base\".\"_fld55\" ELSE -\"__aggregate_base\".\"_fld55\" END) AS \"_fld55ClosingBalance\"",
+    );
+    assert_eq!(
+        whole
+            .columns
+            .iter()
+            .map(|column| column.label.as_str())
+            .collect::<Vec<_>>(),
+        ["Н", "Нач", "Прих", "Расх", "Обор", "Кон"]
+    );
+
+    // An interval splits the movements into the opening balance and the
+    // turnover of the period.
+    let interval = postgres(
+        &snapshot,
+        "ВЫБРАТЬ О.КоличествоНачальныйОстаток КАК Нач, О.КоличествоОборот КАК Обор
+         ИЗ РегистрНакопления.Остатки.ОстаткиИОбороты(ДАТАВРЕМЯ(2024, 2, 1), ДАТАВРЕМЯ(2024, 5, 1), , ) КАК О;",
+    );
+    assert_contains(
+        &interval.sql,
+        "WHERE \"__aggregate_base\".\"_active\" = TRUE AND (\"__aggregate_base\".\"_period\" < TIMESTAMP '2024-05-01 00:00:00')",
+    );
+    assert_contains(
+        &interval.sql,
+        "CASE WHEN \"__aggregate_base\".\"_period\" < TIMESTAMP '2024-02-01 00:00:00' THEN CASE WHEN",
+    );
+    // The statement reads no dimension, so the register answers one row.
+    assert_contains(&interval.sql, "\"__aggregate_used\"");
+
+    for (source, message) in [
+        (
+            "ВЫБРАТЬ О.КоличествоОборот КАК Обор
+             ИЗ РегистрНакопления.Остатки.ОстаткиИОбороты(, , Месяц, ) КАК О;",
+            "periodicity is not supported",
+        ),
+        (
+            "ВЫБРАТЬ О.КоличествоОборот КАК Обор
+             ИЗ РегистрНакопления.Остатки.ОстаткиИОбороты(, , , ДвиженияИГраницыПериода, ) КАК О;",
+            "period completion method is not supported",
+        ),
+    ] {
+        let error = QueryCompiler::new(&snapshot, PostgresBackend)
+            .compile(source)
+            .unwrap_err();
+        assert_eq!(
+            error.kind(),
+            open_sdbl::query::QueryDiagnosticKind::UnsupportedFeature,
+            "{source}: {error}"
+        );
+        assert!(error.message().contains(message), "{source}: {error}");
+    }
+}

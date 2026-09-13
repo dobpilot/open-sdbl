@@ -103,6 +103,8 @@ pub enum Keyword {
     Refs,
     /// `МЕЖДУ` or `BETWEEN`.
     Between,
+    /// `ОСТАТКИИОБОРОТЫ` or `BALANCEANDTURNOVERS`.
+    BalanceAndTurnovers,
     /// `ПОДСТРОКА` or `SUBSTRING`.
     Substring,
     /// `ДЛИНАСТРОКИ` or `STRINGLENGTH`.
@@ -273,6 +275,7 @@ impl Keyword {
             Self::Avg => "AVG",
             Self::Refs => "REFS",
             Self::Between => "BETWEEN",
+            Self::BalanceAndTurnovers => "BALANCEANDTURNOVERS",
             Self::Substring => "SUBSTRING",
             Self::StringLength => "STRINGLENGTH",
             Self::TrimAll => "TRIMALL",
@@ -711,7 +714,7 @@ fn is_identifier_continue(character: char) -> bool {
     character == '_' || character.is_alphanumeric()
 }
 
-const KEYWORDS: [(Keyword, &str, &str); 103] = [
+const KEYWORDS: [(Keyword, &str, &str); 104] = [
     (Keyword::Select, "ВЫБРАТЬ", "SELECT"),
     (Keyword::From, "ИЗ", "FROM"),
     (Keyword::Where, "ГДЕ", "WHERE"),
@@ -759,6 +762,11 @@ const KEYWORDS: [(Keyword, &str, &str); 103] = [
     (Keyword::Avg, "СРЕДНЕЕ", "AVG"),
     (Keyword::Refs, "ССЫЛКА", "REFS"),
     (Keyword::Between, "МЕЖДУ", "BETWEEN"),
+    (
+        Keyword::BalanceAndTurnovers,
+        "ОСТАТКИИОБОРОТЫ",
+        "BALANCEANDTURNOVERS",
+    ),
     (Keyword::Substring, "ПОДСТРОКА", "SUBSTRING"),
     (Keyword::StringLength, "ДЛИНАСТРОКИ", "STRINGLENGTH"),
     (Keyword::TrimAll, "СОКРЛП", "TRIMALL"),

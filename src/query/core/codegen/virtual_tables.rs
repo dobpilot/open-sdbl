@@ -140,16 +140,41 @@ pub(super) fn compile_accumulation_relation(
         .find(|field| names_equal(&field.schema_name, "RecordKind"))
         .map(|field| single_column(field, virtual_table.token))
         .transpose()?;
-    if virtual_table.kind == AccumulationKind::Balance && record_kind.is_none() {
+    if matches!(
+        virtual_table.kind,
+        AccumulationKind::Balance | AccumulationKind::BalanceAndTurnovers
+    ) && record_kind.is_none()
+    {
         return Err(QueryDiagnostic::at(
             QueryDiagnosticKind::UnsupportedFeature,
             Some(virtual_table.token),
-            "Balance is unavailable for a turnover-only accumulation register",
+            format!(
+                "{} is unavailable for a turnover-only accumulation register",
+                virtual_table.kind.name()
+            ),
         ));
     }
 
     if virtual_table.kind == AccumulationKind::Balance {
         return compile_accumulation_balance_relation(
+            source,
+            virtual_table,
+            snapshot,
+            catalog,
+            object,
+            &dimension_fields,
+            &resource_fields,
+            live_table,
+            active_column,
+            period_column,
+            record_kind.expect("a balance register has RecordKind"),
+            restriction,
+            dialect,
+        );
+    }
+
+    if virtual_table.kind == AccumulationKind::BalanceAndTurnovers {
+        return compile_balance_and_turnovers_relation(
             source,
             virtual_table,
             snapshot,
@@ -290,6 +315,199 @@ pub(super) fn compile_accumulation_relation(
         aggregate: Some(aggregate),
         separators: Vec::new(),
     })
+}
+
+/// Compiles `ОстаткиИОбороты(Начало, Конец, Периодичность, Метод,
+/// Условие)`: one row per combination of the dimensions in use with the
+/// opening balance, the receipts and expenses of the interval, their
+/// turnover, and the closing balance. Everything is read from the
+/// movements, which is what the totals table caches.
+#[allow(clippy::too_many_arguments)]
+fn compile_balance_and_turnovers_relation(
+    source: &SourceAst<'_, '_>,
+    virtual_table: &AccumulationAst<'_, '_>,
+    snapshot: &MetadataSnapshot,
+    catalog: &CompilationCatalog<'_>,
+    object: &MetadataObject,
+    dimension_fields: &[QueryableField],
+    resource_fields: &[QueryableField],
+    live_table: &LiveTable,
+    active_column: &QueryableColumn,
+    period_column: &QueryableColumn,
+    record_kind: &QueryableColumn,
+    restriction: Option<&SourceRestriction<'_>>,
+    dialect: SqlDialect,
+) -> Result<CompiledSourceRelation, QueryDiagnostic> {
+    for (index, name) in [(2, "periodicity"), (3, "period completion method")] {
+        if let Some(argument) = virtual_table.arguments.get(index).and_then(Option::as_ref) {
+            return Err(QueryDiagnostic::at(
+                QueryDiagnosticKind::UnsupportedFeature,
+                operand_token(argument).or(Some(virtual_table.token)),
+                format!("BalanceAndTurnovers {name} is not supported yet"),
+            ));
+        }
+    }
+    let begin = virtual_table
+        .arguments
+        .first()
+        .and_then(Option::as_ref)
+        .map(|expression| {
+            compile_virtual_period_literal(
+                expression,
+                virtual_table,
+                "begin period",
+                catalog,
+                dialect,
+            )
+        })
+        .transpose()?;
+    let end = virtual_table
+        .arguments
+        .get(1)
+        .and_then(Option::as_ref)
+        .map(|expression| {
+            compile_virtual_period_literal(
+                expression,
+                virtual_table,
+                "period boundary",
+                catalog,
+                dialect,
+            )
+        })
+        .transpose()?;
+    let condition = virtual_table.arguments.get(4).and_then(Option::as_ref);
+    let qualified = |column: &QueryableColumn| {
+        dialect.qualified_column(Some("__aggregate_base"), &column.physical_name)
+    };
+    let mut predicates = vec![format!(
+        "{} = {}",
+        qualified(active_column),
+        dialect.boolean_literal(true)
+    )];
+    let period = qualified(period_column);
+    if let Some(end) = &end {
+        predicates.push(format!("({period} < {end})"));
+    }
+    if let Some(sql) = compile_accumulation_condition(
+        condition,
+        source,
+        virtual_table,
+        snapshot,
+        catalog,
+        object,
+        dimension_fields,
+        live_table,
+        "__aggregate_base",
+        restriction,
+        dialect,
+    )? {
+        predicates.push(sql);
+    }
+    let mut projections = Vec::new();
+    let mut grouping = Vec::new();
+    for field in dimension_fields {
+        for column in &field.columns {
+            let sql = qualified(column);
+            projections.push(format!(
+                "{sql} AS {}",
+                dialect.quote_identifier(&column.physical_name)
+            ));
+            grouping.push(sql);
+        }
+    }
+    let kind = qualified(record_kind);
+    let mut fields = dimension_fields.to_vec();
+    for field in resource_fields {
+        let column = single_column(field, virtual_table.token)?;
+        let value = qualified(column);
+        // Receipts carry record kind 0 and expenses 1, so the signed
+        // movement is the receipt minus the expense.
+        let signed = format!("CASE WHEN {kind} = 0 THEN {value} ELSE -{value} END");
+        let before = begin.as_ref().map_or_else(
+            || "0".to_owned(),
+            |begin| format!("CASE WHEN {period} < {begin} THEN {signed} ELSE 0 END"),
+        );
+        let inside = begin.as_ref().map_or_else(
+            || signed.clone(),
+            |begin| format!("CASE WHEN {period} >= {begin} THEN {signed} ELSE 0 END"),
+        );
+        let receipt = begin.as_ref().map_or_else(
+            || format!("CASE WHEN {kind} = 0 THEN {value} ELSE 0 END"),
+            |begin| format!("CASE WHEN {period} >= {begin} AND {kind} = 0 THEN {value} ELSE 0 END"),
+        );
+        let expense = begin.as_ref().map_or_else(
+            || format!("CASE WHEN {kind} = 1 THEN {value} ELSE 0 END"),
+            |begin| format!("CASE WHEN {period} >= {begin} AND {kind} = 1 THEN {value} ELSE 0 END"),
+        );
+        for (suffix, aggregate) in AccumulationKind::balance_and_turnover_suffixes()
+            .into_iter()
+            .zip([
+                before.clone(),
+                receipt,
+                expense,
+                inside.clone(),
+                format!("{before} + {inside}"),
+            ])
+        {
+            let column_name = format!("{}{}", column.physical_name, suffix.1);
+            projections.push(format!(
+                "SUM({aggregate}) AS {}",
+                dialect.quote_identifier(&column_name)
+            ));
+            fields.push(balance_and_turnover_field(
+                field,
+                column,
+                suffix,
+                &column_name,
+            ));
+        }
+    }
+    let mut relation = format!(
+        "(SELECT {} FROM {} AS {} WHERE {}",
+        projections.join(", "),
+        dialect.quote_identifier(&live_table.name),
+        dialect.quote_identifier("__aggregate_base"),
+        predicates.join(" AND ")
+    );
+    if !grouping.is_empty() {
+        relation.push_str(" GROUP BY ");
+        relation.push_str(&grouping.join(", "));
+    }
+    relation.push(')');
+    let mut aggregate = aggregate_source(dimension_fields, &[]);
+    aggregate.resources = fields
+        .iter()
+        .skip(dimension_fields.len())
+        .flat_map(|field| field.columns.iter())
+        .map(|column| column.physical_name.clone())
+        .collect();
+    Ok(CompiledSourceRelation {
+        sql: relation,
+        fields: fields.into(),
+        aggregate: Some(aggregate),
+        separators: Vec::new(),
+    })
+}
+
+/// One of the five columns `ОстаткиИОбороты` exposes per resource.
+fn balance_and_turnover_field(
+    field: &QueryableField,
+    column: &QueryableColumn,
+    (russian, english): (&str, &str),
+    physical_name: &str,
+) -> QueryableField {
+    let russian_name = format!("{}{russian}", field.name);
+    let mut result = field.clone();
+    result.name = russian_name.clone();
+    result.schema_name = format!("{}{english}", field.schema_name);
+    result.aliases = vec![russian_name.clone(), format!("{}{english}", field.name)];
+    result.columns = vec![QueryableColumn {
+        physical_name: physical_name.to_owned(),
+        data_type: column.data_type.clone(),
+        output_label: russian_name,
+        kind: column.kind.clone(),
+    }];
+    result
 }
 
 /// Reads the periodicity of `Обороты`: the platform writes a bare period

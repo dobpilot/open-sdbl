@@ -199,6 +199,7 @@ pub(super) struct AccumulationAst<'tokens, 'source> {
 pub(super) enum AccumulationKind {
     Balance,
     Turnovers,
+    BalanceAndTurnovers,
 }
 
 impl AccumulationKind {
@@ -206,13 +207,26 @@ impl AccumulationKind {
         match self {
             Self::Balance => "Balance",
             Self::Turnovers => "Turnovers",
+            Self::BalanceAndTurnovers => "BalanceAndTurnovers",
         }
+    }
+
+    /// The five columns `ОстаткиИОбороты` adds per resource, as
+    /// `(Russian, English)` suffixes in the order the platform lists them.
+    pub(super) const fn balance_and_turnover_suffixes() -> [(&'static str, &'static str); 5] {
+        [
+            ("НачальныйОстаток", "OpeningBalance"),
+            ("Приход", "Receipt"),
+            ("Расход", "Expense"),
+            ("Оборот", "Turnover"),
+            ("КонечныйОстаток", "ClosingBalance"),
+        ]
     }
 
     pub(super) const fn resource_suffix(self) -> (&'static str, &'static str) {
         match self {
             Self::Balance => ("Остаток", "Balance"),
-            Self::Turnovers => ("Оборот", "Turnover"),
+            Self::Turnovers | Self::BalanceAndTurnovers => ("Оборот", "Turnover"),
         }
     }
 }

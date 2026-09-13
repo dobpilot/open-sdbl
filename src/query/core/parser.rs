@@ -39,6 +39,7 @@ fn is_contextual_identifier(kind: TokenKind) -> bool {
                     | Keyword::Avg
                     | Keyword::Refs
                     | Keyword::Between
+                    | Keyword::BalanceAndTurnovers
                     | Keyword::Substring
                     | Keyword::StringLength
                     | Keyword::TrimAll
@@ -823,6 +824,16 @@ impl<'tokens, 'source> Parser<'tokens, 'source> {
                         token,
                         kind: AccumulationKind::Balance,
                         arguments: self.parse_virtual_arguments(2, "Balance")?,
+                    }),
+                )
+            } else if let Some(token) = self.consume_keyword_token(Keyword::BalanceAndTurnovers) {
+                (
+                    None,
+                    None,
+                    Some(AccumulationAst {
+                        token,
+                        kind: AccumulationKind::BalanceAndTurnovers,
+                        arguments: self.parse_virtual_arguments(5, "BalanceAndTurnovers")?,
                     }),
                 )
             } else if let Some(token) = self.consume_keyword_token(Keyword::Turnovers) {
