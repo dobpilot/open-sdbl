@@ -420,9 +420,16 @@ impl<'tokens, 'source> Parser<'tokens, 'source> {
         };
         let mut joins = Vec::new();
         if source.is_some() {
-            while let Some(join) = self.parse_join()? {
-                self.record_binary_operator(join.token)?;
-                joins.push(join);
+            loop {
+                if let Some(join) = self.parse_join()? {
+                    self.record_binary_operator(join.token)?;
+                    joins.push(join);
+                } else if let Some(element) = self.parse_comma_source()? {
+                    self.record_binary_operator(element.token)?;
+                    joins.push(element);
+                } else {
+                    break;
+                }
             }
         }
         let filter = if self.consume_keyword(Keyword::Where) {
@@ -565,7 +572,23 @@ impl<'tokens, 'source> Parser<'tokens, 'source> {
             token,
             kind,
             source,
-            condition: self.parse_or()?,
+            condition: Some(self.parse_or()?),
+        }))
+    }
+
+    /// Parses `, <source>` after a source element, returning the element as
+    /// a condition-less cross join positioned at the comma.
+    fn parse_comma_source(&mut self) -> Result<Option<JoinAst<'tokens, 'source>>, QueryDiagnostic> {
+        let Some(token) = self.peek().filter(|token| token.lexeme == ",") else {
+            return Ok(None);
+        };
+        self.offset += 1;
+        let source = self.parse_source()?;
+        Ok(Some(JoinAst {
+            token,
+            kind: JoinKind::Cross,
+            source,
+            condition: None,
         }))
     }
 

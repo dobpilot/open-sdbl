@@ -164,6 +164,9 @@ pub(super) struct CompilationContext<'snapshot, 'catalog> {
     /// Whether a join condition dereferenced a reference, which forces the
     /// dereference joins to be rendered next to their own source.
     pub(super) dereference_in_join: bool,
+    /// The comma element of every scope, in scope order: a join condition
+    /// may reference only scopes of its own element.
+    pub(super) source_elements: Vec<usize>,
 }
 
 #[derive(Debug, Clone)]

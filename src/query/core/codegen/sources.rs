@@ -92,6 +92,7 @@ pub(super) fn compile_restriction_predicate(
                 aggregates_allowed: false,
                 compiling_join_condition: false,
                 dereference_in_join: false,
+                source_elements: vec![0],
             };
             let sql = compile_predicate(&expression, &mut context)?;
             let scope = context
@@ -1533,6 +1534,7 @@ pub(super) fn compile_source_relation(
             aggregates_allowed: false,
             compiling_join_condition: false,
             dereference_in_join: false,
+            source_elements: vec![0],
         };
         let sql = compile_expression(condition, &mut condition_context)?;
         if !condition_context.sources[0].reference_joins.is_empty() {

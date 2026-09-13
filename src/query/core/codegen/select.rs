@@ -113,13 +113,14 @@ pub(super) fn compile_branch(
     let conditions = joins
         .iter()
         .enumerate()
-        .map(|(index, join)| {
-            compile_join_condition(
-                &join.condition,
-                &mut context,
-                join.token,
-                ScopeId(index + 1),
-            )
+        .map(|(index, join)| match &join.condition {
+            Some(condition) => {
+                compile_join_condition(condition, &mut context, join.token, ScopeId(index + 1))
+            }
+            None => Ok(FullJoinCondition {
+                sql: String::new(),
+                left_marker: String::new(),
+            }),
         })
         .collect::<Result<Vec<_>, _>>()?;
     // A transposed FULL JOIN duplicates its condition into two branches
@@ -225,10 +226,30 @@ fn validate_join_projection(
         return Err(QueryDiagnostic::at(
             QueryDiagnosticKind::UnsupportedFeature,
             Some(first.token),
-            "wildcard projection in JOIN is not supported",
+            if first.kind == JoinKind::Cross {
+                "wildcard projection over several sources is not supported"
+            } else {
+                "wildcard projection in JOIN is not supported"
+            },
         ));
     }
     Ok(())
+}
+
+/// The comma element of every scope: the base source and the sources its
+/// joins introduce form element 0, each comma-listed source starts the
+/// next element together with its own joins.
+fn source_elements(joins: &[JoinAst<'_, '_>]) -> Vec<usize> {
+    let mut elements = Vec::with_capacity(joins.len() + 1);
+    let mut element = 0;
+    elements.push(element);
+    for join in joins {
+        if join.kind == JoinKind::Cross {
+            element += 1;
+        }
+        elements.push(element);
+    }
+    elements
 }
 
 fn compile_branch_context<'snapshot, 'catalog>(
@@ -287,6 +308,7 @@ fn compile_branch_context<'snapshot, 'catalog>(
             aggregates_allowed: false,
             compiling_join_condition: false,
             dereference_in_join: false,
+            source_elements: source_elements(joins),
         });
     }
     let scope = resolve_join_source(source, snapshot, catalog, "__src", dialect, presentations)?;
@@ -298,6 +320,7 @@ fn compile_branch_context<'snapshot, 'catalog>(
         aggregates_allowed: false,
         compiling_join_condition: false,
         dereference_in_join: false,
+        source_elements: vec![0],
     })
 }
 
@@ -1356,8 +1379,8 @@ fn compile_cross_source_join_equality(
     };
     let left_field = context.resolve(left_reference)?;
     let right_field = context.resolve(right_reference)?;
-    check_join_scope(left_field.scope, left_reference.last(), joined)?;
-    check_join_scope(right_field.scope, right_reference.last(), joined)?;
+    check_join_scope(context, left_field.scope, left_reference.last(), joined)?;
+    check_join_scope(context, right_field.scope, right_reference.last(), joined)?;
     // Only an equality that binds the joined source to an earlier one is the
     // anchor; equalities between earlier sources are ordinary predicates.
     if left_field.scope == right_field.scope
@@ -1382,6 +1405,7 @@ fn compile_cross_source_join_equality(
 
 /// A join condition may reference the joined source and earlier ones only.
 fn check_join_scope(
+    context: &CompilationContext<'_, '_>,
     scope: ScopeId,
     token: &Token<'_>,
     joined: ScopeId,
@@ -1392,6 +1416,16 @@ fn check_join_scope(
             Some(token),
             format!(
                 "JOIN condition cannot reference {:?}, which is joined later",
+                token.lexeme
+            ),
+        ));
+    }
+    if context.source_elements.get(scope.0) != context.source_elements.get(joined.0) {
+        return Err(QueryDiagnostic::at(
+            QueryDiagnosticKind::UnknownField,
+            Some(token),
+            format!(
+                "field {:?} is not visible from this join; sources listed through commas are joined independently",
                 token.lexeme
             ),
         ));
@@ -1409,11 +1443,11 @@ fn validate_direct_join_condition_fields(
         match expression {
             Expression::Field(reference) => {
                 let resolved = context.resolve(reference)?;
-                check_join_scope(resolved.scope, reference.last(), joined)?;
+                check_join_scope(context, resolved.scope, reference.last(), joined)?;
             }
             Expression::Uuid { argument, .. } => {
                 let resolved = context.resolve(argument)?;
-                check_join_scope(resolved.scope, argument.last(), joined)?;
+                check_join_scope(context, resolved.scope, argument.last(), joined)?;
             }
             Expression::Cast {
                 argument,
@@ -1886,12 +1920,17 @@ fn compile_native_join(
             JoinKind::Inner => "INNER JOIN",
             JoinKind::Left => "LEFT JOIN",
             JoinKind::Right => "RIGHT JOIN",
+            JoinKind::Cross => "CROSS JOIN",
             JoinKind::Full => unreachable!("FULL JOIN is transposed separately"),
         };
         sql.push(' ');
         sql.push_str(operator);
         sql.push(' ');
         sql.push_str(&render_join_source(context, source, grouped));
+        if join.kind == JoinKind::Cross {
+            debug_assert!(placement.on[index].is_empty());
+            continue;
+        }
         sql.push_str(" ON ");
         sql.push_str(&condition.sql);
         for predicate in &placement.on[index] {

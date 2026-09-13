@@ -20,7 +20,13 @@ expressions. A branch MAY instead chain one or more
 СОЕДИНЕНИЕ` / `LEFT [OUTER] JOIN`, and `ПРАВОЕ [ВНЕШНЕЕ] СОЕДИНЕНИЕ` /
 `RIGHT [OUTER] JOIN` in source order, each introducing one more source
 scope, or contain exactly one `ПОЛНОЕ [ВНЕШНЕЕ] СОЕДИНЕНИЕ` / `FULL
-[OUTER] JOIN`. Joined branches SHALL support named direct fields and one-hop
+[OUTER] JOIN`. The source list MAY contain several comma-separated
+elements, each a source with its own joins; every element after the
+first SHALL be rendered as a `CROSS JOIN` in written order, SHALL be
+filtered like the base source, and a join condition SHALL see only the
+sources of its own element (`UnknownField` otherwise). A comma list
+SHALL keep the `FULL JOIN` and `*` refusals of joined branches. Joined
+branches SHALL support named direct fields and one-hop
 reference properties. Each join condition SHALL contain at least one top-level
 scalar equality between a direct field or one-hop reference property of the
 joined source and one of an earlier source, and MAY combine that anchor with
@@ -164,6 +170,17 @@ batch. Unsupported syntax SHALL fail before execution.
   reference target, path deeper than one hop, or branch-local ordering
   before another union
 - **THEN** compilation returns a positional diagnostic and no SQL is produced
+
+#### Scenario: Comma-separated sources
+- **WHEN** a branch reads `ИЗ Справочник.А КАК А, Справочник.Б КАК Б
+  ГДЕ А.Поле = Б.Поле`
+- **THEN** generated SQL is `FROM … AS "А" CROSS JOIN … AS "Б" WHERE …`
+  on both providers
+
+#### Scenario: Join inside a comma element
+- **WHEN** a branch reads `ИЗ А, Б ЛЕВОЕ СОЕДИНЕНИЕ В ПО В.x = Б.y`
+- **THEN** the `LEFT JOIN` follows the `CROSS JOIN` in the written order,
+  and a condition naming a field of `А` is an `UnknownField` diagnostic
 
 ### Requirement: Resolve queryable objects and fields bilingually
 The compiler SHALL accept Russian and English metadata-kind names and standard

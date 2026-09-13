@@ -176,7 +176,8 @@ pub(super) struct JoinAst<'tokens, 'source> {
     pub(super) token: &'tokens Token<'source>,
     pub(super) kind: JoinKind,
     pub(super) source: SourceAst<'tokens, 'source>,
-    pub(super) condition: Expression<'tokens, 'source>,
+    /// `None` only for a comma-listed source (`JoinKind::Cross`).
+    pub(super) condition: Option<Expression<'tokens, 'source>>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -185,6 +186,9 @@ pub(super) enum JoinKind {
     Left,
     Right,
     Full,
+    /// A source listed after a comma: a Cartesian product with no
+    /// condition, whose own joins see only the sources of its element.
+    Cross,
 }
 
 #[derive(Debug)]
