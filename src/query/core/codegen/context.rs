@@ -15,12 +15,13 @@ use super::sources::{
 use super::virtual_tables::AggregateSource;
 use super::virtual_tables::compile_presentation_plan;
 use crate::Token;
-use crate::metadata::{MetadataKind, MetadataSnapshot, ObjectId, StandardFieldId};
+use crate::metadata::{MetadataKind, MetadataSnapshot, ObjectId};
 use crate::query::core::ast::{FieldReference, PresentationArgument, PresentationOperation};
 use crate::query::core::dialect::{SqlDialect, compile_literal};
 use crate::query::core::names::names_equal;
 use crate::query::core::resolve::{
     ColumnKind, CompilationCatalog, CompiledColumn, QueryableColumn, QueryableField,
+    is_standard_field_name,
 };
 use crate::query::core::{QueryDiagnostic, QueryDiagnosticKind};
 
@@ -1043,7 +1044,7 @@ impl CompilationContext<'_, '_> {
         &self,
         target_token: &Token<'_>,
     ) -> Result<Vec<ObjectId>, QueryDiagnostic> {
-        let standard = StandardFieldId::from_name(target_token.lexeme).is_some();
+        let standard = is_standard_field_name(target_token.lexeme);
         let mut tables = Vec::new();
         for field in self.snapshot.fields() {
             if field

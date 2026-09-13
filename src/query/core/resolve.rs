@@ -270,6 +270,40 @@ pub(super) fn standard_field_aliases(schema_name: &str) -> &'static [&'static st
     }
 }
 
+/// Every standard field the compiler knows, by SchemaStorage name.
+const STANDARD_FIELD_NAMES: [&str; 17] = [
+    "ID",
+    "Code",
+    "Description",
+    "Marked",
+    "Version",
+    "Number",
+    "Date",
+    "Posted",
+    "Recorder",
+    "LineNo",
+    "Period",
+    "Active",
+    "ParentID",
+    "OwnerID",
+    "Folder",
+    "Predefined",
+    "RecordKind",
+];
+
+/// Whether a name spells a standard field in any of its accepted forms.
+/// A dereference through a reference of several targets scans the
+/// snapshot for an attribute of that name, which standard fields never
+/// carry, so they are recognized here instead.
+pub(super) fn is_standard_field_name(name: &str) -> bool {
+    STANDARD_FIELD_NAMES.iter().any(|schema_name| {
+        names_equal(schema_name, name)
+            || standard_field_aliases(schema_name)
+                .iter()
+                .any(|alias| names_equal(alias, name))
+    })
+}
+
 /// Query-language names of the metadata kinds: the English name, the
 /// short table prefix, and the Russian name.
 const KIND_QUERY_NAMES: [(MetadataKind, [&str; 3]); 20] = [

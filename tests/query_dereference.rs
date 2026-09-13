@@ -119,3 +119,27 @@ fn refuses_to_walk_through_a_composite_reference() {
         "{error}"
     );
 }
+
+#[test]
+fn dereferences_standard_fields_through_a_composite_reference() {
+    // SchemaStorage names no target for a reference of several tables, so
+    // the candidates are scanned; standard fields are not attributes and
+    // have to be recognized by name.
+    let snapshot = universal_dereferenced_presentation_snapshot();
+    let compiled = postgres(
+        &snapshot,
+        "ВЫБРАТЬ ДоговорКонтрагента.Ссылка КАК С
+         ИЗ Документ.бит_ДополнительныеУсловияПоДоговору;",
+    );
+    // Each candidate target is joined under its own type guard.
+    assert_contains(&compiled.sql, "\"__src\".\"_fld59_rtref\"");
+    assert!(compiled.sql.contains("LEFT JOIN"), "{}", compiled.sql);
+
+    let unknown = QueryCompiler::new(&snapshot, PostgresBackend)
+        .compile(
+            "ВЫБРАТЬ ДоговорКонтрагента.НетТакого КАК Н
+             ИЗ Документ.бит_ДополнительныеУсловияПоДоговору;",
+        )
+        .unwrap_err();
+    assert!(unknown.message().contains("was not found"), "{unknown}");
+}
