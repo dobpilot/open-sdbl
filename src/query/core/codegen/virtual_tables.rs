@@ -2,7 +2,7 @@ use std::cell::RefCell;
 use std::collections::BTreeSet;
 
 use super::context::{CompilationContext, SourceScope};
-use super::expression::{compile_expression, single_column, single_column_at};
+use super::expression::{compile_expression, operand_token, single_column, single_column_at};
 use super::params::render_scalar_parameter;
 use super::separators::separator_predicates;
 use super::sources::{CompiledSourceRelation, SourceRestriction, compile_restriction_predicate};
@@ -10,7 +10,9 @@ use crate::metadata::{
     ConfigFieldPurpose, FieldId, LiveColumn, LiveTable, MetadataKind, MetadataObject,
     MetadataSnapshot, ObjectId,
 };
-use crate::query::core::ast::{AccumulationAst, AccumulationKind, Expression, SourceAst};
+use crate::query::core::ast::{
+    AccumulationAst, AccumulationKind, Expression, PeriodKind, SourceAst,
+};
 use crate::query::core::dialect::{SqlDialect, compile_literal};
 use crate::query::core::names::names_equal;
 use crate::query::core::params::{ParameterValue, Parameters};
@@ -164,18 +166,12 @@ pub(super) fn compile_accumulation_relation(
         );
     }
 
-    if virtual_table
+    let periodicity = virtual_table
         .arguments
         .get(2)
         .and_then(Option::as_ref)
-        .is_some()
-    {
-        return Err(QueryDiagnostic::at(
-            QueryDiagnosticKind::UnsupportedFeature,
-            Some(virtual_table.token),
-            "Turnovers periodicity is not supported yet; omit the third argument",
-        ));
-    }
+        .map(|expression| turnovers_periodicity(expression, virtual_table))
+        .transpose()?;
     let begin = virtual_table.arguments.first().and_then(Option::as_ref);
     let end = virtual_table.arguments.get(1).and_then(Option::as_ref);
     let condition = virtual_table.arguments.get(3).and_then(Option::as_ref);
@@ -233,6 +229,14 @@ pub(super) fn compile_accumulation_relation(
 
     let mut projections = Vec::new();
     let mut grouping = Vec::new();
+    if let Some(periodicity) = periodicity {
+        let truncated = dialect.begin_of_period(&qualified_period, periodicity);
+        projections.push(format!(
+            "{truncated} AS {}",
+            dialect.quote_identifier(&period_column.physical_name)
+        ));
+        grouping.push(truncated);
+    }
     for field in &dimension_fields {
         for column in &field.columns {
             let sql = dialect.qualified_column(Some("__aggregate_base"), &column.physical_name);
@@ -274,7 +278,11 @@ pub(super) fn compile_accumulation_relation(
     }
     relation.push(')');
 
-    let aggregate = aggregate_source(&dimension_fields, &resource_fields);
+    let mut aggregate = aggregate_source(&dimension_fields, &resource_fields);
+    if periodicity.is_some() {
+        dimension_fields.push(turnovers_period_field(period));
+        aggregate.period = Some(period_column.physical_name.clone());
+    }
     dimension_fields.extend(virtual_resources);
     Ok(CompiledSourceRelation {
         sql: relation,
@@ -282,6 +290,41 @@ pub(super) fn compile_accumulation_relation(
         aggregate: Some(aggregate),
         separators: Vec::new(),
     })
+}
+
+/// Reads the periodicity of `Обороты`: the platform writes a bare period
+/// name there, which parses as a one-segment field path.
+fn turnovers_periodicity(
+    expression: &Expression<'_, '_>,
+    virtual_table: &AccumulationAst<'_, '_>,
+) -> Result<PeriodKind, QueryDiagnostic> {
+    let token = match expression {
+        Expression::Field(reference) if reference.segments.len() == 1 => reference.last(),
+        other => operand_token(other).unwrap_or(virtual_table.token),
+    };
+    PeriodKind::from_name(token.lexeme).ok_or_else(|| {
+        QueryDiagnostic::at(
+            QueryDiagnosticKind::UnsupportedFeature,
+            Some(token),
+            format!(
+                "Turnovers periodicity {:?} is not supported; use a calendar period from SECOND to YEAR",
+                token.lexeme
+            ),
+        )
+    })
+}
+
+/// The `Период` field a periodic `Обороты` exposes: the beginning of the
+/// period the records fall into.
+fn turnovers_period_field(period: &QueryableField) -> QueryableField {
+    let mut result = period.clone();
+    result.name = "Период".to_owned();
+    result.schema_name = "Period".to_owned();
+    result.aliases = vec!["Период".to_owned(), "Period".to_owned()];
+    for column in &mut result.columns {
+        column.output_label = "Период".to_owned();
+    }
+    result
 }
 
 /// What an aggregating register table needs to drop the dimensions the
@@ -294,6 +337,11 @@ pub(super) struct AggregateSource {
     /// Physical column of every resource; they are summed when a
     /// dimension is dropped.
     pub(super) resources: Vec<String>,
+    /// Physical column of the period of a periodic `Обороты`. The
+    /// periodicity is an explicit request to split by period, so the
+    /// platform keeps that grouping even when the statement never reads
+    /// the column.
+    pub(super) period: Option<String>,
 }
 
 /// Sums away the dimensions the statement never reads, as the platform
@@ -312,22 +360,20 @@ pub(super) fn finalize_aggregate_relation(scope: &mut SourceScope, dialect: SqlD
         return;
     }
     let alias = dialect.quote_identifier("__aggregate_used");
-    let kept = aggregate
+    let columns = aggregate
         .dimensions
         .iter()
         .filter(|(index, _)| used.contains(index))
         .flat_map(|(_, columns)| columns.iter())
+        .chain(aggregate.period.iter())
+        .collect::<Vec<_>>();
+    let kept = columns
+        .iter()
         .map(|column| dialect.qualified_column(Some("__aggregate_used"), column))
         .collect::<Vec<_>>();
     let mut projection = kept
         .iter()
-        .zip(
-            aggregate
-                .dimensions
-                .iter()
-                .filter(|(index, _)| used.contains(index))
-                .flat_map(|(_, columns)| columns.iter()),
-        )
+        .zip(columns.iter())
         .map(|(sql, column)| format!("{sql} AS {}", dialect.quote_identifier(column)))
         .collect::<Vec<_>>();
     for column in &aggregate.resources {
@@ -378,6 +424,7 @@ fn aggregate_source(
             .flat_map(|field| field.columns.iter())
             .map(|column| column.physical_name.clone())
             .collect(),
+        period: None,
     }
 }
 

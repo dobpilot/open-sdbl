@@ -1503,16 +1503,24 @@ fn rejects_invalid_accumulation_virtual_table_shapes() {
     );
 
     let register = accumulation_register_snapshot();
+    // A calendar periodicity compiles; the recorder ones do not, because
+    // the virtual table exposes no recorder columns.
     let periodicity = postgres_compile!(
         "SELECT КоличествоОборот FROM AccumulationRegister.Остатки.Turnovers(,,Day,);",
         &register,
     )
-    .unwrap_err();
+    .unwrap();
     assert!(
-        periodicity
-            .message()
-            .contains("periodicity is not supported")
+        periodicity.sql.contains("date_trunc('day'"),
+        "{}",
+        periodicity.sql
     );
+    let recorder = postgres_compile!(
+        "SELECT КоличествоОборот FROM AccumulationRegister.Остатки.Turnovers(,,Регистратор,);",
+        &register,
+    )
+    .unwrap_err();
+    assert!(recorder.message().contains("periodicity"), "{recorder}");
 
     let resource_condition = postgres_compile!(
         "SELECT КоличествоОстаток FROM AccumulationRegister.Остатки.Balance(, Количество > 0);",

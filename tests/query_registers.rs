@@ -79,3 +79,55 @@ fn accepts_virtual_tables_without_an_argument_list() {
         .unwrap();
     assert_contains(&mssql.sql, "GROUP BY [__aggregate_base].[_fld54]");
 }
+
+#[test]
+fn groups_turnovers_by_the_requested_period() {
+    let snapshot = accumulation_register_snapshot();
+    let monthly = postgres(
+        &snapshot,
+        "ВЫБРАТЬ О.Период КАК П, О.Номенклатура КАК Н, О.КоличествоОборот КАК Кол
+         ИЗ РегистрНакопления.Остатки.Обороты(, , Месяц, ) КАК О;",
+    );
+    assert_contains(
+        &monthly.sql,
+        "date_trunc('month', \"__aggregate_base\".\"_period\") AS \"_period\"",
+    );
+    assert_contains(
+        &monthly.sql,
+        "GROUP BY date_trunc('month', \"__aggregate_base\".\"_period\"), \"__aggregate_base\".\"_fld54\"",
+    );
+
+    // The periodicity splits by period even when the column is not read.
+    let unread = postgres(
+        &snapshot,
+        "ВЫБРАТЬ О.КоличествоОборот КАК Кол ИЗ РегистрНакопления.Остатки.Обороты(, , День, ) КАК О;",
+    );
+    assert_contains(
+        &unread.sql,
+        "\"__aggregate_used\".\"_period\" AS \"_period\"",
+    );
+    assert_contains(&unread.sql, "GROUP BY \"__aggregate_used\".\"_period\"");
+
+    let mssql = QueryCompiler::new(&snapshot, MsSqlBackend::new(0).unwrap())
+        .compile(
+            "ВЫБРАТЬ О.Период КАК П, О.КоличествоОборот КАК Кол
+             ИЗ РегистрНакопления.Остатки.Обороты(, , Год, ) КАК О;",
+        )
+        .unwrap();
+    assert_contains(
+        &mssql.sql,
+        "DATETIME2FROMPARTS(YEAR([__aggregate_base].[_period]), 1, 1, 0, 0, 0, 0, 0)",
+    );
+
+    let recorder = QueryCompiler::new(&snapshot, PostgresBackend)
+        .compile(
+            "ВЫБРАТЬ О.КоличествоОборот КАК Кол
+             ИЗ РегистрНакопления.Остатки.Обороты(, , Регистратор, ) КАК О;",
+        )
+        .unwrap_err();
+    assert_eq!(
+        recorder.kind(),
+        open_sdbl::query::QueryDiagnosticKind::UnsupportedFeature
+    );
+    assert!(recorder.message().contains("periodicity"), "{recorder}");
+}
