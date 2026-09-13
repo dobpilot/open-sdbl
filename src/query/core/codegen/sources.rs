@@ -4,9 +4,9 @@ use std::sync::Arc;
 
 use super::context::{CompilationContext, CompiledBranch, JoinPlan, SourceScope};
 use super::expression::{
-    Operand, binary_operator_sql, check_like_operand, compile_case, compile_expression,
-    compile_predicate, count_diagnostic, function_name, is_count_kind, is_date_operand_kind,
-    is_unbound_parameter, left_binary_spine, operand_token, reference_column,
+    Operand, binary_operator_sql, check_like_operand, check_scalar_argument, compile_case,
+    compile_expression, compile_predicate, count_diagnostic, function_name, is_count_kind,
+    is_date_operand_kind, is_unbound_parameter, left_binary_spine, operand_token, reference_column,
     reference_type_column, render_coalesce, render_like, single_column,
     source_free_expression_kind, type_literal_value, value_type_sql, widen_reference,
 };
@@ -469,6 +469,30 @@ fn compile_source_free_expression(
             } else {
                 sql
             })
+        }
+        Expression::ScalarFunction {
+            token,
+            function,
+            arguments,
+        } => {
+            let mut compiled = Vec::with_capacity(arguments.len());
+            for (index, argument) in arguments.iter().enumerate() {
+                let kind = source_free_expression_kind(argument, snapshot, parameters);
+                check_scalar_argument(
+                    *function,
+                    index,
+                    operand_token(argument).unwrap_or(token),
+                    &kind,
+                )?;
+                compiled.push(compile_source_free_expression(
+                    argument,
+                    snapshot,
+                    dialect,
+                    parameters,
+                    storage_domain,
+                )?);
+            }
+            Ok(dialect.scalar_function(*function, &compiled))
         }
         Expression::TypeLiteral { token, name } => {
             Ok(dialect.binary_literal(&type_literal_value(name, snapshot, token)?.encode()))
@@ -1034,6 +1058,7 @@ pub(super) fn contains_aggregate(expression: &Expression<'_, '_>) -> bool {
             | Expression::MetadataValue { .. }
             | Expression::TypeLiteral { .. }
             | Expression::Uuid { .. } => {}
+            Expression::ScalarFunction { arguments, .. } => pending.extend(arguments),
             Expression::Between {
                 value, low, high, ..
             } => {

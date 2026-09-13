@@ -1123,6 +1123,18 @@ fn fingerprint_into(expression: &Expression<'_, '_>, output: &mut String) {
             fingerprint_into(high, output);
             output.push(')');
         }
+        Expression::ScalarFunction {
+            function,
+            arguments,
+            ..
+        } => {
+            output.push_str(&format!("F({},", function.name()));
+            for argument in arguments {
+                fingerprint_into(argument, output);
+                output.push(',');
+            }
+            output.push(')');
+        }
         Expression::TypeLiteral { name, .. } => match name {
             TypeName::Primitive(primitive) => {
                 output.push_str(&format!("TYPE({primitive:?})"));
@@ -1577,6 +1589,7 @@ fn validate_direct_join_condition_fields(
                 pending.push(high);
             }
             Expression::TypeLiteral { .. } => {}
+            Expression::ScalarFunction { arguments, .. } => pending.extend(arguments),
             Expression::BeginOfPeriod { value, .. }
             | Expression::EndOfPeriod { value, .. }
             | Expression::DatePart { value, .. }

@@ -1,6 +1,6 @@
 use open_sdbl::{DiagnosticKind, Keyword, Lexer, TokenKind, tokenize};
 
-const KEYWORD_ALIASES: [(Keyword, &str, &str); 81] = [
+const KEYWORD_ALIASES: [(Keyword, &str, &str); 103] = [
     (Keyword::Select, "ВЫБРАТЬ", "SELECT"),
     (Keyword::From, "ИЗ", "FROM"),
     (Keyword::Where, "ГДЕ", "WHERE"),
@@ -48,6 +48,28 @@ const KEYWORD_ALIASES: [(Keyword, &str, &str); 81] = [
     (Keyword::Avg, "СРЕДНЕЕ", "AVG"),
     (Keyword::Refs, "ССЫЛКА", "REFS"),
     (Keyword::Between, "МЕЖДУ", "BETWEEN"),
+    (Keyword::Substring, "ПОДСТРОКА", "SUBSTRING"),
+    (Keyword::StringLength, "ДЛИНАСТРОКИ", "STRINGLENGTH"),
+    (Keyword::TrimAll, "СОКРЛП", "TRIMALL"),
+    (Keyword::TrimLeft, "СОКРЛ", "TRIML"),
+    (Keyword::TrimRight, "СОКРП", "TRIMR"),
+    (Keyword::Upper, "ВРЕГ", "UPPER"),
+    (Keyword::Lower, "НРЕГ", "LOWER"),
+    (Keyword::StrFind, "СТРНАЙТИ", "STRFIND"),
+    (Keyword::StrReplace, "СТРЗАМЕНИТЬ", "STRREPLACE"),
+    (Keyword::Round, "ОКР", "ROUND"),
+    (Keyword::Int, "ЦЕЛ", "INT"),
+    (Keyword::Sqrt, "SQRT", "SQRT"),
+    (Keyword::Exp, "EXP", "EXP"),
+    (Keyword::Log, "LOG", "LOG"),
+    (Keyword::Log10, "LOG10", "LOG10"),
+    (Keyword::Pow, "POW", "POW"),
+    (Keyword::Cos, "COS", "COS"),
+    (Keyword::Sin, "SIN", "SIN"),
+    (Keyword::Tan, "TAN", "TAN"),
+    (Keyword::ACos, "ACOS", "ACOS"),
+    (Keyword::ASin, "ASIN", "ASIN"),
+    (Keyword::ATan, "ATAN", "ATAN"),
     (Keyword::Type, "ТИП", "TYPE"),
     (Keyword::ValueType, "ТИПЗНАЧЕНИЯ", "VALUETYPE"),
     (Keyword::Undefined, "НЕОПРЕДЕЛЕНО", "UNDEFINED"),
@@ -118,7 +140,7 @@ fn recognizes_russian_and_english_keywords_case_insensitively() {
 
 #[test]
 fn recognizes_the_complete_bilingual_keyword_table() {
-    assert_eq!(KEYWORD_ALIASES.len(), 81);
+    assert_eq!(KEYWORD_ALIASES.len(), 103);
     for (index, (keyword, russian, english)) in KEYWORD_ALIASES.into_iter().enumerate() {
         assert!(
             KEYWORD_ALIASES[..index]

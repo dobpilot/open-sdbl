@@ -2,7 +2,7 @@
 
 use std::collections::HashSet;
 
-use crate::query::core::ast::{CastTarget, DatePart, DateTimeValue, PeriodKind};
+use crate::query::core::ast::{CastTarget, DatePart, DateTimeValue, PeriodKind, ScalarFunction};
 use crate::query::core::resolve::ColumnKind;
 use crate::query::core::{QueryDiagnostic, QueryDiagnosticKind};
 use crate::query::mssql::MsSqlDialectLevel;
@@ -346,6 +346,113 @@ impl SqlDialect {
             }
             _ => expression.to_owned(),
         }
+    }
+
+    /// Renders one call of the scalar string and arithmetic library.
+    /// PostgreSQL keeps to 9.0: `left`/`right` arrived in 9.1, so both are
+    /// spelled with `substring`, and `round`/`trunc` take `numeric`.
+    pub(super) fn scalar_function(self, function: ScalarFunction, arguments: &[String]) -> String {
+        let argument = |index: usize| arguments[index].as_str();
+        let zero = "0".to_owned();
+        match (self, function) {
+            (_, ScalarFunction::Substring) => match self {
+                Self::Postgres => format!(
+                    "substring({} from {} for {})",
+                    argument(0),
+                    argument(1),
+                    argument(2)
+                ),
+                Self::MsSql { .. } => format!(
+                    "SUBSTRING({}, {}, {})",
+                    argument(0),
+                    argument(1),
+                    argument(2)
+                ),
+            },
+            // `LEN` ignores trailing spaces, which the platform counts.
+            (Self::Postgres, ScalarFunction::StringLength) => format!("length({})", argument(0)),
+            (Self::MsSql { .. }, ScalarFunction::StringLength) => {
+                format!("(LEN({} + N'.') - 1)", argument(0))
+            }
+            (Self::Postgres, ScalarFunction::TrimAll) => format!("btrim({})", argument(0)),
+            (Self::MsSql { .. }, ScalarFunction::TrimAll) => {
+                format!("LTRIM(RTRIM({}))", argument(0))
+            }
+            (_, ScalarFunction::TrimLeft) => self.call("ltrim", &[argument(0)]),
+            (_, ScalarFunction::TrimRight) => self.call("rtrim", &[argument(0)]),
+            (_, ScalarFunction::Upper) => self.call("upper", &[argument(0)]),
+            (_, ScalarFunction::Lower) => self.call("lower", &[argument(0)]),
+            (Self::Postgres, ScalarFunction::Left) => {
+                format!("substring({} from 1 for {})", argument(0), argument(1))
+            }
+            (Self::MsSql { .. }, ScalarFunction::Left) => {
+                format!("LEFT({}, {})", argument(0), argument(1))
+            }
+            (Self::Postgres, ScalarFunction::Right) => format!(
+                "substring({0} from greatest(length({0}) - ({1}) + 1, 1))",
+                argument(0),
+                argument(1)
+            ),
+            (Self::MsSql { .. }, ScalarFunction::Right) => {
+                format!("RIGHT({}, {})", argument(0), argument(1))
+            }
+            (Self::Postgres, ScalarFunction::StrFind) => {
+                format!("position({} in {})", argument(1), argument(0))
+            }
+            (Self::MsSql { .. }, ScalarFunction::StrFind) => {
+                format!("CHARINDEX({}, {})", argument(1), argument(0))
+            }
+            (_, ScalarFunction::StrReplace) => {
+                self.call("replace", &[argument(0), argument(1), argument(2)])
+            }
+            (Self::Postgres, ScalarFunction::Round) => format!(
+                "round(({})::numeric, {})",
+                argument(0),
+                arguments.get(1).unwrap_or(&zero)
+            ),
+            (Self::MsSql { .. }, ScalarFunction::Round) => format!(
+                "ROUND({}, {})",
+                argument(0),
+                arguments.get(1).unwrap_or(&zero)
+            ),
+            (Self::Postgres, ScalarFunction::Int) => format!("trunc(({})::numeric)", argument(0)),
+            (Self::MsSql { .. }, ScalarFunction::Int) => format!("ROUND({}, 0, 1)", argument(0)),
+            (_, ScalarFunction::Sqrt) => self.call("sqrt", &[argument(0)]),
+            (_, ScalarFunction::Exp) => self.call("exp", &[argument(0)]),
+            // The platform's LOG is the natural logarithm; PostgreSQL
+            // spells that `ln` and reserves `log` for base ten.
+            (Self::Postgres, ScalarFunction::Log) => format!("ln({})", argument(0)),
+            (Self::MsSql { .. }, ScalarFunction::Log) => format!("LOG({})", argument(0)),
+            (Self::Postgres, ScalarFunction::Log10) => format!("log({})", argument(0)),
+            (Self::MsSql { .. }, ScalarFunction::Log10) => format!("LOG10({})", argument(0)),
+            (_, ScalarFunction::Pow) => self.call("power", &[argument(0), argument(1)]),
+            (_, trigonometric) => {
+                let name = match trigonometric {
+                    ScalarFunction::Cos => "cos",
+                    ScalarFunction::Sin => "sin",
+                    ScalarFunction::Tan => "tan",
+                    ScalarFunction::ACos => "acos",
+                    ScalarFunction::ASin => "asin",
+                    _ => "atan",
+                };
+                match self {
+                    // PostgreSQL defines them on `double precision` only.
+                    Self::Postgres => {
+                        format!("{name}(({})::double precision)", argument(0))
+                    }
+                    Self::MsSql { .. } => self.call(name, &[argument(0)]),
+                }
+            }
+        }
+    }
+
+    /// Renders `name(arguments)`, upper-casing the name for SQL Server.
+    fn call(self, name: &str, arguments: &[&str]) -> String {
+        let name = match self {
+            Self::Postgres => name.to_owned(),
+            Self::MsSql { .. } => name.to_ascii_uppercase(),
+        };
+        format!("{name}({})", arguments.join(", "))
     }
 
     /// Renders a scalar `ВЫРАЗИТЬ`/`CAST`. PostgreSQL uses `substring … for`

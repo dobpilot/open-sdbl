@@ -5,8 +5,8 @@ use crate::query::core::ast::{
     CastTarget, ControlPoint, DatePart, Expression, FieldReference, GroupKey, HierarchyTotals,
     IndexAst, IntoAst, JoinAst, JoinKind, OrderKeyAst, OrderTerm, PeriodKind, PeriodsAst,
     PresentationArgument, PresentationOperation, PrimitiveType, Projection, ProjectionItem,
-    QueryAst, SelectAst, SliceAst, SliceKind, SourceAst, StatementAst, TotalsAst, TotalsField,
-    TypeName, UnionLink, parse_datetime_value,
+    QueryAst, ScalarFunction, SelectAst, SliceAst, SliceKind, SourceAst, StatementAst, TotalsAst,
+    TotalsField, TypeName, UnionLink, parse_datetime_value,
 };
 use crate::query::core::diag::SourcePosition;
 use crate::query::core::names::names_equal;
@@ -39,6 +39,28 @@ fn is_contextual_identifier(kind: TokenKind) -> bool {
                     | Keyword::Avg
                     | Keyword::Refs
                     | Keyword::Between
+                    | Keyword::Substring
+                    | Keyword::StringLength
+                    | Keyword::TrimAll
+                    | Keyword::TrimLeft
+                    | Keyword::TrimRight
+                    | Keyword::Upper
+                    | Keyword::Lower
+                    | Keyword::StrFind
+                    | Keyword::StrReplace
+                    | Keyword::Round
+                    | Keyword::Int
+                    | Keyword::Sqrt
+                    | Keyword::Exp
+                    | Keyword::Log
+                    | Keyword::Log10
+                    | Keyword::Pow
+                    | Keyword::Cos
+                    | Keyword::Sin
+                    | Keyword::Tan
+                    | Keyword::ACos
+                    | Keyword::ASin
+                    | Keyword::ATan
                     | Keyword::Type
                     | Keyword::ValueType
                     | Keyword::Totals
@@ -1263,6 +1285,9 @@ impl<'tokens, 'source> Parser<'tokens, 'source> {
             if let Some(token) = self.consume_keyword_token(Keyword::Uuid) {
                 return self.parse_uuid(token);
             }
+            if let Some((token, function)) = self.consume_scalar_function() {
+                return self.parse_scalar_function(token, function);
+            }
             if let Some(token) = self.consume_keyword_token(Keyword::Type) {
                 return self.parse_type_literal(token);
             }
@@ -1295,6 +1320,83 @@ impl<'tokens, 'source> Parser<'tokens, 'source> {
             return Ok(Expression::Literal(self.next().expect("peeked token")));
         }
         Ok(Expression::Field(self.parse_field_reference()?))
+    }
+
+    /// The scalar function opened by the next token, if any. `Лев` and
+    /// `Прав` share their English spelling with the join keywords, so the
+    /// Russian names are matched by lexeme and the keywords are read as
+    /// functions only here, where a join can never appear.
+    fn consume_scalar_function(&mut self) -> Option<(&'tokens Token<'source>, ScalarFunction)> {
+        let token = self.peek()?;
+        let function = match token.kind {
+            TokenKind::Keyword(Keyword::Substring) => ScalarFunction::Substring,
+            TokenKind::Keyword(Keyword::StringLength) => ScalarFunction::StringLength,
+            TokenKind::Keyword(Keyword::TrimAll) => ScalarFunction::TrimAll,
+            TokenKind::Keyword(Keyword::TrimLeft) => ScalarFunction::TrimLeft,
+            TokenKind::Keyword(Keyword::TrimRight) => ScalarFunction::TrimRight,
+            TokenKind::Keyword(Keyword::Upper) => ScalarFunction::Upper,
+            TokenKind::Keyword(Keyword::Lower) => ScalarFunction::Lower,
+            TokenKind::Keyword(Keyword::StrFind) => ScalarFunction::StrFind,
+            TokenKind::Keyword(Keyword::StrReplace) => ScalarFunction::StrReplace,
+            TokenKind::Keyword(Keyword::Round) => ScalarFunction::Round,
+            TokenKind::Keyword(Keyword::Int) => ScalarFunction::Int,
+            TokenKind::Keyword(Keyword::Sqrt) => ScalarFunction::Sqrt,
+            TokenKind::Keyword(Keyword::Exp) => ScalarFunction::Exp,
+            TokenKind::Keyword(Keyword::Log) => ScalarFunction::Log,
+            TokenKind::Keyword(Keyword::Log10) => ScalarFunction::Log10,
+            TokenKind::Keyword(Keyword::Pow) => ScalarFunction::Pow,
+            TokenKind::Keyword(Keyword::Cos) => ScalarFunction::Cos,
+            TokenKind::Keyword(Keyword::Sin) => ScalarFunction::Sin,
+            TokenKind::Keyword(Keyword::Tan) => ScalarFunction::Tan,
+            TokenKind::Keyword(Keyword::ACos) => ScalarFunction::ACos,
+            TokenKind::Keyword(Keyword::ASin) => ScalarFunction::ASin,
+            TokenKind::Keyword(Keyword::ATan) => ScalarFunction::ATan,
+            TokenKind::Keyword(Keyword::Left) => ScalarFunction::Left,
+            TokenKind::Keyword(Keyword::Right) => ScalarFunction::Right,
+            TokenKind::Identifier if names_equal(token.lexeme, "ЛЕВ") => ScalarFunction::Left,
+            TokenKind::Identifier if names_equal(token.lexeme, "ПРАВ") => ScalarFunction::Right,
+            _ => return None,
+        };
+        self.next().map(|token| (token, function))
+    }
+
+    /// The argument list of a scalar function after its name.
+    fn parse_scalar_function(
+        &mut self,
+        token: &'tokens Token<'source>,
+        function: ScalarFunction,
+    ) -> Result<Expression<'tokens, 'source>, QueryDiagnostic> {
+        self.expect_lexeme("(")?;
+        let mut arguments = Vec::new();
+        loop {
+            arguments.push(self.parse_or()?);
+            if !self.consume_lexeme(",") {
+                break;
+            }
+        }
+        self.expect_lexeme(")")?;
+        let (low, high) = function.arity();
+        if arguments.len() < low || arguments.len() > high {
+            return Err(QueryDiagnostic::at(
+                QueryDiagnosticKind::Syntax,
+                Some(token),
+                format!(
+                    "{} takes {} arguments, found {}",
+                    function.name(),
+                    if low == high {
+                        low.to_string()
+                    } else {
+                        format!("{low} or {high}")
+                    },
+                    arguments.len()
+                ),
+            ));
+        }
+        Ok(Expression::ScalarFunction {
+            token,
+            function,
+            arguments,
+        })
     }
 
     /// `ТИП(Строка | Число | Дата | Булево | <Вид>.<Объект>)`.

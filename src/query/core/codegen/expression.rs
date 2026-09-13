@@ -10,7 +10,7 @@ use crate::metadata::MetadataSnapshot;
 use crate::metadata::ObjectId;
 use crate::query::core::ast::{
     AggregateArgument, AggregateKind, CaseBranch, CastTarget, Expression, FieldReference,
-    PrimitiveType, TypeName,
+    PrimitiveType, ScalarFunction, TypeName,
 };
 use crate::query::core::dialect::{SqlDialect, compile_literal, decode_binary_literal};
 use crate::query::core::names::names_equal;
@@ -456,6 +456,99 @@ fn compound_null_member(
     Ok(member.map(|member| context.sql_column(&resolved, member)))
 }
 
+/// The result kind of a scalar function.
+pub(super) fn scalar_function_kind(function: ScalarFunction) -> ColumnKind {
+    if function.returns_string() {
+        ColumnKind::String { length: None }
+    } else {
+        ColumnKind::Number {
+            precision: None,
+            scale: None,
+        }
+    }
+}
+
+/// Whether the argument at `index` is a string; the others are numbers.
+pub(super) fn scalar_argument_is_string(function: ScalarFunction, index: usize) -> bool {
+    match function {
+        ScalarFunction::StrFind | ScalarFunction::StrReplace => true,
+        ScalarFunction::Substring | ScalarFunction::Left | ScalarFunction::Right => index == 0,
+        other => other.takes_strings() && index == 0,
+    }
+}
+
+/// Checks one argument of a scalar function against the kind the platform
+/// expects there. `NULL` and unclassified values pass, as elsewhere.
+pub(super) fn check_scalar_argument(
+    function: ScalarFunction,
+    index: usize,
+    token: &Token<'_>,
+    kind: &ColumnKind,
+) -> Result<(), QueryDiagnostic> {
+    let wildcard = matches!(
+        kind,
+        ColumnKind::Null | ColumnKind::Undefined | ColumnKind::Unknown { .. }
+    );
+    let expected_string = scalar_argument_is_string(function, index);
+    let matches = if expected_string {
+        matches!(kind, ColumnKind::String { .. })
+    } else {
+        matches!(kind, ColumnKind::Number { .. })
+    };
+    if wildcard || matches {
+        return Ok(());
+    }
+    Err(QueryDiagnostic::at(
+        QueryDiagnosticKind::Syntax,
+        Some(token),
+        format!(
+            "{} argument {} must be {}, found {kind:?}",
+            function.name(),
+            index + 1,
+            if expected_string {
+                "a string"
+            } else {
+                "a number"
+            }
+        ),
+    ))
+}
+
+/// Compiles one call of the scalar string and arithmetic library. A
+/// character column of the PostgreSQL 1C extension types is cast to
+/// `text` first, because the functions are not defined on them.
+fn compile_scalar_function(
+    context: &mut CompilationContext<'_, '_>,
+    token: &Token<'_>,
+    function: ScalarFunction,
+    arguments: &[Expression<'_, '_>],
+) -> Result<String, QueryDiagnostic> {
+    let mut compiled = Vec::with_capacity(arguments.len());
+    for (index, argument) in arguments.iter().enumerate() {
+        let kind = expression_kind(argument, context)?;
+        check_scalar_argument(
+            function,
+            index,
+            operand_token(argument).unwrap_or(token),
+            &kind,
+        )?;
+        let sql = match argument {
+            Expression::Field(reference) => {
+                let resolved = context.resolve(reference)?;
+                let column = single_column(resolved.field(), reference.last())?;
+                context.dialect.column_projection(
+                    &context.sql_column(&resolved, column),
+                    &column.kind,
+                    &column.data_type,
+                )
+            }
+            other => compile_expression(other, context)?,
+        };
+        compiled.push(sql);
+    }
+    Ok(context.dialect.scalar_function(function, &compiled))
+}
+
 /// Whether `ТИПЗНАЧЕНИЯ` can name the type of a value of this kind.
 fn is_classifiable_kind(kind: &ColumnKind) -> bool {
     match kind {
@@ -837,6 +930,7 @@ pub(super) fn expression_kind(
         }
         Expression::Like { .. } => Ok(ColumnKind::Boolean),
         Expression::Between { .. } => Ok(ColumnKind::Boolean),
+        Expression::ScalarFunction { function, .. } => Ok(scalar_function_kind(*function)),
         Expression::TypeLiteral { .. } | Expression::ValueType { .. } => Ok(ColumnKind::Type),
         Expression::Parameter(token) => Ok(context
             .catalog
@@ -889,6 +983,7 @@ pub(super) fn operand_token<'tokens, 'source>(
         | Expression::MetadataValue { token, .. }
         | Expression::Uuid { token, .. }
         | Expression::Between { token, .. }
+        | Expression::ScalarFunction { token, .. }
         | Expression::TypeLiteral { token, .. }
         | Expression::ValueType { token, .. }
         | Expression::Cast { token, .. }
@@ -1296,6 +1391,7 @@ pub(super) fn source_free_expression_kind(
             _ => ColumnKind::Boolean,
         },
         Expression::Between { .. } => ColumnKind::Boolean,
+        Expression::ScalarFunction { function, .. } => scalar_function_kind(*function),
         Expression::TypeLiteral { .. } | Expression::ValueType { .. } => ColumnKind::Type,
         Expression::InList { .. }
         | Expression::InQuery { .. }
@@ -1462,6 +1558,11 @@ pub(super) fn compile_expression(
                 sql
             })
         }
+        Expression::ScalarFunction {
+            token,
+            function,
+            arguments,
+        } => compile_scalar_function(context, token, *function, arguments),
         Expression::TypeLiteral { token, name } => Ok(type_constant(
             type_literal_value(name, context.snapshot, token)?,
             context.dialect,

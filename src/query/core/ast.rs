@@ -325,6 +325,112 @@ pub(super) enum OrderKeyAst<'tokens, 'source> {
     Expression(Expression<'tokens, 'source>),
 }
 
+/// A scalar function of the 1C string and arithmetic library.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum ScalarFunction {
+    Substring,
+    StringLength,
+    TrimAll,
+    TrimLeft,
+    TrimRight,
+    Upper,
+    Lower,
+    Left,
+    Right,
+    StrFind,
+    StrReplace,
+    Round,
+    Int,
+    Sqrt,
+    Exp,
+    Log,
+    Log10,
+    Pow,
+    Cos,
+    Sin,
+    Tan,
+    ACos,
+    ASin,
+    ATan,
+}
+
+impl ScalarFunction {
+    /// The accepted argument counts, as `(minimum, maximum)`.
+    pub(super) const fn arity(self) -> (usize, usize) {
+        match self {
+            Self::Substring => (3, 3),
+            Self::StrReplace => (3, 3),
+            Self::Left | Self::Right | Self::StrFind | Self::Pow => (2, 2),
+            Self::Round => (1, 2),
+            _ => (1, 1),
+        }
+    }
+
+    /// Whether the arguments are strings; the others take numbers.
+    pub(super) const fn takes_strings(self) -> bool {
+        matches!(
+            self,
+            Self::Substring
+                | Self::StringLength
+                | Self::TrimAll
+                | Self::TrimLeft
+                | Self::TrimRight
+                | Self::Upper
+                | Self::Lower
+                | Self::Left
+                | Self::Right
+                | Self::StrFind
+                | Self::StrReplace
+        )
+    }
+
+    /// Whether the result is a string; the others return numbers.
+    pub(super) const fn returns_string(self) -> bool {
+        matches!(
+            self,
+            Self::Substring
+                | Self::TrimAll
+                | Self::TrimLeft
+                | Self::TrimRight
+                | Self::Upper
+                | Self::Lower
+                | Self::Left
+                | Self::Right
+                | Self::StrReplace
+        )
+    }
+
+    /// The stable name used in diagnostics.
+    pub(super) const fn name(self) -> &'static str {
+        match self {
+            Self::Substring => "SUBSTRING",
+            Self::StringLength => "STRINGLENGTH",
+            Self::TrimAll => "TRIMALL",
+            Self::TrimLeft => "TRIML",
+            Self::TrimRight => "TRIMR",
+            Self::Upper => "UPPER",
+            Self::Lower => "LOWER",
+            Self::Left => "LEFT",
+            Self::Right => "RIGHT",
+            Self::StrFind => "STRFIND",
+            Self::StrReplace => "STRREPLACE",
+            Self::Round => "ROUND",
+            Self::Int => "INT",
+            Self::Sqrt => "SQRT",
+            Self::Exp => "EXP",
+            Self::Log => "LOG",
+            Self::Log10 => "LOG10",
+            Self::Pow => "POW",
+            Self::Cos => "COS",
+            Self::Sin => "SIN",
+            Self::Tan => "TAN",
+            Self::ACos => "ACOS",
+            Self::ASin => "ASIN",
+            Self::ATan => "ATAN",
+        }
+    }
+}
+
 /// The argument of `ТИП(…)`.
 #[derive(Debug)]
 pub(super) enum TypeName<'tokens, 'source> {
@@ -425,6 +531,12 @@ pub(super) enum Expression<'tokens, 'source> {
         low: Box<Self>,
         high: Box<Self>,
         negated: bool,
+    },
+    /// A scalar string or arithmetic function of fixed arity.
+    ScalarFunction {
+        token: &'tokens Token<'source>,
+        function: ScalarFunction,
+        arguments: Vec<Self>,
     },
     /// `ТИП(<type name>)`: a constant type value.
     TypeLiteral {

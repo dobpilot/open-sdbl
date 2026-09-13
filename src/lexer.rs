@@ -103,6 +103,50 @@ pub enum Keyword {
     Refs,
     /// `МЕЖДУ` or `BETWEEN`.
     Between,
+    /// `ПОДСТРОКА` or `SUBSTRING`.
+    Substring,
+    /// `ДЛИНАСТРОКИ` or `STRINGLENGTH`.
+    StringLength,
+    /// `СОКРЛП` or `TRIMALL`.
+    TrimAll,
+    /// `СОКРЛ` or `TRIML`.
+    TrimLeft,
+    /// `СОКРП` or `TRIMR`.
+    TrimRight,
+    /// `ВРЕГ` or `UPPER`.
+    Upper,
+    /// `НРЕГ` or `LOWER`.
+    Lower,
+    /// `СТРНАЙТИ` or `STRFIND`.
+    StrFind,
+    /// `СТРЗАМЕНИТЬ` or `STRREPLACE`.
+    StrReplace,
+    /// `ОКР` or `ROUND`.
+    Round,
+    /// `ЦЕЛ` or `INT`.
+    Int,
+    /// `SQRT` or `SQRT`.
+    Sqrt,
+    /// `EXP` or `EXP`.
+    Exp,
+    /// `LOG` or `LOG`.
+    Log,
+    /// `LOG10` or `LOG10`.
+    Log10,
+    /// `POW` or `POW`.
+    Pow,
+    /// `COS` or `COS`.
+    Cos,
+    /// `SIN` or `SIN`.
+    Sin,
+    /// `TAN` or `TAN`.
+    Tan,
+    /// `ACOS` or `ACOS`.
+    ACos,
+    /// `ASIN` or `ASIN`.
+    ASin,
+    /// `ATAN` or `ATAN`.
+    ATan,
     /// `ТИП` or `TYPE`.
     Type,
     /// `ТИПЗНАЧЕНИЯ` or `VALUETYPE`.
@@ -229,6 +273,28 @@ impl Keyword {
             Self::Avg => "AVG",
             Self::Refs => "REFS",
             Self::Between => "BETWEEN",
+            Self::Substring => "SUBSTRING",
+            Self::StringLength => "STRINGLENGTH",
+            Self::TrimAll => "TRIMALL",
+            Self::TrimLeft => "TRIML",
+            Self::TrimRight => "TRIMR",
+            Self::Upper => "UPPER",
+            Self::Lower => "LOWER",
+            Self::StrFind => "STRFIND",
+            Self::StrReplace => "STRREPLACE",
+            Self::Round => "ROUND",
+            Self::Int => "INT",
+            Self::Sqrt => "SQRT",
+            Self::Exp => "EXP",
+            Self::Log => "LOG",
+            Self::Log10 => "LOG10",
+            Self::Pow => "POW",
+            Self::Cos => "COS",
+            Self::Sin => "SIN",
+            Self::Tan => "TAN",
+            Self::ACos => "ACOS",
+            Self::ASin => "ASIN",
+            Self::ATan => "ATAN",
             Self::Type => "TYPE",
             Self::ValueType => "VALUETYPE",
             Self::Undefined => "UNDEFINED",
@@ -645,7 +711,7 @@ fn is_identifier_continue(character: char) -> bool {
     character == '_' || character.is_alphanumeric()
 }
 
-const KEYWORDS: [(Keyword, &str, &str); 81] = [
+const KEYWORDS: [(Keyword, &str, &str); 103] = [
     (Keyword::Select, "ВЫБРАТЬ", "SELECT"),
     (Keyword::From, "ИЗ", "FROM"),
     (Keyword::Where, "ГДЕ", "WHERE"),
@@ -693,6 +759,28 @@ const KEYWORDS: [(Keyword, &str, &str); 81] = [
     (Keyword::Avg, "СРЕДНЕЕ", "AVG"),
     (Keyword::Refs, "ССЫЛКА", "REFS"),
     (Keyword::Between, "МЕЖДУ", "BETWEEN"),
+    (Keyword::Substring, "ПОДСТРОКА", "SUBSTRING"),
+    (Keyword::StringLength, "ДЛИНАСТРОКИ", "STRINGLENGTH"),
+    (Keyword::TrimAll, "СОКРЛП", "TRIMALL"),
+    (Keyword::TrimLeft, "СОКРЛ", "TRIML"),
+    (Keyword::TrimRight, "СОКРП", "TRIMR"),
+    (Keyword::Upper, "ВРЕГ", "UPPER"),
+    (Keyword::Lower, "НРЕГ", "LOWER"),
+    (Keyword::StrFind, "СТРНАЙТИ", "STRFIND"),
+    (Keyword::StrReplace, "СТРЗАМЕНИТЬ", "STRREPLACE"),
+    (Keyword::Round, "ОКР", "ROUND"),
+    (Keyword::Int, "ЦЕЛ", "INT"),
+    (Keyword::Sqrt, "SQRT", "SQRT"),
+    (Keyword::Exp, "EXP", "EXP"),
+    (Keyword::Log, "LOG", "LOG"),
+    (Keyword::Log10, "LOG10", "LOG10"),
+    (Keyword::Pow, "POW", "POW"),
+    (Keyword::Cos, "COS", "COS"),
+    (Keyword::Sin, "SIN", "SIN"),
+    (Keyword::Tan, "TAN", "TAN"),
+    (Keyword::ACos, "ACOS", "ACOS"),
+    (Keyword::ASin, "ASIN", "ASIN"),
+    (Keyword::ATan, "ATAN", "ATAN"),
     (Keyword::Type, "ТИП", "TYPE"),
     (Keyword::ValueType, "ТИПЗНАЧЕНИЯ", "VALUETYPE"),
     (Keyword::Undefined, "НЕОПРЕДЕЛЕНО", "UNDEFINED"),
