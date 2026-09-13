@@ -6279,3 +6279,50 @@ fn negation_binds_looser_than_a_comparison() {
         null_test.sql
     );
 }
+
+#[test]
+fn flattens_a_group_of_nested_joins() {
+    // 1C closes the conditions of a join group in reverse order. Measured
+    // on the platform: a group of left joins answers exactly what the flat
+    // chain answers, so the group compiles as that chain.
+    let snapshot = presentation_reference_snapshot(false);
+    let compiled = postgres_compile!(
+        "ВЫБРАТЬ Т.Ссылка КАК С ИЗ Справочник.OpenSdblMetadataProbe КАК Т
+         ЛЕВОЕ СОЕДИНЕНИЕ Справочник.OpenSdblMetadataProbe КАК Б
+            ЛЕВОЕ СОЕДИНЕНИЕ Справочник.OpenSdblMetadataProbe КАК Г
+            ПО Г.Ссылка = Б.ProbeAttribute
+         ПО Б.Ссылка = Т.ProbeAttribute;",
+        &snapshot,
+    )
+    .unwrap();
+    let outer = compiled.sql.find("AS \"Б\"").expect("outer join");
+    let inner = compiled.sql.find("AS \"Г\"").expect("inner join");
+    assert!(outer < inner, "{}", compiled.sql);
+    assert!(
+        compiled.sql.contains(
+            "LEFT JOIN \"_reference53\" AS \"Б\" ON (\"Т\".\"_fld54_rrref\" = \"Б\".\"_idrref\""
+        ),
+        "{}",
+        compiled.sql
+    );
+    assert!(
+        compiled.sql.contains(
+            "LEFT JOIN \"_reference53\" AS \"Г\" ON (\"Б\".\"_fld54_rrref\" = \"Г\".\"_idrref\""
+        ),
+        "{}",
+        compiled.sql
+    );
+
+    // An inner join inside a left one keeps the outer rows the flat chain
+    // drops, so it is refused rather than answered differently.
+    let error = postgres_compile!(
+        "ВЫБРАТЬ Т.Ссылка КАК С ИЗ Справочник.OpenSdblMetadataProbe КАК Т
+         ЛЕВОЕ СОЕДИНЕНИЕ Справочник.OpenSdblMetadataProbe КАК Б
+            ВНУТРЕННЕЕ СОЕДИНЕНИЕ Справочник.OpenSdblMetadataProbe КАК Г
+            ПО Г.Ссылка = Б.ProbeAttribute
+         ПО Б.Ссылка = Т.ProbeAttribute;",
+        &snapshot,
+    )
+    .unwrap_err();
+    assert_eq!(error.kind(), QueryDiagnosticKind::UnsupportedFeature);
+}

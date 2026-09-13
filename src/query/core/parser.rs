@@ -103,6 +103,27 @@ fn is_contextual_identifier(kind: TokenKind) -> bool {
         )
 }
 
+/// Whether a join nested inside another may be flattened into the same
+/// chain. Measured on the platform: a group of left joins answers exactly
+/// what the flat chain answers, while an inner join inside a left one
+/// keeps the outer rows that the flat chain would drop.
+fn check_join_group(outer: JoinKind, inner: &JoinAst<'_, '_>) -> Result<(), QueryDiagnostic> {
+    let flattens = match outer {
+        JoinKind::Inner | JoinKind::Cross => matches!(inner.kind, JoinKind::Inner | JoinKind::Left),
+        JoinKind::Left => inner.kind == JoinKind::Left,
+        JoinKind::Right | JoinKind::Full => false,
+    };
+    if flattens {
+        return Ok(());
+    }
+    Err(QueryDiagnostic::at(
+        QueryDiagnosticKind::UnsupportedFeature,
+        Some(inner.token),
+        "a join written inside the source of this join answers differently \
+         than the same joins written one after another",
+    ))
+}
+
 fn is_ascending_order(token: &Token<'_>) -> bool {
     names_equal(token.lexeme, "ASC") || names_equal(token.lexeme, "ВОЗР")
 }
@@ -557,9 +578,11 @@ impl<'tokens, 'source> Parser<'tokens, 'source> {
         let mut joins = Vec::new();
         if source.is_some() {
             loop {
-                if let Some(join) = self.parse_join()? {
-                    self.record_binary_operator(join.token)?;
-                    joins.push(join);
+                if let Some(group) = self.parse_join()? {
+                    for join in group {
+                        self.record_binary_operator(join.token)?;
+                        joins.push(join);
+                    }
                 } else if let Some(element) = self.parse_comma_source()? {
                     self.record_binary_operator(element.token)?;
                     joins.push(element);
@@ -675,7 +698,12 @@ impl<'tokens, 'source> Parser<'tokens, 'source> {
         }
     }
 
-    fn parse_join(&mut self) -> Result<Option<JoinAst<'tokens, 'source>>, QueryDiagnostic> {
+    /// Parses one join and the joins nested inside its source. 1C closes
+    /// the conditions in reverse order, so
+    /// `A ЛЕВОЕ СОЕДИНЕНИЕ B ЛЕВОЕ СОЕДИНЕНИЕ C ПО <B‑C> ПО <A‑B>` is a
+    /// group; it is returned flattened, outer join first, which answers
+    /// what the platform answers for the combinations this accepts.
+    fn parse_join(&mut self) -> Result<Option<Vec<JoinAst<'tokens, 'source>>>, QueryDiagnostic> {
         let (token, kind) = if let Some(token) = self.consume_keyword_token(Keyword::Inner) {
             self.expect_keyword(Keyword::Join)?;
             (token, JoinKind::Inner)
@@ -697,6 +725,13 @@ impl<'tokens, 'source> Parser<'tokens, 'source> {
             return Ok(None);
         };
         let source = self.parse_source()?;
+        let mut nested = Vec::new();
+        while let Some(mut group) = self.parse_join()? {
+            if let Some(inner) = group.first() {
+                check_join_group(kind, inner)?;
+            }
+            nested.append(&mut group);
+        }
         if !self.consume_keyword(Keyword::On) && !self.consume_keyword(Keyword::By) {
             return Err(self.diagnostic(
                 QueryDiagnosticKind::Syntax,
@@ -704,12 +739,15 @@ impl<'tokens, 'source> Parser<'tokens, 'source> {
                 "expected ON or ПО after JOIN source",
             ));
         }
-        Ok(Some(JoinAst {
+        let mut group = Vec::with_capacity(nested.len() + 1);
+        group.push(JoinAst {
             token,
             kind,
             source,
             condition: Some(self.parse_or()?),
-        }))
+        });
+        group.append(&mut nested);
+        Ok(Some(group))
     }
 
     /// Parses `, <source>` after a source element, returning the element as
