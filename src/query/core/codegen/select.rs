@@ -756,6 +756,7 @@ fn render_selected_projections(
                 } else {
                     (expression.clone(), kind.clone())
                 };
+                let expression = context.dialect.expression_projection(&expression, &kind);
                 let output_label = labels.allocate(label);
                 sql.push(format!(
                     "{expression} AS {}",

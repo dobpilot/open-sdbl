@@ -3086,7 +3086,15 @@ fn reports_structured_column_kinds_for_fields_scalars_and_aggregates() {
             },
         ]
     );
-    assert!(!aggregates.sql.contains("::text"));
+    // Only the character aggregate is cast, because an `mvarchar` operand
+    // makes the whole expression that undecodable type.
+    assert_eq!(aggregates.sql.matches("::text").count(), 1);
+    assert!(aggregates.sql.contains("(MAX(\"__src\".\"_code\"))::text"));
+    assert!(
+        !aggregates
+            .sql
+            .contains("MIN(\"__src\".\"_date_time\")::text")
+    );
 }
 
 #[test]
@@ -3487,7 +3495,7 @@ fn compiles_scalar_casts_on_both_dialects() {
     assert!(
         postgres
             .sql
-            .contains("substring(\"__src\".\"_code\"::text from 1 for 10) AS \"Короткий\"")
+            .contains("(substring(\"__src\".\"_code\"::text from 1 for 10))::text AS \"Короткий\"")
     );
     assert!(
         postgres
@@ -3759,7 +3767,7 @@ fn compiles_case_expressions_in_projections_and_predicates() {
         ]
     );
     assert!(postgres.sql.contains(
-        "CASE WHEN \"__src\".\"_fld77\" THEN 'Да' WHEN (\"__src\".\"_code\" = 'A') THEN 'A' ELSE 'Нет' END AS \"Статус\""
+        "(CASE WHEN \"__src\".\"_fld77\" THEN 'Да' WHEN (\"__src\".\"_code\" = 'A') THEN 'A' ELSE 'Нет' END)::text AS \"Статус\""
     ));
     assert!(
         postgres
@@ -4053,7 +4061,7 @@ fn aggregates_arbitrary_scalar_expressions() {
     assert!(
         postgres
             .sql
-            .contains("MAX(COALESCE(\"__src\".\"_code\", '')) AS \"M\"")
+            .contains("(MAX(COALESCE(\"__src\".\"_code\", '')))::text AS \"M\"")
     );
     assert!(
         mssql
@@ -4144,7 +4152,7 @@ fn compiles_scalar_parameters_on_both_dialects() {
         ]
     );
     assert!(postgres.sql.starts_with(
-        "SELECT 15.50 AS \"N\", 'A''B' AS \"S\", TIMESTAMP '2024-01-01 00:00:00' AS \"D\", NULL AS \"Z\" FROM"
+        "SELECT 15.50 AS \"N\", ('A''B')::text AS \"S\", TIMESTAMP '2024-01-01 00:00:00' AS \"D\", NULL AS \"Z\" FROM"
     ));
     assert!(postgres.sql.ends_with(
         "WHERE ((((\"__src\".\"_code\" = 'A''B') AND (\"__src\".\"_date_time\" >= TIMESTAMP '2024-01-01 00:00:00')) AND TRUE) AND (\"__src\".\"_fld77\" = TRUE))"
@@ -4530,7 +4538,7 @@ fn compiles_grouped_branches_with_having_and_ordering() {
     assert!(
         postgres
             .sql
-            .contains("CASE WHEN (COUNT(*) > 1) THEN 'many' ELSE 'one' END AS \"Label\"")
+            .contains("(CASE WHEN (COUNT(*) > 1) THEN 'many' ELSE 'one' END)::text AS \"Label\"")
     );
     let mssql = mssql.unwrap();
     assert!(mssql.sql.contains(
@@ -5942,4 +5950,74 @@ fn dereferences_composite_references_across_targets() {
     )
     .unwrap_err();
     assert_eq!(missing.kind(), QueryDiagnosticKind::UnknownField);
+}
+
+/// A character result of an expression carries the PostgreSQL 1C
+/// extension type of its operands, which no driver can decode, so it is
+/// projected as `text` in every statement.
+#[test]
+fn casts_character_expressions_to_text_on_postgres() {
+    let snapshot = snapshot();
+    let compiled = postgres_compile!(
+        "ВЫБРАТЬ ЕСТЬNULL(Код, \"нет\") КАК Е,
+         ВЫБОР КОГДА Код = \"A\" ТОГДА Код ИНАЧЕ \"B\" КОНЕЦ КАК Р
+         ИЗ Справочник.OpenSdblMetadataProbe;",
+        &snapshot,
+    )
+    .unwrap();
+    for needle in [
+        "(COALESCE(\"__src\".\"_code\", 'нет'))::text AS \"Е\"",
+        "(CASE WHEN (\"__src\".\"_code\" = 'A') THEN \"__src\".\"_code\" ELSE 'B' END)::text AS \"Р\"",
+    ] {
+        assert!(compiled.sql.contains(needle), "{needle}\n{}", compiled.sql);
+    }
+    let aggregate = postgres_compile!(
+        "ВЫБРАТЬ МАКСИМУМ(Код) КАК М ИЗ Справочник.OpenSdblMetadataProbe;",
+        &snapshot,
+    )
+    .unwrap();
+    assert!(
+        aggregate
+            .sql
+            .contains("(MAX(\"__src\".\"_code\"))::text AS \"М\""),
+        "{}",
+        aggregate.sql
+    );
+
+    // Nested statements normalize too, so the outer statement never reads
+    // the extension type back.
+    let nested = postgres_compile!(
+        "ВЫБРАТЬ Х.Е КАК Е ИЗ (ВЫБРАТЬ ЕСТЬNULL(Код, \"нет\") КАК Е
+         ИЗ Справочник.OpenSdblMetadataProbe) КАК Х;",
+        &snapshot,
+    )
+    .unwrap();
+    assert!(
+        nested
+            .sql
+            .contains("(COALESCE(\"__src\".\"_code\", 'нет'))::text AS \"Е\""),
+        "{}",
+        nested.sql
+    );
+
+    // Nothing else converts, and MSSQL never casts.
+    let dates = postgres_compile!(
+        "ВЫБРАТЬ ЕСТЬNULL(Date_Time, ДАТАВРЕМЯ(2024, 1, 1)) КАК Д ИЗ Справочник.OpenSdblMetadataProbe;",
+        &snapshot,
+    )
+    .unwrap();
+    assert!(!dates.sql.contains("::text"), "{}", dates.sql);
+    let mssql = compile_backend_generic(
+        &snapshot,
+        MsSqlBackend::new(0).unwrap(),
+        "ВЫБРАТЬ ЕСТЬNULL(Код, \"нет\") КАК Е ИЗ Справочник.OpenSdblMetadataProbe;",
+    )
+    .unwrap();
+    assert!(
+        mssql
+            .sql
+            .contains("COALESCE([__src].[_code], N'нет') AS [Е]"),
+        "{}",
+        mssql.sql
+    );
 }

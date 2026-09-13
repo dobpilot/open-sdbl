@@ -315,6 +315,20 @@ impl SqlDialect {
         }
     }
 
+    /// Projects a computed expression. An operand of the PostgreSQL 1C
+    /// extension types `mchar`/`mvarchar` makes the whole expression that
+    /// type, which the drivers cannot decode, so a character result is cast
+    /// to `text`; an expression that already ends with that cast is left
+    /// alone.
+    pub(super) fn expression_projection(self, expression: &str, kind: &ColumnKind) -> String {
+        match (self, kind) {
+            (Self::Postgres, ColumnKind::String { .. }) if !expression.ends_with("::text") => {
+                format!("({expression})::text")
+            }
+            _ => expression.to_owned(),
+        }
+    }
+
     /// Projects a column inside a nested statement: values stay in the
     /// storage domain (the outer statement corrects MSSQL dates once), only
     /// the PostgreSQL 1C string types are cast to text.
