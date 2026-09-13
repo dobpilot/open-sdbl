@@ -1,6 +1,6 @@
 use open_sdbl::{DiagnosticKind, Keyword, Lexer, TokenKind, tokenize};
 
-const KEYWORD_ALIASES: [(Keyword, &str, &str); 71] = [
+const KEYWORD_ALIASES: [(Keyword, &str, &str); 72] = [
     (Keyword::Select, "ВЫБРАТЬ", "SELECT"),
     (Keyword::From, "ИЗ", "FROM"),
     (Keyword::Where, "ГДЕ", "WHERE"),
@@ -46,6 +46,7 @@ const KEYWORD_ALIASES: [(Keyword, &str, &str); 71] = [
     (Keyword::Min, "МИНИМУМ", "MIN"),
     (Keyword::Max, "МАКСИМУМ", "MAX"),
     (Keyword::Avg, "СРЕДНЕЕ", "AVG"),
+    (Keyword::Refs, "ССЫЛКА", "REFS"),
     (Keyword::SliceLast, "СРЕЗПОСЛЕДНИХ", "SLICELAST"),
     (Keyword::SliceFirst, "СРЕЗПЕРВЫХ", "SLICEFIRST"),
     (Keyword::Balance, "ОСТАТКИ", "BALANCE"),
@@ -108,7 +109,7 @@ fn recognizes_russian_and_english_keywords_case_insensitively() {
 
 #[test]
 fn recognizes_the_complete_bilingual_keyword_table() {
-    assert_eq!(KEYWORD_ALIASES.len(), 71);
+    assert_eq!(KEYWORD_ALIASES.len(), 72);
     for (index, (keyword, russian, english)) in KEYWORD_ALIASES.into_iter().enumerate() {
         assert!(
             KEYWORD_ALIASES[..index]
@@ -255,6 +256,15 @@ fn recognizes_date_part_keywords_bilingually() {
     assert_eq!(tokens[2].lexeme, "ДеньНедели");
     assert_eq!(Keyword::DayOfYear.as_str(), "DAYOFYEAR");
     assert_eq!(Keyword::WeekDay.as_str(), "WEEKDAY");
+}
+
+#[test]
+fn recognizes_the_refs_operator_bilingually() {
+    let tokens = tokenize("Т.Ссылка ССЫЛКА refs").unwrap();
+    assert_eq!(tokens[2].kind, TokenKind::Keyword(Keyword::Refs));
+    assert_eq!(tokens[3].kind, TokenKind::Keyword(Keyword::Refs));
+    assert_eq!(tokens[4].kind, TokenKind::Keyword(Keyword::Refs));
+    assert_eq!(Keyword::Refs.as_str(), "REFS");
 }
 
 #[test]

@@ -302,6 +302,14 @@ pub(super) enum Expression<'tokens, 'source> {
         to: Box<Self>,
         period: PeriodKind,
     },
+    /// `<field> ССЫЛКА <Kind>.<Object>`: whether the reference is of the
+    /// named table.
+    Refs {
+        token: &'tokens Token<'source>,
+        value: Box<Self>,
+        kind: &'tokens Token<'source>,
+        object: &'tokens Token<'source>,
+    },
     /// `ГОД(<date>)` and the other date-part functions.
     DatePart {
         token: &'tokens Token<'source>,

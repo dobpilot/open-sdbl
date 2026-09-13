@@ -36,6 +36,7 @@ fn is_contextual_identifier(kind: TokenKind) -> bool {
                     | Keyword::Min
                     | Keyword::Max
                     | Keyword::Avg
+                    | Keyword::Refs
                     | Keyword::Presentation
                     | Keyword::RefPresentation
                     | Keyword::SliceFirst
@@ -847,6 +848,9 @@ impl<'tokens, 'source> Parser<'tokens, 'source> {
         if let Some(is) = self.consume_keyword_token(Keyword::Is) {
             return self.parse_is_null_tail(expression, is);
         }
+        if let Some(token) = self.consume_keyword_token(Keyword::Refs) {
+            return self.parse_refs_tail(expression, token);
+        }
         let negated_in = self
             .peek()
             .is_some_and(|token| token.kind == TokenKind::Keyword(Keyword::Not))
@@ -873,6 +877,25 @@ impl<'tokens, 'source> Parser<'tokens, 'source> {
             };
         }
         Ok(expression)
+    }
+
+    /// The `ССЫЛКА <Вид>.<Объект>` tail.
+    #[inline(never)]
+    fn parse_refs_tail(
+        &mut self,
+        value: Expression<'tokens, 'source>,
+        token: &'tokens Token<'source>,
+    ) -> Result<Expression<'tokens, 'source>, QueryDiagnostic> {
+        self.record_binary_operator(token)?;
+        let kind = self.expect_identifier("REFS expects a metadata kind")?;
+        self.expect_lexeme(".")?;
+        let object = self.expect_identifier("REFS expects a metadata object")?;
+        Ok(Expression::Refs {
+            token,
+            value: Box::new(value),
+            kind,
+            object,
+        })
     }
 
     /// The `ЕСТЬ [НЕ] NULL` tail. Kept out of `parse_comparison` so that its

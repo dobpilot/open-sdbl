@@ -307,6 +307,118 @@ fn compile_narrowed_reference(
     })
 }
 
+/// Compiles `<field> ССЫЛКА <Kind>.<Object>`: a composite field compares
+/// its type member with the target's database type number, a runtime-typed
+/// derived column compares the payload prefix, and a fixed-target field of
+/// the named table is always true (the platform treats the empty reference
+/// as a reference of the field's type).
+fn compile_refs(
+    context: &mut CompilationContext<'_, '_>,
+    token: &Token<'_>,
+    value: &Expression<'_, '_>,
+    kind_token: &Token<'_>,
+    object_token: &Token<'_>,
+) -> Result<String, QueryDiagnostic> {
+    let Expression::Field(reference) = value else {
+        return Err(QueryDiagnostic::at(
+            QueryDiagnosticKind::Syntax,
+            Some(token),
+            "REFS argument must be a reference field",
+        ));
+    };
+    let kind = kind_from_query_name(kind_token.lexeme).ok_or_else(|| {
+        QueryDiagnostic::at(
+            QueryDiagnosticKind::UnknownObject,
+            Some(kind_token),
+            format!("unknown REFS metadata kind {:?}", kind_token.lexeme),
+        )
+    })?;
+    let target_id = context
+        .snapshot
+        .object_id(kind, object_token.lexeme)
+        .map_err(|error| {
+            QueryDiagnostic::lookup(
+                object_token,
+                error.clone(),
+                format!(
+                    "REFS target {}.{:?} could not be resolved: {error}",
+                    kind.as_str(),
+                    object_token.lexeme
+                ),
+            )
+        })?;
+    let target_object = context.snapshot.object_by_id(target_id).ok_or_else(|| {
+        QueryDiagnostic::at(
+            QueryDiagnosticKind::Metadata,
+            Some(object_token),
+            "REFS target disappeared from the metadata index",
+        )
+    })?;
+    let number = object_type_number(target_id, object_token, context.snapshot)?;
+    let resolved = context.resolve(reference)?;
+    let field = resolved.field();
+    let is_reference = !field.reference_targets.is_empty()
+        || field
+            .columns
+            .iter()
+            .any(QueryableColumn::is_reference_value_member);
+    if !is_reference {
+        return Err(QueryDiagnostic::at(
+            QueryDiagnosticKind::Syntax,
+            Some(token),
+            format!(
+                "REFS argument {:?} must be a reference field",
+                reference.last().lexeme
+            ),
+        ));
+    }
+    let dialect = context.dialect;
+    if let Some(type_member) = field
+        .columns
+        .iter()
+        .find(|column| column.is_reference_type_member())
+    {
+        return Ok(format!(
+            "({} = {})",
+            context.sql_column(&resolved, type_member),
+            dialect.binary_u32(number)
+        ));
+    }
+    let universal = field.reference_targets.iter().any(String::is_empty);
+    if universal {
+        let payload = reference_column(field, reference.last())?;
+        return Ok(format!(
+            "({} = {})",
+            dialect.payload_type(&context.sql_column(&resolved, payload)),
+            dialect.binary_u32(number)
+        ));
+    }
+    let admissible = target_object
+        .physical_table
+        .as_deref()
+        .is_some_and(|table| {
+            field.reference_targets.iter().any(|candidate| {
+                names_equal(
+                    table.strip_prefix('_').unwrap_or(table),
+                    candidate.strip_prefix('_').unwrap_or(candidate),
+                )
+            })
+        });
+    if !admissible {
+        return Err(QueryDiagnostic::at(
+            QueryDiagnosticKind::Syntax,
+            Some(object_token),
+            format!(
+                "field {:?} cannot hold {}.{}",
+                field.name,
+                kind.as_str(),
+                object_token.lexeme
+            ),
+        ));
+    }
+    Ok(dialect.boolean_literal_predicate(true))
+}
+
 fn scalar_cast_kind(target: CastTarget<'_, '_>) -> ColumnKind {
     match target {
         CastTarget::String { length } => ColumnKind::String { length },
@@ -438,6 +550,7 @@ pub(super) fn operand_token<'tokens, 'source>(
         | Expression::DateAdd { token, .. }
         | Expression::DateDiff { token, .. }
         | Expression::DatePart { token, .. }
+        | Expression::Refs { token, .. }
         | Expression::MetadataValue { token, .. }
         | Expression::Uuid { token, .. }
         | Expression::Cast { token, .. }
@@ -838,6 +951,7 @@ pub(super) fn source_free_expression_kind(
         Expression::InList { .. }
         | Expression::InQuery { .. }
         | Expression::IsNull { .. }
+        | Expression::Refs { .. }
         | Expression::Like { .. } => ColumnKind::Boolean,
         Expression::Case {
             branches,
@@ -973,6 +1087,12 @@ pub(super) fn compile_expression(
             let value = compile_date_operand(value, context, token, "first")?;
             Ok(context.dialect.date_part(*part, &value, true))
         }
+        Expression::Refs {
+            token,
+            value,
+            kind,
+            object,
+        } => compile_refs(context, token, value, kind, object),
         Expression::MetadataValue {
             token,
             kind,

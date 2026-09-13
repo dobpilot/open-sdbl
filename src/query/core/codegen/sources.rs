@@ -435,6 +435,11 @@ fn compile_source_free_expression(
             Some(token),
             "UUID requires FROM",
         )),
+        Expression::Refs { token, .. } => Err(QueryDiagnostic::at(
+            QueryDiagnosticKind::UnsupportedFeature,
+            Some(token),
+            "REFS requires FROM",
+        )),
         Expression::Cast {
             token,
             target: CastTarget::Reference { .. },
@@ -968,6 +973,7 @@ pub(super) fn contains_aggregate(expression: &Expression<'_, '_>) -> bool {
             Expression::BeginOfPeriod { value, .. }
             | Expression::EndOfPeriod { value, .. }
             | Expression::DatePart { value, .. }
+            | Expression::Refs { value, .. }
             | Expression::Unary { value, .. }
             | Expression::IsNull { value, .. }
             | Expression::Cast {

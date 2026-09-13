@@ -139,6 +139,8 @@ const COMPLETION_KEYWORDS: &[&str] = &[
     "MAX",
     "СРЕДНЕЕ",
     "AVG",
+    "ССЫЛКА",
+    "REFS",
     "СРЕЗПОСЛЕДНИХ",
     "SLICELAST",
     "СРЕЗПЕРВЫХ",

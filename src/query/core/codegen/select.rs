@@ -1017,6 +1017,16 @@ fn fingerprint_into(expression: &Expression<'_, '_>, output: &mut String) {
             fingerprint_into(value, output);
             output.push(')');
         }
+        Expression::Refs {
+            value,
+            kind,
+            object,
+            ..
+        } => {
+            output.push_str(&format!("REFS({}.{},", upper(kind), upper(object)));
+            fingerprint_into(value, output);
+            output.push(')');
+        }
         Expression::MetadataValue {
             kind,
             object,
@@ -1468,6 +1478,7 @@ fn validate_direct_join_condition_fields(
             Expression::BeginOfPeriod { value, .. }
             | Expression::EndOfPeriod { value, .. }
             | Expression::DatePart { value, .. }
+            | Expression::Refs { value, .. }
             | Expression::Unary { value, .. }
             | Expression::IsNull { value, .. } => pending.push(value),
             Expression::DateAdd { value, count, .. } => {
