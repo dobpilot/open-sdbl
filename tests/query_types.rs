@@ -311,3 +311,81 @@ fn tests_compound_fields_for_null() {
     );
     assert_contains(&single.sql, "WHERE (\"__src\".\"_idrref\" IS NULL)");
 }
+
+#[test]
+fn compares_a_composite_field_with_a_value() {
+    // The platform tests the `_TYPE` discriminator against the tag of the
+    // value and the member that carries it; both were read from the SQL it
+    // generates for the same query.
+    let snapshot = mixed_composite_snapshot();
+    let string = postgres(
+        &snapshot,
+        "ВЫБРАТЬ Ссылка ИЗ Справочник.OpenSdblMetadataProbe КАК Т ГДЕ Т.ProbeAttribute = \"текст\";",
+    );
+    assert_contains(
+        &string.sql,
+        "WHERE ((\"Т\".\"_fld54_type\" = decode('05', 'hex')) AND (\"Т\".\"_fld54_s\" = 'текст'))",
+    );
+
+    // A field admitting one reference type stores no `_RTRef` member, so
+    // the comparison synthesizes it from the discriminator.
+    let reference = postgres(
+        &snapshot,
+        "ВЫБРАТЬ Ссылка ИЗ Справочник.OpenSdblMetadataProbe КАК Т
+         ГДЕ Т.ProbeAttribute = ЗНАЧЕНИЕ(Справочник.OpenSdblMetadataProbe.ПустаяСсылка);",
+    );
+    assert_contains(
+        &reference.sql,
+        "(\"Т\".\"_fld54_type\" = decode('08', 'hex'))",
+    );
+    assert_contains(
+        &reference.sql,
+        "CASE WHEN \"Т\".\"_fld54_type\" = decode('08', 'hex') THEN decode('00000039', 'hex') \
+         WHEN \"Т\".\"_fld54_type\" <> decode('08', 'hex') THEN decode('00000000', 'hex') END",
+    );
+
+    // A parameter bound to NULL compares with NULL, as a single-member
+    // field already does.
+    let parameters = [QueryParameter::new("П", ParameterValue::Null)];
+    let unbound = QueryCompiler::new(&snapshot, PostgresBackend)
+        .compile_with(
+            "ВЫБРАТЬ Ссылка ИЗ Справочник.OpenSdblMetadataProbe КАК Т ГДЕ Т.ProbeAttribute = &П;",
+            &CompileOptions::new().parameters(&parameters),
+        )
+        .unwrap();
+    assert_contains(&unbound.sql, "WHERE (\"Т\".\"_fld54_type\" = NULL)");
+
+    // SQL Server spells the same members as binary literals.
+    let mssql = mssql(
+        &snapshot,
+        "ВЫБРАТЬ Ссылка ИЗ Справочник.OpenSdblMetadataProbe КАК Т ГДЕ Т.ProbeAttribute = \"текст\";",
+    );
+    assert_contains(
+        &mssql.sql,
+        "WHERE (([Т].[_fld54_type] = 0x05) AND ([Т].[_fld54_s] = N'текст'))",
+    );
+}
+
+#[test]
+fn compares_a_composite_field_with_a_list() {
+    // A list is the disjunction of the member comparisons, the way the
+    // platform groups its own list by type.
+    let snapshot = mixed_composite_snapshot();
+    let compiled = postgres(
+        &snapshot,
+        "ВЫБРАТЬ Ссылка ИЗ Справочник.OpenSdblMetadataProbe КАК Т
+         ГДЕ Т.ProbeAttribute В (НЕОПРЕДЕЛЕНО, \"текст\");",
+    );
+    assert_contains(
+        &compiled.sql,
+        "WHERE ((\"Т\".\"_fld54_type\" = decode('01', 'hex')) \
+         OR ((\"Т\".\"_fld54_type\" = decode('05', 'hex')) AND (\"Т\".\"_fld54_s\" = 'текст')))",
+    );
+
+    let negated = postgres(
+        &snapshot,
+        "ВЫБРАТЬ Ссылка ИЗ Справочник.OpenSdblMetadataProbe КАК Т
+         ГДЕ Т.ProbeAttribute НЕ В (\"текст\");",
+    );
+    assert_contains(&negated.sql, "WHERE (NOT ((\"Т\".\"_fld54_type\"");
+}

@@ -763,6 +763,67 @@ pub(crate) fn presentation_reference_snapshot(
     resolve_metadata(db_names, descriptors, schema, live_tables).snapshot
 }
 
+/// A catalog whose `Fld54` holds either a string or a reference to one
+/// table, so the field stores a `_TYPE` discriminator, a `_S` member and a
+/// bare `_RRRef` without an `_RTRef`, the way the platform lays out a
+/// composite of a single reference type.
+pub(crate) fn mixed_composite_snapshot() -> open_sdbl::metadata::MetadataSnapshot {
+    let db_names = parse_db_names(&hex(
+        "55cd310e82210c40e1bb30d3c49f16682fe001bc012ded641c5c097797c141bff9256f615eca3aac3705934b816667e0d16f10315082a737a19c1e1efef69779ca15775ea59a349d08318c808a0768930a9d4c46105616cde9fe9ca7a7d35f5f500e2044042622a83ffe2f7def0f",
+    ))
+    .unwrap();
+    let descriptors = parse_config_descriptors(
+        "b8bac76b-c91b-4d78-8a70-ffa39f8de694",
+        &hex(
+            "4d8d4b0ac3201400af22ae7d9018a3be650f505ae809def303857e426256c1bb37d850ba9e6166d36adb7ad529f64cc15986803d8389ce8327d741ce3460f631593455c9cb945eb7c88f732a14a9d0757e73926a4fc879955f2e965d10cfc31053536a3d467a0c68390e902918303a65608b23381390b219468fbc8f5af854ca7ce7b5fc1f1a10f423b5d60f",
+        ),
+    )
+    .unwrap();
+    let schema = parse_schema_storage(
+        br#"{0,{2,{"Reference53","N",53,"",{2,{"ID",0,{1,{"R",0,0,"Reference53",2}},"",0},{"Fld54",0,{2,{"S",10,0,"",0},{"R",0,0,"Reference57",2}},"",0}},{0},{0},1,"R",{0},{0},"",0},{"Reference57","N",57,"",{2,{"ID",0,{1,{"R",0,0,"Reference57",2}},"",0},{"Code",0,{1,{"S",10,0,"",0}},"",0}},{0},{0},1,"R",{0},{0},"",0}}}"#,
+    )
+    .unwrap();
+    let live_tables = vec![
+        LiveTable {
+            name: "_reference53".to_owned(),
+            columns: vec![
+                LiveColumn {
+                    name: "_idrref".to_owned(),
+                    data_type: "bytea".to_owned(),
+                },
+                LiveColumn {
+                    name: "_fld54_type".to_owned(),
+                    data_type: "bytea".to_owned(),
+                },
+                LiveColumn {
+                    name: "_fld54_s".to_owned(),
+                    data_type: "mvarchar(10)".to_owned(),
+                },
+                LiveColumn {
+                    name: "_fld54_rrref".to_owned(),
+                    data_type: "bytea".to_owned(),
+                },
+            ],
+            indexes: Vec::new(),
+        },
+        LiveTable {
+            name: "_reference57".to_owned(),
+            columns: vec![
+                LiveColumn {
+                    name: "_idrref".to_owned(),
+                    data_type: "bytea".to_owned(),
+                },
+                LiveColumn {
+                    name: "_code".to_owned(),
+                    data_type: "mvarchar(10)".to_owned(),
+                },
+            ],
+            indexes: Vec::new(),
+        },
+    ];
+    resolve_metadata(db_names, descriptors, schema, live_tables).snapshot
+}
+
 pub(crate) fn stored_deflate(value: &[u8]) -> Vec<u8> {
     let length = u16::try_from(value.len()).expect("test fixture must fit one stored block");
     let mut compressed = Vec::with_capacity(value.len() + 5);

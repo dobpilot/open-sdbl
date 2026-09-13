@@ -14,7 +14,7 @@ use crate::query::core::ast::{
 };
 use crate::query::core::dialect::{SqlDialect, compile_literal, decode_binary_literal};
 use crate::query::core::names::names_equal;
-use crate::query::core::params::Parameters;
+use crate::query::core::params::{ParameterValue, Parameters};
 use crate::query::core::resolve::{
     ColumnKind, QueryableColumn, QueryableField, kind_from_query_name,
 };
@@ -1673,6 +1673,9 @@ pub(super) fn compile_expression(
             if let Some(sql) = compile_reference_pair_in_list(value, items, *negated, context)? {
                 return Ok(sql);
             }
+            if let Some(sql) = compile_composite_in_list(value, items, *negated, context)? {
+                return Ok(sql);
+            }
             let value_sql = compile_expression(value, context)?;
             let mut item_sql = Vec::with_capacity(items.len());
             for item in items {
@@ -1798,6 +1801,12 @@ fn compile_binary_expression(
     if let [(operator, right)] = terms.as_slice()
         && matches!(operator.lexeme, "=" | "<>")
         && let Some(sql) = compile_reference_pair_comparison(left, right, operator, context)?
+    {
+        return Ok(sql);
+    }
+    if let [(operator, right)] = terms.as_slice()
+        && matches!(operator.lexeme, "=" | "<>")
+        && let Some(sql) = compile_composite_comparison(left, right, operator, context)?
     {
         return Ok(sql);
     }
@@ -1945,6 +1954,290 @@ fn compile_reference_pair_in_list(
     for (constant, item) in &constants {
         let Some(sql) = reference_member_equality(&resolved, field, constant, item, context)?
         else {
+            return Ok(None);
+        };
+        parts.push(sql);
+    }
+    let sql = if parts.len() == 1 {
+        parts.pop().expect("one part")
+    } else {
+        format!("({})", parts.join(" OR "))
+    };
+    Ok(Some(if negated { format!("(NOT {sql})") } else { sql }))
+}
+
+/// One value described the way a composite field stores it: the tag the
+/// platform writes into the `_TYPE` member, the SQL of the value itself,
+/// and the `RTRef` table number of a reference. The shape is taken from
+/// the SQL the platform generates for the same comparison.
+struct CompositeOperand {
+    tag: TypeValue,
+    /// Compared with the member that carries a value of this tag's type.
+    /// `None` for `Неопределено`, which occupies no member, and for an
+    /// unbound parameter, which compares with `NULL`.
+    value_sql: Option<String>,
+    /// The `RTRef` bytes of a reference value, when known.
+    type_sql: Option<String>,
+}
+
+/// The member of a composite field that carries a value of `tag`.
+fn composite_value_member(field: &QueryableField, tag: TypeValue) -> Option<&QueryableColumn> {
+    let suffix = match tag {
+        TypeValue::Boolean => "_l",
+        TypeValue::Number => "_n",
+        TypeValue::Date => "_t",
+        TypeValue::String => "_s",
+        TypeValue::Reference(_) => {
+            return field
+                .columns
+                .iter()
+                .find(|column| column.is_reference_value_member());
+        }
+        TypeValue::Undefined | TypeValue::Null => return None,
+    };
+    field
+        .columns
+        .iter()
+        .find(|column| column.physical_name.to_ascii_lowercase().ends_with(suffix))
+}
+
+/// The tag a value of this kind carries in the `_TYPE` member.
+fn composite_tag_of_kind(kind: &ColumnKind) -> Option<TypeValue> {
+    match kind {
+        ColumnKind::Boolean => Some(TypeValue::Boolean),
+        ColumnKind::Number { .. } => Some(TypeValue::Number),
+        ColumnKind::DateTime => Some(TypeValue::Date),
+        ColumnKind::String { .. } => Some(TypeValue::String),
+        _ => None,
+    }
+}
+
+/// Describes one operand of a comparison with a composite field.
+fn composite_operand(
+    other: &Expression<'_, '_>,
+    context: &mut CompilationContext<'_, '_>,
+) -> Result<Option<CompositeOperand>, QueryDiagnostic> {
+    if is_undefined_literal(other) {
+        return Ok(Some(CompositeOperand {
+            tag: TypeValue::Undefined,
+            value_sql: None,
+            type_sql: None,
+        }));
+    }
+    if let Some(constant) = reference_constant(other, context)? {
+        return Ok(Some(CompositeOperand {
+            tag: TypeValue::Reference(0),
+            value_sql: Some(constant.id_sql),
+            type_sql: constant.type_sql,
+        }));
+    }
+    let kind = value_operand_kind(other, context)?;
+    if matches!(kind, ColumnKind::Null) || is_unbound_parameter(other, &kind) {
+        return Ok(Some(CompositeOperand {
+            tag: TypeValue::Null,
+            value_sql: None,
+            type_sql: None,
+        }));
+    }
+    if let ColumnKind::Reference { targets, .. } = &kind {
+        let [target] = targets.as_slice() else {
+            return Ok(None);
+        };
+        let token = operand_token(other).ok_or_else(|| {
+            QueryDiagnostic::unpositioned(
+                QueryDiagnosticKind::Metadata,
+                "reference operand without a token",
+            )
+        })?;
+        let number = object_type_number(*target, token, context.snapshot)?;
+        let type_sql = context.dialect.binary_u32(number);
+        return Ok(Some(CompositeOperand {
+            tag: TypeValue::Reference(number),
+            value_sql: Some(compile_expression(other, context)?),
+            type_sql: Some(type_sql),
+        }));
+    }
+    let Some(tag) = composite_tag_of_kind(&kind) else {
+        return Ok(None);
+    };
+    Ok(Some(CompositeOperand {
+        tag,
+        value_sql: Some(compile_expression(other, context)?),
+        type_sql: None,
+    }))
+}
+
+/// Describes a bound parameter value the same way, for the elements of a
+/// list parameter.
+fn composite_operand_of_value(
+    value: &ParameterValue,
+    token: &Token<'_>,
+    context: &CompilationContext<'_, '_>,
+) -> Result<Option<CompositeOperand>, QueryDiagnostic> {
+    if let Some(constant) =
+        reference_constant_of_value(value, token, context.snapshot, context.dialect)?
+    {
+        return Ok(Some(CompositeOperand {
+            tag: TypeValue::Reference(0),
+            value_sql: Some(constant.id_sql),
+            type_sql: constant.type_sql,
+        }));
+    }
+    let tag = match value {
+        ParameterValue::Boolean(_) => TypeValue::Boolean,
+        ParameterValue::Number { .. } => TypeValue::Number,
+        ParameterValue::String(_) => TypeValue::String,
+        ParameterValue::Date(_) => TypeValue::Date,
+        ParameterValue::Null => TypeValue::Null,
+        ParameterValue::Reference { .. } | ParameterValue::Binary(_) | ParameterValue::List(_) => {
+            return Ok(None);
+        }
+    };
+    let value_sql = match tag {
+        TypeValue::Null => None,
+        _ => Some(render_scalar_parameter(
+            value,
+            token,
+            context.dialect,
+            true,
+        )?),
+    };
+    Ok(Some(CompositeOperand {
+        tag,
+        value_sql,
+        type_sql: None,
+    }))
+}
+
+/// Renders the equality of a composite field with one described value: the
+/// `_TYPE` member carries the tag, the member of that type carries the
+/// value, and a reference also compares its `RTRef`. A field admitting a
+/// single reference type stores no `RTRef` member, so the comparison
+/// synthesizes it from the discriminator, as the platform does.
+fn composite_member_equality(
+    resolved: &ResolvedPath,
+    operand: &CompositeOperand,
+    token: &Token<'_>,
+    context: &CompilationContext<'_, '_>,
+) -> Result<Option<String>, QueryDiagnostic> {
+    let field = resolved.field();
+    let Some(type_member) = composite_type_member(field) else {
+        return Ok(None);
+    };
+    let discriminator = context.sql_column(resolved, type_member);
+    if operand.tag == TypeValue::Null {
+        return Ok(Some(format!("({discriminator} = NULL)")));
+    }
+    let tag_sql = context.dialect.binary_literal(&[operand.tag.tag()]);
+    let mut parts = vec![format!("({discriminator} = {tag_sql})")];
+    if matches!(operand.tag, TypeValue::Reference(_))
+        && let Some(type_sql) = &operand.type_sql
+    {
+        if let Some(member) = field
+            .columns
+            .iter()
+            .find(|column| column.is_reference_type_member())
+        {
+            parts.push(format!(
+                "({} = {type_sql})",
+                context.sql_column(resolved, member)
+            ));
+        } else if let Some(target) = single_reference_target(field) {
+            let number = object_type_number(target, token, context.snapshot)?;
+            parts.push(format!(
+                "(CASE WHEN {discriminator} = {tag_sql} THEN {} WHEN {discriminator} <> {tag_sql} THEN {} END = {type_sql})",
+                context.dialect.binary_u32(number),
+                context.dialect.binary_u32(0),
+            ));
+        }
+    }
+    if let Some(value_sql) = &operand.value_sql
+        && let Some(member) = composite_value_member(field, operand.tag)
+    {
+        parts.push(format!(
+            "({} = {value_sql})",
+            context.sql_column(resolved, member)
+        ));
+    }
+    Ok(Some(if parts.len() == 1 {
+        parts.pop().expect("one part")
+    } else {
+        format!("({})", parts.join(" AND "))
+    }))
+}
+
+/// Compares a composite field with one value. Returns `None` when the
+/// operands are not such a pair, leaving the generic path to report what
+/// it cannot render.
+fn compile_composite_comparison(
+    left: &Expression<'_, '_>,
+    right: &Expression<'_, '_>,
+    operator: &Token<'_>,
+    context: &mut CompilationContext<'_, '_>,
+) -> Result<Option<String>, QueryDiagnostic> {
+    let (field, other) = match (left, right) {
+        (Expression::Field(field), other) | (other, Expression::Field(field)) => (field, other),
+        _ => return Ok(None),
+    };
+    let resolved = context.resolve(field)?;
+    if resolved.field().columns.len() < 2 {
+        return Ok(None);
+    }
+    let Some(operand) = composite_operand(other, context)? else {
+        return Ok(None);
+    };
+    let token = operand_token(other).unwrap_or(field.last());
+    let Some(sql) = composite_member_equality(&resolved, &operand, token, context)? else {
+        return Ok(None);
+    };
+    Ok(Some(if operator.lexeme == "<>" {
+        format!("(NOT {sql})")
+    } else {
+        sql
+    }))
+}
+
+/// Compiles `<составное поле> [НЕ] В (…)` as the disjunction of the member
+/// comparisons of the listed values, the way the platform groups its own
+/// list by type.
+fn compile_composite_in_list(
+    value: &Expression<'_, '_>,
+    items: &[Expression<'_, '_>],
+    negated: bool,
+    context: &mut CompilationContext<'_, '_>,
+) -> Result<Option<String>, QueryDiagnostic> {
+    let Expression::Field(field) = value else {
+        return Ok(None);
+    };
+    let resolved = context.resolve(field)?;
+    if resolved.field().columns.len() < 2 || composite_type_member(resolved.field()).is_none() {
+        return Ok(None);
+    }
+    let mut operands = Vec::with_capacity(items.len());
+    for item in items {
+        if let Expression::Parameter(token) = item
+            && let Some(value) = context.catalog.parameters().lookup(token)?
+            && let Some(elements) = list_elements(value, token)?
+        {
+            for element in elements {
+                let Some(operand) = composite_operand_of_value(element, token, context)? else {
+                    return Ok(None);
+                };
+                operands.push((operand, *token));
+            }
+            continue;
+        }
+        let Some(operand) = composite_operand(item, context)? else {
+            return Ok(None);
+        };
+        operands.push((operand, operand_token(item).unwrap_or(field.last())));
+    }
+    if operands.is_empty() {
+        return Ok(Some(context.dialect.boolean_literal_predicate(negated)));
+    }
+    let mut parts = Vec::with_capacity(operands.len());
+    for (operand, token) in &operands {
+        let Some(sql) = composite_member_equality(&resolved, operand, token, context)? else {
             return Ok(None);
         };
         parts.push(sql);
