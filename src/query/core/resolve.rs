@@ -58,6 +58,11 @@ pub enum ColumnKind {
     Uuid,
     /// The `NULL` literal, compatible with every other kind.
     Null,
+    /// The `НЕОПРЕДЕЛЕНО` literal, rendered as `NULL` and compatible with
+    /// every other kind.
+    Undefined,
+    /// A type value: the five-byte encoding of [`crate::query::TypeValue`].
+    Type,
     /// A catalog type the compiler does not classify.
     Unknown {
         /// Raw catalog type name.
@@ -79,7 +84,7 @@ impl ColumnKind {
     }
 
     pub(crate) const fn is_wildcard(&self) -> bool {
-        matches!(self, Self::Null | Self::Unknown { .. })
+        matches!(self, Self::Null | Self::Undefined | Self::Unknown { .. })
     }
 
     /// Classifies one live catalog type name such as `numeric(15,2)`,
@@ -265,88 +270,92 @@ pub(super) fn standard_field_aliases(schema_name: &str) -> &'static [&'static st
     }
 }
 
+/// Query-language names of the metadata kinds: the English name, the
+/// short table prefix, and the Russian name.
+const KIND_QUERY_NAMES: [(MetadataKind, [&str; 3]); 20] = [
+    (
+        MetadataKind::Catalog,
+        ["Catalog", "Reference", "Справочник"],
+    ),
+    (MetadataKind::Document, ["Document", "Document", "Документ"]),
+    (
+        MetadataKind::Enumeration,
+        ["Enumeration", "Enum", "Перечисление"],
+    ),
+    (
+        MetadataKind::InformationRegister,
+        ["InformationRegister", "InfoRg", "РегистрСведений"],
+    ),
+    (
+        MetadataKind::AccumulationRegister,
+        ["AccumulationRegister", "AccumRg", "РегистрНакопления"],
+    ),
+    (
+        MetadataKind::AccountingRegister,
+        ["AccountingRegister", "AccRg", "РегистрБухгалтерии"],
+    ),
+    (
+        MetadataKind::CalculationRegister,
+        ["CalculationRegister", "CRg", "РегистрРасчета"],
+    ),
+    (
+        MetadataKind::ChartOfCharacteristicTypes,
+        [
+            "ChartOfCharacteristicTypes",
+            "Chrc",
+            "ПланВидовХарактеристик",
+        ],
+    ),
+    (
+        MetadataKind::ChartOfCalculationTypes,
+        ["ChartOfCalculationTypes", "CKinds", "ПланВидовРасчета"],
+    ),
+    (
+        MetadataKind::ChartOfAccounts,
+        ["ChartOfAccounts", "Acc", "ПланСчетов"],
+    ),
+    (MetadataKind::Constant, ["Constant", "Const", "Константа"]),
+    (
+        MetadataKind::ExchangePlan,
+        ["ExchangePlan", "Node", "ПланОбмена"],
+    ),
+    (
+        MetadataKind::BusinessProcess,
+        ["BusinessProcess", "BPr", "БизнесПроцесс"],
+    ),
+    (MetadataKind::Task, ["Task", "Task", "Задача"]),
+    (
+        MetadataKind::Sequence,
+        ["Sequence", "Seq", "Последовательность"],
+    ),
+    (
+        MetadataKind::ChangeRegistration,
+        ["ChangeRegistration", "ChngR", "РегистрацияИзменений"],
+    ),
+    (
+        MetadataKind::Recalculation,
+        ["Recalculation", "CRgRecalc", "Перерасчет"],
+    ),
+    (
+        MetadataKind::CalculationKindDependency,
+        [
+            "CalculationKindDependency",
+            "CKDependency",
+            "ЗависимостьВидовРасчета",
+        ],
+    ),
+    (
+        MetadataKind::ExtraDimension,
+        ["ExtraDimension", "ExtDim", "ВидСубконто"],
+    ),
+    (
+        MetadataKind::ResolveOnlyService,
+        ["ResolveOnlyService", "Service", "СлужебнаяТаблица"],
+    ),
+];
+
 pub(super) fn kind_from_query_name(name: &str) -> Option<MetadataKind> {
-    let names = [
-        (
-            MetadataKind::Catalog,
-            ["Catalog", "Reference", "Справочник"],
-        ),
-        (MetadataKind::Document, ["Document", "Document", "Документ"]),
-        (
-            MetadataKind::Enumeration,
-            ["Enumeration", "Enum", "Перечисление"],
-        ),
-        (
-            MetadataKind::InformationRegister,
-            ["InformationRegister", "InfoRg", "РегистрСведений"],
-        ),
-        (
-            MetadataKind::AccumulationRegister,
-            ["AccumulationRegister", "AccumRg", "РегистрНакопления"],
-        ),
-        (
-            MetadataKind::AccountingRegister,
-            ["AccountingRegister", "AccRg", "РегистрБухгалтерии"],
-        ),
-        (
-            MetadataKind::CalculationRegister,
-            ["CalculationRegister", "CRg", "РегистрРасчета"],
-        ),
-        (
-            MetadataKind::ChartOfCharacteristicTypes,
-            [
-                "ChartOfCharacteristicTypes",
-                "Chrc",
-                "ПланВидовХарактеристик",
-            ],
-        ),
-        (
-            MetadataKind::ChartOfCalculationTypes,
-            ["ChartOfCalculationTypes", "CKinds", "ПланВидовРасчета"],
-        ),
-        (
-            MetadataKind::ChartOfAccounts,
-            ["ChartOfAccounts", "Acc", "ПланСчетов"],
-        ),
-        (MetadataKind::Constant, ["Constant", "Const", "Константа"]),
-        (
-            MetadataKind::ExchangePlan,
-            ["ExchangePlan", "Node", "ПланОбмена"],
-        ),
-        (
-            MetadataKind::BusinessProcess,
-            ["BusinessProcess", "BPr", "БизнесПроцесс"],
-        ),
-        (MetadataKind::Task, ["Task", "Task", "Задача"]),
-        (
-            MetadataKind::Sequence,
-            ["Sequence", "Seq", "Последовательность"],
-        ),
-        (
-            MetadataKind::ChangeRegistration,
-            ["ChangeRegistration", "ChngR", "РегистрацияИзменений"],
-        ),
-        (
-            MetadataKind::Recalculation,
-            ["Recalculation", "CRgRecalc", "Перерасчет"],
-        ),
-        (
-            MetadataKind::CalculationKindDependency,
-            [
-                "CalculationKindDependency",
-                "CKDependency",
-                "ЗависимостьВидовРасчета",
-            ],
-        ),
-        (
-            MetadataKind::ExtraDimension,
-            ["ExtraDimension", "ExtDim", "ВидСубконто"],
-        ),
-        (
-            MetadataKind::ResolveOnlyService,
-            ["ResolveOnlyService", "Service", "СлужебнаяТаблица"],
-        ),
-    ];
+    let names = KIND_QUERY_NAMES;
     names.into_iter().find_map(|(kind, aliases)| {
         aliases
             .iter()

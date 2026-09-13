@@ -101,6 +101,12 @@ pub enum Keyword {
     Avg,
     /// `ССЫЛКА` or `REFS`.
     Refs,
+    /// `ТИП` or `TYPE`.
+    Type,
+    /// `ТИПЗНАЧЕНИЯ` or `VALUETYPE`.
+    ValueType,
+    /// `НЕОПРЕДЕЛЕНО` or `UNDEFINED`.
+    Undefined,
     /// `ИТОГИ` or `TOTALS`.
     Totals,
     /// `ОБЩИЕ` or `OVERALL`.
@@ -220,6 +226,9 @@ impl Keyword {
             Self::Max => "MAX",
             Self::Avg => "AVG",
             Self::Refs => "REFS",
+            Self::Type => "TYPE",
+            Self::ValueType => "VALUETYPE",
+            Self::Undefined => "UNDEFINED",
             Self::Totals => "TOTALS",
             Self::Overall => "OVERALL",
             Self::Hierarchy => "HIERARCHY",
@@ -633,7 +642,7 @@ fn is_identifier_continue(character: char) -> bool {
     character == '_' || character.is_alphanumeric()
 }
 
-const KEYWORDS: [(Keyword, &str, &str); 77] = [
+const KEYWORDS: [(Keyword, &str, &str); 80] = [
     (Keyword::Select, "ВЫБРАТЬ", "SELECT"),
     (Keyword::From, "ИЗ", "FROM"),
     (Keyword::Where, "ГДЕ", "WHERE"),
@@ -680,6 +689,9 @@ const KEYWORDS: [(Keyword, &str, &str); 77] = [
     (Keyword::Max, "МАКСИМУМ", "MAX"),
     (Keyword::Avg, "СРЕДНЕЕ", "AVG"),
     (Keyword::Refs, "ССЫЛКА", "REFS"),
+    (Keyword::Type, "ТИП", "TYPE"),
+    (Keyword::ValueType, "ТИПЗНАЧЕНИЯ", "VALUETYPE"),
+    (Keyword::Undefined, "НЕОПРЕДЕЛЕНО", "UNDEFINED"),
     (Keyword::Totals, "ИТОГИ", "TOTALS"),
     (Keyword::Overall, "ОБЩИЕ", "OVERALL"),
     (Keyword::Hierarchy, "ИЕРАРХИЯ", "HIERARCHY"),

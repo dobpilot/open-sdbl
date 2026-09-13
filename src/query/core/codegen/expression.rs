@@ -9,6 +9,7 @@ use crate::metadata::MetadataSnapshot;
 use crate::metadata::ObjectId;
 use crate::query::core::ast::{
     AggregateArgument, AggregateKind, CaseBranch, CastTarget, Expression, FieldReference,
+    PrimitiveType, TypeName,
 };
 use crate::query::core::dialect::{SqlDialect, compile_literal, decode_binary_literal};
 use crate::query::core::names::names_equal;
@@ -16,6 +17,7 @@ use crate::query::core::params::Parameters;
 use crate::query::core::resolve::{
     ColumnKind, QueryableColumn, QueryableField, kind_from_query_name,
 };
+use crate::query::core::types::TypeValue;
 use crate::query::core::{QueryDiagnostic, QueryDiagnosticKind};
 use crate::{Keyword, Token, TokenKind};
 use std::collections::BTreeSet;
@@ -307,6 +309,311 @@ fn compile_narrowed_reference(
     })
 }
 
+/// The `_TYPE` member of a composite field: the discriminator byte the
+/// platform writes next to the value members.
+fn composite_type_member(field: &QueryableField) -> Option<&QueryableColumn> {
+    field
+        .columns
+        .iter()
+        .find(|column| column.physical_name.to_ascii_lowercase().ends_with("_type"))
+}
+
+/// The single reference target of a composite field's value member, when
+/// the field admits exactly one reference type.
+fn single_reference_target(field: &QueryableField) -> Option<ObjectId> {
+    match &field
+        .columns
+        .iter()
+        .find(|column| column.is_reference_value_member())?
+        .kind
+    {
+        ColumnKind::Reference { targets, .. } => match targets.as_slice() {
+            [target] => Some(*target),
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
+/// Resolves the argument of `ТИП(…)` to the type it names.
+pub(super) fn type_literal_value(
+    name: &TypeName<'_, '_>,
+    snapshot: &MetadataSnapshot,
+    token: &Token<'_>,
+) -> Result<TypeValue, QueryDiagnostic> {
+    match name {
+        TypeName::Primitive(PrimitiveType::String) => Ok(TypeValue::String),
+        TypeName::Primitive(PrimitiveType::Number) => Ok(TypeValue::Number),
+        TypeName::Primitive(PrimitiveType::Date) => Ok(TypeValue::Date),
+        TypeName::Primitive(PrimitiveType::Boolean) => Ok(TypeValue::Boolean),
+        TypeName::Object { kind, object } => {
+            let metadata_kind = kind_from_query_name(kind.lexeme).ok_or_else(|| {
+                QueryDiagnostic::at(
+                    QueryDiagnosticKind::UnknownObject,
+                    Some(kind),
+                    format!("unknown TYPE metadata kind {:?}", kind.lexeme),
+                )
+            })?;
+            let target = snapshot
+                .object_id(metadata_kind, object.lexeme)
+                .map_err(|error| {
+                    QueryDiagnostic::lookup(
+                        object,
+                        error.clone(),
+                        format!(
+                            "TYPE target {}.{:?} could not be resolved: {error}",
+                            metadata_kind.as_str(),
+                            object.lexeme
+                        ),
+                    )
+                })?;
+            Ok(TypeValue::Reference(object_type_number(
+                target, token, snapshot,
+            )?))
+        }
+    }
+}
+
+/// The five-byte SQL constant of a type value.
+fn type_constant(value: TypeValue, dialect: SqlDialect) -> String {
+    dialect.binary_literal(&value.encode())
+}
+
+/// The type of a value already compiled to `sql` with `kind`, as SQL that
+/// is never `NULL`: a `NULL` value has the `NULL` type, as on the
+/// platform. `nullable` asks for the `IS NULL` guard, which literals and
+/// bound parameters do not need.
+pub(super) fn value_type_sql(
+    sql: &str,
+    kind: &ColumnKind,
+    nullable: bool,
+    snapshot: &MetadataSnapshot,
+    dialect: SqlDialect,
+    token: &Token<'_>,
+) -> Result<String, QueryDiagnostic> {
+    let null_type = type_constant(TypeValue::Null, dialect);
+    // A runtime-typed payload carries its table number in the first four
+    // bytes, so the type is read from the value itself.
+    if let ColumnKind::Reference {
+        runtime_typed: true,
+        ..
+    } = kind
+    {
+        let payload = dialect.reference_payload(
+            &dialect.binary_literal(&[TypeValue::TAG_REFERENCE]),
+            &dialect.payload_type(sql),
+        );
+        return Ok(format!("COALESCE({payload}, {null_type})"));
+    }
+    let constant = match kind {
+        ColumnKind::Reference { targets, .. } => match targets.as_slice() {
+            [target] => TypeValue::Reference(object_type_number(*target, token, snapshot)?),
+            _ => return Err(value_type_diagnostic(token, kind)),
+        },
+        ColumnKind::String { .. } => TypeValue::String,
+        ColumnKind::Number { .. } => TypeValue::Number,
+        ColumnKind::Boolean => TypeValue::Boolean,
+        ColumnKind::DateTime => TypeValue::Date,
+        ColumnKind::Null => TypeValue::Null,
+        ColumnKind::Undefined => TypeValue::Undefined,
+        ColumnKind::Binary { .. }
+        | ColumnKind::Uuid
+        | ColumnKind::Type
+        | ColumnKind::Unknown { .. } => return Err(value_type_diagnostic(token, kind)),
+    };
+    let constant = type_constant(constant, dialect);
+    if !nullable || constant == null_type {
+        return Ok(constant);
+    }
+    Ok(format!(
+        "CASE WHEN {sql} IS NULL THEN {null_type} ELSE {constant} END"
+    ))
+}
+
+/// Whether `ТИПЗНАЧЕНИЯ` can name the type of a value of this kind.
+fn is_classifiable_kind(kind: &ColumnKind) -> bool {
+    match kind {
+        ColumnKind::Reference {
+            targets,
+            runtime_typed,
+        } => *runtime_typed || targets.len() == 1,
+        ColumnKind::String { .. }
+        | ColumnKind::Number { .. }
+        | ColumnKind::Boolean
+        | ColumnKind::DateTime
+        | ColumnKind::Null
+        | ColumnKind::Undefined => true,
+        ColumnKind::Binary { .. }
+        | ColumnKind::Uuid
+        | ColumnKind::Type
+        | ColumnKind::Unknown { .. } => false,
+    }
+}
+
+/// Whether the argument is a parameter whose value the current pass does
+/// not know: it compiles to `NULL`, so its type is the `NULL` type, and
+/// the bound pass then sees the real kind.
+pub(super) fn is_unbound_parameter(argument: &Expression<'_, '_>, kind: &ColumnKind) -> bool {
+    matches!(argument, Expression::Parameter(_)) && matches!(kind, ColumnKind::Unknown { .. })
+}
+
+fn value_type_diagnostic(token: &Token<'_>, kind: &ColumnKind) -> QueryDiagnostic {
+    QueryDiagnostic::at(
+        QueryDiagnosticKind::UnsupportedFeature,
+        Some(token),
+        format!("VALUETYPE does not classify an expression of kind {kind:?}"),
+    )
+}
+
+/// Compiles `ТИПЗНАЧЕНИЯ(<выражение>)`. A composite field reads its
+/// `_TYPE` member, and its `_RTRef` member when the tag says the value is
+/// a reference; every other expression reports the type of its kind.
+fn compile_value_type(
+    context: &mut CompilationContext<'_, '_>,
+    token: &Token<'_>,
+    argument: &Expression<'_, '_>,
+) -> Result<String, QueryDiagnostic> {
+    let dialect = context.dialect;
+    if let Expression::Field(reference) = argument {
+        let resolved = context.resolve(reference)?;
+        if let Some(type_member) = composite_type_member(resolved.field()) {
+            let tag = context.sql_column(&resolved, type_member);
+            let zero = dialect.binary_literal(&[0; 4]);
+            // With several reference alternatives the table number lives in
+            // the `_RTRef` member; with one it is fixed by the field.
+            let table = match resolved
+                .field()
+                .columns
+                .iter()
+                .find(|column| column.is_reference_type_member())
+            {
+                Some(table_member) => Some(context.sql_column(&resolved, table_member)),
+                None => single_reference_target(resolved.field())
+                    .map(|target| object_type_number(target, token, context.snapshot))
+                    .transpose()?
+                    .map(|number| dialect.binary_u32(number)),
+            };
+            let value = match table {
+                Some(table) => format!(
+                    "CASE WHEN {tag} = {} THEN {} ELSE {} END",
+                    dialect.binary_literal(&[TypeValue::TAG_REFERENCE]),
+                    dialect.reference_payload(&tag, &table),
+                    dialect.reference_payload(&tag, &zero)
+                ),
+                None => dialect.reference_payload(&tag, &zero),
+            };
+            return Ok(format!(
+                "COALESCE({value}, {})",
+                type_constant(TypeValue::Null, dialect)
+            ));
+        }
+    }
+    if let Expression::Field(reference) = argument
+        && let Some(sql) = compile_derived_value_type(context, reference)?
+    {
+        return Ok(sql);
+    }
+    let (sql, kind) = value_operand(argument, context)?;
+    if is_unbound_parameter(argument, &kind) {
+        return Ok(type_constant(TypeValue::Null, dialect));
+    }
+    let nullable = !matches!(
+        argument,
+        Expression::Literal(_) | Expression::Parameter(_) | Expression::TypeLiteral { .. }
+    );
+    value_type_sql(&sql, &kind, nullable, context.snapshot, dialect, token)
+}
+
+/// Reads the type of a composite field that reached this query through a
+/// derived source, which projects the `_TYPE` member as a separate
+/// column next to the reference payload. `None` when the field has no
+/// such companion column.
+fn compile_derived_value_type(
+    context: &mut CompilationContext<'_, '_>,
+    reference: &FieldReference<'_, '_>,
+) -> Result<Option<String>, QueryDiagnostic> {
+    let resolved = context.resolve(reference)?;
+    let ColumnKind::Reference {
+        runtime_typed: true,
+        ..
+    } = single_column(resolved.field(), reference.last())?.kind
+    else {
+        return Ok(None);
+    };
+    let Some(tag_path) = context.companion_field(&resolved, "_TYPE") else {
+        return Ok(None);
+    };
+    let tag_column = single_column(tag_path.field(), reference.last())?;
+    if !matches!(tag_column.kind, ColumnKind::Binary { .. }) {
+        return Ok(None);
+    }
+    let dialect = context.dialect;
+    let tag = context.sql_column(&tag_path, tag_column);
+    let payload = context.sql_column(
+        &resolved,
+        single_column(resolved.field(), reference.last())?,
+    );
+    let value = format!(
+        "CASE WHEN {tag} = {} THEN {} ELSE {} END",
+        dialect.binary_literal(&[TypeValue::TAG_REFERENCE]),
+        dialect.reference_payload(&tag, &dialect.payload_type(&payload)),
+        dialect.reference_payload(&tag, &dialect.binary_literal(&[0; 4]))
+    );
+    Ok(Some(format!(
+        "COALESCE({value}, {})",
+        type_constant(TypeValue::Null, dialect)
+    )))
+}
+
+/// Whether an expression is the `НЕОПРЕДЕЛЕНО` literal.
+fn is_undefined_literal(expression: &Expression<'_, '_>) -> bool {
+    matches!(
+        expression,
+        Expression::Literal(token) if token.kind == TokenKind::Keyword(Keyword::Undefined)
+    )
+}
+
+/// Renders `<выражение> =|<> НЕОПРЕДЕЛЕНО` as a comparison of the value's
+/// type with the undefined type: a composite field holding the undefined
+/// value matches, every other value does not, and no diagnostic is
+/// raised for a field that cannot hold it, as on the platform.
+fn compile_undefined_comparison(
+    left: &Expression<'_, '_>,
+    right: &Expression<'_, '_>,
+    operator: &Token<'_>,
+    context: &mut CompilationContext<'_, '_>,
+) -> Result<Option<String>, QueryDiagnostic> {
+    let other = match (is_undefined_literal(left), is_undefined_literal(right)) {
+        (_, true) => left,
+        (true, false) => right,
+        (false, false) => return Ok(None),
+    };
+    // A value that cannot hold `Неопределено` never equals it, which is
+    // what the platform answers instead of raising a type error.
+    let composite = match other {
+        Expression::Field(reference) => {
+            composite_type_member(context.resolve(reference)?.field()).is_some()
+        }
+        _ => false,
+    };
+    if !composite {
+        let kind = value_operand_kind(other, context)?;
+        if !is_classifiable_kind(&kind) && !is_unbound_parameter(other, &kind) {
+            return Ok(Some(
+                context
+                    .dialect
+                    .boolean_literal_predicate(operator.lexeme == "<>"),
+            ));
+        }
+    }
+    let value = compile_value_type(context, operator, other)?;
+    Ok(Some(format!(
+        "({value} {} {})",
+        operator.lexeme,
+        type_constant(TypeValue::Undefined, context.dialect)
+    )))
+}
+
 /// Compiles `<field> ССЫЛКА <Kind>.<Object>`: a composite field compares
 /// its type member with the target's database type number, a runtime-typed
 /// derived column compares the payload prefix, and a fixed-target field of
@@ -503,6 +810,7 @@ pub(super) fn expression_kind(
             Ok(common_kind(&operands)?.kind)
         }
         Expression::Like { .. } => Ok(ColumnKind::Boolean),
+        Expression::TypeLiteral { .. } | Expression::ValueType { .. } => Ok(ColumnKind::Type),
         Expression::Parameter(token) => Ok(context
             .catalog
             .parameters()
@@ -553,6 +861,8 @@ pub(super) fn operand_token<'tokens, 'source>(
         | Expression::Refs { token, .. }
         | Expression::MetadataValue { token, .. }
         | Expression::Uuid { token, .. }
+        | Expression::TypeLiteral { token, .. }
+        | Expression::ValueType { token, .. }
         | Expression::Cast { token, .. }
         | Expression::Case { token, .. }
         | Expression::IsNullFunction { token, .. }
@@ -649,8 +959,17 @@ pub(super) fn common_kind(operands: &[Operand<'_, '_>]) -> Result<CommonKind, Qu
         .map(|operand| &operand.kind)
         .find(|kind| !kind.is_wildcard())
     else {
+        // Only wildcards: `НЕОПРЕДЕЛЕНО` names the column kind when it is
+        // the only literal kind present, otherwise `NULL` does.
+        let undefined = operands
+            .iter()
+            .any(|operand| operand.kind == ColumnKind::Undefined);
         return Ok(CommonKind {
-            kind: ColumnKind::Null,
+            kind: if undefined {
+                ColumnKind::Undefined
+            } else {
+                ColumnKind::Null
+            },
             widen: false,
         });
     };
@@ -948,6 +1267,7 @@ pub(super) fn source_free_expression_kind(
             },
             _ => ColumnKind::Boolean,
         },
+        Expression::TypeLiteral { .. } | Expression::ValueType { .. } => ColumnKind::Type,
         Expression::InList { .. }
         | Expression::InQuery { .. }
         | Expression::IsNull { .. }
@@ -1027,6 +1347,7 @@ fn literal_kind(token: &Token<'_>) -> ColumnKind {
         TokenKind::Binary => ColumnKind::Binary { length: None },
         TokenKind::Keyword(Keyword::True | Keyword::False) => ColumnKind::Boolean,
         TokenKind::Keyword(Keyword::Null) => ColumnKind::Null,
+        TokenKind::Keyword(Keyword::Undefined) => ColumnKind::Undefined,
         _ => ColumnKind::Unknown {
             data_type: token.lexeme.to_owned(),
         },
@@ -1093,6 +1414,11 @@ pub(super) fn compile_expression(
             kind,
             object,
         } => compile_refs(context, token, value, kind, object),
+        Expression::TypeLiteral { token, name } => Ok(type_constant(
+            type_literal_value(name, context.snapshot, token)?,
+            context.dialect,
+        )),
+        Expression::ValueType { token, argument } => compile_value_type(context, token, argument),
         Expression::MetadataValue {
             token,
             kind,
@@ -1296,6 +1622,12 @@ fn compile_binary_expression(
     context: &mut CompilationContext<'_, '_>,
 ) -> Result<String, QueryDiagnostic> {
     let (left, terms) = left_binary_spine(expression);
+    if let [(operator, right)] = terms.as_slice()
+        && matches!(operator.lexeme, "=" | "<>")
+        && let Some(sql) = compile_undefined_comparison(left, right, operator, context)?
+    {
+        return Ok(sql);
+    }
     if let [(operator, right)] = terms.as_slice()
         && matches!(operator.lexeme, "=" | "<>")
         && let Some(sql) = compile_reference_pair_comparison(left, right, operator, context)?

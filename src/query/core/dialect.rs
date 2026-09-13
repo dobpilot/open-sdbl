@@ -146,7 +146,7 @@ pub(super) fn compile_literal(
         }
         TokenKind::Keyword(Keyword::True) => Ok(dialect.boolean_literal(true).to_owned()),
         TokenKind::Keyword(Keyword::False) => Ok(dialect.boolean_literal(false).to_owned()),
-        TokenKind::Keyword(Keyword::Null) => Ok("NULL".to_owned()),
+        TokenKind::Keyword(Keyword::Null | Keyword::Undefined) => Ok("NULL".to_owned()),
         _ => Err(QueryDiagnostic::at(
             QueryDiagnosticKind::UnsupportedFeature,
             Some(token),

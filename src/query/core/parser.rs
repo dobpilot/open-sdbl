@@ -4,8 +4,9 @@ use crate::query::core::ast::{
     AccumulationAst, AccumulationKind, AggregateArgument, AggregateKind, BatchAst, CaseBranch,
     CastTarget, ControlPoint, DatePart, Expression, FieldReference, GroupKey, HierarchyTotals,
     IndexAst, IntoAst, JoinAst, JoinKind, OrderTerm, PeriodKind, PeriodsAst, PresentationArgument,
-    PresentationOperation, Projection, ProjectionItem, QueryAst, SelectAst, SliceAst, SliceKind,
-    SourceAst, StatementAst, TotalsAst, TotalsField, UnionLink, parse_datetime_value,
+    PresentationOperation, PrimitiveType, Projection, ProjectionItem, QueryAst, SelectAst,
+    SliceAst, SliceKind, SourceAst, StatementAst, TotalsAst, TotalsField, TypeName, UnionLink,
+    parse_datetime_value,
 };
 use crate::query::core::diag::SourcePosition;
 use crate::query::core::names::names_equal;
@@ -37,6 +38,8 @@ fn is_contextual_identifier(kind: TokenKind) -> bool {
                     | Keyword::Max
                     | Keyword::Avg
                     | Keyword::Refs
+                    | Keyword::Type
+                    | Keyword::ValueType
                     | Keyword::Totals
                     | Keyword::Overall
                     | Keyword::Hierarchy
@@ -1189,6 +1192,12 @@ impl<'tokens, 'source> Parser<'tokens, 'source> {
             if let Some(token) = self.consume_keyword_token(Keyword::Uuid) {
                 return self.parse_uuid(token);
             }
+            if let Some(token) = self.consume_keyword_token(Keyword::Type) {
+                return self.parse_type_literal(token);
+            }
+            if let Some(token) = self.consume_keyword_token(Keyword::ValueType) {
+                return self.parse_value_type(token);
+            }
             if let Some(token) = self.consume_keyword_token(Keyword::Cast) {
                 return self.parse_cast(token);
             }
@@ -1210,11 +1219,61 @@ impl<'tokens, 'source> Parser<'tokens, 'source> {
             TokenKind::String | TokenKind::Number | TokenKind::Binary
         ) || matches!(
             token.kind,
-            TokenKind::Keyword(Keyword::True | Keyword::False | Keyword::Null)
+            TokenKind::Keyword(Keyword::True | Keyword::False | Keyword::Null | Keyword::Undefined)
         ) {
             return Ok(Expression::Literal(self.next().expect("peeked token")));
         }
         Ok(Expression::Field(self.parse_field_reference()?))
+    }
+
+    /// `ТИП(Строка | Число | Дата | Булево | <Вид>.<Объект>)`.
+    fn parse_type_literal(
+        &mut self,
+        token: &'tokens Token<'source>,
+    ) -> Result<Expression<'tokens, 'source>, QueryDiagnostic> {
+        self.expect_lexeme("(")?;
+        let first = self.expect_identifier("TYPE expects a type name")?;
+        let name = if self.consume_lexeme(".") {
+            let object = self.expect_identifier("TYPE expects a metadata object")?;
+            TypeName::Object {
+                kind: first,
+                object,
+            }
+        } else if let Some(primitive) = PrimitiveType::from_query_name(first.lexeme) {
+            TypeName::Primitive(primitive)
+        } else {
+            return Err(QueryDiagnostic::at(
+                QueryDiagnosticKind::Syntax,
+                Some(first),
+                format!(
+                    "TYPE expects Строка, Число, Дата, Булево, or <Kind>.<Object>, found {:?}",
+                    first.lexeme
+                ),
+            ));
+        };
+        self.expect_lexeme(")")?;
+        Ok(Expression::TypeLiteral { token, name })
+    }
+
+    /// `ТИПЗНАЧЕНИЯ(<выражение>)`.
+    fn parse_value_type(
+        &mut self,
+        token: &'tokens Token<'source>,
+    ) -> Result<Expression<'tokens, 'source>, QueryDiagnostic> {
+        self.expect_lexeme("(")?;
+        let argument = self.parse_or()?;
+        if self.peek().is_some_and(|next| next.lexeme == ",") {
+            return Err(self.diagnostic(
+                QueryDiagnosticKind::Syntax,
+                Some(token),
+                "VALUETYPE expects exactly one argument",
+            ));
+        }
+        self.expect_lexeme(")")?;
+        Ok(Expression::ValueType {
+            token,
+            argument: Box::new(argument),
+        })
     }
 
     /// Parses `[НЕ] ПОДОБНО <pattern> [СПЕЦСИМВОЛ <escape>]` after the left

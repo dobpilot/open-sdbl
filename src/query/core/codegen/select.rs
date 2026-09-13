@@ -15,7 +15,7 @@ use super::sources::{
 use crate::metadata::{Guid, MetadataSnapshot, ObjectId};
 use crate::query::core::ast::{
     AggregateArgument, CastTarget, Expression, FieldReference, JoinAst, JoinKind, OrderTerm,
-    PresentationArgument, Projection, ProjectionItem, SelectAst, SourceAst,
+    PresentationArgument, Projection, ProjectionItem, SelectAst, SourceAst, TypeName,
 };
 use crate::query::core::dialect::{OutputLabelAllocator, SqlDialect};
 use crate::query::core::names::names_equal;
@@ -504,7 +504,7 @@ pub(super) fn derived_data_type(kind: &ColumnKind, dialect: SqlDialect) -> Strin
                 "datetime2"
             }
         }
-        ColumnKind::Reference { .. } | ColumnKind::Binary { .. } => {
+        ColumnKind::Reference { .. } | ColumnKind::Binary { .. } | ColumnKind::Type => {
             if postgres {
                 "bytea"
             } else {
@@ -518,7 +518,7 @@ pub(super) fn derived_data_type(kind: &ColumnKind, dialect: SqlDialect) -> Strin
                 "uniqueidentifier"
             }
         }
-        ColumnKind::Null => "",
+        ColumnKind::Null | ColumnKind::Undefined => "",
         ColumnKind::Unknown { data_type } => data_type.as_str(),
     }
     .to_owned()
@@ -1090,6 +1090,19 @@ fn fingerprint_into(expression: &Expression<'_, '_>, output: &mut String) {
             fingerprint_into(&Expression::Field(argument.clone()), output);
             output.push(')');
         }
+        Expression::TypeLiteral { name, .. } => match name {
+            TypeName::Primitive(primitive) => {
+                output.push_str(&format!("TYPE({primitive:?})"));
+            }
+            TypeName::Object { kind, object } => {
+                output.push_str(&format!("TYPE({}.{})", upper(kind), upper(object)));
+            }
+        },
+        Expression::ValueType { argument, .. } => {
+            output.push_str("VTYPE(");
+            fingerprint_into(argument, output);
+            output.push(')');
+        }
         Expression::Cast {
             argument,
             target,
@@ -1520,10 +1533,14 @@ fn validate_direct_join_condition_fields(
                     "JOIN condition supports direct fields only",
                 ));
             }
+            Expression::TypeLiteral { .. } => {}
             Expression::BeginOfPeriod { value, .. }
             | Expression::EndOfPeriod { value, .. }
             | Expression::DatePart { value, .. }
             | Expression::Refs { value, .. }
+            | Expression::ValueType {
+                argument: value, ..
+            }
             | Expression::Unary { value, .. }
             | Expression::IsNull { value, .. } => pending.push(value),
             Expression::DateAdd { value, count, .. } => {

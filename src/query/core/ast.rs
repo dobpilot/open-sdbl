@@ -315,6 +315,41 @@ pub(super) struct OrderTerm<'tokens, 'source> {
     pub(super) descending: bool,
 }
 
+/// The argument of `ТИП(…)`.
+#[derive(Debug)]
+pub(super) enum TypeName<'tokens, 'source> {
+    /// `Строка`, `Число`, `Дата`, or `Булево`.
+    Primitive(PrimitiveType),
+    /// `<Вид>.<Объект>`.
+    Object {
+        kind: &'tokens Token<'source>,
+        object: &'tokens Token<'source>,
+    },
+}
+
+/// A primitive type named in `ТИП(…)`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum PrimitiveType {
+    String,
+    Number,
+    Date,
+    Boolean,
+}
+
+impl PrimitiveType {
+    /// Parses the Russian or English name of a primitive type.
+    pub(super) fn from_query_name(name: &str) -> Option<Self> {
+        let lower = name.to_lowercase();
+        match lower.as_str() {
+            "строка" | "string" => Some(Self::String),
+            "число" | "number" => Some(Self::Number),
+            "дата" | "date" => Some(Self::Date),
+            "булево" | "boolean" => Some(Self::Boolean),
+            _ => None,
+        }
+    }
+}
+
 #[derive(Debug)]
 pub(super) enum Expression<'tokens, 'source> {
     Field(FieldReference<'tokens, 'source>),
@@ -372,6 +407,16 @@ pub(super) enum Expression<'tokens, 'source> {
     Uuid {
         token: &'tokens Token<'source>,
         argument: FieldReference<'tokens, 'source>,
+    },
+    /// `ТИП(<type name>)`: a constant type value.
+    TypeLiteral {
+        token: &'tokens Token<'source>,
+        name: TypeName<'tokens, 'source>,
+    },
+    /// `ТИПЗНАЧЕНИЯ(<expression>)`: the type of a value.
+    ValueType {
+        token: &'tokens Token<'source>,
+        argument: Box<Self>,
     },
     /// `ВЫРАЗИТЬ(<expression> КАК <target>)`, optionally followed by one
     /// `.Field` when the target is a metadata object.

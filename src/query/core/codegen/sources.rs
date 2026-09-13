@@ -6,8 +6,9 @@ use super::context::{CompilationContext, CompiledBranch, JoinPlan, SourceScope};
 use super::expression::{
     Operand, binary_operator_sql, check_like_operand, compile_case, compile_expression,
     compile_predicate, count_diagnostic, function_name, is_count_kind, is_date_operand_kind,
-    left_binary_spine, operand_token, reference_column, reference_type_column, render_coalesce,
-    render_like, single_column, source_free_expression_kind, widen_reference,
+    is_unbound_parameter, left_binary_spine, operand_token, reference_column,
+    reference_type_column, render_coalesce, render_like, single_column,
+    source_free_expression_kind, type_literal_value, value_type_sql, widen_reference,
 };
 use super::params::render_scalar_parameter;
 use super::select::append_reference_join;
@@ -29,6 +30,7 @@ use crate::query::core::resolve::{
     kind_from_query_name,
 };
 use crate::query::core::restrict::AccessRestriction;
+use crate::query::core::types::TypeValue;
 use crate::query::core::{QueryDiagnostic, QueryDiagnosticKind};
 use crate::{Keyword, Token, TokenKind, tokenize};
 
@@ -440,6 +442,30 @@ fn compile_source_free_expression(
             Some(token),
             "REFS requires FROM",
         )),
+        Expression::TypeLiteral { token, name } => {
+            Ok(dialect.binary_literal(&type_literal_value(name, snapshot, token)?.encode()))
+        }
+        Expression::ValueType { token, argument } => {
+            let sql = compile_source_free_expression(
+                argument,
+                snapshot,
+                dialect,
+                parameters,
+                storage_domain,
+            )?;
+            let kind = source_free_expression_kind(argument, snapshot, parameters);
+            if is_unbound_parameter(argument, &kind) {
+                return Ok(dialect.binary_literal(&TypeValue::Null.encode()));
+            }
+            value_type_sql(
+                &sql,
+                &kind,
+                !matches!(argument.as_ref(), Expression::Literal(_)),
+                snapshot,
+                dialect,
+                token,
+            )
+        }
         Expression::Cast {
             token,
             target: CastTarget::Reference { .. },
@@ -969,11 +995,15 @@ pub(super) fn contains_aggregate(expression: &Expression<'_, '_>) -> bool {
             | Expression::Parameter(_)
             | Expression::DateTime { .. }
             | Expression::MetadataValue { .. }
+            | Expression::TypeLiteral { .. }
             | Expression::Uuid { .. } => {}
             Expression::BeginOfPeriod { value, .. }
             | Expression::EndOfPeriod { value, .. }
             | Expression::DatePart { value, .. }
             | Expression::Refs { value, .. }
+            | Expression::ValueType {
+                argument: value, ..
+            }
             | Expression::Unary { value, .. }
             | Expression::IsNull { value, .. }
             | Expression::Cast {

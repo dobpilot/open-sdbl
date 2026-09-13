@@ -9,7 +9,7 @@ use open_sdbl::metadata::{MetadataKind, MetadataObject, MetadataSnapshot, Object
 use open_sdbl::query::{
     AccessRestriction, ColumnKind, CompileOptions, CompiledQuery, MsSqlBackend, PostgresBackend,
     Prepared, PresentationExpression, PresentationPlan, PresentationRequest, QueryCompiler,
-    QueryParameter, RestrictionRequest, SessionParameters, TempTablesManager,
+    QueryParameter, RestrictionRequest, SessionParameters, TempTablesManager, TypeValue,
     constants_table_fields, find_metadata_object, queryable_field_catalog, queryable_fields,
 };
 use open_sdbl::{TokenKind, tokenize};
@@ -141,6 +141,12 @@ const COMPLETION_KEYWORDS: &[&str] = &[
     "AVG",
     "ССЫЛКА",
     "REFS",
+    "ТИП",
+    "TYPE",
+    "ТИПЗНАЧЕНИЯ",
+    "VALUETYPE",
+    "НЕОПРЕДЕЛЕНО",
+    "UNDEFINED",
     "ИТОГИ",
     "TOTALS",
     "ОБЩИЕ",
@@ -1108,7 +1114,7 @@ pub(super) async fn run(
                         )
                         .map_err(CliError::standard_output)?;
                         validate_query_rows(&compiled, &rows)?;
-                        print_query_rows(output, &compiled, &rows)
+                        print_query_rows(output, &snapshot, &compiled, &rows)
                             .map_err(CliError::standard_output)?;
                     }
                     Err(error) => {
@@ -1611,6 +1617,8 @@ fn column_kind_label(kind: &ColumnKind) -> String {
         ColumnKind::Binary { .. } => "Binary".to_owned(),
         ColumnKind::Uuid => "UUID".to_owned(),
         ColumnKind::Null => "Null".to_owned(),
+        ColumnKind::Undefined => "Undefined".to_owned(),
+        ColumnKind::Type => "Type".to_owned(),
         _ => "Unknown".to_owned(),
     }
 }
@@ -1816,6 +1824,7 @@ fn validate_query_rows(compiled: &CompiledQuery, rows: &QueryRows) -> Result<(),
 
 fn print_query_rows(
     output: &mut impl Write,
+    snapshot: &MetadataSnapshot,
     compiled: &CompiledQuery,
     rows: &QueryRows,
 ) -> io::Result<()> {
@@ -1824,8 +1833,42 @@ fn print_query_rows(
         .iter()
         .map(|column| column.label.as_str())
         .collect();
-    print_table(output, &headers, rows)?;
+    let kinds: Vec<&ColumnKind> = compiled.columns.iter().map(|column| &column.kind).collect();
+    let typed: Vec<TypedRow<'_>> = rows
+        .iter()
+        .map(|cells| TypedRow {
+            cells,
+            kinds: &kinds,
+            snapshot,
+        })
+        .collect();
+    print_table(output, &headers, &typed)?;
     writeln!(output, "({} rows)", rows.len())
+}
+
+/// One result row rendered with its column kinds, so a type value prints
+/// as the name of the type rather than as its five bytes.
+struct TypedRow<'a> {
+    cells: &'a Vec<Cell>,
+    kinds: &'a [&'a ColumnKind],
+    snapshot: &'a MetadataSnapshot,
+}
+
+impl TableRow for TypedRow<'_> {
+    fn cell(&self, index: usize) -> Cow<'_, str> {
+        let Some(cell) = self.cells.get(index) else {
+            return Cow::Borrowed("");
+        };
+        if self
+            .kinds
+            .get(index)
+            .is_some_and(|kind| **kind == ColumnKind::Type)
+            && let Some(value) = cell.as_bytes().and_then(TypeValue::decode)
+        {
+            return Cow::Owned(value.query_name(self.snapshot));
+        }
+        cell.render()
+    }
 }
 
 trait TableRow {

@@ -10,6 +10,7 @@ mod parser;
 mod resolve;
 mod restrict;
 mod temp_tables;
+mod types;
 
 pub use diag::{QueryDiagnostic, QueryDiagnosticKind};
 pub use params::{
@@ -24,6 +25,7 @@ pub use resolve::{
 };
 pub use restrict::{AccessRestriction, RestrictionRequest, RestrictionTarget};
 pub use temp_tables::{TempTable, TempTablesManager};
+pub use types::TypeValue;
 
 pub(super) use codegen::{
     compile_batch, compile_presentation_lookup, compile_query, prepare_query, prepare_query_with,

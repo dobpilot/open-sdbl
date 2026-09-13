@@ -231,6 +231,18 @@ impl ResolvedPath {
         &self.fields[self.field_index]
     }
 
+    /// The same resolution pointing at another field of the same source.
+    fn with_field_index(&self, field_index: usize) -> Self {
+        Self {
+            field_index,
+            path_label: None,
+            expression: None,
+            fields: Arc::clone(&self.fields),
+            sql_alias: self.sql_alias.clone(),
+            ..*self
+        }
+    }
+
     /// Whether two resolutions name the same field of the same source scope.
     pub(super) fn same_path(&self, other: &Self) -> bool {
         self.scope == other.scope
@@ -325,6 +337,27 @@ impl CompilationContext<'_, '_> {
             path_label: None,
             expression: None,
         })
+    }
+
+    /// The field of the same source named `<name><suffix>`, which is how a
+    /// derived source exposes the extra physical members of a composite
+    /// field next to its reference payload.
+    pub(super) fn companion_field(
+        &self,
+        resolved: &ResolvedPath,
+        suffix: &str,
+    ) -> Option<ResolvedPath> {
+        if resolved.expression.is_some() {
+            return None;
+        }
+        let wanted = format!("{}{suffix}", resolved.field().name);
+        let source = self.source(resolved.scope);
+        let index = source
+            .fields
+            .iter()
+            .position(|field| names_equal(&field.name, &wanted))?;
+        source.used_fields.borrow_mut().insert(index);
+        Some(resolved.with_field_index(index))
     }
 
     pub(super) fn resolve_direct(
