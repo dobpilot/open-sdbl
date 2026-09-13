@@ -2386,12 +2386,19 @@ fn supports_a_qualified_reference_path_and_rejects_non_references() {
             .contains("no unique SchemaStorage reference target")
     );
 
+    // A path walks as many hops as it names.
     let deep = postgres_compile!(
         "SELECT d.Организация.Ссылка.Код FROM Catalog.OpenSdblMetadataProbe AS d;",
         &snapshot,
     )
-    .unwrap_err();
-    assert!(deep.message().contains("deeper than one hop"));
+    .unwrap();
+    assert_eq!(labels(&deep), ["Организация.Ссылка.Код"]);
+    assert!(
+        deep.sql
+            .contains("AS \"__ref2\" ON \"__ref1\".\"_idrref\" = \"__ref2\".\"_idrref\""),
+        "{}",
+        deep.sql
+    );
 
     let collision = postgres_compile!(
         "SELECT __ref1.Организация.Код FROM Catalog.OpenSdblMetadataProbe AS __ref1;",
@@ -2709,13 +2716,17 @@ fn rejects_unsafe_or_ambiguous_join_shapes() {
     .unwrap_err();
     assert!(same_alias.message().contains("distinct aliases"));
 
+    // A join condition still reads direct fields and one-hop properties.
     let deep_condition = postgres_compile!(
         "SELECT p.Code FROM Catalog.OpenSdblMetadataProbe p
          LEFT JOIN Catalog.Организации t ON p.Организация.Код.Code = t.Code;",
         &snapshot,
     )
     .unwrap_err();
-    assert!(deep_condition.message().contains("deeper than one hop"));
+    assert!(
+        deep_condition.message().contains("is not a reference"),
+        "{deep_condition}"
+    );
 
     let full_join_condition = postgres_compile!(
         "SELECT p.Code FROM Catalog.OpenSdblMetadataProbe p

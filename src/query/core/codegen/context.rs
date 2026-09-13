@@ -452,7 +452,7 @@ impl CompilationContext<'_, '_> {
                     }
                 }
             },
-            [qualifier, reference_field, target_field] => {
+            [qualifier, rest @ ..] => {
                 let Some(scope) = self.qualifier_scope(qualifier)? else {
                     return Err(QueryDiagnostic::at(
                         QueryDiagnosticKind::UnknownObject,
@@ -460,13 +460,13 @@ impl CompilationContext<'_, '_> {
                         format!("unknown source qualifier {:?}", qualifier.lexeme),
                     ));
                 };
-                self.resolve_dereference(scope, reference_field, target_field)
+                match rest {
+                    [reference_field, target_field] => {
+                        self.resolve_dereference(scope, reference_field, target_field)
+                    }
+                    hops => self.resolve_deep_dereference(scope, hops),
+                }
             }
-            [_, _, _, unsupported, ..] => Err(QueryDiagnostic::at(
-                QueryDiagnosticKind::UnsupportedFeature,
-                Some(unsupported),
-                "reference paths deeper than one hop are not supported",
-            )),
             [] => unreachable!("field path is non-empty"),
         }
     }
@@ -644,6 +644,191 @@ impl CompilationContext<'_, '_> {
         })
     }
 
+    /// Walks a reference path of more than one hop: every hop but the
+    /// last joins its target to the alias the previous hop produced, and
+    /// the last segment is read from the table the walk ended on. Only
+    /// single-target references can be walked through; a composite one
+    /// selects its value by type and has no single table to continue
+    /// from.
+    fn resolve_deep_dereference(
+        &mut self,
+        scope: ScopeId,
+        hops: &[&Token<'_>],
+    ) -> Result<ResolvedPath, QueryDiagnostic> {
+        let [first, second, rest @ ..] = hops else {
+            unreachable!("a deep path has at least three segments");
+        };
+        let mut resolved = self.resolve_dereference(scope, first, second)?;
+        let mut label = format!("{}.{}", first.lexeme, second.lexeme);
+        for segment in rest {
+            let field = resolved.field();
+            let Some(target_table) = field.reference_target.clone() else {
+                let composite = field
+                    .columns
+                    .iter()
+                    .any(QueryableColumn::is_reference_value_member)
+                    || !field.reference_targets.is_empty();
+                return Err(QueryDiagnostic::at(
+                    QueryDiagnosticKind::UnsupportedFeature,
+                    Some(segment),
+                    format!(
+                        "reference path cannot continue through {:?}, which {}",
+                        field.name,
+                        if composite {
+                            "references more than one table"
+                        } else {
+                            "is not a reference"
+                        }
+                    ),
+                ));
+            };
+            let column = reference_column(field, segment)?.physical_name.clone();
+            let source_field = field.schema_name.clone();
+            let alias = resolved.sql_alias.clone();
+            resolved = self.join_reference_target(
+                scope,
+                &alias,
+                source_field,
+                column,
+                &target_table,
+                segment,
+                segment,
+            )?;
+            label.push('.');
+            label.push_str(segment.lexeme);
+        }
+        resolved.path_label = Some(label);
+        Ok(resolved)
+    }
+
+    /// Joins the table a reference column points at and resolves
+    /// `target_token` in it, reusing an identical join of the same scope.
+    #[allow(clippy::too_many_arguments)]
+    fn join_reference_target(
+        &mut self,
+        scope: ScopeId,
+        source_alias: &str,
+        source_field: String,
+        source_column: String,
+        target_table: &str,
+        reference_token: &Token<'_>,
+        target_token: &Token<'_>,
+    ) -> Result<ResolvedPath, QueryDiagnostic> {
+        let target_physical = format!(
+            "_{}",
+            target_table.strip_prefix('_').unwrap_or(target_table)
+        );
+        let target_object = self.reference_target_object(&target_physical, reference_token)?;
+        let target_live_table = self.snapshot.live_table(&target_physical).ok_or_else(|| {
+            QueryDiagnostic::at(
+                QueryDiagnosticKind::NotLive,
+                Some(reference_token),
+                format!("reference target table {target_physical:?} is not live"),
+            )
+        })?;
+        let target_object_id = ObjectId::from(&target_object.guid);
+        let target_fields = self.catalog.fields(target_object, Some(reference_token))?;
+        let (target_field_index, _) = resolve_named_field(&target_fields, target_token)?;
+        let target_id_column = target_fields
+            .iter()
+            .find(|field| names_equal(&field.schema_name, "ID"))
+            .ok_or_else(|| {
+                QueryDiagnostic::at(
+                    QueryDiagnosticKind::Metadata,
+                    Some(reference_token),
+                    format!("reference target {target_physical:?} has no ID field"),
+                )
+            })
+            .and_then(|field| Ok(single_column(field, reference_token)?.physical_name.clone()))?;
+        let existing = self
+            .source(scope)
+            .reference_joins
+            .iter()
+            .find(|join| {
+                join.matches(JoinKey {
+                    source_alias,
+                    source_field: &source_field,
+                    target_object: target_object_id,
+                    database_type: None,
+                })
+            })
+            .map(|join| join.alias.clone());
+        let alias = if let Some(alias) = existing {
+            alias
+        } else {
+            let alias = self.next_reference_alias(scope);
+            let target = compile_live_relation(
+                self.snapshot,
+                self.catalog,
+                target_live_table,
+                &target_fields,
+                &alias,
+                Some(reference_token),
+                self.dialect,
+            )?;
+            self.source_mut(scope).reference_joins.push(JoinPlan {
+                source_alias: source_alias.to_owned(),
+                source_field,
+                source_column,
+                source_type_column: None,
+                database_type: None,
+                target_object: target_object_id,
+                target_relation: target.sql,
+                target_id_column,
+                alias: alias.clone(),
+                source_value_sql: None,
+                source_type_sql: None,
+                target_predicates: target.separators,
+            });
+            alias
+        };
+        if self.compiling_join_condition {
+            self.dereference_in_join = true;
+        }
+        Ok(ResolvedPath {
+            scope,
+            owner: target_object_id,
+            identity_is_base: true,
+            fields: target_fields,
+            field_index: target_field_index,
+            sql_alias: alias,
+            path_label: None,
+            expression: None,
+        })
+    }
+
+    /// The metadata object a reference column points at.
+    fn reference_target_object(
+        &self,
+        target_physical: &str,
+        token: &Token<'_>,
+    ) -> Result<&crate::metadata::MetadataObject, QueryDiagnostic> {
+        let objects = self
+            .snapshot
+            .objects()
+            .iter()
+            .filter(|object| {
+                object
+                    .physical_table
+                    .as_deref()
+                    .is_some_and(|table| names_equal(table, target_physical))
+            })
+            .collect::<Vec<_>>();
+        match objects.as_slice() {
+            [object] => Ok(object),
+            [] => Err(QueryDiagnostic::at(
+                QueryDiagnosticKind::UnknownObject,
+                Some(token),
+                format!("reference target {target_physical:?} was not resolved"),
+            )),
+            _ => Err(QueryDiagnostic::at(
+                QueryDiagnosticKind::AmbiguousObject,
+                Some(token),
+                format!("reference target {target_physical:?} is ambiguous"),
+            )),
+        }
+    }
+
     /// Dereferences a composite reference: every candidate target is
     /// joined under its own type guard and the value is selected by the
     /// reference type, exactly as the platform resolves `ЛюбаяСсылка`.
@@ -777,6 +962,14 @@ impl CompilationContext<'_, '_> {
             reference_column(field, reference_token).map_err(|_| missing_target())?;
         let type_column =
             reference_type_column(field, reference_token).map_err(|_| missing_target())?;
+        // The value member knows the objects the reference can hold, so
+        // the dereference reaches them directly instead of scanning the
+        // snapshot for an attribute of that name, which never finds a
+        // standard field.
+        let known_targets = match &value_column.kind {
+            ColumnKind::Reference { targets, .. } => targets.clone(),
+            _ => Vec::new(),
+        };
         Ok(CompositeSource {
             schema_name: field.schema_name.clone(),
             value_sql: self
@@ -787,7 +980,7 @@ impl CompilationContext<'_, '_> {
                 .qualified_column(Some(&alias), &type_column.physical_name),
             value_column: Some(value_column.physical_name.clone()),
             type_column: Some(type_column.physical_name.clone()),
-            known_targets: Vec::new(),
+            known_targets,
             declared,
         })
     }

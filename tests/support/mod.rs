@@ -456,6 +456,47 @@ pub(crate) fn reference_snapshot() -> open_sdbl::metadata::MetadataSnapshot {
     resolve_metadata(db_names, descriptors, schema, live_tables).snapshot
 }
 
+/// The reference snapshot with the target catalog pointing at itself, so
+/// a path can walk more than one hop.
+pub(crate) fn chained_reference_snapshot() -> open_sdbl::metadata::MetadataSnapshot {
+    let base = snapshot();
+    let source_guid = base.objects()[0].guid.clone();
+    let field_guid = base.fields()[0].guid.clone();
+    let target_guid = guid("11111111-1111-4111-8111-111111111111");
+    let serialized = format!(
+        "{{3,{{{source_guid},\"Reference\",53}},{{{field_guid},\"Fld\",54}},{{{target_guid},\"Reference\",57}}}}"
+    );
+    let db_names = parse_db_names(&stored_deflate(serialized.as_bytes())).unwrap();
+    let mut descriptors = base.descriptors().to_vec();
+    descriptors
+        .iter_mut()
+        .find(|descriptor| descriptor.resource_guid != descriptor.object_guid)
+        .unwrap()
+        .name = "Организация".to_owned();
+    descriptors.push(descriptor(&target_guid, &target_guid, "Организации"));
+    let mut schema = base.schema().clone();
+    let source_field = schema.tables[0]
+        .columns
+        .iter_mut()
+        .find(|column| column.name == "Fld54")
+        .unwrap();
+    source_field.types = vec![ColumnType {
+        tag: "R".to_owned(),
+        reference_target: Some("Reference57".to_owned()),
+    }];
+    // The target keeps the same reference column, pointing at itself.
+    let mut target_schema = schema.tables[0].clone();
+    target_schema.name = "Reference57".to_owned();
+    target_schema.number = 57;
+    schema.tables.push(target_schema);
+    let mut live_tables = base.live_tables().to_vec();
+    let mut target_live = live_tables[0].clone();
+    target_live.name = "_reference57".to_owned();
+    live_tables.push(target_live);
+
+    resolve_metadata(db_names, descriptors, schema, live_tables).snapshot
+}
+
 pub(crate) fn information_register_snapshot() -> open_sdbl::metadata::MetadataSnapshot {
     let base = snapshot();
     let object_guid = base.objects()[0].guid.clone();
