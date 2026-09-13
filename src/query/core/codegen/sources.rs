@@ -13,7 +13,9 @@ use super::expression::{
 use super::params::render_scalar_parameter;
 use super::select::append_reference_join;
 use super::separators::separator_predicates;
-use super::virtual_tables::{compile_accumulation_relation, compile_constant_date_expression};
+use super::virtual_tables::{
+    AggregateSource, compile_accumulation_relation, compile_constant_date_expression,
+};
 use crate::metadata::{
     ConfigFieldPurpose, LiveTable, MetadataKind, MetadataObject, MetadataSnapshot, ObjectId,
 };
@@ -88,6 +90,7 @@ pub(super) fn compile_restriction_predicate(
                     reference_joins: Vec::new(),
                     separator_predicates: Vec::new(),
                     constants: None,
+                    aggregate: None,
                     used_fields: RefCell::new(BTreeSet::new()),
                 }],
                 dialect,
@@ -1324,6 +1327,9 @@ pub(super) fn wrap_reference_presentation(
 pub(super) struct CompiledSourceRelation {
     pub(super) sql: String,
     pub(super) fields: Arc<[QueryableField]>,
+    /// Set for an aggregating register table, whose relation is narrowed to
+    /// the dimensions the statement resolves against it.
+    pub(super) aggregate: Option<AggregateSource>,
     /// Data-separator predicates the caller places around the relation,
     /// already qualified with the source alias; empty when the relation
     /// filters its branches itself.
@@ -1494,6 +1500,7 @@ pub(super) fn compile_source_relation(
                     dialect,
                 )?;
                 Ok(CompiledSourceRelation {
+                    aggregate: None,
                     sql: wrap_restricted_relation(
                         &relation.sql,
                         fields,
@@ -1516,6 +1523,7 @@ pub(super) fn compile_source_relation(
                     dialect,
                 )?;
                 Ok(CompiledSourceRelation {
+                    aggregate: None,
                     sql: relation.sql,
                     fields: fields.to_vec().into(),
                     separators: relation.separators,
@@ -1633,6 +1641,7 @@ pub(super) fn compile_source_relation(
                 reference_joins: Vec::new(),
                 separator_predicates: Vec::new(),
                 constants: None,
+                aggregate: None,
                 used_fields: RefCell::new(BTreeSet::new()),
             }],
             dialect,
@@ -1713,6 +1722,7 @@ pub(super) fn compile_source_relation(
     }
     relation.push_str(&format!(") AS {slice_ranked} WHERE {qualified_rank} = 1)"));
     Ok(CompiledSourceRelation {
+        aggregate: None,
         sql: relation,
         fields: fields.to_vec().into(),
         separators: Vec::new(),

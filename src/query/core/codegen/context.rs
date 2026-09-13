@@ -12,6 +12,7 @@ use super::sources::{
     ReferencePresentationTargets, compile_deferred_reference_presentation, compile_live_relation,
     presentation_targets, wrap_reference_presentation,
 };
+use super::virtual_tables::AggregateSource;
 use super::virtual_tables::compile_presentation_plan;
 use crate::Token;
 use crate::metadata::{MetadataKind, MetadataSnapshot, ObjectId, StandardFieldId};
@@ -162,6 +163,9 @@ pub(super) struct SourceScope {
     /// Set for the `Константы` source, whose relation is rendered from the
     /// fields the statement resolves against it.
     pub(super) constants: Option<ConstantsSource>,
+    /// Set for an aggregating register table, whose unused dimensions are
+    /// summed away once the statement is known.
+    pub(super) aggregate: Option<AggregateSource>,
     /// Indexes into `fields` the statement resolved, in any role.
     pub(super) used_fields: RefCell<BTreeSet<usize>>,
 }

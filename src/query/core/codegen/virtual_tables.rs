@@ -274,12 +274,111 @@ pub(super) fn compile_accumulation_relation(
     }
     relation.push(')');
 
+    let aggregate = aggregate_source(&dimension_fields, &resource_fields);
     dimension_fields.extend(virtual_resources);
     Ok(CompiledSourceRelation {
         sql: relation,
         fields: dimension_fields.into(),
+        aggregate: Some(aggregate),
         separators: Vec::new(),
     })
+}
+
+/// What an aggregating register table needs to drop the dimensions the
+/// statement never reads. The platform aggregates over them, so a query
+/// that reads one dimension gets one row per value of it.
+pub(super) struct AggregateSource {
+    /// Index into the relation fields of every dimension, with its
+    /// physical columns.
+    pub(super) dimensions: Vec<(usize, Vec<String>)>,
+    /// Physical column of every resource; they are summed when a
+    /// dimension is dropped.
+    pub(super) resources: Vec<String>,
+}
+
+/// Sums away the dimensions the statement never reads, as the platform
+/// does: a register table answers one row per combination of the
+/// dimensions the query actually selects, filters, or joins on.
+pub(super) fn finalize_aggregate_relation(scope: &mut SourceScope, dialect: SqlDialect) {
+    let Some(aggregate) = &scope.aggregate else {
+        return;
+    };
+    let used = scope.used_fields.borrow();
+    if aggregate
+        .dimensions
+        .iter()
+        .all(|(index, _)| used.contains(index))
+    {
+        return;
+    }
+    let alias = dialect.quote_identifier("__aggregate_used");
+    let kept = aggregate
+        .dimensions
+        .iter()
+        .filter(|(index, _)| used.contains(index))
+        .flat_map(|(_, columns)| columns.iter())
+        .map(|column| dialect.qualified_column(Some("__aggregate_used"), column))
+        .collect::<Vec<_>>();
+    let mut projection = kept
+        .iter()
+        .zip(
+            aggregate
+                .dimensions
+                .iter()
+                .filter(|(index, _)| used.contains(index))
+                .flat_map(|(_, columns)| columns.iter()),
+        )
+        .map(|(sql, column)| format!("{sql} AS {}", dialect.quote_identifier(column)))
+        .collect::<Vec<_>>();
+    for column in &aggregate.resources {
+        projection.push(format!(
+            "SUM({}) AS {}",
+            dialect.qualified_column(Some("__aggregate_used"), column),
+            dialect.quote_identifier(column)
+        ));
+    }
+    let mut relation = format!(
+        "(SELECT {} FROM {} AS {alias}",
+        projection.join(", "),
+        scope.relation
+    );
+    if !kept.is_empty() {
+        relation.push_str(" GROUP BY ");
+        relation.push_str(&kept.join(", "));
+    }
+    relation.push(')');
+    drop(used);
+    scope.relation = relation;
+}
+
+/// Describes the dimensions and resources of the relation the two
+/// aggregating tables build, so unused dimensions can be aggregated away
+/// once the statement is known.
+fn aggregate_source(
+    dimension_fields: &[QueryableField],
+    resource_fields: &[QueryableField],
+) -> AggregateSource {
+    AggregateSource {
+        dimensions: dimension_fields
+            .iter()
+            .enumerate()
+            .map(|(index, field)| {
+                (
+                    index,
+                    field
+                        .columns
+                        .iter()
+                        .map(|column| column.physical_name.clone())
+                        .collect(),
+                )
+            })
+            .collect(),
+        resources: resource_fields
+            .iter()
+            .flat_map(|field| field.columns.iter())
+            .map(|column| column.physical_name.clone())
+            .collect(),
+    }
 }
 
 struct BalanceTotals<'snapshot> {
@@ -383,6 +482,7 @@ fn compile_accumulation_balance_relation(
     Ok(CompiledSourceRelation {
         sql: relation,
         fields: fields.into(),
+        aggregate: Some(aggregate_source(dimension_fields, resource_fields)),
         separators: Vec::new(),
     })
 }
@@ -548,6 +648,7 @@ fn compile_accumulation_condition(
             reference_joins: Vec::new(),
             separator_predicates: Vec::new(),
             constants: None,
+            aggregate: None,
             used_fields: RefCell::new(BTreeSet::new()),
         }],
         dialect,

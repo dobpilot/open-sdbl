@@ -97,6 +97,7 @@ pub(super) fn constants_source_scope(
         reference_joins: Vec::new(),
         separator_predicates: Vec::new(),
         constants: Some(ConstantsSource { entries }),
+        aggregate: None,
         used_fields: RefCell::new(BTreeSet::new()),
     })
 }

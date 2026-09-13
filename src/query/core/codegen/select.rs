@@ -12,6 +12,7 @@ use super::sources::{
     SourceRestriction, compile_source_free_branch, compile_source_relation, contains_aggregate,
     projection_is_aggregated, projection_token, validate_aggregate_projection,
 };
+use super::virtual_tables::finalize_aggregate_relation;
 use crate::metadata::{Guid, MetadataSnapshot, ObjectId};
 use crate::query::core::ast::{
     AggregateArgument, CastTarget, Expression, FieldReference, JoinAst, JoinKind, OrderKeyAst,
@@ -180,6 +181,7 @@ pub(super) fn compile_branch(
         .zip(std::iter::once(source).chain(joins.iter().map(|join| &join.source)))
     {
         finalize_constants_relation(scope, source.object, dialect)?;
+        finalize_aggregate_relation(scope, dialect);
     }
     let mut sql = compile_branch_sql(
         ast,
@@ -389,6 +391,7 @@ fn derived_source_scope(
         reference_joins: Vec::new(),
         separator_predicates: Vec::new(),
         constants: None,
+        aggregate: None,
         used_fields: RefCell::new(BTreeSet::new()),
     })
 }
@@ -422,6 +425,7 @@ fn temporary_source_scope(
         reference_joins: Vec::new(),
         separator_predicates: Vec::new(),
         constants: None,
+        aggregate: None,
         used_fields: RefCell::new(BTreeSet::new()),
     })
 }
@@ -1395,6 +1399,7 @@ fn resolve_join_source(
         object: ObjectId::from(&resolved.object.guid),
         fields: compiled_source.fields,
         relation: compiled_source.sql,
+        aggregate: compiled_source.aggregate,
         sql_alias,
         object_name: resolved.qualifier_name,
         source_alias: source.alias.map(|token| token.lexeme.to_owned()),

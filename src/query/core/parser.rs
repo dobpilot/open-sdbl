@@ -809,17 +809,13 @@ impl<'tokens, 'source> Parser<'tokens, 'source> {
         self.expect_lexeme(".")?;
         let object = self.expect_identifier("expected metadata object name")?;
         let (table_part, slice, accumulation) = if self.consume_lexeme(".") {
-            if self.next_lexeme_is("(")
-                && let Some(token) = self.consume_keyword_token(Keyword::SliceLast)
-            {
+            // The platform writes a virtual table without its argument
+            // list when every argument is left out.
+            if let Some(token) = self.consume_keyword_token(Keyword::SliceLast) {
                 (None, Some(self.parse_slice(token, SliceKind::Last)?), None)
-            } else if self.next_lexeme_is("(")
-                && let Some(token) = self.consume_keyword_token(Keyword::SliceFirst)
-            {
+            } else if let Some(token) = self.consume_keyword_token(Keyword::SliceFirst) {
                 (None, Some(self.parse_slice(token, SliceKind::First)?), None)
-            } else if self.next_lexeme_is("(")
-                && let Some(token) = self.consume_keyword_token(Keyword::Balance)
-            {
+            } else if let Some(token) = self.consume_keyword_token(Keyword::Balance) {
                 (
                     None,
                     None,
@@ -829,9 +825,7 @@ impl<'tokens, 'source> Parser<'tokens, 'source> {
                         arguments: self.parse_virtual_arguments(2, "Balance")?,
                     }),
                 )
-            } else if self.next_lexeme_is("(")
-                && let Some(token) = self.consume_keyword_token(Keyword::Turnovers)
-            {
+            } else if let Some(token) = self.consume_keyword_token(Keyword::Turnovers) {
                 (
                     None,
                     None,
@@ -893,8 +887,10 @@ impl<'tokens, 'source> Parser<'tokens, 'source> {
         maximum: usize,
         name: &str,
     ) -> Result<Vec<Option<Expression<'tokens, 'source>>>, QueryDiagnostic> {
-        self.expect_lexeme("(")?;
         let mut arguments = Vec::new();
+        if !self.consume_lexeme("(") {
+            return Ok(arguments);
+        }
         if self.consume_lexeme(")") {
             return Ok(arguments);
         }
