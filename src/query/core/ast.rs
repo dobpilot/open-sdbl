@@ -454,9 +454,12 @@ pub(super) enum Expression<'tokens, 'source> {
         right: Box<Self>,
     },
     InList {
+        token: &'tokens Token<'source>,
         value: Box<Self>,
         items: Vec<Self>,
         negated: bool,
+        /// `В ИЕРАРХИИ`: the seeds stand for their whole subtrees.
+        hierarchy: bool,
     },
     /// `<value> [НЕ] В (<query>)`.
     InQuery {
@@ -464,6 +467,8 @@ pub(super) enum Expression<'tokens, 'source> {
         value: Box<Self>,
         query: Box<QueryAst<'tokens, 'source>>,
         negated: bool,
+        /// `В ИЕРАРХИИ`: the seeds stand for their whole subtrees.
+        hierarchy: bool,
     },
     IsNull {
         value: Box<Self>,

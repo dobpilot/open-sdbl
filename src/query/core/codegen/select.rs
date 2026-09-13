@@ -1179,8 +1179,10 @@ fn fingerprint_into(expression: &Expression<'_, '_>, output: &mut String) {
             value,
             items,
             negated,
+            hierarchy,
+            ..
         } => {
-            output.push_str(&format!("IN({negated},"));
+            output.push_str(&format!("IN({negated},{hierarchy},"));
             fingerprint_into(value, output);
             for item in items {
                 output.push(',');
@@ -1192,9 +1194,10 @@ fn fingerprint_into(expression: &Expression<'_, '_>, output: &mut String) {
             token,
             value,
             negated,
+            hierarchy,
             ..
         } => {
-            output.push_str(&format!("INQ({negated},{},", token.span.start));
+            output.push_str(&format!("INQ({negated},{hierarchy},{},", token.span.start));
             fingerprint_into(value, output);
             output.push(')');
         }

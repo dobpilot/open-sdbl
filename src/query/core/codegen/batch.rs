@@ -84,6 +84,18 @@ fn compile_statement(
         presentations,
         into.map(|into| into.token),
     )?;
+    if let Some(into) = into
+        && catalog.has_hierarchy_ctes()
+    {
+        return Err(QueryDiagnostic::at(
+            QueryDiagnosticKind::UnsupportedFeature,
+            Some(into.token),
+            format!(
+                "IN HIERARCHY cannot be used in a statement that defines the temporary table {:?}",
+                into.name.lexeme
+            ),
+        ));
+    }
     presentations
         .restriction_targets
         .extend(catalog.restriction_targets());

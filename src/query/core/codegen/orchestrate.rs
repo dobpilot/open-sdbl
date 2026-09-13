@@ -297,7 +297,7 @@ pub(super) fn compile_query_ast(
             columns: branch.columns,
             deferred_presentations: branch.deferred_presentations,
         };
-        return match &ast.totals {
+        let compiled = match &ast.totals {
             Some(totals) => wrap_totals(
                 ast,
                 totals,
@@ -310,6 +310,7 @@ pub(super) fn compile_query_ast(
             ),
             None => Ok(compiled),
         };
+        return attach_hierarchy_ctes(compiled, catalog, nested, dialect);
     }
 
     // Reference columns whose branches disagree on target or width are
@@ -391,7 +392,7 @@ pub(super) fn compile_query_ast(
         columns,
         deferred_presentations: first.deferred_presentations.clone(),
     };
-    match &ast.totals {
+    let compiled = match &ast.totals {
         Some(totals) => wrap_totals(
             ast,
             totals,
@@ -403,5 +404,45 @@ pub(super) fn compile_query_ast(
             dialect,
         ),
         None => Ok(compiled),
+    };
+    attach_hierarchy_ctes(compiled, catalog, nested, dialect)
+}
+
+/// Prefixes the statement with the recursive CTEs its `В ИЕРАРХИИ`
+/// predicates registered. A nested query leaves them to the enclosing
+/// statement, which shares the catalog; PostgreSQL spells the keyword
+/// `WITH RECURSIVE`, SQL Server plain `WITH`.
+fn attach_hierarchy_ctes(
+    compiled: Result<CompiledQuery, QueryDiagnostic>,
+    catalog: &CompilationCatalog<'_>,
+    nested: Option<&Token<'_>>,
+    dialect: SqlDialect,
+) -> Result<CompiledQuery, QueryDiagnostic> {
+    let mut compiled = compiled?;
+    if nested.is_some() {
+        return Ok(compiled);
     }
+    let ctes = catalog.take_hierarchy_ctes();
+    if ctes.is_empty() {
+        return Ok(compiled);
+    }
+    let definitions = ctes
+        .iter()
+        .map(|(name, sql)| format!("{} AS ({sql})", dialect.quote_identifier(name)))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let keyword = if dialect == SqlDialect::Postgres {
+        "WITH RECURSIVE "
+    } else {
+        "WITH "
+    };
+    compiled.sql = match compiled
+        .sql
+        .strip_prefix("WITH RECURSIVE ")
+        .or_else(|| compiled.sql.strip_prefix("WITH "))
+    {
+        Some(rest) => format!("{keyword}{definitions}, {rest}"),
+        None => format!("{keyword}{definitions} {}", compiled.sql),
+    };
+    Ok(compiled)
 }

@@ -569,6 +569,9 @@ pub(super) struct CompilationCatalog<'snapshot> {
     restriction_mode: Cell<bool>,
     /// Data separators of the snapshot as resolved for this statement.
     separators: Vec<StatementSeparator>,
+    /// Recursive CTEs `В ИЕРАРХИИ` needs at statement level, in the order
+    /// they were requested.
+    hierarchy_ctes: RefCell<Vec<(String, String)>>,
 }
 
 impl<'snapshot> CompilationCatalog<'snapshot> {
@@ -602,7 +605,28 @@ impl<'snapshot> CompilationCatalog<'snapshot> {
             used_restrictions: RefCell::new(BTreeSet::new()),
             restriction_mode: Cell::new(false),
             separators: resolve_statement_separators(snapshot, parameters),
+            hierarchy_ctes: RefCell::new(Vec::new()),
         }
+    }
+
+    /// Registers a recursive CTE the statement must define.
+    pub(super) fn push_hierarchy_cte(&self, name: String, sql: String) {
+        self.hierarchy_ctes.borrow_mut().push((name, sql));
+    }
+
+    /// The name of the next recursive CTE of this statement.
+    pub(super) fn next_hierarchy_name(&self) -> String {
+        format!("__hier_{}", self.hierarchy_ctes.borrow().len() + 1)
+    }
+
+    /// Removes and returns the recursive CTEs registered so far.
+    pub(super) fn take_hierarchy_ctes(&self) -> Vec<(String, String)> {
+        std::mem::take(&mut self.hierarchy_ctes.borrow_mut())
+    }
+
+    /// Whether any recursive CTE is waiting to be defined.
+    pub(super) fn has_hierarchy_ctes(&self) -> bool {
+        !self.hierarchy_ctes.borrow().is_empty()
     }
 
     /// The data separators of the snapshot as resolved for this statement.

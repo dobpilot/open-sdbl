@@ -5,6 +5,7 @@ use super::params::{
     reference_constant_of_bytes, reference_constant_of_value, render_scalar_parameter,
 };
 use super::sources::compile_metadata_value;
+use super::totals::hierarchical_catalog_of;
 use crate::metadata::MetadataSnapshot;
 use crate::metadata::ObjectId;
 use crate::query::core::ast::{
@@ -1549,12 +1550,25 @@ pub(super) fn compile_expression(
             value,
             query,
             negated,
-        } => compile_in_query(token, value, query, *negated, context),
+            hierarchy,
+        } => {
+            if *hierarchy {
+                let seeds = compile_hierarchy_query_seeds(token, query, context)?;
+                return compile_in_hierarchy(token, value, seeds, *negated, context);
+            }
+            compile_in_query(token, value, query, *negated, context)
+        }
         Expression::InList {
+            token,
             value,
             items,
             negated,
+            hierarchy,
         } => {
+            if *hierarchy {
+                let seeds = compile_hierarchy_list_seeds(token, items, context)?;
+                return compile_in_hierarchy(token, value, seeds, *negated, context);
+            }
             if let Some(sql) = compile_reference_pair_in_list(value, items, *negated, context)? {
                 return Ok(sql);
             }
@@ -1846,6 +1860,154 @@ fn compile_reference_pair_in_list(
 /// exactly one column of a compatible kind; reference operands are brought
 /// to the same width by widening the fixed side to an `RTRef ‖ RRRef`
 /// payload.
+/// The column the seed relation of `В ИЕРАРХИИ` exposes.
+const HIERARCHY_NODE: &str = "__node";
+
+/// Compiles the seed list of `В ИЕРАРХИИ (…)` into a relation of one
+/// column. The seeds live in a CTE, which cannot read the outer row, so
+/// only constants are accepted there.
+fn compile_hierarchy_list_seeds(
+    token: &Token<'_>,
+    items: &[Expression<'_, '_>],
+    context: &mut CompilationContext<'_, '_>,
+) -> Result<String, QueryDiagnostic> {
+    let node = context.dialect.quote_identifier(HIERARCHY_NODE);
+    let mut parts = Vec::with_capacity(items.len());
+    for item in items {
+        if matches!(item, Expression::Field(_)) {
+            return Err(QueryDiagnostic::at(
+                QueryDiagnosticKind::UnsupportedFeature,
+                Some(operand_token(item).unwrap_or(token)),
+                "IN HIERARCHY accepts constants and a nested query, not a field",
+            ));
+        }
+        if let Expression::Parameter(parameter) = item
+            && let Some(value) = context.catalog.parameters().lookup(parameter)?
+            && let Some(elements) = list_elements(value, parameter)?
+        {
+            for element in elements {
+                let sql = render_scalar_parameter(element, parameter, context.dialect, true)?;
+                parts.push(format!("SELECT {sql} AS {node}"));
+            }
+            continue;
+        }
+        let sql = compile_expression(item, context)?;
+        parts.push(format!("SELECT {sql} AS {node}"));
+    }
+    if parts.is_empty() {
+        return Err(QueryDiagnostic::at(
+            QueryDiagnosticKind::Syntax,
+            Some(token),
+            "IN HIERARCHY list must contain at least one expression",
+        ));
+    }
+    Ok(parts.join(" UNION ALL "))
+}
+
+/// Compiles the nested query of `В ИЕРАРХИИ (ВЫБРАТЬ …)` into a relation
+/// of one column.
+fn compile_hierarchy_query_seeds(
+    token: &Token<'_>,
+    query: &crate::query::core::ast::QueryAst<'_, '_>,
+    context: &mut CompilationContext<'_, '_>,
+) -> Result<String, QueryDiagnostic> {
+    let dialect = context.dialect;
+    let mut presentations =
+        PresentationCompilation::strict(&[], context.catalog.parameters(), dialect);
+    let inner = compile_query_ast(
+        query,
+        context.snapshot,
+        context.catalog,
+        &mut presentations,
+        Some(token),
+    )?;
+    let [column] = inner.columns.as_slice() else {
+        return Err(QueryDiagnostic::at(
+            QueryDiagnosticKind::UnsupportedFeature,
+            Some(token),
+            format!(
+                "IN HIERARCHY subquery must project exactly one column, found {}",
+                inner.columns.len()
+            ),
+        ));
+    };
+    let alias = dialect.quote_identifier("__seeds");
+    Ok(format!(
+        "SELECT {alias}.{} AS {} FROM ({}) AS {alias}",
+        dialect.quote_identifier(&column.label),
+        dialect.quote_identifier(HIERARCHY_NODE),
+        inner.sql
+    ))
+}
+
+/// Compiles `<поле> [НЕ] В ИЕРАРХИИ (<seeds>)`: the value matches a seed
+/// or any of its descendants. The descent is a recursive CTE over the
+/// catalog's parent column, defined once per predicate at statement
+/// level; a catalog without a parent column degenerates to plain
+/// membership, as on the platform.
+fn compile_in_hierarchy(
+    token: &Token<'_>,
+    value: &Expression<'_, '_>,
+    seeds: String,
+    negated: bool,
+    context: &mut CompilationContext<'_, '_>,
+) -> Result<String, QueryDiagnostic> {
+    let Expression::Field(reference) = value else {
+        return Err(QueryDiagnostic::at(
+            QueryDiagnosticKind::UnsupportedFeature,
+            Some(token),
+            "IN HIERARCHY tests a reference field",
+        ));
+    };
+    let resolved = context.resolve(reference)?;
+    let column = single_column(resolved.field(), reference.last())?;
+    let ColumnKind::Reference {
+        targets,
+        runtime_typed: false,
+    } = &column.kind
+    else {
+        return Err(hierarchy_target_diagnostic(reference.last()));
+    };
+    let [target] = targets.as_slice() else {
+        return Err(hierarchy_target_diagnostic(reference.last()));
+    };
+    let dialect = context.dialect;
+    let node = dialect.quote_identifier(HIERARCHY_NODE);
+    let value_sql = context.sql_column(&resolved, column);
+    let relation = match hierarchical_catalog_of(*target, context.snapshot, dialect) {
+        Some((table, id, parent)) => {
+            let name = context.catalog.next_hierarchy_name();
+            let quoted = dialect.quote_identifier(&name);
+            let source = dialect.quote_identifier("__catalog");
+            context.catalog.push_hierarchy_cte(
+                name,
+                format!(
+                    "{seeds} UNION ALL SELECT {source}.{id} FROM {table} AS {source} JOIN {quoted} ON {source}.{parent} = {quoted}.{node}"
+                ),
+            );
+            quoted
+        }
+        // A catalog without a parent column has no hierarchy, so the
+        // predicate is plain membership.
+        None => format!("({seeds}) AS {}", dialect.quote_identifier("__seeds_flat")),
+    };
+    Ok(format!(
+        "{}EXISTS (SELECT 1 FROM {relation} WHERE {node} = {value_sql})",
+        if negated { "NOT " } else { "" }
+    ))
+}
+
+fn hierarchy_target_diagnostic(token: &Token<'_>) -> QueryDiagnostic {
+    QueryDiagnostic::at(
+        QueryDiagnosticKind::UnsupportedFeature,
+        Some(token),
+        format!(
+            "IN HIERARCHY needs the field {:?} to reference one catalog",
+            token.lexeme
+        ),
+    )
+}
+
 fn compile_in_query(
     token: &Token<'_>,
     value: &Expression<'_, '_>,

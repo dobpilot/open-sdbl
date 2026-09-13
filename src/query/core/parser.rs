@@ -1099,6 +1099,15 @@ impl<'tokens, 'source> Parser<'tokens, 'source> {
         operator: &'tokens Token<'source>,
         negated: bool,
     ) -> Result<Expression<'tokens, 'source>, QueryDiagnostic> {
+        // `В ИЕРАРХИИ` spells the genitive of the totals keyword, so the
+        // word is matched by lexeme the way `ВОЗР`/`УБЫВ` are.
+        let hierarchy = self.peek().is_some_and(|token| {
+            token.kind == TokenKind::Keyword(Keyword::Hierarchy)
+                || names_equal(token.lexeme, "ИЕРАРХИИ")
+        });
+        if hierarchy {
+            self.offset += 1;
+        }
         if self.next_is_nested_query() {
             let opening = self.peek().expect("checked opening parenthesis");
             self.record_binary_operator(operator)?;
@@ -1108,6 +1117,7 @@ impl<'tokens, 'source> Parser<'tokens, 'source> {
                 value: Box::new(expression),
                 query: Box::new(query),
                 negated,
+                hierarchy,
             });
         }
         self.expect_lexeme("(")?;
@@ -1134,9 +1144,11 @@ impl<'tokens, 'source> Parser<'tokens, 'source> {
         }
         self.expect_lexeme(")")?;
         Ok(Expression::InList {
+            token: operator,
             value: Box::new(expression),
             items,
             negated,
+            hierarchy,
         })
     }
 

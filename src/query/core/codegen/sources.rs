@@ -551,10 +551,19 @@ fn compile_source_free_expression(
             storage_domain,
         ),
         Expression::InList {
+            token,
             value,
             items,
             negated,
+            hierarchy,
         } => {
+            if *hierarchy {
+                return Err(QueryDiagnostic::at(
+                    QueryDiagnosticKind::UnsupportedFeature,
+                    Some(token),
+                    "IN HIERARCHY requires FROM",
+                ));
+            }
             let value = compile_source_free_expression(
                 value,
                 snapshot,

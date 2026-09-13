@@ -9,7 +9,7 @@
 use super::context::OrderKey;
 use super::params::render_scalar_parameter;
 use super::select::derived_data_type;
-use crate::metadata::{LiveTable, MetadataSnapshot};
+use crate::metadata::{LiveTable, MetadataSnapshot, ObjectId};
 use crate::query::core::ast::{
     AggregateArgument, AggregateKind, ControlPoint, Expression, Projection, QueryAst, TotalsAst,
     TotalsField,
@@ -603,7 +603,21 @@ fn hierarchical_catalog(
         } if targets.len() == 1 => Some(targets[0]),
         _ => None,
     };
-    let physical = target
+    match target.and_then(|target| hierarchical_catalog_of(target, snapshot, dialect)) {
+        Some(catalog) => Ok(catalog),
+        None => Err(hierarchy_diagnostic(token)),
+    }
+}
+
+/// The quoted live relation, `_IDRRef`, and `_ParentIDRRef` of a
+/// hierarchical catalog, or `None` when the object has no live parent
+/// column and therefore no hierarchy.
+pub(super) fn hierarchical_catalog_of(
+    target: ObjectId,
+    snapshot: &MetadataSnapshot,
+    dialect: SqlDialect,
+) -> Option<(String, String, String)> {
+    let physical = Some(target)
         .and_then(|target| snapshot.object_by_id(target))
         .and_then(|object| object.physical_table.as_deref());
     let live = physical.and_then(|table| snapshot.live_table(table));
@@ -613,12 +627,8 @@ fn hierarchical_catalog(
             .find(|column| names_equal(&column.name, name))
             .map(|column| dialect.quote_identifier(&column.name))
     };
-    let (Some(physical), Some(live)) = (physical, live) else {
-        return Err(hierarchy_diagnostic(token));
-    };
-    let (Some(id), Some(parent)) = (find(live, "_IDRRef"), find(live, "_ParentIDRRef")) else {
-        return Err(hierarchy_diagnostic(token));
-    };
+    let (physical, live) = (physical?, live?);
+    let (id, parent) = (find(live, "_IDRRef")?, find(live, "_ParentIDRRef")?);
     // Records of a catalog extended with data live in the extension tables
     // too, so the lookup reads the same `UNION ALL` a source does.
     let mut branches = snapshot
@@ -643,7 +653,7 @@ fn hierarchical_catalog(
         );
         format!("({})", branches.join(" UNION ALL "))
     };
-    Ok((table, id, parent))
+    Some((table, id, parent))
 }
 
 fn hierarchy_diagnostic(token: &Token<'_>) -> QueryDiagnostic {
