@@ -259,6 +259,8 @@ pub(super) fn standard_field_aliases(schema_name: &str) -> &'static [&'static st
         "LineNo" => &["LineNo", "НомерСтроки"],
         "Period" => &["Period", "Период"],
         "Active" => &["Active", "Активность"],
+        "ParentID" => &["ParentID", "Родитель", "Parent"],
+        "OwnerID" => &["OwnerID", "Владелец", "Owner"],
         _ => &[],
     }
 }

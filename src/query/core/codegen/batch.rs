@@ -244,8 +244,15 @@ fn join_with_prefix(prefix: String, sql: &str) -> String {
     if prefix.is_empty() {
         return sql.to_owned();
     }
+    let definitions = prefix
+        .trim_end()
+        .strip_prefix("WITH ")
+        .expect("the temporary-table prefix starts with WITH");
+    if let Some(rest) = sql.strip_prefix("WITH RECURSIVE ") {
+        return format!("WITH RECURSIVE {definitions}, {rest}");
+    }
     match sql.strip_prefix("WITH ") {
-        Some(rest) => format!("{}, {rest}", prefix.trim_end()),
+        Some(rest) => format!("WITH {definitions}, {rest}"),
         None => prefix + sql,
     }
 }
