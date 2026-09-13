@@ -28,7 +28,31 @@ pub(super) struct CompiledBranch {
     pub(super) columns: Vec<CompiledColumn>,
     pub(super) deferred_presentations: Vec<usize>,
     pub(super) logical_width: usize,
-    pub(super) order: Vec<String>,
+    pub(super) order: Vec<OrderKey>,
+}
+
+/// One rendered `ORDER BY` key: a positional output column of a union or
+/// joined branch, or a source expression that a totals wrapper projects as
+/// a hidden `__order_<n>` column.
+#[derive(Debug, Clone)]
+pub(super) struct OrderKey {
+    /// The column expression, or the hidden column label when the branch
+    /// projected the expression for a totals wrapper.
+    pub(super) sql: String,
+    /// The one-based output position when the key addresses a projection.
+    pub(super) position: Option<usize>,
+    pub(super) descending: bool,
+}
+
+impl OrderKey {
+    pub(super) fn render(&self) -> String {
+        format!(
+            "{}{}",
+            self.position
+                .map_or_else(|| self.sql.clone(), |position| position.to_string()),
+            if self.descending { " DESC" } else { " ASC" }
+        )
+    }
 }
 
 pub(super) enum SelectedProjection {

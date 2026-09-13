@@ -286,6 +286,7 @@ pub struct CompileOptions<'a> {
     parameters: &'a [QueryParameter],
     session: &'a SessionParameters,
     restrictions: &'a [AccessRestriction],
+    totals_level: bool,
 }
 
 impl Default for CompileOptions<'_> {
@@ -303,7 +304,23 @@ impl<'a> CompileOptions<'a> {
             parameters: &[],
             session: &EMPTY_SESSION,
             restrictions: &[],
+            totals_level: false,
         }
+    }
+
+    /// Appends a numeric `__level` column to statements with `ИТОГИ`,
+    /// reporting the platform's `Уровень()`: `0` for the overall row,
+    /// then one per control point, and the next number for detail rows.
+    #[must_use]
+    pub const fn totals_level(mut self, enabled: bool) -> Self {
+        self.totals_level = enabled;
+        self
+    }
+
+    /// Whether statements with `ИТОГИ` append the `__level` column.
+    #[must_use]
+    pub const fn totals_level_enabled(&self) -> bool {
+        self.totals_level
     }
 
     /// Supplies the session parameters every query and restriction sees.

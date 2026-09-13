@@ -191,7 +191,8 @@ pub(crate) fn compile_batch(
     let ast = Parser::new(&tokens, source).parse()?;
     let mut presentations =
         PresentationCompilation::strict(options.presentation_plans(), parameters, dialect)
-            .with_restrictions(restrictions);
+            .with_restrictions(restrictions)
+            .with_totals_level(options.totals_level_enabled());
     let compiled = compile_batch_ast(&ast, snapshot, &mut presentations, manager)?;
     if let Some(unused) = (0..restrictions.len())
         .find(|index| !presentations.used_restrictions.contains(index))

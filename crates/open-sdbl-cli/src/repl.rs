@@ -141,6 +141,16 @@ const COMPLETION_KEYWORDS: &[&str] = &[
     "AVG",
     "ССЫЛКА",
     "REFS",
+    "ИТОГИ",
+    "TOTALS",
+    "ОБЩИЕ",
+    "OVERALL",
+    "ИЕРАРХИЯ",
+    "HIERARCHY",
+    "ТОЛЬКО",
+    "ONLY",
+    "ПЕРИОДАМИ",
+    "PERIODS",
     "СРЕЗПОСЛЕДНИХ",
     "SLICELAST",
     "СРЕЗПЕРВЫХ",
@@ -788,7 +798,8 @@ impl PreparedQuery {
             .presentations(plans)
             .parameters(parameters)
             .session(session)
-            .restrictions(restrictions);
+            .restrictions(restrictions)
+            .totals_level(true);
         match self {
             Self::Postgres(query) => query.compile_batch(snapshot, &options, temporary),
             Self::MsSql(query) => query.compile_batch(snapshot, &options, temporary),

@@ -10,6 +10,7 @@ mod params;
 mod select;
 mod separators;
 mod sources;
+mod totals;
 mod virtual_tables;
 
 pub(crate) use entry::{

@@ -1,5 +1,6 @@
-use super::context::CompiledBranch;
+use super::context::{CompiledBranch, OrderKey};
 use super::select::{BranchMode, compile_branch};
+use super::totals::wrap_totals;
 use crate::Token;
 use crate::metadata::{MetadataSnapshot, ObjectId};
 use crate::query::core::ast::{OrderTerm, Projection, QueryAst};
@@ -70,6 +71,8 @@ pub(super) struct PresentationCompilation<'plans> {
     pub(super) restriction_targets: BTreeSet<RestrictionTarget>,
     /// Positions in `restrictions` that some statement applied.
     pub(super) used_restrictions: BTreeSet<usize>,
+    /// Whether statements with `ИТОГИ` append the `__level` column.
+    pub(super) totals_level: bool,
 }
 
 impl<'plans> PresentationCompilation<'plans> {
@@ -87,11 +90,17 @@ impl<'plans> PresentationCompilation<'plans> {
             restrictions: &[],
             restriction_targets: BTreeSet::new(),
             used_restrictions: BTreeSet::new(),
+            totals_level: false,
         }
     }
 
     pub(super) fn with_restrictions(mut self, restrictions: &'plans [AccessRestriction]) -> Self {
         self.restrictions = restrictions;
+        self
+    }
+
+    pub(super) const fn with_totals_level(mut self, enabled: bool) -> Self {
+        self.totals_level = enabled;
         self
     }
 
@@ -105,6 +114,7 @@ impl<'plans> PresentationCompilation<'plans> {
             restrictions: &[],
             restriction_targets: BTreeSet::new(),
             used_restrictions: BTreeSet::new(),
+            totals_level: false,
         }
     }
 
@@ -170,6 +180,27 @@ pub(super) fn compile_query_ast(
             ));
         }
     }
+    if let (Some(into), Some(totals)) = (ast.into.as_ref(), ast.totals.as_ref()) {
+        return Err(QueryDiagnostic::at(
+            QueryDiagnosticKind::Syntax,
+            Some(totals.token),
+            format!(
+                "TOTALS cannot be used in a statement that defines the temporary table {:?}",
+                into.name.lexeme
+            ),
+        ));
+    }
+    if let (Some(token), Some(totals)) = (nested, ast.totals.as_ref()) {
+        return Err(QueryDiagnostic::at(
+            QueryDiagnosticKind::UnsupportedFeature,
+            Some(totals.token),
+            format!(
+                "TOTALS inside the nested query opened at {:?} are not supported",
+                token.lexeme
+            ),
+        ));
+    }
+    let totals_mode = ast.totals.is_some();
     let unioned = !ast.unions.is_empty();
     let compile_branches = |widen: &BTreeSet<usize>,
                             presentations: &mut PresentationCompilation<'_>|
@@ -191,6 +222,7 @@ pub(super) fn compile_query_ast(
                 BranchMode {
                     widen,
                     storage_domain: nested.is_some(),
+                    totals: totals_mode,
                 },
             )?);
         }
@@ -260,11 +292,23 @@ pub(super) fn compile_query_ast(
     }
     if !unioned {
         let branch = branches.pop().expect("a query has one branch");
-        return Ok(CompiledQuery {
+        let compiled = CompiledQuery {
             sql: branch.sql,
             columns: branch.columns,
             deferred_presentations: branch.deferred_presentations,
-        });
+        };
+        return match &ast.totals {
+            Some(totals) => wrap_totals(
+                ast,
+                totals,
+                compiled,
+                &branch.order,
+                presentations.totals_level,
+                presentations.parameters,
+                dialect,
+            ),
+            None => Ok(compiled),
+        };
     }
 
     // Reference columns whose branches disagree on target or width are
@@ -330,13 +374,32 @@ pub(super) fn compile_query_ast(
             }
         }
     }
-    if !first.order.is_empty() {
+    if !first.order.is_empty() && !totals_mode {
         sql.push_str(" ORDER BY ");
-        sql.push_str(&first.order.join(", "));
+        sql.push_str(
+            &first
+                .order
+                .iter()
+                .map(OrderKey::render)
+                .collect::<Vec<_>>()
+                .join(", "),
+        );
     }
-    Ok(CompiledQuery {
+    let compiled = CompiledQuery {
         sql,
         columns,
         deferred_presentations: first.deferred_presentations.clone(),
-    })
+    };
+    match &ast.totals {
+        Some(totals) => wrap_totals(
+            ast,
+            totals,
+            compiled,
+            &first.order,
+            presentations.totals_level,
+            presentations.parameters,
+            dialect,
+        ),
+        None => Ok(compiled),
+    }
 }

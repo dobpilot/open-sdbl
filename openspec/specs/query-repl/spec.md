@@ -34,7 +34,9 @@ additional supported scalar predicates over direct fields and one-hop
 reference properties of the joined source and earlier sources by top-level
 `И`/`AND`. Additional predicates SHALL remain in ON. A `ПОЛНОЕ [ВНЕШНЕЕ]
 СОЕДИНЕНИЕ` condition SHALL use direct fields only. Final `УПОРЯДОЧИТЬ
-ПО`/`ORDER BY` SHALL support `ВОЗР`/`ASC` and `УБЫВ`/`DESC`. Statements
+ПО`/`ORDER BY` SHALL support `ВОЗР`/`ASC` and `УБЫВ`/`DESC` and SHALL
+accept a projection alias of the branch as a key, ordering by the aliased
+expression. Statements
 of a batch SHALL be separated by semicolons and one or more trailing
 semicolons SHALL terminate the batch; a single statement remains a valid
 batch. Unsupported syntax SHALL fail before execution.
@@ -181,6 +183,11 @@ batch. Unsupported syntax SHALL fail before execution.
 - **WHEN** a branch reads `ИЗ А, Б ЛЕВОЕ СОЕДИНЕНИЕ В ПО В.x = Б.y`
 - **THEN** the `LEFT JOIN` follows the `CROSS JOIN` in the written order,
   and a condition naming a field of `А` is an `UnknownField` diagnostic
+
+#### Scenario: Ordering by a projection alias
+- **WHEN** `ВЫБРАТЬ ГОД(Дата) КАК Год ИЗ … УПОРЯДОЧИТЬ ПО Год УБЫВ` is
+  compiled without joins or grouping
+- **THEN** generated SQL orders by the year expression
 
 ### Requirement: Resolve queryable objects and fields bilingually
 The compiler SHALL accept Russian and English metadata-kind names and standard
@@ -2023,3 +2030,51 @@ diagnostics, and a source-free statement SHALL refuse the operator.
 - **WHEN** `ВЫБОР КОГДА Т.Объект ССЫЛКА Справочник.Товары ТОГДА 1 ИНАЧЕ 0 КОНЕЦ`
   is compiled
 - **THEN** the type test is the `CASE` condition
+
+### Requirement: Compute query totals
+The compiler SHALL accept `ИТОГИ [<поле> [КАК Псевдоним], …] ПО [ОБЩИЕ]
+[<контрольная точка> [ПЕРИОДАМИ(<период>[, <дата>[, <дата>]])] [КАК
+Псевдоним], …]` / `TOTALS … BY [OVERALL] …` at the end of a top-level
+statement and SHALL return the rows of the platform's linear traversal:
+the overall row when `ОБЩИЕ` is present, then for every value of the
+first control point one total row followed by the rows of that group,
+recursively for deeper control points. Groups SHALL be ordered by the
+first appearance of their value in the statement's ordered result and
+detail rows SHALL keep that order inside their group. A total row SHALL
+carry the control points of its own and enclosing levels, the totals
+fields aggregated over the result columns of its group, and `NULL` in
+every other column. A totals field SHALL be an expression over
+aggregates of result columns; a bare aggregate targets its argument
+column, an expression targets the column its alias names, an alias
+naming no result column SHALL be a `Syntax` diagnostic, and a later
+field naming the same column wins. `ПЕРИОДАМИ` SHALL be validated (a
+date control point, date literals or parameters) and SHALL not alter the
+rows. `ИТОГИ` with `ПОМЕСТИТЬ`/`ДОБАВИТЬ` SHALL be a `Syntax` diagnostic,
+`ИТОГИ` inside a nested query and a control point that is not a result
+column SHALL be `UnsupportedFeature` diagnostics.
+`CompileOptions::totals_level(true)` SHALL append a numeric `__level`
+column equal to the platform's `Уровень()`; the console SHALL enable it.
+
+#### Scenario: Overall and one level
+- **WHEN** `ВЫБРАТЬ Т.Родитель КАК Родитель, Т.Наименование КАК Имя,
+  Т.Цена КАК Цена ИЗ … УПОРЯДОЧИТЬ ПО Т.Цена УБЫВ ИТОГИ СУММА(Цена) ПО
+  ОБЩИЕ, Родитель` is executed
+- **THEN** the first row has `NULL` parent and name and the total price,
+  each parent's total row precedes its items, parents appear in the
+  order of their most expensive item, and the level column reads `0`,
+  `1`, `2`
+
+#### Scenario: Totals without fields
+- **WHEN** `ИТОГИ ПО Родитель` is executed
+- **THEN** each total row carries the parent and `NULL` in the other
+  columns
+
+#### Scenario: Union and TOP inputs
+- **WHEN** the statement has `ОБЪЕДИНИТЬ ВСЕ` or `ПЕРВЫЕ 3` and totals
+- **THEN** the totals are computed over the union rows, or the three
+  selected rows, respectively
+
+#### Scenario: Temporary table
+- **WHEN** `ПОМЕСТИТЬ ВТ … ИТОГИ СУММА(Цена) ПО ОБЩИЕ` is compiled
+- **THEN** compilation fails with a `Syntax` diagnostic at the `ИТОГИ`
+  token

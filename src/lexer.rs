@@ -101,6 +101,16 @@ pub enum Keyword {
     Avg,
     /// `ССЫЛКА` or `REFS`.
     Refs,
+    /// `ИТОГИ` or `TOTALS`.
+    Totals,
+    /// `ОБЩИЕ` or `OVERALL`.
+    Overall,
+    /// `ИЕРАРХИЯ` or `HIERARCHY`.
+    Hierarchy,
+    /// `ТОЛЬКО` or `ONLY`.
+    Only,
+    /// `ПЕРИОДАМИ` or `PERIODS`.
+    Periods,
     /// `СРЕЗПОСЛЕДНИХ` or `SLICELAST`.
     SliceLast,
     /// `СРЕЗПЕРВЫХ` or `SLICEFIRST`.
@@ -210,6 +220,11 @@ impl Keyword {
             Self::Max => "MAX",
             Self::Avg => "AVG",
             Self::Refs => "REFS",
+            Self::Totals => "TOTALS",
+            Self::Overall => "OVERALL",
+            Self::Hierarchy => "HIERARCHY",
+            Self::Only => "ONLY",
+            Self::Periods => "PERIODS",
             Self::SliceLast => "SLICELAST",
             Self::SliceFirst => "SLICEFIRST",
             Self::Balance => "BALANCE",
@@ -618,7 +633,7 @@ fn is_identifier_continue(character: char) -> bool {
     character == '_' || character.is_alphanumeric()
 }
 
-const KEYWORDS: [(Keyword, &str, &str); 72] = [
+const KEYWORDS: [(Keyword, &str, &str); 77] = [
     (Keyword::Select, "ВЫБРАТЬ", "SELECT"),
     (Keyword::From, "ИЗ", "FROM"),
     (Keyword::Where, "ГДЕ", "WHERE"),
@@ -665,6 +680,11 @@ const KEYWORDS: [(Keyword, &str, &str); 72] = [
     (Keyword::Max, "МАКСИМУМ", "MAX"),
     (Keyword::Avg, "СРЕДНЕЕ", "AVG"),
     (Keyword::Refs, "ССЫЛКА", "REFS"),
+    (Keyword::Totals, "ИТОГИ", "TOTALS"),
+    (Keyword::Overall, "ОБЩИЕ", "OVERALL"),
+    (Keyword::Hierarchy, "ИЕРАРХИЯ", "HIERARCHY"),
+    (Keyword::Only, "ТОЛЬКО", "ONLY"),
+    (Keyword::Periods, "ПЕРИОДАМИ", "PERIODS"),
     (Keyword::SliceLast, "СРЕЗПОСЛЕДНИХ", "SLICELAST"),
     (Keyword::SliceFirst, "СРЕЗПЕРВЫХ", "SLICEFIRST"),
     (Keyword::Balance, "ОСТАТКИ", "BALANCE"),

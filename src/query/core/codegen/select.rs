@@ -1,6 +1,6 @@
 use super::constants::{constants_source_scope, finalize_constants_relation};
 use super::context::{
-    CompilationContext, CompiledBranch, JoinPlan, ProjectedMember, ResolvedPath, ScopeId,
+    CompilationContext, CompiledBranch, JoinPlan, OrderKey, ProjectedMember, ResolvedPath, ScopeId,
     SelectedProjection, SourceScope, compile_presentation, projected_members,
 };
 use super::expression::{
@@ -39,6 +39,10 @@ pub(super) struct BranchMode<'a> {
     /// Whether the statement is nested and keeps values in the storage
     /// domain (no MSSQL year-offset correction on projections).
     pub(super) storage_domain: bool,
+    /// Whether a totals wrapper follows: order keys that are source
+    /// expressions are projected as hidden `__order_<n>` columns, and the
+    /// branch emits its own `ORDER BY` only when `ПЕРВЫЕ` depends on it.
+    pub(super) totals: bool,
 }
 
 pub(super) fn compile_branch(
@@ -53,6 +57,7 @@ pub(super) fn compile_branch(
     let BranchMode {
         widen,
         storage_domain,
+        totals,
     } = mode;
     let dialect = presentations.dialect;
     validate_aggregate_projection(ast)?;
@@ -103,7 +108,7 @@ pub(super) fn compile_branch(
 
     let RenderedProjections {
         columns,
-        sql: projections,
+        sql: mut projections,
         deferred_presentations,
     } = render_selected_projections(&selected, &context, widen, storage_domain)?;
     if projections.is_empty() {
@@ -139,7 +144,7 @@ pub(super) fn compile_branch(
         .as_ref()
         .map(|filter| compile_predicate(filter, &mut context))
         .transpose()?;
-    let order = compile_order_terms(
+    let mut order = compile_order_terms(
         order_terms,
         ast,
         &selected,
@@ -153,6 +158,21 @@ pub(super) fn compile_branch(
             "UNION ORDER BY field must occur in the first branch projection"
         },
     )?;
+    if totals {
+        // A totals wrapper re-orders the rows by these keys, so expression
+        // keys must be visible as columns of the wrapped statement.
+        for (index, key) in order.iter_mut().enumerate() {
+            if key.position.is_none() {
+                let label = format!("__order_{}", index + 1);
+                projections.push(format!(
+                    "{} AS {}",
+                    key.sql,
+                    dialect.quote_identifier(&label)
+                ));
+                key.sql = dialect.quote_identifier(&label);
+            }
+        }
+    }
 
     for (scope, source) in context
         .sources
@@ -177,9 +197,15 @@ pub(super) fn compile_branch(
         sql.push_str(" HAVING ");
         sql.push_str(&having);
     }
-    if !order.is_empty() && !union_order {
+    if !order.is_empty() && !union_order && (!totals || ast.top.is_some()) {
         sql.push_str(" ORDER BY ");
-        sql.push_str(&order.join(", "));
+        sql.push_str(
+            &order
+                .iter()
+                .map(OrderKey::render)
+                .collect::<Vec<_>>()
+                .join(", "),
+        );
     }
     dialect.append_limit(&mut sql, ast.top);
     Ok(CompiledBranch {
@@ -453,7 +479,7 @@ fn derived_field(
 
 /// A catalog type name that renders literals correctly for a derived
 /// column; kinds carry the truth.
-fn derived_data_type(kind: &ColumnKind, dialect: SqlDialect) -> String {
+pub(super) fn derived_data_type(kind: &ColumnKind, dialect: SqlDialect) -> String {
     let postgres = dialect == SqlDialect::Postgres;
     match kind {
         ColumnKind::String { .. } => {
@@ -780,36 +806,55 @@ fn compile_order_terms(
     context: &mut CompilationContext<'_, '_>,
     positional: bool,
     missing_message: &'static str,
-) -> Result<Vec<String>, QueryDiagnostic> {
+) -> Result<Vec<OrderKey>, QueryDiagnostic> {
     order_terms
         .iter()
         .map(|term| {
-            if positional && let Some(index) = aliased_projection(ast, &term.field) {
-                return Ok(format!(
-                    "{}{}",
-                    projection_position(selected, index),
-                    if term.descending { " DESC" } else { " ASC" }
-                ));
+            if let Some(index) = aliased_projection(ast, &term.field) {
+                if positional {
+                    return Ok(OrderKey {
+                        sql: String::new(),
+                        position: Some(projection_position(selected, index)),
+                        descending: term.descending,
+                    });
+                }
+                // A projection alias orders a plain branch by the projected
+                // expression, as on the platform.
+                let sql = match &selected[index] {
+                    SelectedProjection::Generated { sql, .. } => sql.clone(),
+                    SelectedProjection::Field(resolved) => {
+                        let column = single_column(resolved.field(), term.field.last())?;
+                        context.sql_column(resolved, column)
+                    }
+                };
+                return Ok(OrderKey {
+                    sql,
+                    position: None,
+                    descending: term.descending,
+                });
             }
             let resolved = context.resolve(&term.field)?;
             let column = single_column(resolved.field(), term.field.last())?;
-            let expression = if positional {
-                selected_column_position(selected, &resolved, &column.physical_name)
+            if positional {
+                let position = selected_column_position(selected, &resolved, &column.physical_name)
                     .ok_or_else(|| {
                         QueryDiagnostic::at(
                             QueryDiagnosticKind::UnsupportedFeature,
                             Some(term.field.last()),
                             missing_message,
                         )
-                    })?
-                    .to_string()
-            } else {
-                context.sql_column(&resolved, column)
-            };
-            Ok(format!(
-                "{expression}{}",
-                if term.descending { " DESC" } else { " ASC" }
-            ))
+                    })?;
+                return Ok(OrderKey {
+                    sql: String::new(),
+                    position: Some(position),
+                    descending: term.descending,
+                });
+            }
+            Ok(OrderKey {
+                sql: context.sql_column(&resolved, column),
+                position: None,
+                descending: term.descending,
+            })
         })
         .collect()
 }

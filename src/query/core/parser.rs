@@ -2,10 +2,10 @@
 
 use crate::query::core::ast::{
     AccumulationAst, AccumulationKind, AggregateArgument, AggregateKind, BatchAst, CaseBranch,
-    CastTarget, DatePart, Expression, FieldReference, GroupKey, IndexAst, IntoAst, JoinAst,
-    JoinKind, OrderTerm, PeriodKind, PresentationArgument, PresentationOperation, Projection,
-    ProjectionItem, QueryAst, SelectAst, SliceAst, SliceKind, SourceAst, StatementAst, UnionLink,
-    parse_datetime_value,
+    CastTarget, ControlPoint, DatePart, Expression, FieldReference, GroupKey, HierarchyTotals,
+    IndexAst, IntoAst, JoinAst, JoinKind, OrderTerm, PeriodKind, PeriodsAst, PresentationArgument,
+    PresentationOperation, Projection, ProjectionItem, QueryAst, SelectAst, SliceAst, SliceKind,
+    SourceAst, StatementAst, TotalsAst, TotalsField, UnionLink, parse_datetime_value,
 };
 use crate::query::core::diag::SourcePosition;
 use crate::query::core::names::names_equal;
@@ -37,6 +37,11 @@ fn is_contextual_identifier(kind: TokenKind) -> bool {
                     | Keyword::Max
                     | Keyword::Avg
                     | Keyword::Refs
+                    | Keyword::Totals
+                    | Keyword::Overall
+                    | Keyword::Hierarchy
+                    | Keyword::Only
+                    | Keyword::Periods
                     | Keyword::Presentation
                     | Keyword::RefPresentation
                     | Keyword::SliceFirst
@@ -185,6 +190,7 @@ impl<'tokens, 'source> Parser<'tokens, 'source> {
         if index.is_none() {
             index = self.parse_index()?;
         }
+        let totals = self.parse_totals()?;
         Ok(QueryAst {
             branches,
             unions,
@@ -192,6 +198,108 @@ impl<'tokens, 'source> Parser<'tokens, 'source> {
             into,
             allowed,
             index,
+            totals,
+        })
+    }
+
+    /// Parses `ИТОГИ [<поля>] ПО [ОБЩИЕ] [<контрольные точки>]`.
+    fn parse_totals(&mut self) -> Result<Option<TotalsAst<'tokens, 'source>>, QueryDiagnostic> {
+        let Some(token) = self.consume_keyword_token(Keyword::Totals) else {
+            return Ok(None);
+        };
+        self.record_binary_operator(token)?;
+        let mut fields = Vec::new();
+        while !self
+            .peek()
+            .is_some_and(|next| next.kind == TokenKind::Keyword(Keyword::By))
+        {
+            let field_token = self.peek().ok_or_else(|| {
+                self.diagnostic(QueryDiagnosticKind::Syntax, None, "expected TOTALS field")
+            })?;
+            self.record_binary_operator(field_token)?;
+            let expression = self.parse_or()?;
+            let alias = if self.consume_keyword(Keyword::As) {
+                Some(self.expect_identifier("expected TOTALS field alias after AS")?)
+            } else {
+                None
+            };
+            fields.push(TotalsField {
+                token: field_token,
+                expression,
+                alias,
+            });
+            if !self.consume_lexeme(",") {
+                break;
+            }
+        }
+        self.expect_keyword(Keyword::By)?;
+        let overall = self.consume_keyword_token(Keyword::Overall);
+        let mut points = Vec::new();
+        if overall.is_none() || self.consume_lexeme(",") {
+            loop {
+                let field = self.parse_field_reference()?;
+                let hierarchy = if let Some(only) = self.consume_keyword_token(Keyword::Only) {
+                    self.expect_keyword(Keyword::Hierarchy)?;
+                    Some(HierarchyTotals {
+                        token: only,
+                        only: true,
+                    })
+                } else {
+                    self.consume_keyword_token(Keyword::Hierarchy)
+                        .map(|token| HierarchyTotals { token, only: false })
+                };
+                let periods =
+                    if let Some(periods_token) = self.consume_keyword_token(Keyword::Periods) {
+                        Some(self.parse_periods(periods_token)?)
+                    } else {
+                        None
+                    };
+                if self.consume_keyword(Keyword::As) {
+                    self.expect_identifier("expected control point alias after AS")?;
+                }
+                points.push(ControlPoint {
+                    field,
+                    hierarchy,
+                    periods,
+                });
+                if !self.consume_lexeme(",") {
+                    break;
+                }
+            }
+        }
+        Ok(Some(TotalsAst {
+            token,
+            fields,
+            overall,
+            points,
+        }))
+    }
+
+    /// Parses `(<период>[, <начало>[, <конец>]])` after `ПЕРИОДАМИ`.
+    fn parse_periods(
+        &mut self,
+        token: &'tokens Token<'source>,
+    ) -> Result<PeriodsAst<'tokens, 'source>, QueryDiagnostic> {
+        self.expect_lexeme("(")?;
+        let period = self.expect_period_kind(token, &PeriodKind::SHIFT)?;
+        let mut bounds = Vec::new();
+        while self.consume_lexeme(",") {
+            if bounds.len() == 2 {
+                return Err(self.diagnostic(
+                    QueryDiagnosticKind::Syntax,
+                    self.peek(),
+                    "PERIODS accepts a period and at most two bounds",
+                ));
+            }
+            bounds.push(self.parse_or()?);
+        }
+        self.expect_lexeme(")")?;
+        let mut bounds = bounds.into_iter();
+        Ok(PeriodsAst {
+            token,
+            period,
+            begin: bounds.next(),
+            end: bounds.next(),
         })
     }
 

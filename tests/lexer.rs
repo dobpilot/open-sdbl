@@ -1,6 +1,6 @@
 use open_sdbl::{DiagnosticKind, Keyword, Lexer, TokenKind, tokenize};
 
-const KEYWORD_ALIASES: [(Keyword, &str, &str); 72] = [
+const KEYWORD_ALIASES: [(Keyword, &str, &str); 77] = [
     (Keyword::Select, "ВЫБРАТЬ", "SELECT"),
     (Keyword::From, "ИЗ", "FROM"),
     (Keyword::Where, "ГДЕ", "WHERE"),
@@ -47,6 +47,11 @@ const KEYWORD_ALIASES: [(Keyword, &str, &str); 72] = [
     (Keyword::Max, "МАКСИМУМ", "MAX"),
     (Keyword::Avg, "СРЕДНЕЕ", "AVG"),
     (Keyword::Refs, "ССЫЛКА", "REFS"),
+    (Keyword::Totals, "ИТОГИ", "TOTALS"),
+    (Keyword::Overall, "ОБЩИЕ", "OVERALL"),
+    (Keyword::Hierarchy, "ИЕРАРХИЯ", "HIERARCHY"),
+    (Keyword::Only, "ТОЛЬКО", "ONLY"),
+    (Keyword::Periods, "ПЕРИОДАМИ", "PERIODS"),
     (Keyword::SliceLast, "СРЕЗПОСЛЕДНИХ", "SLICELAST"),
     (Keyword::SliceFirst, "СРЕЗПЕРВЫХ", "SLICEFIRST"),
     (Keyword::Balance, "ОСТАТКИ", "BALANCE"),
@@ -109,7 +114,7 @@ fn recognizes_russian_and_english_keywords_case_insensitively() {
 
 #[test]
 fn recognizes_the_complete_bilingual_keyword_table() {
-    assert_eq!(KEYWORD_ALIASES.len(), 72);
+    assert_eq!(KEYWORD_ALIASES.len(), 77);
     for (index, (keyword, russian, english)) in KEYWORD_ALIASES.into_iter().enumerate() {
         assert!(
             KEYWORD_ALIASES[..index]
@@ -265,6 +270,23 @@ fn recognizes_the_refs_operator_bilingually() {
     assert_eq!(tokens[3].kind, TokenKind::Keyword(Keyword::Refs));
     assert_eq!(tokens[4].kind, TokenKind::Keyword(Keyword::Refs));
     assert_eq!(Keyword::Refs.as_str(), "REFS");
+}
+
+#[test]
+fn recognizes_totals_keywords_bilingually() {
+    let tokens = tokenize(
+        "ИТОГИ СУММА(Сумма) ПО ОБЩИЕ, Товар ТОЛЬКО ИЕРАРХИЯ, Дата ПЕРИОДАМИ(МЕСЯЦ) totals overall",
+    )
+    .unwrap();
+    assert_eq!(tokens[0].kind, TokenKind::Keyword(Keyword::Totals));
+    assert_eq!(tokens[6].kind, TokenKind::Keyword(Keyword::Overall));
+    assert_eq!(tokens[9].kind, TokenKind::Keyword(Keyword::Only));
+    assert_eq!(tokens[10].kind, TokenKind::Keyword(Keyword::Hierarchy));
+    assert_eq!(tokens[13].kind, TokenKind::Keyword(Keyword::Periods));
+    assert_eq!(tokens[17].kind, TokenKind::Keyword(Keyword::Totals));
+    assert_eq!(tokens[18].kind, TokenKind::Keyword(Keyword::Overall));
+    assert_eq!(Keyword::Hierarchy.as_str(), "HIERARCHY");
+    assert_eq!(Keyword::Periods.as_str(), "PERIODS");
 }
 
 #[test]

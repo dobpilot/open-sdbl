@@ -30,6 +30,52 @@ pub(super) struct QueryAst<'tokens, 'source> {
     pub(super) allowed: Option<&'tokens Token<'source>>,
     /// A trailing `ИНДЕКСИРОВАТЬ ПО` clause, validated but not generated.
     pub(super) index: Option<IndexAst<'tokens, 'source>>,
+    /// A trailing `ИТОГИ … ПО …` clause.
+    pub(super) totals: Option<TotalsAst<'tokens, 'source>>,
+}
+
+/// `ИТОГИ [<поля>] ПО [ОБЩИЕ] [<контрольные точки>]`.
+#[derive(Debug)]
+pub(super) struct TotalsAst<'tokens, 'source> {
+    pub(super) token: &'tokens Token<'source>,
+    pub(super) fields: Vec<TotalsField<'tokens, 'source>>,
+    pub(super) overall: Option<&'tokens Token<'source>>,
+    pub(super) points: Vec<ControlPoint<'tokens, 'source>>,
+}
+
+/// One totals field: an expression over aggregates of result columns,
+/// written into the result column its alias (or its argument) names.
+#[derive(Debug)]
+pub(super) struct TotalsField<'tokens, 'source> {
+    pub(super) token: &'tokens Token<'source>,
+    pub(super) expression: Expression<'tokens, 'source>,
+    pub(super) alias: Option<&'tokens Token<'source>>,
+}
+
+/// One control point: a result column, optionally with hierarchy or
+/// period completion. Its alias only names the point for the platform's
+/// traversal API, so it is accepted and dropped.
+#[derive(Debug)]
+pub(super) struct ControlPoint<'tokens, 'source> {
+    pub(super) field: FieldReference<'tokens, 'source>,
+    pub(super) hierarchy: Option<HierarchyTotals<'tokens, 'source>>,
+    pub(super) periods: Option<PeriodsAst<'tokens, 'source>>,
+}
+
+/// `[ТОЛЬКО] ИЕРАРХИЯ` after a control point.
+#[derive(Debug)]
+pub(super) struct HierarchyTotals<'tokens, 'source> {
+    pub(super) token: &'tokens Token<'source>,
+    pub(super) only: bool,
+}
+
+/// `ПЕРИОДАМИ(<период>[, <начало>[, <конец>]])` after a control point.
+#[derive(Debug)]
+pub(super) struct PeriodsAst<'tokens, 'source> {
+    pub(super) token: &'tokens Token<'source>,
+    pub(super) period: PeriodKind,
+    pub(super) begin: Option<Expression<'tokens, 'source>>,
+    pub(super) end: Option<Expression<'tokens, 'source>>,
 }
 
 /// `ПОМЕСТИТЬ <Имя>` or `ДОБАВИТЬ <Имя>`.

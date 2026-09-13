@@ -118,7 +118,7 @@ fn place_statement(
             dependencies,
         } = compiled;
         return Ok(Some(CompiledQuery {
-            sql: with_prefix(manager, &dependencies, dialect) + &query.sql,
+            sql: join_with_prefix(with_prefix(manager, &dependencies, dialect), &query.sql),
             columns: query.columns,
             deferred_presentations: query.deferred_presentations,
         }));
@@ -236,6 +236,18 @@ fn with_prefix(
         return String::new();
     }
     format!("WITH {} ", definitions.join(", "))
+}
+
+/// Prepends the temporary-table `WITH` list to a statement, merging the
+/// lists when the statement (totals) brings its own CTE.
+fn join_with_prefix(prefix: String, sql: &str) -> String {
+    if prefix.is_empty() {
+        return sql.to_owned();
+    }
+    match sql.strip_prefix("WITH ") {
+        Some(rest) => format!("{}, {rest}", prefix.trim_end()),
+        None => prefix + sql,
+    }
 }
 
 /// `ДОБАВИТЬ` accepts only rows the table can already hold: 1C reports a
