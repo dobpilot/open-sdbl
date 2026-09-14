@@ -289,3 +289,58 @@ fn names_the_movement_type_as_the_query_does() {
     assert_eq!(by_query_name.sql, by_schema_name.sql);
     assert_contains(&by_query_name.sql, "\"_recordkind\" AS \"Вид\"");
 }
+
+#[test]
+fn reads_a_reference_pair_as_a_value() {
+    // A recorder of several document kinds is stored as an `RTRef`/`RRRef`
+    // pair without a `_TYPE` member, because such a value is always a
+    // reference. Measured on 8.3.27: the platform takes the pair as a
+    // value everywhere, answers its type as the reference tag beside the
+    // table number, and aggregates the concatenated members.
+    let mut session = open_sdbl::query::SessionParameters::new();
+    for name in ["ЗначениеРазделителя", "ОбластьДанныхОсновныеДанные"]
+    {
+        session.set(open_sdbl::query::QueryParameter::new(
+            name,
+            open_sdbl::query::ParameterValue::Number {
+                unscaled: 0,
+                scale: 0,
+            },
+        ));
+    }
+    session.set(open_sdbl::query::QueryParameter::new(
+        "ИспользованиеРазделителя",
+        open_sdbl::query::ParameterValue::Boolean(false),
+    ));
+    let snapshot = support::demo_resolved_at(
+        &std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/demo"),
+    )
+    .snapshot;
+    let compile = |source: &str| {
+        QueryCompiler::new(&snapshot, PostgresBackend)
+            .compile_with(
+                source,
+                &open_sdbl::query::CompileOptions::new().session(&session),
+            )
+            .unwrap_or_else(|error| panic!("{source}: {error}"))
+    };
+
+    let typed = compile(
+        "ВЫБРАТЬ ТИПЗНАЧЕНИЯ(Р.Регистратор) КАК Тип
+         ИЗ РегистрНакопления.КоличествоПредметовВПапках КАК Р;",
+    );
+    assert_contains(
+        &typed.sql,
+        "(decode('08', 'hex') || \"Р\".\"_recordertref\") AS \"Тип\"",
+    );
+    assert_eq!(typed.columns[0].kind, open_sdbl::query::ColumnKind::Type);
+
+    let aggregated = compile(
+        "ВЫБРАТЬ МАКСИМУМ(Р.Регистратор) КАК Макс
+         ИЗ РегистрНакопления.КоличествоПредметовВПапках КАК Р;",
+    );
+    assert_contains(
+        &aggregated.sql,
+        "MAX((\"Р\".\"_recordertref\" || \"Р\".\"_recorderrref\"))",
+    );
+}

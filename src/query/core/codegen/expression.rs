@@ -36,6 +36,9 @@ pub(super) fn compile_predicate(
     match expression {
         Expression::Field(reference) => {
             let resolved = context.resolve(reference)?;
+            if let Some(sql) = reference_pair_payload(&resolved, context) {
+                return Ok(sql);
+            }
             let column = single_column(resolved.field(), reference.last())?;
             let sql = context.sql_column(&resolved, column);
             Ok(if column.kind == ColumnKind::Boolean {
@@ -679,6 +682,20 @@ fn compile_value_type(
             ));
         }
     }
+    // A reference pair carries no `_TYPE` member because it is always a
+    // reference: its type is the tag beside the table number the `RTRef`
+    // member holds. Measured on 8.3.27.
+    if let Expression::Field(reference) = argument {
+        let resolved = context.resolve(reference)?;
+        if composite_type_member(resolved.field()).is_none()
+            && let Some((type_member, _)) = reference_pair(resolved.field())
+        {
+            return Ok(dialect.reference_payload(
+                &dialect.binary_literal(&[TypeValue::TAG_REFERENCE]),
+                &context.sql_column(&resolved, type_member),
+            ));
+        }
+    }
     if let Expression::Field(reference) = argument
         && let Some(sql) = compile_derived_value_type(context, reference)?
     {
@@ -919,6 +936,9 @@ pub(super) fn expression_kind(
     match expression {
         Expression::Field(reference) => {
             let resolved = context.resolve(reference)?;
+            if let Some((_, value_member)) = reference_pair(resolved.field()) {
+                return Ok(payload_kind(&value_member.kind));
+            }
             let column = single_column(resolved.field(), reference.last())?;
             Ok(column.kind.clone())
         }
@@ -998,6 +1018,9 @@ pub(super) fn expression_kind(
             (_, AggregateArgument::Expression(argument)) => match argument.as_ref() {
                 Expression::Field(reference) => {
                     let resolved = context.resolve(reference)?;
+                    if let Some((_, value_member)) = reference_pair(resolved.field()) {
+                        return Ok(aggregated_field_kind(&payload_kind(&value_member.kind)));
+                    }
                     let column = countable_column(resolved.field(), reference.last())?;
                     Ok(aggregated_field_kind(&column.kind))
                 }
@@ -1061,6 +1084,19 @@ fn reference_pair(field: &QueryableField) -> Option<(&QueryableColumn, &Queryabl
         .iter()
         .find(|column| column.is_reference_value_member())?;
     Some((type_member, value_member))
+}
+
+/// The `RTRef ‖ RRRef` payload of a field stored as a reference pair, or
+/// `None` when the field is not one.
+fn reference_pair_payload(
+    resolved: &ResolvedPath,
+    context: &CompilationContext<'_, '_>,
+) -> Option<String> {
+    let (type_member, value_member) = reference_pair(resolved.field())?;
+    Some(context.dialect.reference_payload(
+        &context.sql_column(resolved, type_member),
+        &context.sql_column(resolved, value_member),
+    ))
 }
 
 /// Compiles an operand that contributes a value to a `ВЫБОР`/`ЕСТЬNULL`
@@ -1845,6 +1881,11 @@ fn compile_logical_or_value(
     match expression {
         Expression::Field(reference) => {
             let resolved = context.resolve(reference)?;
+            // A value stored as an `RTRef`/`RRRef` pair is always a
+            // reference, so it is one value: its payload.
+            if let Some(sql) = reference_pair_payload(&resolved, context) {
+                return Ok(sql);
+            }
             let column = single_column(resolved.field(), reference.last())?;
             Ok(context.sql_column(&resolved, column))
         }
@@ -3097,7 +3138,17 @@ pub(super) fn compile_aggregate(
     let compiled = match argument {
         AggregateArgument::All => Ok(("*".to_owned(), number.clone())),
         AggregateArgument::Expression(expression) => match expression.as_ref() {
+            // An aggregate over a reference pair takes the payload, the
+            // way the platform aggregates the concatenated members.
             Expression::Field(reference) => context.resolve(reference).and_then(|resolved| {
+                if let Some(sql) = reference_pair_payload(&resolved, context)
+                    && let Some((_, value_member)) = reference_pair(resolved.field())
+                {
+                    return Ok((
+                        sql,
+                        aggregated_field_kind(&payload_kind(&value_member.kind)),
+                    ));
+                }
                 let column = countable_column(resolved.field(), reference.last())?;
                 Ok((
                     context.sql_column(&resolved, column),
