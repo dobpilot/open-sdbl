@@ -1173,10 +1173,9 @@ targets from the alias the composite field lives on.
 
 ### Requirement: Presenting an expression
 `ПРЕДСТАВЛЕНИЕ` SHALL accept any expression. A value that is not a
-reference SHALL be presented as itself. A reference expression SHALL be
-refused with a diagnostic saying that only a reference field can be
-presented, because the presentation of a reference comes from the
-application and is requested for a field.
+reference SHALL be presented as itself. A value that is a reference SHALL
+be carried as a deferred presentation column, the way a universal
+reference field is, so that the application resolves it.
 
 #### Scenario: Presenting a concatenation
 - **WHEN** `ВЫБРАТЬ ПРЕДСТАВЛЕНИЕ(Т.Код + "!") ИЗ Справочник.X КАК Т` is
@@ -1185,4 +1184,5 @@ application and is requested for a field.
 
 #### Scenario: Presenting a reference expression
 - **WHEN** the argument is an expression whose value is a reference
-- **THEN** the query is refused, naming the reason
+- **THEN** the column carries the reference itself and is reported as a
+  deferred presentation

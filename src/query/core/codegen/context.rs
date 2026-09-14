@@ -4,8 +4,8 @@ use std::sync::Arc;
 
 use super::constants::ConstantsSource;
 use super::expression::{
-    compile_expression, expression_kind, matching_fields, reference_column, reference_type_column,
-    resolve_named_field, single_column, type_constant, value_type_sql,
+    matching_fields, reference_column, reference_type_column, resolve_named_field, single_column,
+    type_constant, value_operand, value_type_sql, widen_reference,
 };
 use super::orchestrate::PresentationCompilation;
 use super::select::{derived_data_type, derived_owner};
@@ -1985,15 +1985,20 @@ pub(super) fn compile_presentation(
         // The platform presents any expression: a value that is not a
         // reference is its own presentation, measured on 8.3.27.
         if let PresentationArgument::Expression(expression) = argument {
-            let kind = expression_kind(expression, context)?;
+            let (value, kind) = value_operand(expression, context)?;
+            // A reference answers the presentation the application gives
+            // it, which for an expression is asked the deferred way: the
+            // column carries the reference itself.
             if matches!(kind, ColumnKind::Reference { .. }) {
-                return Err(QueryDiagnostic::at(
-                    QueryDiagnosticKind::UnsupportedFeature,
+                let (payload, _) = widen_reference(
+                    &value,
+                    &kind,
                     Some(token),
-                    "a reference expression cannot be presented; present a reference field",
-                ));
+                    context.snapshot,
+                    context.dialect,
+                )?;
+                return Ok((payload, label, true));
             }
-            let value = compile_expression(expression, context)?;
             return Ok((context.dialect.scalar_text(&value), label, false));
         }
         let PresentationArgument::Literal(literal) = argument else {

@@ -6707,12 +6707,19 @@ fn presents_an_expression_as_its_value() {
         ColumnKind::String { length: None }
     );
 
+    // A reference answers the presentation the application gives it, which
+    // for an expression is asked the deferred way: the column carries the
+    // reference itself and the caller resolves it.
     let reference = postgres_compile!(
         "ВЫБРАТЬ ПРЕДСТАВЛЕНИЕ(ВЫБОР КОГДА ИСТИНА ТОГДА Т.Ссылка ИНАЧЕ НЕОПРЕДЕЛЕНО КОНЕЦ) КАК П
          ИЗ Справочник.OpenSdblMetadataProbe КАК Т;",
         &snapshot,
     )
-    .unwrap_err();
-    assert_eq!(reference.kind(), QueryDiagnosticKind::UnsupportedFeature);
-    assert!(reference.message().contains("presented"), "{reference}");
+    .unwrap();
+    assert_eq!(reference.deferred_presentations, vec![0]);
+    assert!(
+        reference.sql.contains("decode('00000035', 'hex') ||"),
+        "the column carries the reference payload: {}",
+        reference.sql
+    );
 }
