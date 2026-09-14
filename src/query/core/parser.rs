@@ -2098,6 +2098,16 @@ impl<'tokens, 'source> Parser<'tokens, 'source> {
                     "expected field name after '.'",
                 )
             })?;
+            // `Состав.(Поле, …)` and `Состав.*` ask for the tabular
+            // section as a nested result inside one column, which one SQL
+            // statement cannot return.
+            if matches!(token.lexeme, "(" | "*") {
+                return Err(QueryDiagnostic::at(
+                    QueryDiagnosticKind::UnsupportedFeature,
+                    Some(token),
+                    "a tabular section as a nested result of the selection is not supported",
+                ));
+            }
             if !is_contextual_identifier(token.kind) {
                 return Err(QueryDiagnostic::at(
                     QueryDiagnosticKind::Syntax,

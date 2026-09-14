@@ -6389,3 +6389,23 @@ fn names_the_standard_fields_of_processes_and_tasks() {
     );
     assert!(task.sql.contains("\"З\".\"_point_rrref\""), "{}", task.sql);
 }
+
+#[test]
+fn names_a_nested_tabular_section_projection() {
+    // The platform returns the tabular section as a nested result inside
+    // one column, which a single SQL statement cannot do, so the compiler
+    // names the construct instead of complaining about a missing name.
+    let snapshot = support::snapshot();
+    for source in [
+        "ВЫБРАТЬ Т.Состав.(Ссылка, НомерСтроки) ИЗ Справочник.OpenSdblMetadataProbe КАК Т;",
+        "ВЫБРАТЬ Т.Состав.* ИЗ Справочник.OpenSdblMetadataProbe КАК Т;",
+    ] {
+        let error = postgres_compile!(source, &snapshot).unwrap_err();
+        assert_eq!(
+            error.kind(),
+            QueryDiagnosticKind::UnsupportedFeature,
+            "{error}"
+        );
+        assert!(error.message().contains("nested result"), "{error}");
+    }
+}
