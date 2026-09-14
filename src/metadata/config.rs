@@ -196,6 +196,18 @@ pub struct ConfigPredefinedValue {
     pub name: String,
 }
 
+/// One filter criterion decoded from its Config resource: the objects it
+/// searches are the fields listed in its content.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ConfigCriterion {
+    /// GUID of the criterion itself.
+    pub guid: Guid,
+    /// Metadata name accepted after `КритерийОтбора.`.
+    pub name: String,
+    /// GUIDs of the fields the criterion searches, in declaration order.
+    pub content: Vec<Guid>,
+}
+
 /// Parsed contents of one relevant Config resource plus its decoded size.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ParsedConfigResource {
@@ -203,6 +215,8 @@ pub struct ParsedConfigResource {
     pub descriptors: Vec<ConfigDescriptor>,
     /// Predefined values found in a `<catalog-guid>.1c` resource.
     pub predefined_values: Vec<ConfigPredefinedValue>,
+    /// The filter criterion this resource declares, if it declares one.
+    pub criterion: Option<ConfigCriterion>,
     /// Number of inflated bytes charged to the caller's total budget.
     pub decoded_bytes: usize,
 }
@@ -267,6 +281,23 @@ pub fn parse_config_predefined_values(
     )
 }
 
+/// Parses the filter criterion a bare-GUID Config resource declares.
+///
+/// Returns `None` for every other resource without decoding it.
+///
+/// # Errors
+///
+/// Returns [`MetadataError`] when a bare-GUID resource is malformed.
+pub fn parse_config_criterion(
+    file_name: &str,
+    compressed: &[u8],
+) -> Result<Option<ConfigCriterion>, MetadataError> {
+    if Guid::from_str(file_name).is_err() {
+        return Ok(None);
+    }
+    Ok(parse_config_resource_bounded(file_name, compressed, DEFAULT_OUTPUT_LIMIT)?.criterion)
+}
+
 /// Inflates and parses one Config resource with an explicit decoded-byte cap.
 ///
 /// Irrelevant suffixed resources return an empty result without decompression.
@@ -294,6 +325,7 @@ pub fn parse_config_resource_bounded(
         return Ok(ParsedConfigResource {
             descriptors: Vec::new(),
             predefined_values: Vec::new(),
+            criterion: None,
             decoded_bytes: 0,
         });
     };
@@ -303,6 +335,7 @@ pub fn parse_config_resource_bounded(
         ResourceKind::Descriptors(resource) => Ok(ParsedConfigResource {
             descriptors: parse_config_descriptors_streaming(&decoded, &resource)?,
             predefined_values: Vec::new(),
+            criterion: parse_criterion(&decoded, &resource),
             decoded_bytes,
         }),
         ResourceKind::Predefined(owner) => {
@@ -312,10 +345,96 @@ pub fn parse_config_resource_bounded(
             Ok(ParsedConfigResource {
                 descriptors: Vec::new(),
                 predefined_values,
+                criterion: None,
                 decoded_bytes,
             })
         }
     }
+}
+
+/// The marker of a filter criterion in the serialized class list of a
+/// Config resource, followed by its generated types, its own descriptor
+/// and the content list.
+const CRITERION_CLASS: u32 = 14;
+
+/// The type identifier every content item of a filter criterion carries.
+const METADATA_REFERENCE_TYPE: &str = "157fa490-4ce9-11d4-9415-008048da11f9";
+
+/// Decodes the filter criterion a resource declares, if it declares one.
+/// The content is the list of fields the criterion searches; each item is
+/// a metadata reference to one attribute.
+fn parse_criterion(decoded: &[u8], resource: &Guid) -> Option<ConfigCriterion> {
+    let body = parse_serialized(decoded).ok()?;
+    let outer = body.as_list()?;
+    let class = outer.get(1)?.as_list()?;
+    if class.first()?.as_u32()? != CRITERION_CLASS {
+        return None;
+    }
+    let mut name = None;
+    let mut content = Vec::new();
+    for value in class {
+        let Some(values) = value.as_list() else {
+            continue;
+        };
+        if name.is_none()
+            && let Some(found) = criterion_name(values, resource)
+        {
+            name = Some(found);
+        }
+        if content.is_empty() {
+            content = criterion_content(values);
+        }
+    }
+    Some(ConfigCriterion {
+        guid: resource.clone(),
+        name: name?,
+        content,
+    })
+}
+
+/// The criterion's own name, read from the descriptor that refers to the
+/// resource GUID.
+fn criterion_name(values: &[Value], resource: &Guid) -> Option<String> {
+    let descriptor = values.get(1)?.as_list()?;
+    let identity = descriptor.get(1)?.as_list()?;
+    let Value::Atom(guid) = identity.get(2)? else {
+        return None;
+    };
+    if !guid.eq_ignore_ascii_case(resource.as_str()) {
+        return None;
+    }
+    Some(descriptor.get(2)?.as_string()?.to_owned())
+}
+
+/// The GUIDs of the fields a criterion searches.
+fn criterion_content(values: &[Value]) -> Vec<Guid> {
+    let mut content = Vec::new();
+    for value in values {
+        let Some(item) = value.as_list() else {
+            continue;
+        };
+        if item.len() != 3 || item.first().and_then(Value::as_string) != Some("#") {
+            continue;
+        }
+        let Value::Atom(kind) = &item[1] else {
+            continue;
+        };
+        if !kind.eq_ignore_ascii_case(METADATA_REFERENCE_TYPE) {
+            continue;
+        }
+        let Some(reference) = item[2].as_list() else {
+            continue;
+        };
+        let Some(Value::Atom(guid)) = reference.get(1) else {
+            continue;
+        };
+        if let Ok(guid) = Guid::from_str(guid)
+            && !guid.is_nil()
+        {
+            content.push(guid);
+        }
+    }
+    content
 }
 
 fn collect_predefined_values(

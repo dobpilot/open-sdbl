@@ -8,9 +8,12 @@ use super::expression::{
     reference_type_column, single_column, widen_reference,
 };
 use super::orchestrate::{PresentationCompilation, compile_query_ast};
+use super::params::{reference_constant_of_bytes, reference_constant_of_value};
+use super::separators::separator_predicates;
 use super::sources::{
-    SourceRestriction, compile_source_free_branch, compile_source_relation, contains_aggregate,
-    projection_is_aggregated, projection_token, validate_aggregate_projection,
+    SourceRestriction, compile_source_free_branch, compile_source_free_expression,
+    compile_source_relation, contains_aggregate, projection_is_aggregated, projection_token,
+    validate_aggregate_projection,
 };
 use super::virtual_tables::finalize_aggregate_relation;
 use crate::metadata::{Guid, MetadataSnapshot, ObjectId};
@@ -18,7 +21,7 @@ use crate::query::core::ast::{
     AggregateArgument, CastTarget, Expression, FieldReference, JoinAst, JoinKind, OrderKeyAst,
     OrderTerm, PresentationArgument, Projection, ProjectionItem, SelectAst, SourceAst, TypeName,
 };
-use crate::query::core::dialect::{OutputLabelAllocator, SqlDialect};
+use crate::query::core::dialect::{OutputLabelAllocator, SqlDialect, decode_binary_literal};
 use crate::query::core::names::names_equal;
 use crate::query::core::temp_tables::cte_name;
 use std::str::FromStr;
@@ -437,6 +440,147 @@ pub(super) fn derived_owner() -> ObjectId {
 }
 
 /// One field of a derived source, addressed by the nested column label.
+/// Builds the scope of a filter-criterion source. The platform searches
+/// every field the criterion lists and returns the objects holding the
+/// value, which is one `SELECT` per field united by `UNION ALL`; the
+/// single field `Ссылка` carries the `RTRef ‖ RRRef` payload of the found
+/// object, exactly as a derived source does.
+fn criterion_source_scope(
+    source: &SourceAst<'_, '_>,
+    value: &Expression<'_, '_>,
+    snapshot: &MetadataSnapshot,
+    catalog: &CompilationCatalog<'_>,
+    default_alias: &str,
+    dialect: SqlDialect,
+) -> Result<SourceScope, QueryDiagnostic> {
+    let criterion = snapshot.criterion(source.object.lexeme).ok_or_else(|| {
+        QueryDiagnostic::at(
+            QueryDiagnosticKind::UnknownObject,
+            Some(source.object),
+            format!("unknown filter criterion {:?}", source.object.lexeme),
+        )
+    })?;
+    let value_sql = criterion_value_sql(value, snapshot, catalog, dialect)?;
+    let mut branches = Vec::new();
+    let mut targets = Vec::new();
+    for guid in &criterion.content {
+        let Some(field) = snapshot.fields().iter().find(|field| &field.guid == guid) else {
+            continue;
+        };
+        for table in &field.owner_tables {
+            let Some(live) = snapshot.live_table(table) else {
+                continue;
+            };
+            let Ok(object_id) = snapshot.object_id_by_physical_table(table) else {
+                continue;
+            };
+            let Some(object) = snapshot.object_by_id(object_id) else {
+                continue;
+            };
+            let Some(number) = object.number else {
+                continue;
+            };
+            let Some(identity) = live
+                .columns
+                .iter()
+                .find(|column| names_equal(&column.name, "_IDRRef"))
+            else {
+                continue;
+            };
+            let Some(column) = live.columns.iter().find(|column| {
+                names_equal(&column.name, &field.physical_name)
+                    || names_equal(&column.name, &format!("{}RRef", field.physical_name))
+            }) else {
+                continue;
+            };
+            let alias = format!("__criterion{}", branches.len() + 1);
+            let mut predicates =
+                separator_predicates(catalog, live, &alias, source.object, dialect)?;
+            predicates.push(format!(
+                "({} = {value_sql})",
+                dialect.qualified_column(Some(&alias), &column.name)
+            ));
+            branches.push(format!(
+                "SELECT {} AS {} FROM {} AS {} WHERE {}",
+                dialect.reference_payload(
+                    &dialect.binary_u32(number),
+                    &dialect.qualified_column(Some(&alias), &identity.name),
+                ),
+                dialect.quote_identifier(CRITERION_FIELD),
+                dialect.quote_identifier(&live.name),
+                dialect.quote_identifier(&alias),
+                predicates.join(" AND "),
+            ));
+            targets.push(object_id);
+        }
+    }
+    if branches.is_empty() {
+        return Err(QueryDiagnostic::at(
+            QueryDiagnosticKind::UnsupportedFeature,
+            Some(source.object),
+            format!(
+                "filter criterion {:?} searches no live field",
+                source.object.lexeme
+            ),
+        ));
+    }
+    let alias = source
+        .alias
+        .map_or_else(|| default_alias.to_owned(), |token| token.lexeme.to_owned());
+    let kind = ColumnKind::Reference {
+        targets,
+        runtime_typed: true,
+    };
+    let field = derived_field(0, CRITERION_FIELD, &kind, snapshot, dialect);
+    Ok(SourceScope {
+        object: derived_owner(),
+        fields: vec![field].into(),
+        relation: format!("({})", branches.join(" UNION ALL ")),
+        sql_alias: alias.clone(),
+        object_name: alias.clone(),
+        source_alias: Some(alias),
+        identity_is_base: false,
+        reference_joins: Vec::new(),
+        separator_predicates: Vec::new(),
+        constants: None,
+        aggregate: None,
+        used_fields: RefCell::new(BTreeSet::new()),
+    })
+}
+
+/// The value a criterion searches for, rendered the way its content
+/// columns store it: a reference keeps only its 16-byte identifier, the
+/// way the platform compares it, and every other value compiles as
+/// written.
+fn criterion_value_sql(
+    value: &Expression<'_, '_>,
+    snapshot: &MetadataSnapshot,
+    catalog: &CompilationCatalog<'_>,
+    dialect: SqlDialect,
+) -> Result<String, QueryDiagnostic> {
+    match value {
+        Expression::Parameter(token) => {
+            if let Some(bound) = catalog.parameters().lookup(token)?
+                && let Some(constant) =
+                    reference_constant_of_value(bound, token, snapshot, dialect)?
+            {
+                return Ok(constant.id_sql);
+            }
+        }
+        Expression::Literal(token) if token.kind == TokenKind::Binary => {
+            let bytes = decode_binary_literal(token)?;
+            if let Some(constant) = reference_constant_of_bytes(&bytes, dialect) {
+                return Ok(constant.id_sql);
+            }
+        }
+        _ => {}
+    }
+    compile_source_free_expression(value, snapshot, dialect, catalog.parameters(), true)
+}
+
+/// The only field a filter-criterion source exposes.
+const CRITERION_FIELD: &str = "Ссылка";
+
 fn derived_field(
     index: usize,
     label: &str,
@@ -1370,6 +1514,9 @@ fn resolve_join_source(
     }
     if source.constants {
         return constants_source_scope(source, snapshot, catalog, default_alias, dialect);
+    }
+    if let Some(value) = &source.criterion {
+        return criterion_source_scope(source, value, snapshot, catalog, default_alias, dialect);
     }
     let resolved = resolve_source_metadata(source, snapshot, catalog)?;
     let target = resolved.restriction_target();

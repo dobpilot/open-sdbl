@@ -346,3 +346,65 @@ fn reads_a_document_journal() {
     assert_contains(&column.sql, "AS \"С\"");
     assert_contains(&column.sql, "AND \"Ж\".\"_posted\"");
 }
+
+#[test]
+fn reads_a_filter_criterion() {
+    // The platform answers every object whose listed field holds the
+    // value: one selection per content field, united by UNION ALL, each
+    // projecting the found object as a payload reference. Measured on the
+    // probe base against the platform's own SQL.
+    let snapshot = support::demo_resolved_at(
+        &std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/demo"),
+    )
+    .snapshot;
+    let mut session = open_sdbl::query::SessionParameters::new();
+    session.set(open_sdbl::query::QueryParameter::new(
+        "ОбластьДанныхОсновныеДанные",
+        open_sdbl::query::ParameterValue::Number {
+            unscaled: 0,
+            scale: 0,
+        },
+    ));
+    let parameters = [open_sdbl::query::QueryParameter::new(
+        "Значение",
+        open_sdbl::query::ParameterValue::Binary(vec![0x11; 16]),
+    )];
+    let compiled = QueryCompiler::new(&snapshot, PostgresBackend)
+        .compile_with(
+            "ВЫБРАТЬ К.Ссылка КАК С ИЗ КритерийОтбора.ДокументыПоВопросуДеятельности(&Значение) КАК К;",
+            &open_sdbl::query::CompileOptions::new()
+                .session(&session)
+                .parameters(&parameters),
+        )
+        .unwrap_or_else(|error| panic!("{error}"));
+    // The criterion of the fixture reaches one live field, so the union
+    // has a single branch; the shape is the same for several.
+    assert_contains(&compiled.sql, "AS \"Ссылка\" FROM ");
+    assert_contains(&compiled.sql, "decode('00000065', 'hex') || ");
+    assert_contains(
+        &compiled.sql,
+        "= decode('11111111111111111111111111111111', 'hex')",
+    );
+    assert!(
+        matches!(
+            compiled.columns[0].kind,
+            open_sdbl::query::ColumnKind::Reference {
+                runtime_typed: true,
+                ..
+            }
+        ),
+        "{:?}",
+        compiled.columns[0].kind
+    );
+
+    // An unknown criterion is named as such.
+    let error = QueryCompiler::new(&snapshot, PostgresBackend)
+        .compile_with(
+            "ВЫБРАТЬ К.Ссылка ИЗ КритерийОтбора.НетТакого(&Значение) КАК К;",
+            &open_sdbl::query::CompileOptions::new()
+                .session(&session)
+                .parameters(&parameters),
+        )
+        .unwrap_err();
+    assert_eq!(error.kind(), QueryDiagnosticKind::UnknownObject, "{error}");
+}

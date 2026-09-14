@@ -920,7 +920,7 @@ mod tests {
         ]);
         let mut progress = MetadataProgress::disabled();
         progress.config_totals(2, (compressed.len() * 2) as u64);
-        let (descriptors, predefined_values) = decode_config_stream(
+        let (descriptors, predefined_values, _criteria) = decode_config_stream(
             resources,
             2,
             2,

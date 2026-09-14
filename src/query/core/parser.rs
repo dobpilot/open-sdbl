@@ -124,6 +124,12 @@ fn check_join_group(outer: JoinKind, inner: &JoinAst<'_, '_>) -> Result<(), Quer
     ))
 }
 
+/// Whether a source names a filter criterion, whose value follows the name
+/// in parentheses.
+fn is_filter_criterion_kind(lexeme: &str) -> bool {
+    names_equal(lexeme, "КритерийОтбора") || names_equal(lexeme, "FilterCriterion")
+}
+
 fn is_ascending_order(token: &Token<'_>) -> bool {
     names_equal(token.lexeme, "ASC") || names_equal(token.lexeme, "ВОЗР")
 }
@@ -798,6 +804,7 @@ impl<'tokens, 'source> Parser<'tokens, 'source> {
                 nested: Some(Box::new(nested)),
                 temporary: false,
                 constants: false,
+                criterion: None,
             });
         }
         if self.next_is_constants_source() {
@@ -822,6 +829,7 @@ impl<'tokens, 'source> Parser<'tokens, 'source> {
                 nested: None,
                 temporary: false,
                 constants: true,
+                criterion: None,
             });
         }
         if self.next_is_temporary_source() {
@@ -846,11 +854,41 @@ impl<'tokens, 'source> Parser<'tokens, 'source> {
                 nested: None,
                 temporary: true,
                 constants: false,
+                criterion: None,
             });
         }
         let kind = self.expect_identifier("expected metadata kind after FROM")?;
         self.expect_lexeme(".")?;
         let object = self.expect_identifier("expected metadata object name")?;
+        // `КритерийОтбора.<Имя>(<значение>)` carries the value it searches
+        // for directly after the name.
+        if is_filter_criterion_kind(kind.lexeme) {
+            self.expect_lexeme("(")?;
+            let value = self.parse_or()?;
+            self.expect_lexeme(")")?;
+            let alias = if self.consume_keyword(Keyword::As) {
+                Some(self.expect_identifier("expected source alias after AS")?)
+            } else if self
+                .peek()
+                .is_some_and(|token| token.kind == TokenKind::Identifier)
+            {
+                self.next()
+            } else {
+                None
+            };
+            return Ok(SourceAst {
+                kind,
+                object,
+                table_part: None,
+                slice: None,
+                accumulation: None,
+                alias,
+                nested: None,
+                temporary: false,
+                constants: false,
+                criterion: Some(value),
+            });
+        }
         let (table_part, slice, accumulation) = if self.consume_lexeme(".") {
             // The platform writes a virtual table without its argument
             // list when every argument is left out.
@@ -918,6 +956,7 @@ impl<'tokens, 'source> Parser<'tokens, 'source> {
             slice,
             accumulation,
             alias,
+            criterion: None,
         })
     }
 

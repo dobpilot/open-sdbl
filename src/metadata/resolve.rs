@@ -7,9 +7,9 @@ use crate::names::{folded_name, names_equal};
 use super::db_names::DbNameFieldConflict;
 use super::normalize::{normalize_logical_name, normalize_standard_field_name};
 use super::{
-    AttributeId, ConfigDescriptor, ConfigFieldPurpose, ConfigPredefinedValue, DbNameEntry, DbNames,
-    FieldId, Guid, LookupError, MetadataKind, ObjectId, SchemaStorage, SchemaTable,
-    SeparatedDataUse, StandardFieldId, collapse_logical_fields, normalize_index_key,
+    AttributeId, ConfigCriterion, ConfigDescriptor, ConfigFieldPurpose, ConfigPredefinedValue,
+    DbNameEntry, DbNames, FieldId, Guid, LookupError, MetadataKind, ObjectId, SchemaStorage,
+    SchemaTable, SeparatedDataUse, StandardFieldId, collapse_logical_fields, normalize_index_key,
     recase_postgres_identifier,
 };
 
@@ -165,6 +165,17 @@ pub struct ExtensionMetadata {
     pub field_reference_targets: Vec<(u32, String)>,
     /// Malformed restructure records surfaced as resolution findings.
     pub restructure_anomalies: Vec<String>,
+}
+
+/// One resolved filter criterion: its name and the fields it searches.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MetadataCriterion {
+    /// GUID of the criterion.
+    pub guid: Guid,
+    /// Metadata name accepted after `КритерийОтбора.`.
+    pub name: String,
+    /// GUIDs of the fields the criterion searches, in declaration order.
+    pub content: Vec<Guid>,
 }
 
 /// One resolved enumeration value or catalog predefined value.
@@ -440,6 +451,8 @@ pub struct MetadataSnapshot {
     fields: Vec<MetadataField>,
     /// Resolved enumeration and catalog predefined values.
     values: Vec<MetadataValue>,
+    /// Filter criteria declared by Config, in resource order.
+    criteria: Vec<MetadataCriterion>,
     /// SchemaStorage indexes compared with the live catalog.
     indexes: Vec<IndexComparison>,
     index: MetadataIndex,
@@ -495,6 +508,33 @@ impl MetadataSnapshot {
     #[must_use]
     pub fn values(&self) -> &[MetadataValue] {
         &self.values
+    }
+
+    /// Returns the filter criteria in deterministic source order.
+    #[must_use]
+    pub fn criteria(&self) -> &[MetadataCriterion] {
+        &self.criteria
+    }
+
+    /// Attaches the filter criteria decoded from Config resources.
+    pub fn attach_criteria(&mut self, criteria: Vec<ConfigCriterion>) {
+        self.criteria = criteria
+            .into_iter()
+            .map(|criterion| MetadataCriterion {
+                guid: criterion.guid,
+                name: criterion.name,
+                content: criterion.content,
+            })
+            .collect();
+    }
+
+    /// Looks up a filter criterion by its metadata name.
+    #[must_use]
+    pub fn criterion(&self, name: &str) -> Option<&MetadataCriterion> {
+        let wanted = normalize_name(name);
+        self.criteria
+            .iter()
+            .find(|criterion| normalize_name(&criterion.name) == wanted)
     }
 
     /// Returns SchemaStorage/live index comparisons.
@@ -750,6 +790,36 @@ pub fn resolve_metadata_with_predefined_values(
         schema,
         live_tables,
     )
+}
+
+/// Resolves authoritative 1C resources including the filter criteria the
+/// Config resources declare.
+#[must_use]
+pub fn resolve_metadata_with_criteria(
+    db_names: DbNames,
+    descriptors: Vec<ConfigDescriptor>,
+    predefined_values: Vec<ConfigPredefinedValue>,
+    criteria: Vec<ConfigCriterion>,
+    schema: SchemaStorage,
+    live_tables: Vec<LiveTable>,
+) -> ResolvedMetadata {
+    let mut resolved = resolve_metadata_with_predefined_values_and_extensions(
+        db_names,
+        descriptors,
+        predefined_values,
+        Vec::new(),
+        schema,
+        live_tables,
+    );
+    resolved.snapshot.criteria = criteria
+        .into_iter()
+        .map(|criterion| MetadataCriterion {
+            guid: criterion.guid,
+            name: criterion.name,
+            content: criterion.content,
+        })
+        .collect();
+    resolved
 }
 
 /// Resolves predefined values and caller-provided extension resources.
@@ -1092,6 +1162,7 @@ pub fn resolve_metadata_with_predefined_values_and_extensions(
             objects,
             fields,
             values,
+            criteria: Vec::new(),
             indexes,
             index,
             fingerprint,

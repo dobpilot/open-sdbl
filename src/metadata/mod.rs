@@ -20,9 +20,10 @@ mod schema;
 mod value;
 
 pub use config::{
-    ConfigDescriptor, ConfigFieldPurpose, ConfigPredefinedValue, DataSeparationSettings,
-    ParsedConfigResource, SeparatedDataUse, Synonym, parse_config_descriptor,
-    parse_config_descriptors, parse_config_predefined_values, parse_config_resource_bounded,
+    ConfigCriterion, ConfigDescriptor, ConfigFieldPurpose, ConfigPredefinedValue,
+    DataSeparationSettings, ParsedConfigResource, SeparatedDataUse, Synonym,
+    parse_config_criterion, parse_config_descriptor, parse_config_descriptors,
+    parse_config_predefined_values, parse_config_resource_bounded,
 };
 pub use db_names::{DbNameEntry, DbNames, MetadataKind, parse_db_names};
 pub use deflate::{DEFAULT_OUTPUT_LIMIT, inflate_raw_deflate, inflate_raw_deflate_bounded};
@@ -40,8 +41,9 @@ pub use queries::{MsSqlMetadataQueries, PostgresMetadataQueries, StorageLayout};
 pub(crate) use resolve::SnapshotFingerprint;
 pub use resolve::{
     AllowedLength, ExtensionMetadata, IndexComparison, LiveColumn, LiveIndex, LiveTable,
-    MetadataField, MetadataObject, MetadataSnapshot, MetadataValue, ResolutionFinding,
-    ResolutionReport, ResolvedMetadata, resolve_metadata, resolve_metadata_with_extensions,
+    MetadataCriterion, MetadataField, MetadataObject, MetadataSnapshot, MetadataValue,
+    ResolutionFinding, ResolutionReport, ResolvedMetadata, resolve_metadata,
+    resolve_metadata_with_criteria, resolve_metadata_with_extensions,
     resolve_metadata_with_predefined_values,
     resolve_metadata_with_predefined_values_and_extensions,
 };

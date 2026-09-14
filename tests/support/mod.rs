@@ -8,9 +8,9 @@ pub(crate) use hex::hex;
 
 use open_sdbl::metadata::{
     ColumnType, ConfigDescriptor, ConfigFieldPurpose, ConfigPredefinedValue, Guid, LiveColumn,
-    LiveIndex, LiveTable, SchemaColumn, SchemaStorage, SchemaTable, parse_config_descriptors,
-    parse_config_predefined_values, parse_db_names, parse_schema_storage, resolve_metadata,
-    resolve_metadata_with_predefined_values,
+    LiveIndex, LiveTable, SchemaColumn, SchemaStorage, SchemaTable, parse_config_criterion,
+    parse_config_descriptors, parse_config_predefined_values, parse_db_names, parse_schema_storage,
+    resolve_metadata, resolve_metadata_with_criteria, resolve_metadata_with_predefined_values,
 };
 
 pub(crate) fn snapshot() -> open_sdbl::metadata::MetadataSnapshot {
@@ -965,6 +965,7 @@ pub(crate) fn demo_resolved_at(root: &std::path::Path) -> open_sdbl::metadata::R
     let pack = std::fs::read(root.join("config.pack")).unwrap();
     let mut descriptors = Vec::new();
     let mut predefined = Vec::new();
+    let mut criteria = Vec::new();
     let mut offset = 0usize;
     while offset < pack.len() {
         let newline = offset
@@ -981,6 +982,9 @@ pub(crate) fn demo_resolved_at(root: &std::path::Path) -> open_sdbl::metadata::R
         }
         if let Ok(parsed) = parse_config_predefined_values(resource, &pack[start..start + length]) {
             predefined.extend(parsed);
+        }
+        if let Ok(Some(parsed)) = parse_config_criterion(resource, &pack[start..start + length]) {
+            criteria.push(parsed);
         }
         offset = start + length;
     }
@@ -1015,7 +1019,14 @@ pub(crate) fn demo_resolved_at(root: &std::path::Path) -> open_sdbl::metadata::R
             data_type: data_type.to_owned(),
         });
     }
-    resolve_metadata_with_predefined_values(db_names, descriptors, predefined, schema, live_tables)
+    resolve_metadata_with_criteria(
+        db_names,
+        descriptors,
+        predefined,
+        criteria,
+        schema,
+        live_tables,
+    )
 }
 
 pub(crate) fn separators_snapshot() -> open_sdbl::metadata::MetadataSnapshot {

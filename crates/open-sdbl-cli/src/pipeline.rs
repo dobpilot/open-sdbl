@@ -86,6 +86,7 @@ fn decode_extension_restructures(blobs: Vec<Vec<u8>>) -> Vec<ExtensionMetadata> 
 pub(crate) type ConfigMetadata = (
     Vec<open_sdbl::metadata::ConfigDescriptor>,
     Vec<open_sdbl::metadata::ConfigPredefinedValue>,
+    Vec<open_sdbl::metadata::ConfigCriterion>,
 );
 
 pub(crate) trait MetadataSource {
@@ -144,7 +145,8 @@ pub(crate) async fn acquire_metadata(
             "DBNames (legacy layout)"
         });
         let db_names = source.read_db_names(&layout).await?;
-        let (descriptors, predefined_values) = source.read_config(&layout, &mut progress).await?;
+        let (descriptors, predefined_values, criteria) =
+            source.read_config(&layout, &mut progress).await?;
 
         progress.phase("extensions");
         let extension_resources = source.read_extension_resources(&layout).await?;
@@ -166,14 +168,16 @@ pub(crate) async fn acquire_metadata(
 
         progress.phase("resolve");
         let resolved = run_metadata_blocking("metadata resolution", move || {
-            Ok(resolve_metadata_with_predefined_values_and_extensions(
+            let mut resolved = resolve_metadata_with_predefined_values_and_extensions(
                 db_names,
                 descriptors,
                 predefined_values,
                 extensions,
                 schema,
                 live_tables,
-            ))
+            );
+            resolved.snapshot.attach_criteria(criteria);
+            Ok(resolved)
         })
         .await?;
         progress.finish();
@@ -314,6 +318,7 @@ struct DecodedConfigBatch {
     decoded_bytes: usize,
     descriptors: Vec<open_sdbl::metadata::ConfigDescriptor>,
     predefined_values: Vec<open_sdbl::metadata::ConfigPredefinedValue>,
+    criteria: Vec<open_sdbl::metadata::ConfigCriterion>,
 }
 
 pub(crate) async fn decode_config_stream<S>(
@@ -326,6 +331,7 @@ pub(crate) async fn decode_config_stream<S>(
     (
         Vec<open_sdbl::metadata::ConfigDescriptor>,
         Vec<open_sdbl::metadata::ConfigPredefinedValue>,
+        Vec<open_sdbl::metadata::ConfigCriterion>,
     ),
     CliError,
 >
@@ -388,6 +394,7 @@ where
                         decoded_bytes: 0,
                         descriptors: Vec::new(),
                         predefined_values: Vec::new(),
+                        criteria: Vec::new(),
                     };
                     for resource in batch {
                         let remaining = limits.batch_bytes.saturating_sub(result.decoded_bytes);
@@ -412,6 +419,7 @@ where
                         result
                             .predefined_values
                             .append(&mut parsed.predefined_values);
+                        result.criteria.extend(parsed.criterion);
                     }
                     drop(permit);
                     Ok::<_, CliError>(result)
@@ -426,6 +434,7 @@ where
     let mut total_decoded_bytes = 0_usize;
     let mut descriptors = Vec::new();
     let mut predefined_values = Vec::new();
+    let mut criteria = Vec::new();
     loop {
         let next = timeout(progress_timeout, jobs.next()).await.map_err(|_| {
             CliError::DatabaseTimeout {
@@ -449,6 +458,7 @@ where
         progress.advance_config(batch.resource_count, batch.compressed_bytes);
         descriptors.append(&mut batch.descriptors);
         predefined_values.append(&mut batch.predefined_values);
+        criteria.append(&mut batch.criteria);
     }
     descriptors.sort_by(|left, right| {
         left.resource_guid
@@ -464,7 +474,8 @@ where
             .then_with(|| left.value_guid.as_str().cmp(right.value_guid.as_str()))
             .then_with(|| left.name.cmp(&right.name))
     });
-    Ok((descriptors, predefined_values))
+    criteria.sort_by(|left, right| left.name.cmp(&right.name));
+    Ok((descriptors, predefined_values, criteria))
 }
 
 pub(crate) async fn run_metadata_blocking<T, F>(label: &'static str, work: F) -> Result<T, CliError>

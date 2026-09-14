@@ -143,6 +143,9 @@ pub(super) struct SourceAst<'tokens, 'source> {
     pub(super) temporary: bool,
     /// The `Константы`/`Constants` table: one row with every constant.
     pub(super) constants: bool,
+    /// The value a filter criterion searches for:
+    /// `КритерийОтбора.<Имя>(<значение>)`.
+    pub(super) criterion: Option<Expression<'tokens, 'source>>,
 }
 
 #[derive(Debug)]

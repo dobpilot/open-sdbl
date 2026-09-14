@@ -315,7 +315,7 @@ fn compile_source_free_date(
     compile_source_free_expression(expression, snapshot, dialect, parameters, storage_domain)
 }
 
-fn compile_source_free_expression(
+pub(super) fn compile_source_free_expression(
     expression: &Expression<'_, '_>,
     snapshot: &MetadataSnapshot,
     dialect: SqlDialect,
