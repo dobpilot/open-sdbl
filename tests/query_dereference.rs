@@ -278,3 +278,43 @@ fn resolves_the_computed_standard_fields() {
         "{error}"
     );
 }
+
+#[test]
+fn reads_a_document_journal() {
+    // A journal is a table of its own: `Ссылка` is the reference of the
+    // registered document, `Тип` its type. Measured on the probe base,
+    // where a journal of one document kind stores a bare reference and the
+    // demo journals store the `RTRef ‖ RRRef` pair.
+    let snapshot = support::demo_resolved_at(
+        &std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/demo"),
+    )
+    .snapshot;
+    let compiled = QueryCompiler::new(&snapshot, PostgresBackend)
+        .compile(
+            "ВЫБРАТЬ Ж.Ссылка КАК С, Ж.Тип КАК Т, Ж.Дата КАК Д, Ж.Номер КАК Н,
+                    Ж.ПометкаУдаления КАК П, Ж.Проведен КАК Пр
+             ИЗ ЖурналДокументов.УчетРабочегоВремени КАК Ж;",
+        )
+        .unwrap_or_else(|error| panic!("{error}"));
+    assert_contains(&compiled.sql, "FROM \"_documentjournal1240\" AS \"Ж\"");
+    assert_contains(&compiled.sql, "\"Ж\".\"_documentrref\"");
+    assert_contains(&compiled.sql, "\"Ж\".\"_documenttref\"");
+    assert_contains(&compiled.sql, "\"Ж\".\"_date_time\" AS \"Д\"");
+    assert_eq!(
+        compiled.columns[1].kind,
+        open_sdbl::query::ColumnKind::Type,
+        "{}",
+        compiled.sql
+    );
+
+    // The journal's own column answers under its metadata name, and the
+    // reference joins like any other.
+    let column = QueryCompiler::new(&snapshot, PostgresBackend)
+        .compile(
+            "ВЫБРАТЬ Ж.Сотрудник КАК С, Ж.ДлительностьРабот КАК Д
+             ИЗ ЖурналДокументов.УчетРабочегоВремени КАК Ж ГДЕ Ж.Проведен;",
+        )
+        .unwrap_or_else(|error| panic!("{error}"));
+    assert_contains(&column.sql, "AS \"С\"");
+    assert_contains(&column.sql, "AND \"Ж\".\"_posted\"");
+}

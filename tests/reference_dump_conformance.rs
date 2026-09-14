@@ -341,7 +341,7 @@ fn shared_provider_entries_keep_canonical_identity_across_renumbering() {
                 .is_some_and(|postgres_fields| *postgres_fields == fields)
         })
         .count();
-    assert_eq!(matched_objects, 525);
-    assert_eq!(equivalent_field_sets, 392);
+    assert_eq!(matched_objects, 526);
+    assert_eq!(equivalent_field_sets, 393);
     assert_eq!(equivalent, 26);
 }

@@ -126,6 +126,54 @@ fn rerecord_the_demo_corpus() {
     );
 }
 
+/// Prints where the corpus queries whose diagnostic contains `$GAP` stop,
+/// with the surrounding text, so a gap can be read without guessing:
+/// `GAP="expected field name" cargo test -p open-sdbl --test query_corpus \
+/// -- --ignored locate`.
+#[test]
+#[ignore = "maintenance: reports where the corpus stops"]
+fn locate_the_corpus_gaps() {
+    let root = fixture();
+    let snapshot = support::demo_resolved_at(&root).snapshot;
+    let corpus = std::fs::read_to_string(root.join("corpus.jsonl")).unwrap();
+    let filter = std::env::var("GAP").unwrap_or_default();
+    for (index, line) in corpus
+        .lines()
+        .filter(|line| !line.trim().is_empty())
+        .enumerate()
+    {
+        let query = json_field(line, "text");
+        let (parameters, session) = options(&query);
+        let Err(error) = QueryCompiler::new(&snapshot, PostgresBackend).compile_with(
+            &query,
+            &CompileOptions::new()
+                .parameters(&parameters)
+                .session(&session),
+        ) else {
+            continue;
+        };
+        if !error.message().contains(&filter) {
+            continue;
+        }
+        let offset = error.offset().min(query.len());
+        let start = query[..offset]
+            .char_indices()
+            .rev()
+            .nth(90)
+            .map_or(0, |(index, _)| index);
+        let end = query[offset..]
+            .char_indices()
+            .nth(60)
+            .map_or(query.len(), |(index, _)| offset + index);
+        println!(
+            "#{index} {}\n   …{}<<HERE>>{}…",
+            error.message(),
+            query[start..offset].replace('\n', " "),
+            query[offset..end].replace('\n', " "),
+        );
+    }
+}
+
 /// Writes a JSON string the way the corpus files spell one.
 fn escape(value: &str) -> String {
     let mut out = String::with_capacity(value.len() + 2);
@@ -208,5 +256,5 @@ fn compiles_the_demo_corpus_as_recorded() {
             .join("\n")
     );
     // The share that compiles is recorded so an improvement is visible.
-    assert_eq!(compiled, 237, "queries that compile");
+    assert_eq!(compiled, 239, "queries that compile");
 }

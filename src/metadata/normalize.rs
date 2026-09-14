@@ -17,8 +17,9 @@ pub struct LogicalField {
 /// preserved, except single-letter compound tails after `_`, which are uppercased.
 #[must_use]
 pub fn recase_postgres_identifier(identifier: &str) -> String {
-    const TOKENS: [(&str, &str); 39] = [
+    const TOKENS: [(&str, &str); 40] = [
         ("usersworkhistory", "UsersWorkHistory"),
+        ("documentjournal", "DocumentJournal"),
         ("description", "Description"),
         ("predefinedid", "PredefinedID"),
         ("numberprefix", "NumberPrefix"),

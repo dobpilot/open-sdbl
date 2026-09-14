@@ -5,6 +5,7 @@ use std::sync::Arc;
 use super::constants::ConstantsSource;
 use super::expression::{
     matching_fields, reference_column, reference_type_column, resolve_named_field, single_column,
+    type_constant, value_type_sql,
 };
 use super::orchestrate::PresentationCompilation;
 use super::select::{derived_data_type, derived_owner};
@@ -23,6 +24,7 @@ use crate::query::core::resolve::{
     ColumnKind, CompilationCatalog, CompiledColumn, QueryableColumn, QueryableField,
     is_standard_field_name,
 };
+use crate::query::core::types::TypeValue;
 use crate::query::core::{QueryDiagnostic, QueryDiagnosticKind};
 
 pub(super) struct CompiledBranch {
@@ -352,9 +354,10 @@ impl CompilationContext<'_, '_> {
     /// The standard fields the platform computes instead of storing:
     /// `ЭтоГруппа` is the negation of the `Folder` column, which holds
     /// true for an item, `Предопределенный` says the `PredefinedID`
-    /// column is not the empty reference, and `ИмяПредопределенныхДанных`
-    /// names the predefined item that column identifies. All three are
-    /// measured against the platform.
+    /// column is not the empty reference, `ИмяПредопределенныхДанных`
+    /// names the predefined item that column identifies, and `Тип` of a
+    /// document journal is the type of its reference. All are measured
+    /// against the platform.
     fn computed_standard_field(
         &self,
         owner: ObjectId,
@@ -366,6 +369,9 @@ impl CompilationContext<'_, '_> {
             || names_equal(token.lexeme, "PredefinedDataName")
         {
             return self.predefined_data_name(owner, fields, alias, token);
+        }
+        if names_equal(token.lexeme, "Тип") || names_equal(token.lexeme, "Type") {
+            return self.journal_reference_type(fields, alias, token);
         }
         let (schema_name, negated) = if names_equal(token.lexeme, "ЭтоГруппа")
             || names_equal(token.lexeme, "IsFolder")
@@ -405,6 +411,67 @@ impl CompilationContext<'_, '_> {
             reference_targets: Vec::new(),
         };
         Some((field, self.dialect.boolean_value(&predicate)))
+    }
+
+    /// `Тип` of a document journal answers the type of the registered
+    /// document: the journal stores one reference column when it registers
+    /// a single document kind and an `RTRef ‖ RRRef` pair otherwise, so
+    /// the type value is read from the same members `ТИПЗНАЧЕНИЯ` uses.
+    fn journal_reference_type(
+        &self,
+        fields: &[QueryableField],
+        alias: &str,
+        token: &Token<'_>,
+    ) -> Option<(QueryableField, String)> {
+        let source = fields
+            .iter()
+            .find(|field| names_equal(&field.schema_name, "Document"))?;
+        let type_member = source
+            .columns
+            .iter()
+            .find(|column| column.is_reference_type_member());
+        let value_member = source
+            .columns
+            .iter()
+            .find(|column| column.is_reference_value_member())?;
+        let expression = match type_member {
+            Some(type_member) => format!(
+                "COALESCE({}, {})",
+                self.dialect.reference_payload(
+                    &self.dialect.binary_literal(&[TypeValue::TAG_REFERENCE]),
+                    &self
+                        .dialect
+                        .qualified_column(Some(alias), &type_member.physical_name),
+                ),
+                type_constant(TypeValue::Null, self.dialect),
+            ),
+            None => value_type_sql(
+                &self
+                    .dialect
+                    .qualified_column(Some(alias), &value_member.physical_name),
+                &value_member.kind,
+                true,
+                self.snapshot,
+                self.dialect,
+                token,
+            )
+            .ok()?,
+        };
+        let name = token.lexeme.to_owned();
+        let field = QueryableField {
+            name: name.clone(),
+            schema_name: "Type".to_owned(),
+            aliases: vec![name.clone()],
+            columns: vec![QueryableColumn {
+                physical_name: value_member.physical_name.clone(),
+                data_type: String::new(),
+                output_label: name,
+                kind: ColumnKind::Type,
+            }],
+            reference_target: None,
+            reference_targets: Vec::new(),
+        };
+        Some((field, expression))
     }
 
     /// `ИмяПредопределенныхДанных` names the predefined item a row is. The

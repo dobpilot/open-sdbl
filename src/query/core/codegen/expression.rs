@@ -376,7 +376,7 @@ pub(super) fn type_literal_value(
 }
 
 /// The five-byte SQL constant of a type value.
-fn type_constant(value: TypeValue, dialect: SqlDialect) -> String {
+pub(super) fn type_constant(value: TypeValue, dialect: SqlDialect) -> String {
     dialect.binary_literal(&value.encode())
 }
 

@@ -7927,3 +7927,58 @@ _task708	_fld11474_rrref	bytea
 _task708	_fld11475rref	bytea
 _task708	_fld730rref	bytea
 _task708	_fld731	numeric
+_documentjournal1232	_documenttref	bytea
+_documentjournal1232	_documentrref	bytea
+_documentjournal1232	_date_time	timestamp without time zone
+_documentjournal1232	_marked	boolean
+_documentjournal1232	_posted	boolean
+_documentjournal1232	_number	USER-DEFINED
+_documentjournal1232	_fld1233rref	bytea
+_documentjournal1232	_fld1234rref	bytea
+_documentjournal1232	_fld1235rref	bytea
+_documentjournal1232	_fld1236	timestamp without time zone
+_documentjournal1232	_fld1237	timestamp without time zone
+_documentjournal1232	_fld1238rref	bytea
+_documentjournal1232	_fld1239	USER-DEFINED
+_documentjournal1232	_fld731	numeric
+_documentjournal1240	_documenttref	bytea
+_documentjournal1240	_documentrref	bytea
+_documentjournal1240	_date_time	timestamp without time zone
+_documentjournal1240	_marked	boolean
+_documentjournal1240	_posted	boolean
+_documentjournal1240	_number	USER-DEFINED
+_documentjournal1240	_fld1241	USER-DEFINED
+_documentjournal1240	_fld1242	USER-DEFINED
+_documentjournal1240	_fld1243	boolean
+_documentjournal1240	_fld1244_type	bytea
+_documentjournal1240	_fld1244_rtref	bytea
+_documentjournal1240	_fld1244_rrref	bytea
+_documentjournal1240	_fld731	numeric
+_documentjournal1246	_documenttref	bytea
+_documentjournal1246	_documentrref	bytea
+_documentjournal1246	_date_time	timestamp without time zone
+_documentjournal1246	_marked	boolean
+_documentjournal1246	_posted	boolean
+_documentjournal1246	_number	USER-DEFINED
+_documentjournal1246	_fld1247	USER-DEFINED
+_documentjournal1246	_fld1248rref	bytea
+_documentjournal1246	_fld1249rref	bytea
+_documentjournal1246	_fld1250	timestamp without time zone
+_documentjournal1246	_fld1251	boolean
+_documentjournal1246	_fld1252	USER-DEFINED
+_documentjournal1246	_fld1253	numeric
+_documentjournal1246	_fld1254_type	bytea
+_documentjournal1246	_fld1254_rtref	bytea
+_documentjournal1246	_fld1254_rrref	bytea
+_documentjournal1246	_fld1255	boolean
+_documentjournal1246	_fld1256	timestamp without time zone
+_documentjournal1246	_fld1257rref	bytea
+_documentjournal1246	_fld1258	USER-DEFINED
+_documentjournal1246	_fld1259	timestamp without time zone
+_documentjournal1246	_fld1260_type	bytea
+_documentjournal1246	_fld1260_rtref	bytea
+_documentjournal1246	_fld1260_rrref	bytea
+_documentjournal1246	_fld1261	numeric
+_documentjournal1246	_fld1262	USER-DEFINED
+_documentjournal1246	_fld1263rref	bytea
+_documentjournal1246	_fld731	numeric

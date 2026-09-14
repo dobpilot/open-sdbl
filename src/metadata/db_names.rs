@@ -26,6 +26,8 @@ pub enum MetadataKind {
     Catalog,
     /// Document (`Документ`).
     Document,
+    /// A document journal, whose table lists the registered documents.
+    DocumentJournal,
     /// Enumeration (`Перечисление`).
     Enumeration,
     /// Information register (`РегистрСведений`).
@@ -71,6 +73,7 @@ impl MetadataKind {
         match alias {
             "Reference" => Some(Self::Catalog),
             "Document" => Some(Self::Document),
+            "DocumentJournal" => Some(Self::DocumentJournal),
             "Enum" => Some(Self::Enumeration),
             "InfoRg" => Some(Self::InformationRegister),
             "AccumRg" => Some(Self::AccumulationRegister),
@@ -108,6 +111,7 @@ impl MetadataKind {
         match self {
             Self::Catalog => "Reference",
             Self::Document => "Document",
+            Self::DocumentJournal => "DocumentJournal",
             Self::Enumeration => "Enum",
             Self::InformationRegister => "InfoRg",
             Self::AccumulationRegister => "AccumRg",
@@ -135,6 +139,7 @@ impl MetadataKind {
         match self {
             Self::Catalog => "_Reference",
             Self::Document => "_Document",
+            Self::DocumentJournal => "_DocumentJournal",
             Self::Enumeration => "_Enum",
             Self::InformationRegister => "_InfoRg",
             Self::AccumulationRegister => "_AccumRg",
@@ -162,6 +167,7 @@ impl MetadataKind {
         match self {
             Self::Catalog => "Catalog",
             Self::Document => "Document",
+            Self::DocumentJournal => "DocumentJournal",
             Self::Enumeration => "Enumeration",
             Self::InformationRegister => "InformationRegister",
             Self::AccumulationRegister => "AccumulationRegister",

@@ -165,10 +165,12 @@ pub struct QueryableColumn {
 }
 
 impl QueryableColumn {
-    /// Whether this member is the `RTRef` discriminator of a reference field.
+    /// Whether this member is the type discriminator of a reference field:
+    /// an attribute spells it `RTRef`, a document journal `DocumentTRef`.
     #[must_use]
     pub fn is_reference_type_member(&self) -> bool {
-        self.physical_name.to_ascii_lowercase().ends_with("rtref")
+        let lower = self.physical_name.to_ascii_lowercase();
+        lower.ends_with("rtref") || lower.ends_with("documenttref")
     }
 
     /// Whether this member is the `RRRef`/`IDRRef` value of a reference field.
@@ -253,6 +255,9 @@ pub(super) fn compound_label(display_name: &str, schema_name: &str, physical_nam
 pub(super) fn standard_field_aliases(schema_name: &str) -> &'static [&'static str] {
     match schema_name {
         "ID" => &["ID", "Ссылка"],
+        // The reference column of a document journal, which the platform
+        // exposes as the journal's Ссылка.
+        "Document" => &["Document", "Ссылка", "Ref"],
         "Code" => &["Code", "Код"],
         "Description" => &["Description", "Наименование"],
         "Marked" => &["Marked", "ПометкаУдаления"],
@@ -271,8 +276,9 @@ pub(super) fn standard_field_aliases(schema_name: &str) -> &'static [&'static st
 }
 
 /// Every standard field the compiler knows, by SchemaStorage name.
-const STANDARD_FIELD_NAMES: [&str; 17] = [
+const STANDARD_FIELD_NAMES: [&str; 18] = [
     "ID",
+    "Document",
     "Code",
     "Description",
     "Marked",
@@ -306,12 +312,16 @@ pub(super) fn is_standard_field_name(name: &str) -> bool {
 
 /// Query-language names of the metadata kinds: the English name, the
 /// short table prefix, and the Russian name.
-const KIND_QUERY_NAMES: [(MetadataKind, [&str; 3]); 20] = [
+const KIND_QUERY_NAMES: [(MetadataKind, [&str; 3]); 21] = [
     (
         MetadataKind::Catalog,
         ["Catalog", "Reference", "Справочник"],
     ),
     (MetadataKind::Document, ["Document", "Document", "Документ"]),
+    (
+        MetadataKind::DocumentJournal,
+        ["DocumentJournal", "DocumentJournal", "ЖурналДокументов"],
+    ),
     (
         MetadataKind::Enumeration,
         ["Enumeration", "Enum", "Перечисление"],
