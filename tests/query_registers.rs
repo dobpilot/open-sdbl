@@ -271,3 +271,21 @@ fn groups_turnovers_by_recorder_and_record() {
         .unwrap_err();
     assert!(missing.message().contains("was not found"), "{missing}");
 }
+
+#[test]
+fn names_the_movement_type_as_the_query_does() {
+    // `ВидДвижения` is how a query writes the movement type; the
+    // SchemaStorage spelling is `RecordKind`. Both name the same column,
+    // checked on the platform.
+    let snapshot = accumulation_register_snapshot();
+    let by_query_name = postgres(
+        &snapshot,
+        "ВЫБРАТЬ Р.ВидДвижения КАК Вид ИЗ РегистрНакопления.Остатки КАК Р;",
+    );
+    let by_schema_name = postgres(
+        &snapshot,
+        "ВЫБРАТЬ Р.RecordKind КАК Вид ИЗ РегистрНакопления.Остатки КАК Р;",
+    );
+    assert_eq!(by_query_name.sql, by_schema_name.sql);
+    assert_contains(&by_query_name.sql, "\"_recordkind\" AS \"Вид\"");
+}

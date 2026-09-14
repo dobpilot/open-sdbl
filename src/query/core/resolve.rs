@@ -266,6 +266,10 @@ pub(super) fn standard_field_aliases(schema_name: &str) -> &'static [&'static st
         "Date" => &["Date", "Дата"],
         "Posted" => &["Posted", "Проведен"],
         "Recorder" => &["Recorder", "Регистратор"],
+        // The movement type of an accumulation register, checked on the
+        // platform: the query names it `ВидДвижения`, SchemaStorage
+        // spells it `RecordKind`.
+        "RecordKind" => &["RecordKind", "ВидДвижения", "RecordType"],
         "LineNo" => &["LineNo", "НомерСтроки"],
         "Period" => &["Period", "Период"],
         "Active" => &["Active", "Активность"],
