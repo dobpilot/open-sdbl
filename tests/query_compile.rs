@@ -3991,14 +3991,19 @@ fn widens_references_in_case_isnull_and_union() {
 #[test]
 fn diagnoses_incompatible_conditional_branches() {
     let snapshot = snapshot();
-    let error = postgres_compile!(
+    // Alternatives of different types are one value of a composite type,
+    // which the platform answers and which is projected by member.
+    let composite = postgres_compile!(
         "SELECT CASE WHEN Code = \"A\" THEN 1 ELSE \"x\" END FROM Catalog.OpenSdblMetadataProbe;",
         &snapshot,
     )
-    .unwrap_err();
-    assert_eq!(error.kind(), QueryDiagnosticKind::UnsupportedFeature);
-    assert_eq!((error.line(), error.column()), (1, 41));
-    assert!(error.message().contains("kinds differ"));
+    .unwrap();
+    let labels = composite
+        .columns
+        .iter()
+        .map(|column| column.label.as_str())
+        .collect::<Vec<_>>();
+    assert_eq!(labels, ["__expr1_N", "__expr1_S", "__expr1_TYPE"]);
 
     let missing = postgres_compile!(
         "SELECT CASE END FROM Catalog.OpenSdblMetadataProbe;",
@@ -4014,12 +4019,20 @@ fn diagnoses_incompatible_conditional_branches() {
     .unwrap_err();
     assert_eq!(one_argument.kind(), QueryDiagnosticKind::Syntax);
 
+    // `ЕСТЬNULL` of two types answers a composite value too.
     let mismatch = postgres_compile!(
         "SELECT ISNULL(Code, 5) FROM Catalog.OpenSdblMetadataProbe;",
         &snapshot,
     )
-    .unwrap_err();
-    assert_eq!(mismatch.kind(), QueryDiagnosticKind::UnsupportedFeature);
+    .unwrap();
+    assert_eq!(mismatch.columns.len(), 3);
+    assert!(
+        mismatch
+            .sql
+            .contains("THEN decode('05', 'hex') ELSE decode('03', 'hex')"),
+        "{}",
+        mismatch.sql
+    );
 }
 
 #[test]

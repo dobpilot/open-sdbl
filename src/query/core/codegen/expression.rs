@@ -1227,6 +1227,245 @@ pub(super) fn unify_operands(
     Ok(common.kind)
 }
 
+/// Renders a projected `ВЫБОР` or `ЕСТЬNULL` whose branches differ in
+/// type as the members of a composite value. Returns `None` for every
+/// other expression and whenever the branches agree on one kind.
+pub(super) fn compile_composite_projection(
+    expression: &Expression<'_, '_>,
+    context: &mut CompilationContext<'_, '_>,
+) -> Result<Option<Vec<CompositeMember>>, QueryDiagnostic> {
+    let snapshot = context.snapshot;
+    let dialect = context.dialect;
+    match expression {
+        Expression::Case {
+            subject,
+            branches,
+            otherwise,
+            ..
+        } => {
+            let mut conditions = Vec::with_capacity(branches.len());
+            let mut values = Vec::with_capacity(branches.len() + 1);
+            for branch in branches {
+                conditions.push(match subject.as_deref() {
+                    Some(subject) => {
+                        compile_case_match(subject, &branch.when, branch.token, context)?
+                    }
+                    None => compile_predicate(&branch.when, context)?,
+                });
+                let (sql, kind) = value_operand(&branch.then, context)?;
+                values.push(Operand {
+                    token: branch.token,
+                    sql,
+                    kind,
+                });
+            }
+            if let Some(otherwise) = otherwise.as_deref() {
+                let (sql, kind) = value_operand(otherwise, context)?;
+                values.push(Operand {
+                    token: operand_token(otherwise).unwrap_or(branches[0].token),
+                    sql,
+                    kind,
+                });
+            }
+            compile_composite_alternatives(
+                &conditions,
+                &mut values,
+                otherwise.is_some(),
+                snapshot,
+                dialect,
+            )
+        }
+        Expression::IsNullFunction {
+            token,
+            value,
+            fallback,
+        } => {
+            let (value_sql, value_kind) = value_operand(value, context)?;
+            let (fallback_sql, fallback_kind) = value_operand(fallback, context)?;
+            let condition = format!("({value_sql} IS NOT NULL)");
+            let mut values = vec![
+                Operand {
+                    token,
+                    sql: value_sql,
+                    kind: value_kind,
+                },
+                Operand {
+                    token,
+                    sql: fallback_sql,
+                    kind: fallback_kind,
+                },
+            ];
+            compile_composite_alternatives(
+                std::slice::from_ref(&condition),
+                &mut values,
+                true,
+                snapshot,
+                dialect,
+            )
+        }
+        _ => Ok(None),
+    }
+}
+
+/// One physical member of a composite result: the suffix its output label
+/// carries, the rendered value and the kind of that column.
+pub(super) struct CompositeMember {
+    pub(super) suffix: &'static str,
+    pub(super) sql: String,
+    pub(super) kind: ColumnKind,
+}
+
+/// The member a value of this kind occupies in a composite result, with
+/// the value every other branch writes there. Mirrors how the platform
+/// stores a value of several types and how a composite field is projected.
+fn composite_member_of(kind: &ColumnKind) -> Option<(&'static str, TypeValue)> {
+    match kind {
+        ColumnKind::String { .. } => Some(("_S", TypeValue::String)),
+        ColumnKind::Number { .. } => Some(("_N", TypeValue::Number)),
+        ColumnKind::DateTime => Some(("_T", TypeValue::Date)),
+        ColumnKind::Boolean => Some(("_L", TypeValue::Boolean)),
+        ColumnKind::Reference { .. } => Some(("", TypeValue::Reference(0))),
+        ColumnKind::Undefined => Some(("", TypeValue::Undefined)),
+        ColumnKind::Null => Some(("", TypeValue::Null)),
+        _ => None,
+    }
+}
+
+/// The value a branch of another type writes into this member: the zero of
+/// its type, as the platform writes it.
+fn composite_member_zero(suffix: &str, dialect: SqlDialect) -> String {
+    match suffix {
+        "_S" => dialect.string_literal(""),
+        "_N" => "0".to_owned(),
+        "_T" => dialect.zero_datetime(),
+        "_L" => dialect.boolean_literal(false).to_owned(),
+        _ => dialect.binary_literal(&[0; 20]),
+    }
+}
+
+/// The kind of a composite member column.
+fn composite_member_kind(suffix: &str) -> ColumnKind {
+    match suffix {
+        "_S" => ColumnKind::String { length: None },
+        "_N" => ColumnKind::Number {
+            precision: None,
+            scale: None,
+        },
+        "_T" => ColumnKind::DateTime,
+        "_L" => ColumnKind::Boolean,
+        _ => ColumnKind::Reference {
+            targets: Vec::new(),
+            runtime_typed: true,
+        },
+    }
+}
+
+/// Renders an alternative-valued expression whose branches differ in type
+/// as the members the platform spreads such a value over: the `_TYPE`
+/// discriminator, the member of every type present, and the reference
+/// payload. Returns `None` when the branches agree on one kind, which the
+/// ordinary path renders as a single column.
+pub(super) fn compile_composite_alternatives(
+    conditions: &[String],
+    values: &mut [Operand<'_, '_>],
+    has_else: bool,
+    snapshot: &MetadataSnapshot,
+    dialect: SqlDialect,
+) -> Result<Option<Vec<CompositeMember>>, QueryDiagnostic> {
+    if common_kind(values).is_ok() {
+        return Ok(None);
+    }
+    let mut tags = Vec::with_capacity(values.len());
+    for operand in values.iter_mut() {
+        let Some((suffix, tag)) = composite_member_of(&operand.kind) else {
+            return Ok(None);
+        };
+        if matches!(operand.kind, ColumnKind::Reference { .. }) {
+            let (sql, kind) = widen_reference(
+                &operand.sql,
+                &operand.kind,
+                Some(operand.token),
+                snapshot,
+                dialect,
+            )?;
+            operand.sql = sql;
+            let tag = match kind {
+                ColumnKind::Reference { .. } => TypeValue::Reference(0),
+                _ => tag,
+            };
+            operand.kind = kind;
+            tags.push((suffix, tag));
+        } else {
+            tags.push((suffix, tag));
+        }
+    }
+    let mut suffixes = Vec::new();
+    for (suffix, _) in &tags {
+        if !suffixes.contains(suffix) {
+            suffixes.push(*suffix);
+        }
+    }
+    // The payload member comes first, the way a composite field projects
+    // one; it is present only when a branch carries a reference.
+    suffixes.sort_by_key(|suffix| if suffix.is_empty() { 0 } else { 1 });
+    let render = |member: &str| -> String {
+        let mut sql = String::from("CASE");
+        for (index, (condition, (operand, (suffix, _)))) in conditions
+            .iter()
+            .zip(values.iter().zip(tags.iter()))
+            .enumerate()
+        {
+            let _ = index;
+            sql.push_str(" WHEN ");
+            sql.push_str(condition);
+            sql.push_str(" THEN ");
+            if *suffix == member {
+                sql.push_str(&operand.sql);
+            } else {
+                sql.push_str(&composite_member_zero(member, dialect));
+            }
+        }
+        if has_else {
+            let last = values.len() - 1;
+            sql.push_str(" ELSE ");
+            if tags[last].0 == member {
+                sql.push_str(&values[last].sql);
+            } else {
+                sql.push_str(&composite_member_zero(member, dialect));
+            }
+        }
+        sql.push_str(" END");
+        sql
+    };
+    let mut members = suffixes
+        .iter()
+        .map(|suffix| CompositeMember {
+            suffix,
+            sql: render(suffix),
+            kind: composite_member_kind(suffix),
+        })
+        .collect::<Vec<_>>();
+    // The discriminator says which member holds the value of a row.
+    let mut tag_sql = String::from("CASE");
+    for (condition, (_, tag)) in conditions.iter().zip(tags.iter()) {
+        tag_sql.push_str(" WHEN ");
+        tag_sql.push_str(condition);
+        tag_sql.push_str(" THEN ");
+        tag_sql.push_str(&dialect.binary_literal(&[tag.tag()]));
+    }
+    if has_else {
+        tag_sql.push_str(" ELSE ");
+        tag_sql.push_str(&dialect.binary_literal(&[tags[values.len() - 1].1.tag()]));
+    }
+    tag_sql.push_str(" END");
+    members.push(CompositeMember {
+        suffix: "_TYPE",
+        sql: tag_sql,
+        kind: ColumnKind::Binary { length: Some(1) },
+    });
+    Ok(Some(members))
+}
+
 /// Renders `CASE WHEN … THEN … [ELSE …] END` from compiled alternatives.
 /// `values` holds one operand per `WHEN` followed by the `ELSE` operand when
 /// `has_else` is set.

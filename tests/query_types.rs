@@ -424,3 +424,47 @@ fn compiles_the_simple_case_form() {
     );
     assert_contains(&searched.sql, "CASE WHEN (\"__src\".\"_idrref\" IS NULL)");
 }
+
+#[test]
+fn projects_alternatives_of_different_types_by_member() {
+    // The platform answers a value of several types and stores it by
+    // member; measured on the probe base, both for a string against a
+    // reference and for two primitive types.
+    let snapshot = universal_dereferenced_presentation_snapshot();
+    let compiled = postgres(
+        &snapshot,
+        &format!(
+            "ВЫБРАТЬ ВЫБОР КОГДА Ссылка ЕСТЬ NULL ТОГДА \"нет\" ИНАЧЕ ДоговорКонтрагента КОНЕЦ
+                КАК Смесь ИЗ {DOCUMENT};"
+        ),
+    );
+    let labels = compiled
+        .columns
+        .iter()
+        .map(|column| column.label.as_str())
+        .collect::<Vec<_>>();
+    assert_eq!(labels, ["Смесь", "Смесь_S", "Смесь_TYPE"]);
+    assert_contains(&compiled.sql, "THEN 'нет' ELSE ''");
+    assert_contains(
+        &compiled.sql,
+        "THEN decode('05', 'hex') ELSE decode('08', 'hex') END AS \"Смесь_TYPE\"",
+    );
+    assert!(
+        matches!(
+            compiled.columns[0].kind,
+            ColumnKind::Reference {
+                runtime_typed: true,
+                ..
+            }
+        ),
+        "{:?}",
+        compiled.columns[0].kind
+    );
+
+    // Alternatives that agree on a kind keep their single column.
+    let single = postgres(
+        &snapshot,
+        &format!("ВЫБРАТЬ ВЫБОР КОГДА Ссылка ЕСТЬ NULL ТОГДА 1 ИНАЧЕ 2 КОНЕЦ КАК Ч ИЗ {DOCUMENT};"),
+    );
+    assert_eq!(single.columns.len(), 1);
+}

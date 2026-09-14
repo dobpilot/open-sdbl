@@ -5,8 +5,8 @@ use super::context::{
     compile_presentation, projected_members,
 };
 use super::expression::{
-    compile_aggregate, compile_expression, compile_predicate, expression_kind, reference_column,
-    reference_type_column, single_column, widen_reference,
+    compile_aggregate, compile_composite_projection, compile_expression, compile_predicate,
+    expression_kind, reference_column, reference_type_column, single_column, widen_reference,
 };
 use super::orchestrate::{PresentationCompilation, compile_query_ast};
 use super::params::{reference_constant_of_bytes, reference_constant_of_value};
@@ -806,6 +806,24 @@ fn compile_selected_projections(
             }
             Projection::Scalar(expression) => {
                 let number = selected.len() + 1;
+                // Alternatives of different types are one value of a
+                // composite type, which the platform spreads over the
+                // members of that type.
+                if let Some(members) = compile_composite_projection(expression, context)? {
+                    let label = projection.alias.map_or_else(
+                        || format!("__expr{number}"),
+                        |alias| alias.lexeme.to_owned(),
+                    );
+                    for member in members {
+                        selected.push(SelectedProjection::Generated {
+                            sql: member.sql,
+                            label: format!("{label}{}", member.suffix),
+                            deferred: false,
+                            kind: member.kind,
+                        });
+                    }
+                    continue;
+                }
                 let sql = compile_expression(expression, context)?;
                 let kind = expression_kind(expression, context)?;
                 selected.push(SelectedProjection::Generated {

@@ -920,6 +920,15 @@ impl SqlDialect {
         self.literal_for_type(token, "datetime2")
     }
 
+    /// The zero date of the 1C domain, which a composite value writes into
+    /// its date member when it holds another type.
+    pub(super) fn zero_datetime(self) -> String {
+        match self {
+            Self::Postgres => "'0001-01-01 00:00:00'::timestamp".to_owned(),
+            Self::MsSql { .. } => "CONVERT(datetime2, '00010101', 112)".to_owned(),
+        }
+    }
+
     pub(super) fn null_text(self) -> &'static str {
         match self {
             Self::Postgres => "NULL::text",
