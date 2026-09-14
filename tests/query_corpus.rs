@@ -8,9 +8,10 @@ mod support;
 use std::collections::BTreeSet;
 use std::path::PathBuf;
 
+use open_sdbl::metadata::{FieldId, MetadataSnapshot, StandardFieldId};
 use open_sdbl::query::{
-    CompileOptions, ParameterValue, PostgresBackend, QueryCompiler, QueryParameter,
-    SessionParameters,
+    CompileOptions, ParameterValue, PostgresBackend, PresentationExpression, PresentationPlan,
+    QueryCompiler, QueryParameter, SessionParameters, queryable_fields,
 };
 use open_sdbl::{TokenKind, tokenize};
 
@@ -101,6 +102,77 @@ fn options(text: &str) -> (Vec<QueryParameter>, SessionParameters) {
     (parameters, session)
 }
 
+/// Compiles one corpus query. A query that asks for a reference
+/// presentation needs the two-phase protocol — the application answers the
+/// request with a plan — so the harness stands in for the application and
+/// presents every requested object by its description, falling back to its
+/// code and then to a fixed literal. Without this the recorded result would
+/// say the harness omitted a plan, not what the compiler does.
+fn compile_corpus_query(
+    snapshot: &MetadataSnapshot,
+    query: &str,
+    parameters: &[QueryParameter],
+    session: &SessionParameters,
+) -> Result<String, open_sdbl::query::QueryDiagnostic> {
+    let options = CompileOptions::new()
+        .parameters(parameters)
+        .session(session);
+    let direct = QueryCompiler::new(snapshot, PostgresBackend).compile_with(query, &options);
+    if !matches!(
+        &direct,
+        Err(error) if error.kind() == open_sdbl::query::QueryDiagnosticKind::PresentationPlan
+    ) {
+        return direct.map(|compiled| compiled.sql);
+    }
+    let prepared = QueryCompiler::new(snapshot, PostgresBackend).prepare(query)?;
+    let plans = prepared
+        .presentation_request()
+        .targets
+        .iter()
+        .map(|target| stand_in_plan(snapshot, target.object))
+        .collect::<Vec<_>>();
+    prepared
+        .compile_with(snapshot, &options.presentations(&plans))
+        .map(|compiled| compiled.sql)
+}
+
+/// The plan the harness answers with: the object's description, else its
+/// code, else a literal that names no column.
+fn stand_in_plan(
+    snapshot: &MetadataSnapshot,
+    object: open_sdbl::metadata::ObjectId,
+) -> PresentationPlan {
+    let has = |name: &str| {
+        snapshot
+            .object_by_id(object)
+            .and_then(|object| queryable_fields(snapshot, object).ok())
+            .is_some_and(|fields| {
+                fields
+                    .iter()
+                    .any(|field| field.schema_name.eq_ignore_ascii_case(name))
+            })
+    };
+    let field = if has("Description") {
+        Some(FieldId::Standard(StandardFieldId::Description))
+    } else if has("Code") {
+        Some(FieldId::Standard(StandardFieldId::Code))
+    } else {
+        None
+    };
+    match field {
+        Some(field) => PresentationPlan {
+            object,
+            fields: vec![field],
+            expression: PresentationExpression::Field(field),
+        },
+        None => PresentationPlan {
+            object,
+            fields: Vec::new(),
+            expression: PresentationExpression::Literal("<представление>".to_owned()),
+        },
+    }
+}
+
 /// Rewrites `expected.jsonl` from the current compiler. Run it after a
 /// change that the corpus test reports, and commit the diff:
 /// `cargo test -p open-sdbl --test query_corpus -- --ignored`.
@@ -115,15 +187,10 @@ fn rerecord_the_demo_corpus() {
     for line in corpus.lines().filter(|line| !line.trim().is_empty()) {
         let query = json_field(line, "text");
         let (parameters, session) = options(&query);
-        let outcome = match QueryCompiler::new(&snapshot, PostgresBackend).compile_with(
-            &query,
-            &CompileOptions::new()
-                .parameters(&parameters)
-                .session(&session),
-        ) {
-            Ok(result) => {
+        let outcome = match compile_corpus_query(&snapshot, &query, &parameters, &session) {
+            Ok(sql) => {
                 compiled += 1;
-                result.sql
+                sql
             }
             Err(error) => format!("!{:?}: {}", error.kind(), error.message()),
         };
@@ -155,12 +222,7 @@ fn locate_the_corpus_gaps() {
     {
         let query = json_field(line, "text");
         let (parameters, session) = options(&query);
-        let Err(error) = QueryCompiler::new(&snapshot, PostgresBackend).compile_with(
-            &query,
-            &CompileOptions::new()
-                .parameters(&parameters)
-                .session(&session),
-        ) else {
+        let Err(error) = compile_corpus_query(&snapshot, &query, &parameters, &session) else {
             continue;
         };
         if !error.message().contains(&filter) {
@@ -232,15 +294,10 @@ fn compiles_the_demo_corpus_as_recorded() {
     let mut compiled = 0usize;
     for (index, (query, expected)) in queries.iter().zip(&recorded).enumerate() {
         let (parameters, session) = options(query);
-        let outcome = match QueryCompiler::new(&snapshot, PostgresBackend).compile_with(
-            query,
-            &CompileOptions::new()
-                .parameters(&parameters)
-                .session(&session),
-        ) {
-            Ok(result) => {
+        let outcome = match compile_corpus_query(&snapshot, query, &parameters, &session) {
+            Ok(sql) => {
                 compiled += 1;
-                result.sql
+                sql
             }
             Err(error) => format!("!{:?}: {}", error.kind(), error.message()),
         };
@@ -267,5 +324,5 @@ fn compiles_the_demo_corpus_as_recorded() {
             .join("\n")
     );
     // The share that compiles is recorded so an improvement is visible.
-    assert_eq!(compiled, 318, "queries that compile");
+    assert_eq!(compiled, 322, "queries that compile");
 }
