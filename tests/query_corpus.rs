@@ -77,6 +77,17 @@ fn options(text: &str) -> (Vec<QueryParameter>, SessionParameters) {
         ),
         ("ОбластьДанныхИспользование", ParameterValue::Boolean(false)),
         (
+            "ОбластьДанныхОсновныеДанные",
+            ParameterValue::Number {
+                unscaled: 0,
+                scale: 0,
+            },
+        ),
+        (
+            "ИспользованиеРазделителяСеанса",
+            ParameterValue::Boolean(false),
+        ),
+        (
             "ЗначениеРазделителя",
             ParameterValue::Number {
                 unscaled: 0,
@@ -256,5 +267,5 @@ fn compiles_the_demo_corpus_as_recorded() {
             .join("\n")
     );
     // The share that compiles is recorded so an improvement is visible.
-    assert_eq!(compiled, 239, "queries that compile");
+    assert_eq!(compiled, 262, "queries that compile");
 }

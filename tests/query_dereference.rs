@@ -159,6 +159,13 @@ fn resolves_the_computed_standard_fields() {
             "ИспользованиеРазделителя",
             open_sdbl::query::ParameterValue::Boolean(false),
         ));
+        session.set(open_sdbl::query::QueryParameter::new(
+            "ОбластьДанныхОсновныеДанные",
+            open_sdbl::query::ParameterValue::Number {
+                unscaled: 0,
+                scale: 0,
+            },
+        ));
         QueryCompiler::new(snapshot, PostgresBackend)
             .compile_with(
                 source,
@@ -202,6 +209,13 @@ fn resolves_the_computed_standard_fields() {
     session.set(open_sdbl::query::QueryParameter::new(
         "ИспользованиеРазделителя",
         open_sdbl::query::ParameterValue::Boolean(false),
+    ));
+    session.set(open_sdbl::query::QueryParameter::new(
+        "ОбластьДанныхОсновныеДанные",
+        open_sdbl::query::ParameterValue::Number {
+            unscaled: 0,
+            scale: 0,
+        },
     ));
     let mssql = QueryCompiler::new(&snapshot, MsSqlBackend::new(0).unwrap())
         .compile_with(
@@ -271,7 +285,10 @@ fn resolves_the_computed_standard_fields() {
     // A document stores no predefined identity, so the name is unknown
     // there, as it is on the platform.
     let error = QueryCompiler::new(&snapshot, PostgresBackend)
-        .compile("ВЫБРАТЬ Д.ИмяПредопределенныхДанных ИЗ Документ.ВходящееПисьмо КАК Д;")
+        .compile_with(
+            "ВЫБРАТЬ Д.ИмяПредопределенныхДанных ИЗ Документ.ВходящееПисьмо КАК Д;",
+            &open_sdbl::query::CompileOptions::new().session(&session),
+        )
         .unwrap_err();
     assert!(
         format!("{error}").contains("ИмяПредопределенныхДанных"),
@@ -289,11 +306,21 @@ fn reads_a_document_journal() {
         &std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/demo"),
     )
     .snapshot;
+    let mut session = open_sdbl::query::SessionParameters::new();
+    session.set(open_sdbl::query::QueryParameter::new(
+        "ОбластьДанныхОсновныеДанные",
+        open_sdbl::query::ParameterValue::Number {
+            unscaled: 0,
+            scale: 0,
+        },
+    ));
+    let options = open_sdbl::query::CompileOptions::new().session(&session);
     let compiled = QueryCompiler::new(&snapshot, PostgresBackend)
-        .compile(
+        .compile_with(
             "ВЫБРАТЬ Ж.Ссылка КАК С, Ж.Тип КАК Т, Ж.Дата КАК Д, Ж.Номер КАК Н,
                     Ж.ПометкаУдаления КАК П, Ж.Проведен КАК Пр
              ИЗ ЖурналДокументов.УчетРабочегоВремени КАК Ж;",
+            &options,
         )
         .unwrap_or_else(|error| panic!("{error}"));
     assert_contains(&compiled.sql, "FROM \"_documentjournal1240\" AS \"Ж\"");
@@ -310,9 +337,10 @@ fn reads_a_document_journal() {
     // The journal's own column answers under its metadata name, and the
     // reference joins like any other.
     let column = QueryCompiler::new(&snapshot, PostgresBackend)
-        .compile(
+        .compile_with(
             "ВЫБРАТЬ Ж.Сотрудник КАК С, Ж.ДлительностьРабот КАК Д
              ИЗ ЖурналДокументов.УчетРабочегоВремени КАК Ж ГДЕ Ж.Проведен;",
+            &options,
         )
         .unwrap_or_else(|error| panic!("{error}"));
     assert_contains(&column.sql, "AS \"С\"");
