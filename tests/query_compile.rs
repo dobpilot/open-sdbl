@@ -1924,10 +1924,17 @@ fn compiles_english_distinct_wildcard_and_real_document_date_spelling() {
 
     assert!(compiled.sql.starts_with("SELECT DISTINCT "));
     assert!(compiled.sql.contains("\"_date_time\" AS \"Date\""));
+    // `DISTINCT` keeps only the projected values, so SQL orders such a
+    // statement by a projected column, addressed by its position.
     assert!(
-        compiled
-            .sql
-            .ends_with("ORDER BY \"__src\".\"_date_time\" DESC")
+        compiled.sql.contains(" ORDER BY ") && compiled.sql.ends_with(" DESC"),
+        "{}",
+        compiled.sql
+    );
+    assert!(
+        !compiled.sql.ends_with("\"__src\".\"_date_time\" DESC"),
+        "{}",
+        compiled.sql
     );
     assert!(
         compiled
@@ -6588,4 +6595,35 @@ fn accepts_constants_and_concatenates_strings() {
         mixed.message().contains("concatenates strings only"),
         "{mixed}"
     );
+}
+
+#[test]
+fn orders_a_distinct_statement_by_its_projection() {
+    // `DISTINCT` keeps only the projected values, so SQL refuses an
+    // ordering expression that is not one of them. A string column is
+    // projected with a text cast, so ordering by the bare column made the
+    // statement invalid — found by running the platform probes through the
+    // compiler against the same base.
+    let snapshot = snapshot();
+    let compiled = postgres_compile!(
+        "ВЫБРАТЬ РАЗЛИЧНЫЕ Т.Code КАК Имя ИЗ Справочник.OpenSdblMetadataProbe КАК Т
+         УПОРЯДОЧИТЬ ПО Имя;",
+        &snapshot,
+    )
+    .unwrap();
+    assert!(compiled.sql.starts_with("SELECT DISTINCT "));
+    assert!(
+        compiled.sql.ends_with("ORDER BY 1 ASC"),
+        "the ordering addresses the projected column: {}",
+        compiled.sql
+    );
+
+    let outside = postgres_compile!(
+        "ВЫБРАТЬ РАЗЛИЧНЫЕ Т.Code КАК Имя ИЗ Справочник.OpenSdblMetadataProbe КАК Т
+         УПОРЯДОЧИТЬ ПО Т.Date;",
+        &snapshot,
+    )
+    .unwrap_err();
+    assert_eq!(outside.kind(), QueryDiagnosticKind::UnsupportedFeature);
+    assert!(outside.message().contains("DISTINCT"), "{outside}");
 }

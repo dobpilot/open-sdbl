@@ -171,11 +171,15 @@ pub(super) fn compile_branch(
         ast,
         &selected,
         &mut context,
-        union_order || !joins.is_empty() || grouped,
+        // `РАЗЛИЧНЫЕ` keeps only the projected values, so SQL orders such
+        // a statement by its projected columns and nothing else.
+        union_order || !joins.is_empty() || grouped || ast.distinct,
         if grouped {
             "GROUP BY ORDER BY field must be a key or a projection alias"
         } else if !joins.is_empty() {
             "JOIN ORDER BY field must occur in the projection"
+        } else if ast.distinct {
+            "DISTINCT ORDER BY field must occur in the projection"
         } else {
             "UNION ORDER BY field must occur in the first branch projection"
         },
