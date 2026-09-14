@@ -2,7 +2,7 @@ use std::cell::RefCell;
 use std::collections::BTreeSet;
 
 use super::context::{CompilationContext, SourceScope};
-use super::expression::{compile_expression, operand_token, single_column, single_column_at};
+use super::expression::{compile_predicate, operand_token, single_column, single_column_at};
 use super::params::render_scalar_parameter;
 use super::separators::separator_predicates;
 use super::sources::{CompiledSourceRelation, SourceRestriction, compile_restriction_predicate};
@@ -1113,7 +1113,7 @@ fn compile_accumulation_condition(
         source_elements: vec![0],
         local_sources: 1,
     };
-    let sql = compile_expression(condition, &mut context)?;
+    let sql = compile_predicate(condition, &mut context)?;
     if !context.sources[0].reference_joins.is_empty() {
         return Err(QueryDiagnostic::at(
             QueryDiagnosticKind::UnsupportedFeature,

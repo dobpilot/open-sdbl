@@ -70,33 +70,6 @@ pub(super) fn compile_predicate(
                 },
             )
         }
-        Expression::Like {
-            token,
-            value,
-            pattern,
-            escape,
-            negated,
-        } => {
-            let value_sql = compile_expression(value, context)?;
-            let pattern_sql = compile_expression(pattern, context)?;
-            let escape_sql = escape
-                .as_ref()
-                .map(|escape| compile_expression(escape, context))
-                .transpose()?;
-            for operand in [value.as_ref(), pattern.as_ref()]
-                .into_iter()
-                .chain(escape.as_deref())
-            {
-                let kind = expression_kind(operand, context)?;
-                check_like_operand(token, &kind)?;
-            }
-            Ok(render_like(
-                &value_sql,
-                &pattern_sql,
-                escape_sql.as_deref(),
-                *negated,
-            ))
-        }
         Expression::Unary { operator, value }
             if operator.kind == TokenKind::Keyword(Keyword::Not) =>
         {
@@ -137,9 +110,35 @@ pub(super) fn compile_predicate(
             }
             Ok(sql)
         }
-        _ => compile_expression(expression, context),
+        _ => compile_logical_or_value(expression, context),
     }
 }
+
+/// Whether an expression is a logical one. The platform lets such an
+/// expression stand as a value, and a dialect without boolean values needs
+/// it wrapped there, while a predicate position takes it as it is.
+fn is_logical(expression: &Expression<'_, '_>) -> bool {
+    match expression {
+        Expression::Refs { .. }
+        | Expression::Between { .. }
+        | Expression::IsNull { .. }
+        | Expression::Like { .. }
+        | Expression::InQuery { .. }
+        | Expression::InList { .. } => true,
+        Expression::Unary { operator, .. } => operator.kind == TokenKind::Keyword(Keyword::Not),
+        Expression::Binary { operator, .. } => {
+            matches!(
+                operator.kind,
+                TokenKind::Keyword(Keyword::And | Keyword::Or)
+            ) || COMPARISON_LEXEMES.contains(&operator.lexeme)
+        }
+        _ => false,
+    }
+}
+
+/// The comparison spellings, which produce a boolean like the other
+/// logical forms.
+const COMPARISON_LEXEMES: [&str; 6] = ["=", "<>", "<", "<=", ">", ">="];
 
 /// A `<Kind>.<Object>` cast target before resolution.
 #[derive(Clone, Copy)]
@@ -1823,7 +1822,23 @@ fn literal_kind(token: &Token<'_>) -> ColumnKind {
     }
 }
 
+/// Compiles an expression in a value position. A logical expression is a
+/// value in SDBL, so it is wrapped in the boolean value form of the
+/// dialect; every other expression renders as it is.
 pub(super) fn compile_expression(
+    expression: &Expression<'_, '_>,
+    context: &mut CompilationContext<'_, '_>,
+) -> Result<String, QueryDiagnostic> {
+    let sql = compile_logical_or_value(expression, context)?;
+    if is_logical(expression) {
+        return Ok(context.dialect.boolean_scalar(&sql));
+    }
+    Ok(sql)
+}
+
+/// Renders an expression without the boolean value wrapping: a logical
+/// expression comes out as the plain predicate a filter takes.
+fn compile_logical_or_value(
     expression: &Expression<'_, '_>,
     context: &mut CompilationContext<'_, '_>,
 ) -> Result<String, QueryDiagnostic> {
@@ -1980,10 +1995,24 @@ pub(super) fn compile_expression(
                     ));
                 }
             };
-            Ok(format!(
-                "({operator}{})",
+            // `НЕ` negates a predicate, so its operand keeps the plain
+            // predicate form here.
+            let value = if operator == "NOT " {
+                compile_predicate(value, context)?
+            } else {
                 compile_expression(value, context)?
-            ))
+            };
+            Ok(format!("({operator}{value})"))
+        }
+        // `И`/`ИЛИ` join predicates, so the spine keeps the plain
+        // predicate form of its operands here.
+        Expression::Binary { operator, .. }
+            if matches!(
+                operator.kind,
+                TokenKind::Keyword(Keyword::And | Keyword::Or)
+            ) =>
+        {
+            compile_predicate(expression, context)
         }
         Expression::Binary {
             left: _,
@@ -2117,11 +2146,33 @@ pub(super) fn compile_expression(
             ];
             render_coalesce(&mut operands, context.snapshot, context.dialect).map(|(sql, _)| sql)
         }
-        Expression::Like { token, .. } => Err(QueryDiagnostic::at(
-            QueryDiagnosticKind::UnsupportedFeature,
-            Some(token),
-            "LIKE is supported only in predicate positions",
-        )),
+        Expression::Like {
+            token,
+            value,
+            pattern,
+            escape,
+            negated,
+        } => {
+            let value_sql = compile_expression(value, context)?;
+            let pattern_sql = compile_expression(pattern, context)?;
+            let escape_sql = escape
+                .as_ref()
+                .map(|escape| compile_expression(escape, context))
+                .transpose()?;
+            for operand in [value.as_ref(), pattern.as_ref()]
+                .into_iter()
+                .chain(escape.as_deref())
+            {
+                let kind = expression_kind(operand, context)?;
+                check_like_operand(token, &kind)?;
+            }
+            Ok(render_like(
+                &value_sql,
+                &pattern_sql,
+                escape_sql.as_deref(),
+                *negated,
+            ))
+        }
         Expression::Aggregate {
             token,
             kind,

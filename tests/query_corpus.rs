@@ -324,5 +324,5 @@ fn compiles_the_demo_corpus_as_recorded() {
             .join("\n")
     );
     // The share that compiles is recorded so an improvement is visible.
-    assert_eq!(compiled, 323, "queries that compile");
+    assert_eq!(compiled, 324, "queries that compile");
 }

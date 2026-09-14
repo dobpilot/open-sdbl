@@ -5,9 +5,9 @@ use std::sync::Arc;
 use super::context::{CompilationContext, CompiledBranch, JoinPlan, SourceScope};
 use super::expression::{
     CasePart, Operand, binary_operator_sql, check_like_operand, check_scalar_argument,
-    compile_case, compile_expression, compile_predicate, count_diagnostic, function_name,
-    is_count_kind, is_date_operand_kind, is_unbound_parameter, left_binary_spine, operand_token,
-    reference_column, reference_type_column, render_coalesce, render_like, single_column,
+    compile_case, compile_predicate, count_diagnostic, function_name, is_count_kind,
+    is_date_operand_kind, is_unbound_parameter, left_binary_spine, operand_token, reference_column,
+    reference_type_column, render_coalesce, render_like, single_column,
     source_free_expression_kind, type_literal_value, value_type_sql, widen_reference,
 };
 use super::params::render_scalar_parameter;
@@ -1775,7 +1775,7 @@ pub(super) fn compile_source_relation(
             source_elements: vec![0],
             local_sources: 1,
         };
-        let sql = compile_expression(condition, &mut condition_context)?;
+        let sql = compile_predicate(condition, &mut condition_context)?;
         if !condition_context.sources[0].reference_joins.is_empty() {
             return Err(QueryDiagnostic::at(
                 QueryDiagnosticKind::UnsupportedFeature,

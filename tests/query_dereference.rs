@@ -605,3 +605,47 @@ fn accepts_the_selection_modifiers_in_any_order() {
         .unwrap_err();
     assert_eq!(error.kind(), QueryDiagnosticKind::Syntax);
 }
+
+#[test]
+fn renders_a_logical_expression_as_a_value() {
+    // A logical expression is a value on the platform: measured on
+    // 8.3.27, `ВЫБРАТЬ Т.Наименование ПОДОБНО "%а%"` answers a boolean and
+    // answers NULL when an operand is NULL. PostgreSQL has boolean values,
+    // SQL Server has none, so the value form is a three-way CASE there.
+    let snapshot = support::snapshot();
+    let postgres_value = postgres(
+        &snapshot,
+        "ВЫБРАТЬ Т.Ссылка = Т.Ссылка КАК П ИЗ Справочник.OpenSdblMetadataProbe КАК Т;",
+    );
+    assert_contains(
+        &postgres_value.sql,
+        "(\"Т\".\"_idrref\" = \"Т\".\"_idrref\") AS \"П\"",
+    );
+    let mssql_value = QueryCompiler::new(&snapshot, MsSqlBackend::new(0).unwrap())
+        .compile("ВЫБРАТЬ Т.Ссылка = Т.Ссылка КАК П ИЗ Справочник.OpenSdblMetadataProbe КАК Т;")
+        .unwrap();
+    assert_contains(
+        &mssql_value.sql,
+        "CASE WHEN ([Т].[_idrref] = [Т].[_idrref]) THEN 0x01 \
+         WHEN NOT ([Т].[_idrref] = [Т].[_idrref]) THEN 0x00 END AS [П]",
+    );
+
+    // The same comparison in a filter stays a plain predicate on both.
+    let filtered = QueryCompiler::new(&snapshot, MsSqlBackend::new(0).unwrap())
+        .compile(
+            "ВЫБРАТЬ Т.Ссылка КАК С ИЗ Справочник.OpenSdblMetadataProbe КАК Т
+             ГДЕ Т.Ссылка = Т.Ссылка;",
+        )
+        .unwrap();
+    assert_contains(&filtered.sql, "WHERE ([Т].[_idrref] = [Т].[_idrref])");
+    assert!(!filtered.sql.contains("WHERE CASE"), "{}", filtered.sql);
+
+    // `НЕ` and the logical spine negate a predicate, not a value.
+    let negated = QueryCompiler::new(&snapshot, MsSqlBackend::new(0).unwrap())
+        .compile("ВЫБРАТЬ НЕ Т.Ссылка = Т.Ссылка КАК П ИЗ Справочник.OpenSdblMetadataProbe КАК Т;")
+        .unwrap();
+    assert_contains(
+        &negated.sql,
+        "CASE WHEN (NOT ([Т].[_idrref] = [Т].[_idrref])) THEN 0x01",
+    );
+}

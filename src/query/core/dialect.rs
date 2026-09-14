@@ -359,6 +359,21 @@ impl SqlDialect {
 
     /// Renders a predicate as a value of boolean kind: PostgreSQL has a
     /// boolean type, SQL Server needs the bit spelled out.
+    /// A logical expression used as a value. PostgreSQL has boolean
+    /// values, so the predicate is already one; SQL Server has none, and
+    /// the three-way `CASE` keeps `NULL` a `NULL`, as the platform
+    /// answers it.
+    pub(super) fn boolean_scalar(self, predicate: &str) -> String {
+        match self {
+            Self::Postgres => predicate.to_owned(),
+            Self::MsSql { .. } => format!(
+                "CASE WHEN {predicate} THEN {} WHEN NOT {predicate} THEN {} END",
+                self.boolean_literal(true),
+                self.boolean_literal(false)
+            ),
+        }
+    }
+
     pub(super) fn boolean_value(self, predicate: &str) -> String {
         match self {
             Self::Postgres => format!("({predicate})"),

@@ -4063,13 +4063,35 @@ fn compiles_like_predicates_with_escape_and_negation() {
             .contains("CASE WHEN (\"__src\".\"_code\" LIKE 'A%') THEN 1 ELSE 0 END AS \"Flag\"")
     );
 
+    // A logical expression is a value on the platform, so `ПОДОБНО`
+    // projects a boolean column.
     let projected = postgres_compile!(
         "SELECT Code LIKE \"A%\" FROM Catalog.OpenSdblMetadataProbe;",
         &snapshot,
     )
-    .unwrap_err();
-    assert_eq!(projected.kind(), QueryDiagnosticKind::UnsupportedFeature);
-    assert!(projected.message().contains("predicate positions"));
+    .unwrap();
+    assert!(
+        projected
+            .sql
+            .contains("(\"__src\".\"_code\" LIKE 'A%') AS \"column1\"")
+    );
+    assert_eq!(projected.columns[0].kind, ColumnKind::Boolean);
+
+    // SQL Server has no boolean values, so the same projection becomes a
+    // three-way `CASE` that keeps `NULL` a `NULL`.
+    let mssql = mssql_compile!(
+        "SELECT Code LIKE \"A%\" FROM Catalog.OpenSdblMetadataProbe;",
+        &snapshot,
+    )
+    .unwrap();
+    assert!(
+        mssql.sql.contains(
+            "CASE WHEN ([__src].[_code] LIKE N'A%') THEN 0x01 \
+             WHEN NOT ([__src].[_code] LIKE N'A%') THEN 0x00 END"
+        ),
+        "{}",
+        mssql.sql
+    );
 
     let non_string = postgres_compile!(
         "SELECT Code FROM Catalog.OpenSdblMetadataProbe WHERE Date LIKE \"2024%\";",
@@ -6123,8 +6145,13 @@ fn orders_by_computed_expressions() {
         "ВЫБРАТЬ Код КАК Код ИЗ Справочник.OpenSdblMetadataProbe УПОРЯДОЧИТЬ ПО Код = \"A\";",
     )
     .unwrap();
+    // SQL Server cannot order by a bare predicate, so the comparison
+    // takes the boolean value form there.
     assert!(
-        mssql.sql.ends_with("ORDER BY ([__src].[_code] = N'A') ASC"),
+        mssql.sql.ends_with(
+            "ORDER BY CASE WHEN ([__src].[_code] = N'A') THEN 0x01 \
+             WHEN NOT ([__src].[_code] = N'A') THEN 0x00 END ASC"
+        ),
         "{}",
         mssql.sql
     );
