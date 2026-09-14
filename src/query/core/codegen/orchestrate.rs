@@ -1,4 +1,4 @@
-use super::context::{CompiledBranch, OrderKey};
+use super::context::{CompiledBranch, OrderKey, OuterScope};
 use super::select::{BranchMode, compile_branch};
 use super::totals::wrap_totals;
 use crate::Token;
@@ -155,6 +155,19 @@ pub(super) fn compile_query_ast(
     presentations: &mut PresentationCompilation<'_>,
     nested: Option<&Token<'_>>,
 ) -> Result<CompiledQuery, QueryDiagnostic> {
+    compile_query_ast_with_outer(ast, snapshot, catalog, presentations, nested, &[])
+}
+
+/// Compiles a statement that may reference the sources of an enclosing
+/// one, which is how a correlated subquery reads the outer row.
+pub(super) fn compile_query_ast_with_outer(
+    ast: &QueryAst<'_, '_>,
+    snapshot: &MetadataSnapshot,
+    catalog: &CompilationCatalog<'_>,
+    presentations: &mut PresentationCompilation<'_>,
+    nested: Option<&Token<'_>>,
+    outer: &[OuterScope],
+) -> Result<CompiledQuery, QueryDiagnostic> {
     let dialect = presentations.dialect;
     if let Some(token) = nested {
         catalog.charge(1, None)?;
@@ -223,6 +236,7 @@ pub(super) fn compile_query_ast(
                     widen,
                     storage_domain: nested.is_some(),
                     totals: totals_mode,
+                    outer,
                 },
             )?);
         }

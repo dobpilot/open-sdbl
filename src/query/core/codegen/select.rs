@@ -1,7 +1,8 @@
 use super::constants::{constants_source_scope, finalize_constants_relation};
 use super::context::{
-    CompilationContext, CompiledBranch, JoinPlan, OrderKey, ProjectedMember, ResolvedPath, ScopeId,
-    SelectedProjection, SourceScope, compile_presentation, projected_members,
+    CompilationContext, CompiledBranch, JoinPlan, OrderKey, OuterScope, ProjectedMember,
+    ResolvedPath, ScopeId, SelectedProjection, SourceScope, attach_outer_scopes,
+    compile_presentation, projected_members,
 };
 use super::expression::{
     compile_aggregate, compile_expression, compile_predicate, expression_kind, reference_column,
@@ -47,6 +48,9 @@ pub(super) struct BranchMode<'a> {
     /// expressions are projected as hidden `__order_<n>` columns, and the
     /// branch emits its own `ORDER BY` only when `ПЕРВЫЕ` depends on it.
     pub(super) totals: bool,
+    /// The sources of the enclosing statement, visible to a correlated
+    /// subquery by their qualifier.
+    pub(super) outer: &'a [OuterScope],
 }
 
 pub(super) fn compile_branch(
@@ -62,6 +66,7 @@ pub(super) fn compile_branch(
         widen,
         storage_domain,
         totals,
+        outer,
     } = mode;
     let dialect = presentations.dialect;
     validate_aggregate_projection(ast)?;
@@ -86,8 +91,15 @@ pub(super) fn compile_branch(
             "GROUP BY and HAVING are not supported together with FULL JOIN",
         ));
     }
-    let mut context =
-        compile_branch_context(source, joins, snapshot, catalog, dialect, presentations)?;
+    let mut context = compile_branch_context(
+        outer,
+        source,
+        joins,
+        snapshot,
+        catalog,
+        dialect,
+        presentations,
+    )?;
     context.aggregates_allowed = grouped
         || ast
             .projection
@@ -284,6 +296,7 @@ fn source_elements(joins: &[JoinAst<'_, '_>]) -> Vec<usize> {
 }
 
 fn compile_branch_context<'snapshot, 'catalog>(
+    outer: &[OuterScope],
     source: &SourceAst<'_, '_>,
     joins: &[JoinAst<'_, '_>],
     snapshot: &'snapshot MetadataSnapshot,
@@ -331,7 +344,8 @@ fn compile_branch_context<'snapshot, 'catalog>(
             }
             sources.push(scope);
         }
-        return Ok(CompilationContext {
+        let local_sources = sources.len();
+        let mut context = CompilationContext {
             snapshot,
             catalog,
             sources,
@@ -340,10 +354,13 @@ fn compile_branch_context<'snapshot, 'catalog>(
             compiling_join_condition: false,
             dereference_in_join: false,
             source_elements: source_elements(joins),
-        });
+            local_sources,
+        };
+        attach_outer_scopes(&mut context, outer);
+        return Ok(context);
     }
     let scope = resolve_join_source(source, snapshot, catalog, "__src", dialect, presentations)?;
-    Ok(CompilationContext {
+    let mut context = CompilationContext {
         snapshot,
         catalog,
         sources: vec![scope],
@@ -352,7 +369,10 @@ fn compile_branch_context<'snapshot, 'catalog>(
         compiling_join_condition: false,
         dereference_in_join: false,
         source_elements: vec![0],
-    })
+        local_sources: 1,
+    };
+    attach_outer_scopes(&mut context, outer);
+    Ok(context)
 }
 
 /// Builds the scope of a `(ВЫБРАТЬ …) КАК alias` source: the nested

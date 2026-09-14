@@ -198,6 +198,52 @@ pub(super) struct CompilationContext<'snapshot, 'catalog> {
     /// The comma element of every scope, in scope order: a join condition
     /// may reference only scopes of its own element.
     pub(super) source_elements: Vec<usize>,
+    /// How many leading scopes belong to this statement. The scopes after
+    /// them are the sources of the enclosing statement, visible to a
+    /// correlated subquery by their qualifier and never rendered here.
+    pub(super) local_sources: usize,
+}
+
+/// One source of an enclosing statement, carried into a correlated
+/// subquery so that its qualifier resolves there.
+#[derive(Clone)]
+pub(super) struct OuterScope {
+    object: ObjectId,
+    fields: Arc<[QueryableField]>,
+    sql_alias: String,
+    object_name: String,
+    source_alias: Option<String>,
+    identity_is_base: bool,
+}
+
+impl OuterScope {
+    /// The read-only scope a correlated subquery resolves against: it
+    /// carries no relation, because the enclosing statement renders it.
+    fn into_scope(self) -> SourceScope {
+        SourceScope {
+            object: self.object,
+            fields: self.fields,
+            relation: String::new(),
+            sql_alias: self.sql_alias,
+            object_name: self.object_name,
+            source_alias: self.source_alias,
+            identity_is_base: self.identity_is_base,
+            reference_joins: Vec::new(),
+            separator_predicates: Vec::new(),
+            constants: None,
+            aggregate: None,
+            used_fields: RefCell::new(BTreeSet::new()),
+        }
+    }
+}
+
+/// Appends the sources of an enclosing statement to a freshly built
+/// context, where they are visible only by qualifier.
+pub(super) fn attach_outer_scopes(context: &mut CompilationContext<'_, '_>, outer: &[OuterScope]) {
+    context.local_sources = context.sources.len();
+    context
+        .sources
+        .extend(outer.iter().cloned().map(OuterScope::into_scope));
 }
 
 #[derive(Debug, Clone)]
@@ -293,6 +339,22 @@ impl CompilationContext<'_, '_> {
 
     fn source_mut(&mut self, scope: ScopeId) -> &mut SourceScope {
         &mut self.sources[scope.0]
+    }
+
+    /// The sources of this statement, as an enclosing statement hands them
+    /// to a correlated subquery.
+    pub(super) fn outer_scopes(&self) -> Vec<OuterScope> {
+        self.sources[..self.local_sources]
+            .iter()
+            .map(|source| OuterScope {
+                object: source.object,
+                fields: Arc::clone(&source.fields),
+                sql_alias: source.sql_alias.clone(),
+                object_name: source.object_name.clone(),
+                source_alias: source.source_alias.clone(),
+                identity_is_base: source.identity_is_base,
+            })
+            .collect()
     }
 
     pub(super) fn base_alias(&self) -> &str {
@@ -575,8 +637,7 @@ impl CompilationContext<'_, '_> {
     ) -> Result<ResolvedPath, QueryDiagnostic> {
         match reference.segments.as_slice() {
             [field] => {
-                let matches = self
-                    .sources
+                let matches = self.sources[..self.local_sources]
                     .iter()
                     .enumerate()
                     .flat_map(|(index, source)| {
@@ -587,7 +648,7 @@ impl CompilationContext<'_, '_> {
                     .collect::<Vec<_>>();
                 match matches.as_slice() {
                     [(scope, _)] => self.direct_field(*scope, field),
-                    [] => (0..self.sources.len())
+                    [] => (0..self.local_sources)
                         .find_map(|index| self.computed_scope_field(ScopeId(index), field))
                         .ok_or_else(|| {
                             QueryDiagnostic::at(

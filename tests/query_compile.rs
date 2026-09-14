@@ -5023,14 +5023,31 @@ fn postgres_sql_ends_with(sql: &str, suffix: &str) -> bool {
 #[test]
 fn diagnoses_invalid_nested_queries() {
     let snapshot = snapshot();
+    // A subquery of a predicate may read the row of the enclosing
+    // statement, as the platform answers it.
     let correlated = postgres_compile!(
         "SELECT o.Code FROM Catalog.OpenSdblMetadataProbe o
          WHERE o.Code IN (SELECT Code FROM Catalog.OpenSdblMetadataProbe WHERE Date = o.Date);",
         &snapshot,
     )
+    .unwrap();
+    assert!(
+        correlated
+            .sql
+            .contains("WHERE (\"__src\".\"_date_time\" = \"o\".\"_date_time\")"),
+        "{}",
+        correlated.sql
+    );
+
+    // A source of the enclosing statement stays invisible to a derived
+    // source, which SQL evaluates before that row exists.
+    let derived = postgres_compile!(
+        "SELECT o.Code FROM Catalog.OpenSdblMetadataProbe o,
+                (SELECT Code FROM Catalog.OpenSdblMetadataProbe WHERE Date = o.Date) AS d;",
+        &snapshot,
+    )
     .unwrap_err();
-    assert_eq!(correlated.kind(), QueryDiagnosticKind::UnknownField);
-    assert_eq!(correlated.line(), 2);
+    assert_eq!(derived.kind(), QueryDiagnosticKind::UnknownField);
 
     let two_columns = postgres_compile!(
         "SELECT Code FROM Catalog.OpenSdblMetadataProbe WHERE Code IN (SELECT Code, Date FROM Catalog.OpenSdblMetadataProbe);",

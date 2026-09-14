@@ -1,5 +1,7 @@
 use super::context::{CompilationContext, ResolvedPath};
-use super::orchestrate::{PresentationCompilation, compile_query_ast};
+use super::orchestrate::{
+    PresentationCompilation, compile_query_ast, compile_query_ast_with_outer,
+};
 use super::params::{
     ReferenceConstant, list_elements, object_type_number, parameter_kind,
     reference_constant_of_bytes, reference_constant_of_value, render_scalar_parameter,
@@ -2474,12 +2476,16 @@ fn compile_in_query(
     let dialect = context.dialect;
     let mut presentations =
         PresentationCompilation::strict(&[], context.catalog.parameters(), dialect);
-    let inner = compile_query_ast(
+    // A subquery of a predicate may read the row of the enclosing
+    // statement, which is how the platform answers a correlated `В (…)`.
+    let outer = context.outer_scopes();
+    let inner = compile_query_ast_with_outer(
         query,
         snapshot,
         context.catalog,
         &mut presentations,
         Some(token),
+        &outer,
     )?;
     let [column] = inner.columns.as_slice() else {
         return Err(QueryDiagnostic::at(
