@@ -725,4 +725,27 @@ fn joins_only_the_declared_targets_of_a_composite() {
         compiled.sql
     );
     assert_contains(&compiled.sql, "\"О\".\"_fld4324_rtref\" = decode(");
+
+    // A type description may name a whole kind instead of one object —
+    // «любой бизнес-процесс» and its nine siblings are platform constants,
+    // measured on 8.3.27 by declaring an attribute of each category in a
+    // probe configuration. Such a field reaches every object of that kind.
+    let category = QueryCompiler::new(&snapshot, PostgresBackend)
+        .compile_with(
+            "ВЫБРАТЬ Н.БизнесПроцесс.Наименование КАК Имя
+             ИЗ РегистрСведений.НастройкаПовторенияБизнесПроцессов КАК Н;",
+            &open_sdbl::query::CompileOptions::new().session(&session),
+        )
+        .expect("a reference category resolves to the objects of its kind");
+    let joined = category.sql.matches("LEFT JOIN").count();
+    assert!(
+        (1..=12).contains(&joined),
+        "only the business processes are joined: {joined}\n{}",
+        category.sql
+    );
+    assert!(
+        category.sql.contains("\"_bpr"),
+        "the joined tables are business processes: {}",
+        category.sql
+    );
 }

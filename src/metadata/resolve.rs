@@ -101,6 +101,102 @@ pub struct MetadataObject {
     pub number_allowed_length: Option<AllowedLength>,
 }
 
+/// A reference type that stands for every object of one kind rather than
+/// for a single object. The identifiers are platform constants, measured on
+/// 8.3.27 by declaring an attribute of each category in a probe
+/// configuration and reading its Config type description.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum ReferenceCategory {
+    /// Every object of one kind.
+    Kind(MetadataKind),
+    /// Every reference of the configuration.
+    Any,
+}
+
+impl ReferenceCategory {
+    fn covers(self, kind: Option<MetadataKind>) -> bool {
+        let Some(kind) = kind else {
+            return false;
+        };
+        match self {
+            Self::Kind(wanted) => kind == wanted,
+            Self::Any => matches!(
+                kind,
+                MetadataKind::Catalog
+                    | MetadataKind::Document
+                    | MetadataKind::Enumeration
+                    | MetadataKind::ChartOfCharacteristicTypes
+                    | MetadataKind::ChartOfCalculationTypes
+                    | MetadataKind::ChartOfAccounts
+                    | MetadataKind::ExchangePlan
+                    | MetadataKind::BusinessProcess
+                    | MetadataKind::Task
+            ),
+        }
+    }
+}
+
+/// The reference categories by their platform identifier.
+const REFERENCE_CATEGORIES: [(&str, ReferenceCategory); 10] = [
+    (
+        "e61ef7b8-f3e1-4f4b-8ac7-676e90524997",
+        ReferenceCategory::Kind(MetadataKind::Catalog),
+    ),
+    (
+        "38bfd075-3e63-4aaa-a93e-94521380d579",
+        ReferenceCategory::Kind(MetadataKind::Document),
+    ),
+    (
+        "474c3bf6-08b5-4ddc-a2ad-989cedf11583",
+        ReferenceCategory::Kind(MetadataKind::Enumeration),
+    ),
+    (
+        "99892482-ed55-4fb5-a7f7-20888820a758",
+        ReferenceCategory::Kind(MetadataKind::ChartOfCharacteristicTypes),
+    ),
+    (
+        "ac606d60-0209-4159-8e4c-794bc091ce38",
+        ReferenceCategory::Kind(MetadataKind::ChartOfAccounts),
+    ),
+    (
+        "593cd424-0877-470d-91f9-b90a982059b4",
+        ReferenceCategory::Kind(MetadataKind::ChartOfCalculationTypes),
+    ),
+    (
+        "0a52f9de-73ea-4507-81e8-66217bead73a",
+        ReferenceCategory::Kind(MetadataKind::ExchangePlan),
+    ),
+    (
+        "214fa4d8-6ba4-4748-a5e1-6332b5887780",
+        ReferenceCategory::Kind(MetadataKind::BusinessProcess),
+    ),
+    (
+        "6291e9b3-8df5-44e1-b6b2-d9fe008016c0",
+        ReferenceCategory::Kind(MetadataKind::Task),
+    ),
+    (
+        "280f5f0e-9c8a-49cc-bf6d-4d296cc17a63",
+        ReferenceCategory::Any,
+    ),
+];
+
+fn reference_category(reference_type: &Guid) -> Option<ReferenceCategory> {
+    let text = reference_type.to_string();
+    REFERENCE_CATEGORIES
+        .iter()
+        .find(|(guid, _)| guid.eq_ignore_ascii_case(&text))
+        .map(|(_, category)| *category)
+}
+
+fn push_unique_table(tables: &mut Vec<String>, table: String) {
+    if !tables
+        .iter()
+        .any(|existing| existing.eq_ignore_ascii_case(&table))
+    {
+        tables.push(table);
+    }
+}
+
 /// One resolved custom field from a Fld DBNames entry.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MetadataField {
@@ -1121,24 +1217,32 @@ pub fn resolve_metadata_with_predefined_values_and_extensions(
                 .or_else(|| extension_targets.get(&entry.number))
                 .cloned(),
             // A type description that names something other than a stored
-            // object — a defined type, a characteristic — cannot be turned
-            // into a complete list of tables, and a partial list would
-            // silently narrow the field, so it is left empty.
+            // object or a reference category — a defined type, a
+            // characteristic — cannot be turned into a complete list of
+            // tables, and a partial list would silently narrow the field,
+            // so it is left empty.
             declared_reference_tables: descriptor_by_guid
                 .get(&entry.guid)
                 .map(|descriptor| {
-                    let tables = descriptor
-                        .reference_types
-                        .iter()
-                        .filter_map(|reference_type| {
-                            table_by_reference_type.get(reference_type).cloned()
-                        })
-                        .collect::<Vec<_>>();
-                    if tables.len() == descriptor.reference_types.len() {
-                        tables
-                    } else {
-                        Vec::new()
-                    }
+                    let mut tables = Vec::new();
+                    let complete = descriptor.reference_types.iter().all(|reference_type| {
+                        if let Some(table) = table_by_reference_type.get(reference_type) {
+                            push_unique_table(&mut tables, table.clone());
+                            return true;
+                        }
+                        let Some(category) = reference_category(reference_type) else {
+                            return false;
+                        };
+                        for object in &objects {
+                            if category.covers(object.kind)
+                                && let Some(table) = &object.physical_table
+                            {
+                                push_unique_table(&mut tables, table.clone());
+                            }
+                        }
+                        true
+                    });
+                    if complete { tables } else { Vec::new() }
                 })
                 .unwrap_or_default(),
         });
