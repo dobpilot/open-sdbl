@@ -1214,8 +1214,10 @@ async fn resolve_deferred_presentations(
                     "database row has no deferred presentation column {column_index}"
                 ))
             })?;
+            // A row that carries no reference has no presentation, and the
+            // platform prints nothing for it; only a reference that names
+            // no object is unresolved.
             if cell.is_null() {
-                *cell = Cell::Text(UNRESOLVED_REFERENCE.to_owned());
                 continue;
             }
             let payload = cell.as_bytes().ok_or_else(|| {
@@ -2491,11 +2493,16 @@ mod tests {
 
     #[test]
     fn unresolved_deferred_presentations_are_visible() {
+        // A reference that no object answers keeps the marker, while a row
+        // carrying no reference at all has no presentation: the empty
+        // reference resolves to nothing and a null column stays null, the
+        // way the platform prints them.
         let object = ObjectId::from_bytes([7; 16]);
         assert_eq!(
             resolved_presentation(&HashMap::new(), object, [9; 16]),
             UNRESOLVED_REFERENCE
         );
+        assert_eq!(split_deferred_payload(&[0; 20]).unwrap(), None);
     }
 
     #[test]
