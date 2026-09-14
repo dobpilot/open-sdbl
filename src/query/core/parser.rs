@@ -129,7 +129,11 @@ fn is_ascending_order(token: &Token<'_>) -> bool {
 }
 
 impl<'tokens, 'source> Parser<'tokens, 'source> {
-    const MAX_DEPTH: usize = 128;
+    /// Nesting levels a query may use before the parser reports
+    /// [`QueryDiagnosticKind::TooDeep`]. Measured in a debug build, one
+    /// level of nested date functions costs about sixteen kilobytes of
+    /// stack, so the budget stays well inside a small thread stack.
+    const MAX_DEPTH: usize = 64;
     const MAX_BINARY_OPERATORS: usize = 4_096;
     /// Nested statements compile recursively, so their depth is bounded
     /// separately from expression nesting.
@@ -1019,25 +1023,34 @@ impl<'tokens, 'source> Parser<'tokens, 'source> {
         Ok(expression)
     }
 
+    /// `НЕ` binds looser than every comparison and tighter than `И`, so it
+    /// negates the comparison, `ПОДОБНО`, `В`, `ССЫЛКА` or `ЕСТЬ NULL`
+    /// written to its right and groups before a conjunction. Measured on
+    /// the platform, where `ГДЕ НЕ Цена = 10` answers every other price.
+    /// The negations are consumed here rather than in a level of their own
+    /// so that a deep expression does not spend an extra stack frame per
+    /// nesting level.
     fn parse_and(&mut self) -> Result<Expression<'tokens, 'source>, QueryDiagnostic> {
-        let mut expression = self.parse_not()?;
+        let mut negations = Vec::new();
+        self.consume_negations(&mut negations)?;
+        let mut expression = Self::negate(self.parse_comparison()?, &mut negations);
         while let Some(operator) = self.consume_keyword_token(Keyword::And) {
             self.record_binary_operator(operator)?;
+            self.consume_negations(&mut negations)?;
+            let right = Self::negate(self.parse_comparison()?, &mut negations);
             expression = Expression::Binary {
                 left: Box::new(expression),
                 operator,
-                right: Box::new(self.parse_not()?),
+                right: Box::new(right),
             };
         }
         Ok(expression)
     }
 
-    /// `НЕ` binds looser than every comparison and tighter than `И`, so it
-    /// negates the comparison, `ПОДОБНО`, `В`, `ССЫЛКА` or `ЕСТЬ NULL`
-    /// written to its right and groups before a conjunction. Measured on
-    /// the platform, where `ГДЕ НЕ Цена = 10` answers every other price.
-    fn parse_not(&mut self) -> Result<Expression<'tokens, 'source>, QueryDiagnostic> {
-        let mut operators = Vec::new();
+    fn consume_negations(
+        &mut self,
+        operators: &mut Vec<&'tokens Token<'source>>,
+    ) -> Result<(), QueryDiagnostic> {
         while let Some(operator) = self.consume_keyword_token(Keyword::Not) {
             if self.depth + operators.len() >= Self::MAX_DEPTH {
                 return Err(QueryDiagnostic::at(
@@ -1048,14 +1061,20 @@ impl<'tokens, 'source> Parser<'tokens, 'source> {
             }
             operators.push(operator);
         }
-        let mut expression = self.parse_comparison()?;
-        for operator in operators.into_iter().rev() {
+        Ok(())
+    }
+
+    fn negate(
+        mut expression: Expression<'tokens, 'source>,
+        operators: &mut Vec<&'tokens Token<'source>>,
+    ) -> Expression<'tokens, 'source> {
+        for operator in operators.drain(..).rev() {
             expression = Expression::Unary {
                 operator,
                 value: Box::new(expression),
             };
         }
-        Ok(expression)
+        expression
     }
 
     fn parse_comparison(&mut self) -> Result<Expression<'tokens, 'source>, QueryDiagnostic> {

@@ -375,7 +375,7 @@ fn rejects_pathologically_deep_query_expressions() {
     assert!(
         error
             .message()
-            .contains("nesting depth exceeds limit of 128")
+            .contains("nesting depth exceeds limit of 64")
     );
     assert!(error.column() > 1);
 
@@ -384,7 +384,7 @@ fn rejects_pathologically_deep_query_expressions() {
     assert!(
         error
             .message()
-            .contains("nesting depth exceeds limit of 128")
+            .contains("nesting depth exceeds limit of 64")
     );
     assert!(error.column() > 1);
 
@@ -408,7 +408,7 @@ fn rejects_pathologically_deep_query_expressions() {
     assert!(
         error
             .message()
-            .contains("nesting depth exceeds limit of 128")
+            .contains("nesting depth exceeds limit of 64")
     );
     assert!(error.column() > 1);
 }
