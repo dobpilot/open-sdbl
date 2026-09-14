@@ -3043,11 +3043,93 @@ pub(super) fn spread_over_members(
         .map(|member| {
             Ok(match *member {
                 "_TYPE" => guarded(&dialect.binary_literal(&[tag.tag()])),
+                // The string member of a composite result is projected as
+                // text, so the value compared with it is text as well.
+                "_S" if *member == own => dialect.scalar_text(&sql),
                 other if other == own => sql.clone(),
                 other => guarded(&composite_member_zero(other, dialect)),
             })
         })
         .collect()
+}
+
+/// The members a composite field itself provides, in the requested order.
+/// `None` when the value is not a composite field, and a diagnostic when it
+/// is one whose members do not answer the request.
+fn composite_field_members(
+    value: &Expression<'_, '_>,
+    members: &[&'static str],
+    context: &mut CompilationContext<'_, '_>,
+) -> Result<Option<Vec<String>>, QueryDiagnostic> {
+    let Expression::Field(reference) = value else {
+        return Ok(None);
+    };
+    let resolved = context.resolve(reference)?;
+    if resolved.expression.is_some() || composite_type_member(resolved.field()).is_none() {
+        return Ok(None);
+    }
+    let dialect = context.dialect;
+    let member_of = |column: &QueryableColumn| -> &'static str {
+        let lower = column.physical_name.to_ascii_lowercase();
+        for (suffix, member) in [
+            ("_type", "_TYPE"),
+            ("_s", "_S"),
+            ("_n", "_N"),
+            ("_t", "_T"),
+            ("_l", "_L"),
+        ] {
+            if lower.ends_with(suffix) {
+                return member;
+            }
+        }
+        ""
+    };
+    let mut rendered = Vec::with_capacity(members.len());
+    for member in members {
+        let sql = if member.is_empty() {
+            let value_member = resolved
+                .field()
+                .columns
+                .iter()
+                .find(|column| column.is_reference_value_member());
+            let type_member = resolved
+                .field()
+                .columns
+                .iter()
+                .find(|column| column.is_reference_type_member());
+            match (type_member, value_member) {
+                (Some(type_member), Some(value_member)) => dialect.reference_payload(
+                    &context.sql_column(&resolved, type_member),
+                    &context.sql_column(&resolved, value_member),
+                ),
+                (None, Some(value_member)) => context.sql_column(&resolved, value_member),
+                _ => return Ok(None),
+            }
+        } else {
+            let column =
+                resolved.field().columns.iter().find(|column| {
+                    !column.is_reference_value_member() && member_of(column) == *member
+                });
+            let Some(column) = column else {
+                return Err(QueryDiagnostic::at(
+                    QueryDiagnosticKind::UnsupportedFeature,
+                    Some(reference.last()),
+                    format!(
+                        "composite field {:?} has no {member} member to compare with the subquery",
+                        resolved.field().name
+                    ),
+                ));
+            };
+            let sql = context.sql_column(&resolved, column);
+            if *member == "_S" {
+                dialect.scalar_text(&sql)
+            } else {
+                sql
+            }
+        };
+        rendered.push(sql);
+    }
+    Ok(Some(rendered))
 }
 
 /// Compiles `<значение> В (<подзапрос с составным значением>)`.
@@ -3066,8 +3148,14 @@ fn compile_in_composite_query(
             "a composite subquery of В (…) needs a row comparison, which T-SQL has not",
         ));
     }
-    let (outer_sql, outer_kind) = value_operand(value, context)?;
-    let spread = spread_over_members(&outer_sql, &outer_kind, members, Some(token), context)?;
+    // A composite value on the outer side answers with its own members.
+    let spread = match composite_field_members(value, members, context)? {
+        Some(rendered) => rendered,
+        None => {
+            let (outer_sql, outer_kind) = value_operand(value, context)?;
+            spread_over_members(&outer_sql, &outer_kind, members, Some(token), context)?
+        }
+    };
     let sql = format!("(({}) IN ({}))", spread.join(", "), inner.sql);
     Ok(if negated { format!("(NOT {sql})") } else { sql })
 }

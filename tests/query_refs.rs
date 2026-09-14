@@ -190,6 +190,39 @@ fn compares_a_reference_with_a_composite_subquery() {
         compiled.sql
     );
 
+    // The string member of a composite result is projected as text, so the
+    // value compared with it is text as well — without the cast PostgreSQL
+    // answers «оператор не существует: mvarchar = text».
+    let string_side = QueryCompiler::new(&snapshot, PostgresBackend)
+        .compile_with(
+            "ВЫБРАТЬ О.Ссылка КАК С ИЗ Справочник.ОчередьЗаданийДокументооборота КАК О
+             ГДЕ О.Наименование В (ВЫБРАТЬ О2.ПредметЗадания
+                 ИЗ Справочник.ОчередьЗаданийДокументооборота КАК О2);",
+            &open_sdbl::query::CompileOptions::new().session(&session),
+        )
+        .expect("a string against a composite subquery compiles");
+    assert!(
+        string_side.sql.contains("(\"О\".\"_description\")::text"),
+        "the string member is compared as text: {}",
+        string_side.sql
+    );
+
+    // A composite value on the outer side answers with its own members
+    // instead of being spread as if it were one of them.
+    let composite_side = QueryCompiler::new(&snapshot, PostgresBackend)
+        .compile_with(
+            "ВЫБРАТЬ О.Ссылка КАК С ИЗ Справочник.ОчередьЗаданийДокументооборота КАК О
+             ГДЕ О.ПредметЗадания В (ВЫБРАТЬ О2.ПредметЗадания
+                 ИЗ Справочник.ОчередьЗаданийДокументооборота КАК О2);",
+            &open_sdbl::query::CompileOptions::new().session(&session),
+        )
+        .expect("a composite value against a composite subquery compiles");
+    assert!(
+        composite_side.sql.contains("(\"О\".\"_fld8535_type\", "),
+        "the outer side reads its own members: {}",
+        composite_side.sql
+    );
+
     // T-SQL has no row comparison, so the same query is refused there.
     let mssql = QueryCompiler::new(&snapshot, MsSqlBackend::new(0).unwrap())
         .compile_with(
