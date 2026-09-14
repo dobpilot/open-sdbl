@@ -571,3 +571,37 @@ fn accepts_an_alias_written_without_as() {
         .unwrap_err();
     assert_eq!(error.kind(), QueryDiagnosticKind::UnsupportedFeature);
 }
+
+#[test]
+fn accepts_the_selection_modifiers_in_any_order() {
+    // Measured on 8.3.27: `РАЗРЕШЕННЫЕ`, `РАЗЛИЧНЫЕ` and `ПЕРВЫЕ n` are
+    // accepted in any order and answer what the canonical order answers.
+    let snapshot = support::snapshot();
+    let canonical = postgres(
+        &snapshot,
+        "ВЫБРАТЬ РАЗЛИЧНЫЕ ПЕРВЫЕ 1 Т.Ссылка КАК С ИЗ Справочник.OpenSdblMetadataProbe КАК Т;",
+    );
+    for source in [
+        "ВЫБРАТЬ ПЕРВЫЕ 1 РАЗЛИЧНЫЕ Т.Ссылка КАК С ИЗ Справочник.OpenSdblMetadataProbe КАК Т;",
+        "ВЫБРАТЬ РАЗЛИЧНЫЕ ПЕРВЫЕ 1 Т.Ссылка КАК С ИЗ Справочник.OpenSdblMetadataProbe КАК Т;",
+    ] {
+        assert_eq!(postgres(&snapshot, source).sql, canonical.sql, "{source}");
+    }
+
+    // `РАЗРЕШЕННЫЕ` takes either side of `РАЗЛИЧНЫЕ`.
+    let allowed = postgres(
+        &snapshot,
+        "ВЫБРАТЬ РАЗРЕШЕННЫЕ РАЗЛИЧНЫЕ Т.Ссылка КАК С ИЗ Справочник.OpenSdblMetadataProbe КАК Т;",
+    );
+    let swapped = postgres(
+        &snapshot,
+        "ВЫБРАТЬ РАЗЛИЧНЫЕ РАЗРЕШЕННЫЕ Т.Ссылка КАК С ИЗ Справочник.OpenSdblMetadataProbe КАК Т;",
+    );
+    assert_eq!(allowed.sql, swapped.sql);
+
+    // A modifier written twice is refused.
+    let error = QueryCompiler::new(&snapshot, PostgresBackend)
+        .compile("ВЫБРАТЬ РАЗЛИЧНЫЕ РАЗЛИЧНЫЕ Т.Ссылка ИЗ Справочник.OpenSdblMetadataProbe КАК Т;")
+        .unwrap_err();
+    assert_eq!(error.kind(), QueryDiagnosticKind::Syntax);
+}

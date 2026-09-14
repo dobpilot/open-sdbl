@@ -527,30 +527,64 @@ impl<'tokens, 'source> Parser<'tokens, 'source> {
                 .is_some_and(|token| token.kind == TokenKind::Keyword(Keyword::Select))
     }
 
+    fn repeated_modifier(&self, token: &'tokens Token<'source>) -> QueryDiagnostic {
+        QueryDiagnostic::at(
+            QueryDiagnosticKind::Syntax,
+            Some(token),
+            format!("selection modifier {:?} is written twice", token.lexeme),
+        )
+    }
+
+    fn parse_top_count(&mut self) -> Result<u32, QueryDiagnostic> {
+        let token = self.expect_kind(TokenKind::Number, "expected TOP row count")?;
+        let value = token.lexeme.parse::<u32>().map_err(|_| {
+            QueryDiagnostic::at(
+                QueryDiagnosticKind::Syntax,
+                Some(token),
+                "TOP row count must be an integer",
+            )
+        })?;
+        if value == 0 {
+            return Err(QueryDiagnostic::at(
+                QueryDiagnosticKind::Syntax,
+                Some(token),
+                "TOP row count must be greater than zero",
+            ));
+        }
+        Ok(value)
+    }
+
     fn parse_select(&mut self) -> Result<SelectAst<'tokens, 'source>, QueryDiagnostic> {
         self.expect_keyword(Keyword::Select)?;
-        let allowed = self.consume_keyword_token(Keyword::Allowed);
-        let distinct = self.consume_keyword(Keyword::Distinct);
-        let top = if self.consume_keyword(Keyword::Top) {
-            let token = self.expect_kind(TokenKind::Number, "expected TOP row count")?;
-            let value = token.lexeme.parse::<u32>().map_err(|_| {
-                QueryDiagnostic::at(
-                    QueryDiagnosticKind::Syntax,
-                    Some(token),
-                    "TOP row count must be an integer",
-                )
-            })?;
-            if value == 0 {
-                return Err(QueryDiagnostic::at(
-                    QueryDiagnosticKind::Syntax,
-                    Some(token),
-                    "TOP row count must be greater than zero",
-                ));
+        // The platform accepts the three modifiers in any order, measured
+        // on 8.3.27; each of them only once.
+        let mut allowed = None;
+        let mut distinct = false;
+        let mut top = None;
+        loop {
+            if let Some(token) = self.consume_keyword_token(Keyword::Allowed) {
+                if allowed.is_some() {
+                    return Err(self.repeated_modifier(token));
+                }
+                allowed = Some(token);
+                continue;
             }
-            Some(value)
-        } else {
-            None
-        };
+            if let Some(token) = self.consume_keyword_token(Keyword::Distinct) {
+                if distinct {
+                    return Err(self.repeated_modifier(token));
+                }
+                distinct = true;
+                continue;
+            }
+            if let Some(token) = self.consume_keyword_token(Keyword::Top) {
+                if top.is_some() {
+                    return Err(self.repeated_modifier(token));
+                }
+                top = Some(self.parse_top_count()?);
+                continue;
+            }
+            break;
+        }
 
         let mut projection = Vec::new();
         loop {
