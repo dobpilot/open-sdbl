@@ -6354,3 +6354,38 @@ fn reads_names_and_sources_real_configurations_use() {
         "{refused}"
     );
 }
+
+#[test]
+fn names_the_standard_fields_of_processes_and_tasks() {
+    // Every name is accepted by the platform, checked on a probe
+    // configuration that declares a business process and its task.
+    let snapshot = support::demo_resolved_at(
+        &std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/demo"),
+    )
+    .snapshot;
+    let mut session = open_sdbl::query::SessionParameters::new();
+    session.set(open_sdbl::query::QueryParameter::new(
+        "ОбластьДанныхОсновныеДанные",
+        open_sdbl::query::ParameterValue::Number {
+            unscaled: 0,
+            scale: 0,
+        },
+    ));
+    let options = open_sdbl::query::CompileOptions::new().session(&session);
+    let task = QueryCompiler::new(&snapshot, PostgresBackend)
+        .compile_with(
+            "ВЫБРАТЬ З.Наименование КАК Имя, З.Выполнена КАК Вып, З.БизнесПроцесс КАК Бп,
+                    З.ТочкаМаршрута КАК Т
+             ИЗ Задача.ЗадачаИсполнителя КАК З;",
+            &options,
+        )
+        .unwrap_or_else(|error| panic!("{error}"));
+    assert!(task.sql.contains("\"З\".\"_name\""), "{}", task.sql);
+    assert!(task.sql.contains("\"З\".\"_executed\""), "{}", task.sql);
+    assert!(
+        task.sql.contains("\"З\".\"_businessprocess_rrref\""),
+        "{}",
+        task.sql
+    );
+    assert!(task.sql.contains("\"З\".\"_point_rrref\""), "{}", task.sql);
+}

@@ -270,15 +270,30 @@ pub(super) fn standard_field_aliases(schema_name: &str) -> &'static [&'static st
         "Period" => &["Period", "Период"],
         "Active" => &["Active", "Активность"],
         "ParentID" => &["ParentID", "Родитель", "Parent"],
+        // Business processes and tasks, checked on the platform.
+        "Completed" => &["Completed", "Завершен", "Завершён"],
+        "Started" => &["Started", "Стартован"],
+        "HeadTask" => &["HeadTask", "ВедущаяЗадача"],
+        "Name" => &["Name", "Наименование"],
+        "Executed" => &["Executed", "Выполнена"],
+        "BusinessProcess" => &["BusinessProcess", "БизнесПроцесс"],
+        "Point" => &["Point", "ТочкаМаршрута"],
         "OwnerID" => &["OwnerID", "Владелец", "Owner"],
         _ => &[],
     }
 }
 
 /// Every standard field the compiler knows, by SchemaStorage name.
-const STANDARD_FIELD_NAMES: [&str; 18] = [
+const STANDARD_FIELD_NAMES: [&str; 25] = [
     "ID",
     "Document",
+    "Completed",
+    "Started",
+    "HeadTask",
+    "Name",
+    "Executed",
+    "BusinessProcess",
+    "Point",
     "Code",
     "Description",
     "Marked",
