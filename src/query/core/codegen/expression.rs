@@ -2163,6 +2163,42 @@ fn compile_binary_expression(
     {
         return Ok(sql);
     }
+    // The platform concatenates strings with `+` and refuses to mix a
+    // string with another type there, measured on the probe base.
+    if !terms.is_empty() && terms.iter().all(|(operator, _)| operator.lexeme == "+") {
+        let mut operands = vec![left];
+        operands.extend(terms.iter().map(|(_, right)| *right));
+        let mut kinds = Vec::with_capacity(operands.len());
+        for operand in &operands {
+            kinds.push(value_operand_kind(operand, context)?);
+        }
+        if kinds
+            .iter()
+            .any(|kind| matches!(kind, ColumnKind::String { .. }))
+        {
+            let mut parts = Vec::with_capacity(operands.len());
+            for (operand, kind) in operands.iter().zip(kinds.iter()) {
+                if !matches!(
+                    kind,
+                    ColumnKind::String { .. }
+                        | ColumnKind::Null
+                        | ColumnKind::Undefined
+                        | ColumnKind::Unknown { .. }
+                ) {
+                    return Err(QueryDiagnostic::at_or_unpositioned(
+                        QueryDiagnosticKind::UnsupportedFeature,
+                        operand_token(operand),
+                        format!(
+                            "operands of + are a string and {kind:?}; the platform concatenates strings only"
+                        ),
+                    ));
+                }
+                let sql = compile_expression(operand, context)?;
+                parts.push(context.dialect.scalar_text(&sql));
+            }
+            return Ok(context.dialect.concatenate(&parts));
+        }
+    }
     let mut sql = "(".repeat(terms.len());
     let Some((_, first_right)) = terms.first() else {
         return Err(QueryDiagnostic::unpositioned(

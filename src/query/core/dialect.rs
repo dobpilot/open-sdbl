@@ -239,6 +239,15 @@ impl SqlDialect {
     }
 
     /// Converts a scalar presentation argument to text.
+    /// String concatenation, which the platform spells `+`.
+    pub(super) fn concatenate(self, parts: &[String]) -> String {
+        let separator = match self {
+            Self::Postgres => " || ",
+            Self::MsSql { .. } => " + ",
+        };
+        format!("({})", parts.join(separator))
+    }
+
     pub(super) fn scalar_text(self, expression: &str) -> String {
         match self {
             Self::Postgres => format!("({expression})::text"),

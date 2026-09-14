@@ -6501,3 +6501,46 @@ fn filters_a_statement_without_a_source() {
         limited.sql
     );
 }
+
+#[test]
+fn accepts_constants_and_concatenates_strings() {
+    // Measured on the platform: a projection that reads no field needs no
+    // grouping key, and `+` concatenates strings.
+    let snapshot = support::snapshot();
+    let grouped = postgres_compile!(
+        "ВЫБРАТЬ \"Все\" КАК Метка, Т.Код КАК Код, КОЛИЧЕСТВО(*) КАК К
+         ИЗ Справочник.OpenSdblMetadataProbe КАК Т СГРУППИРОВАТЬ ПО Т.Код;",
+        &snapshot,
+    )
+    .unwrap();
+    assert!(grouped.sql.contains("'Все'"), "{}", grouped.sql);
+
+    let beside_aggregate = postgres_compile!(
+        "ВЫБРАТЬ \"Все\" КАК Метка, КОЛИЧЕСТВО(*) КАК К
+         ИЗ Справочник.OpenSdblMetadataProbe КАК Т;",
+        &snapshot,
+    )
+    .unwrap();
+    assert!(
+        beside_aggregate.sql.contains("COUNT(*)"),
+        "{}",
+        beside_aggregate.sql
+    );
+
+    let concatenated = postgres_compile!(
+        "ВЫБРАТЬ Т.Код + \" (\" КАК С ИЗ Справочник.OpenSdblMetadataProbe КАК Т;",
+        &snapshot,
+    )
+    .unwrap();
+    assert!(concatenated.sql.contains(" || "), "{}", concatenated.sql);
+
+    let mixed = postgres_compile!(
+        "ВЫБРАТЬ Т.Код + 1 КАК С ИЗ Справочник.OpenSdblMetadataProbe КАК Т;",
+        &snapshot,
+    )
+    .unwrap_err();
+    assert!(
+        mixed.message().contains("concatenates strings only"),
+        "{mixed}"
+    );
+}

@@ -1080,6 +1080,94 @@ pub(super) fn projection_is_aggregated(projection: &Projection<'_, '_>) -> bool 
 }
 
 /// Whether an expression contains an aggregate call anywhere.
+/// Whether an expression reads a field of a source. A projection that
+/// reads none is a constant of the row set, which the platform allows in a
+/// grouped statement without listing it among the grouping keys.
+pub(super) fn references_a_field(expression: &Expression<'_, '_>) -> bool {
+    let mut pending = vec![expression];
+    while let Some(expression) = pending.pop() {
+        match expression {
+            Expression::Field(_) => return true,
+            Expression::Aggregate {
+                argument: AggregateArgument::Expression(argument),
+                ..
+            } => pending.push(argument),
+            Expression::Aggregate { .. }
+            | Expression::Literal(_)
+            | Expression::Parameter(_)
+            | Expression::DateTime { .. }
+            | Expression::MetadataValue { .. }
+            | Expression::TypeLiteral { .. }
+            | Expression::Uuid { .. } => {}
+            Expression::ScalarFunction { arguments, .. } => pending.extend(arguments),
+            Expression::Between {
+                value, low, high, ..
+            } => {
+                pending.push(value);
+                pending.push(low);
+                pending.push(high);
+            }
+            Expression::BeginOfPeriod { value, .. }
+            | Expression::EndOfPeriod { value, .. }
+            | Expression::DatePart { value, .. }
+            | Expression::Refs { value, .. }
+            | Expression::ValueType {
+                argument: value, ..
+            }
+            | Expression::Unary { value, .. }
+            | Expression::IsNull { value, .. }
+            | Expression::Cast {
+                argument: value, ..
+            } => pending.push(value),
+            Expression::DateAdd { value, count, .. } => {
+                pending.push(value);
+                pending.push(count);
+            }
+            Expression::DateDiff { from, to, .. } => {
+                pending.push(from);
+                pending.push(to);
+            }
+            Expression::Binary { left, right, .. } => {
+                pending.push(left);
+                pending.push(right);
+            }
+            Expression::InList { value, items, .. } => {
+                pending.push(value);
+                pending.extend(items.iter());
+            }
+            Expression::InQuery { value, .. } => pending.push(value),
+            Expression::Case {
+                branches,
+                otherwise,
+                ..
+            } => {
+                pending.extend(otherwise.as_deref());
+                for branch in branches {
+                    pending.push(&branch.when);
+                    pending.push(&branch.then);
+                }
+            }
+            Expression::IsNullFunction {
+                value, fallback, ..
+            } => {
+                pending.push(value);
+                pending.push(fallback);
+            }
+            Expression::Like {
+                value,
+                pattern,
+                escape,
+                ..
+            } => {
+                pending.push(value);
+                pending.push(pattern);
+                pending.extend(escape.as_deref());
+            }
+        }
+    }
+    false
+}
+
 pub(super) fn contains_aggregate(expression: &Expression<'_, '_>) -> bool {
     let mut pending = vec![expression];
     while let Some(expression) = pending.pop() {
@@ -1185,10 +1273,15 @@ pub(super) fn validate_aggregate_projection(
         .iter()
         .find(|projection| projection_is_aggregated(&projection.expression));
     if let Some(aggregated) = aggregated
-        && let Some(plain) = ast
-            .projection
-            .iter()
-            .find(|projection| !projection_is_aggregated(&projection.expression))
+        && let Some(plain) = ast.projection.iter().find(|projection| {
+            if projection_is_aggregated(&projection.expression) {
+                return false;
+            }
+            // A projection that reads no field is a constant of the row
+            // set; the platform answers it beside an aggregate.
+            !matches!(&projection.expression, Projection::Scalar(expression)
+                if !references_a_field(expression))
+        })
     {
         let token = projection_token(&plain.expression)
             .or_else(|| projection_token(&aggregated.expression));

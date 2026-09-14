@@ -14,7 +14,7 @@ use super::separators::separator_predicates;
 use super::sources::{
     SourceRestriction, compile_source_free_branch, compile_source_free_expression,
     compile_source_relation, contains_aggregate, projection_is_aggregated, projection_token,
-    validate_aggregate_projection,
+    references_a_field, validate_aggregate_projection,
 };
 use super::virtual_tables::finalize_aggregate_relation;
 use crate::metadata::{Guid, MetadataSnapshot, ObjectId};
@@ -1144,6 +1144,14 @@ fn compile_group_keys(
 
     for (index, (item, projection)) in ast.projection.iter().zip(selected).enumerate() {
         if projection_is_aggregated(&item.expression) {
+            continue;
+        }
+        // A projection that reads no field is a constant of the row set;
+        // the platform answers it in a grouped statement without listing
+        // it among the grouping keys.
+        if let Projection::Scalar(expression) = &item.expression
+            && !references_a_field(expression)
+        {
             continue;
         }
         let matched = keys
