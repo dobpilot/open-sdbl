@@ -1078,46 +1078,26 @@ impl CompilationContext<'_, '_> {
         let [first, second, rest @ ..] = hops else {
             unreachable!("a deep path has at least three segments");
         };
-        let mut resolved = self.resolve_dereference(scope, first, second)?;
-        let mut label = format!("{}.{}", first.lexeme, second.lexeme);
-        for segment in rest {
-            let field = resolved.field();
-            let Some(target_table) = field.reference_target.clone() else {
-                let composite = field
-                    .columns
-                    .iter()
-                    .any(QueryableColumn::is_reference_value_member)
-                    || !field.reference_targets.is_empty();
-                return Err(QueryDiagnostic::at(
-                    QueryDiagnosticKind::UnsupportedFeature,
-                    Some(segment),
-                    format!(
-                        "reference path cannot continue through {:?}, which {}",
-                        field.name,
-                        if composite {
-                            "references more than one table"
-                        } else {
-                            "is not a reference"
-                        }
-                    ),
-                ));
-            };
-            let column = reference_column(field, segment)?.physical_name.clone();
-            let source_field = field.schema_name.clone();
-            let alias = resolved.sql_alias.clone();
-            resolved = self.join_reference_target(
-                scope,
-                &alias,
-                source_field,
-                column,
-                &target_table,
-                segment,
-                segment,
-            )?;
-            label.push('.');
-            label.push_str(segment.lexeme);
+        // A composite first hop reaches several tables: the whole rest of
+        // the path is walked inside each of them.
+        let single_target = {
+            let (_, field) = resolve_named_field(&self.source(scope).fields, first)?;
+            field.reference_target.is_some()
+        };
+        if !single_target {
+            let source = self.composite_source(scope, first)?;
+            return self.composite_path(scope, &source, first, second, rest);
         }
-        resolved.path_label = Some(label);
+        let resolved = self.resolve_dereference(scope, first, second)?;
+        let mut resolved = self.continue_path(scope, resolved, second, rest)?;
+        if resolved.path_label.is_none() {
+            resolved.path_label = Some(
+                hops.iter()
+                    .map(|token| token.lexeme)
+                    .collect::<Vec<_>>()
+                    .join("."),
+            );
+        }
         Ok(resolved)
     }
 
@@ -1259,12 +1239,32 @@ impl CompilationContext<'_, '_> {
         target_token: &Token<'_>,
     ) -> Result<ResolvedPath, QueryDiagnostic> {
         let source = self.composite_source(scope, reference_token)?;
-        let candidates = self.dereference_candidates(&source, target_token)?;
+        self.composite_path(scope, &source, reference_token, target_token, &[])
+    }
+
+    /// Resolves `<составное>.<поле>[.<поле>…]`: every target the composite
+    /// may hold contributes a branch, the rest of the path is walked
+    /// inside that branch, and the branches are selected by the stored
+    /// type. This is the shape the platform generates, measured on 8.3.27.
+    fn composite_path(
+        &mut self,
+        scope: ScopeId,
+        source: &CompositeSource,
+        reference_token: &Token<'_>,
+        target_token: &Token<'_>,
+        rest: &[&Token<'_>],
+    ) -> Result<ResolvedPath, QueryDiagnostic> {
+        let candidates = self.dereference_candidates(source, target_token)?;
         let mut branches = Vec::new();
         for candidate in candidates {
-            if let Some(branch) =
-                self.dereference_branch(scope, &source, candidate, reference_token, target_token)?
-            {
+            if let Some(branch) = self.dereference_branch(
+                scope,
+                source,
+                candidate,
+                reference_token,
+                target_token,
+                rest,
+            )? {
                 branches.push(branch);
             }
         }
@@ -1324,12 +1324,64 @@ impl CompilationContext<'_, '_> {
             fields: Arc::from(vec![field]),
             field_index: 0,
             sql_alias: self.source(scope).sql_alias.clone(),
-            path_label: Some(format!(
-                "{}.{}",
-                reference_token.lexeme, target_token.lexeme
-            )),
+            path_label: Some(
+                std::iter::once(reference_token.lexeme)
+                    .chain(std::iter::once(target_token.lexeme))
+                    .chain(rest.iter().map(|token| token.lexeme))
+                    .collect::<Vec<_>>()
+                    .join("."),
+            ),
             expression: Some(expression),
         })
+    }
+
+    /// Walks the rest of a reference path from a target that is already
+    /// joined: a fixed reference joins its one table, a composite one fans
+    /// out again over its targets.
+    fn continue_path<'tokens>(
+        &mut self,
+        scope: ScopeId,
+        resolved: ResolvedPath,
+        previous: &'tokens Token<'_>,
+        hops: &[&'tokens Token<'_>],
+    ) -> Result<ResolvedPath, QueryDiagnostic> {
+        let mut resolved = resolved;
+        let mut previous = previous;
+        let mut hops = hops;
+        while let [segment, rest @ ..] = hops {
+            let field = resolved.field();
+            let Some(target_table) = field.reference_target.clone() else {
+                if !is_composite_reference(field) {
+                    return Err(QueryDiagnostic::at(
+                        QueryDiagnosticKind::UnsupportedFeature,
+                        Some(segment),
+                        format!(
+                            "reference path cannot continue through {:?}, which is not a reference",
+                            field.name
+                        ),
+                    ));
+                }
+                // A composite hop reaches several tables, so the rest of
+                // the path is walked inside every one of them.
+                let source = self.composite_source_of(&resolved.sql_alias, field, previous)?;
+                return self.composite_path(scope, &source, previous, segment, rest);
+            };
+            let column = reference_column(field, segment)?.physical_name.clone();
+            let source_field = field.schema_name.clone();
+            let alias = resolved.sql_alias.clone();
+            resolved = self.join_reference_target(
+                scope,
+                &alias,
+                source_field,
+                column,
+                &target_table,
+                segment,
+                segment,
+            )?;
+            previous = segment;
+            hops = rest;
+        }
+        Ok(resolved)
     }
 
     /// The type and identifier expressions of a composite reference field
@@ -1341,6 +1393,17 @@ impl CompilationContext<'_, '_> {
     ) -> Result<CompositeSource, QueryDiagnostic> {
         let alias = self.source(scope).sql_alias.clone();
         let (_, field) = resolve_named_field(&self.source(scope).fields, reference_token)?;
+        self.composite_source_of(&alias, field, reference_token)
+    }
+
+    /// The same description for a composite field of an already joined
+    /// target, which is what a path continuing past a composite hop reads.
+    fn composite_source_of(
+        &self,
+        alias: &str,
+        field: &QueryableField,
+        reference_token: &Token<'_>,
+    ) -> Result<CompositeSource, QueryDiagnostic> {
         let missing_target = || {
             QueryDiagnostic::at(
                 QueryDiagnosticKind::Metadata,
@@ -1367,7 +1430,7 @@ impl CompilationContext<'_, '_> {
             };
             let payload = self
                 .dialect
-                .qualified_column(Some(&alias), &column.physical_name);
+                .qualified_column(Some(alias), &column.physical_name);
             return Ok(CompositeSource {
                 schema_name: field.schema_name.clone(),
                 value_sql: self.dialect.payload_reference(&payload),
@@ -1394,10 +1457,10 @@ impl CompilationContext<'_, '_> {
             schema_name: field.schema_name.clone(),
             value_sql: self
                 .dialect
-                .qualified_column(Some(&alias), &value_column.physical_name),
+                .qualified_column(Some(alias), &value_column.physical_name),
             type_sql: self
                 .dialect
-                .qualified_column(Some(&alias), &type_column.physical_name),
+                .qualified_column(Some(alias), &type_column.physical_name),
             value_column: Some(value_column.physical_name.clone()),
             type_column: Some(type_column.physical_name.clone()),
             known_targets,
@@ -1497,13 +1560,14 @@ impl CompilationContext<'_, '_> {
 
     /// Plans the guarded join of one candidate and describes its attribute,
     /// or `None` when the candidate does not define it.
-    fn dereference_branch(
+    fn dereference_branch<'tokens>(
         &mut self,
         scope: ScopeId,
         source: &CompositeSource,
         candidate: ObjectId,
-        reference_token: &Token<'_>,
-        target_token: &Token<'_>,
+        reference_token: &'tokens Token<'_>,
+        target_token: &'tokens Token<'_>,
+        rest: &[&'tokens Token<'_>],
     ) -> Result<Option<DereferenceBranch>, QueryDiagnostic> {
         let Some(object) = self.snapshot.object_by_id(candidate) else {
             return Ok(None);
@@ -1599,7 +1663,74 @@ impl CompilationContext<'_, '_> {
             });
             alias
         };
-        let _ = field_index;
+        // A path that reaches past this hop is walked inside the branch,
+        // so the branch contributes the value of the whole rest.
+        if !rest.is_empty() {
+            let rooted = ResolvedPath {
+                scope,
+                owner: candidate,
+                identity_is_base: false,
+                fields: Arc::clone(&fields),
+                field_index,
+                sql_alias: alias.clone(),
+                path_label: None,
+                expression: None,
+            };
+            // A target whose rest of the path does not resolve contributes
+            // nothing, exactly as the platform drops it from its `CASE`.
+            let continued = match self.continue_path(scope, rooted, target_token, rest) {
+                Ok(continued) => continued,
+                Err(error) if error.kind() == QueryDiagnosticKind::UnknownField => {
+                    return Ok(None);
+                }
+                Err(error) => return Err(error),
+            };
+            let last = rest.last().copied().unwrap_or(target_token);
+            let continued_field = continued.field().clone();
+            let value_column = match continued_field.columns.as_slice() {
+                [column] => column.clone(),
+                _ => reference_column(&continued_field, last)?.clone(),
+            };
+            let sql = match &continued.expression {
+                Some(expression) => expression.clone(),
+                None => match reference_pair_columns(&continued_field) {
+                    Some((type_member, value_member)) => self.dialect.reference_payload(
+                        &self.dialect.qualified_column(
+                            Some(&continued.sql_alias),
+                            &type_member.physical_name,
+                        ),
+                        &self.dialect.qualified_column(
+                            Some(&continued.sql_alias),
+                            &value_member.physical_name,
+                        ),
+                    ),
+                    None => self
+                        .dialect
+                        .qualified_column(Some(&continued.sql_alias), &value_column.physical_name),
+                },
+            };
+            let kind = match reference_pair_columns(&continued_field) {
+                Some((_, value_member)) => match &value_member.kind {
+                    ColumnKind::Reference { targets, .. } => ColumnKind::Reference {
+                        targets: targets.clone(),
+                        runtime_typed: true,
+                    },
+                    other => other.clone(),
+                },
+                None => value_column.kind.clone(),
+            };
+            return Ok(Some(DereferenceBranch {
+                database_type,
+                alias,
+                kind: kind.clone(),
+                member: DereferenceMember::Continued(sql, kind),
+                field_name: continued_field.name.clone(),
+                schema_name: continued_field.schema_name.clone(),
+                physical_name: value_column.physical_name.clone(),
+                data_type: value_column.data_type.clone(),
+                reference_target: continued_field.reference_target.clone(),
+            }));
+        }
         Ok(Some(DereferenceBranch {
             database_type,
             alias,
@@ -1630,6 +1761,12 @@ impl CompilationContext<'_, '_> {
         target_token: &Token<'_>,
     ) -> Result<String, QueryDiagnostic> {
         match &branch.member {
+            DereferenceMember::Continued(sql, _) => {
+                if !widen {
+                    return Ok(sql.clone());
+                }
+                self.widened_branch_value(branch, sql, target_token)
+            }
             DereferenceMember::Single(column) => {
                 let sql = self
                     .dialect
@@ -1637,6 +1774,30 @@ impl CompilationContext<'_, '_> {
                 if !widen {
                     return Ok(sql);
                 }
+                self.widened_branch_value(branch, &sql, target_token)
+            }
+            DereferenceMember::Reference(type_column, value_column) => {
+                let type_sql = self
+                    .dialect
+                    .qualified_column(Some(&branch.alias), &type_column.physical_name);
+                let value_sql = self
+                    .dialect
+                    .qualified_column(Some(&branch.alias), &value_column.physical_name);
+                Ok(self.dialect.reference_payload(&type_sql, &value_sql))
+            }
+        }
+    }
+
+    /// Widens a branch value of a fixed reference into the `RTRef ‖ RRRef`
+    /// payload the other branches carry.
+    fn widened_branch_value(
+        &self,
+        branch: &DereferenceBranch,
+        sql: &str,
+        target_token: &Token<'_>,
+    ) -> Result<String, QueryDiagnostic> {
+        {
+            {
                 let target = branch.reference_target.as_deref().ok_or_else(|| {
                     QueryDiagnostic::at(
                         QueryDiagnosticKind::Metadata,
@@ -1668,16 +1829,7 @@ impl CompilationContext<'_, '_> {
                     })?;
                 Ok(self
                     .dialect
-                    .reference_payload(&self.dialect.binary_u32(number), &sql))
-            }
-            DereferenceMember::Reference(type_column, value_column) => {
-                let type_sql = self
-                    .dialect
-                    .qualified_column(Some(&branch.alias), &type_column.physical_name);
-                let value_sql = self
-                    .dialect
-                    .qualified_column(Some(&branch.alias), &value_column.physical_name);
-                Ok(self.dialect.reference_payload(&type_sql, &value_sql))
+                    .reference_payload(&self.dialect.binary_u32(number), sql))
             }
         }
     }
@@ -1950,10 +2102,50 @@ struct CompositeSource {
     declared: Vec<String>,
 }
 
+/// Whether a field holds a reference that may point at several tables, so
+/// that a path continuing through it fans out instead of stopping.
+fn is_composite_reference(field: &QueryableField) -> bool {
+    if field
+        .columns
+        .iter()
+        .any(QueryableColumn::is_reference_value_member)
+        || !field.reference_targets.is_empty()
+    {
+        return true;
+    }
+    matches!(
+        field.columns.as_slice(),
+        [column]
+            if matches!(
+                column.kind,
+                ColumnKind::Reference {
+                    runtime_typed: true,
+                    ..
+                }
+            )
+    )
+}
+
+/// The `RTRef`/`RRRef` members of a field stored as a reference pair.
+fn reference_pair_columns(field: &QueryableField) -> Option<(&QueryableColumn, &QueryableColumn)> {
+    let type_member = field
+        .columns
+        .iter()
+        .find(|column| column.is_reference_type_member())?;
+    let value_member = field
+        .columns
+        .iter()
+        .find(|column| column.is_reference_value_member())?;
+    Some((type_member, value_member))
+}
+
 /// The attribute members one candidate contributes.
 enum DereferenceMember {
     Single(QueryableColumn),
     Reference(QueryableColumn, QueryableColumn),
+    /// The path walked on past this candidate: the value of the rest of
+    /// the path, already rendered against the joins it needed.
+    Continued(String, ColumnKind),
 }
 
 impl DereferenceMember {
@@ -1967,6 +2159,7 @@ impl DereferenceMember {
                 },
                 other => other.clone(),
             },
+            Self::Continued(_, kind) => kind.clone(),
         }
     }
 }

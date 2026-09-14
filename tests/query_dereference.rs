@@ -102,21 +102,57 @@ fn walks_the_chain_in_every_clause() {
 }
 
 #[test]
-fn refuses_to_walk_through_a_composite_reference() {
+fn walks_the_chain_through_a_composite_reference() {
+    // Measured on 8.3.27: the platform joins every target of the composite
+    // hop under a guard on the stored type, walks the rest of the path
+    // inside that target with plain joins, and selects the branches with a
+    // `CASE` over the same type.
     let snapshot = universal_dereferenced_presentation_snapshot();
-    let error = QueryCompiler::new(&snapshot, PostgresBackend)
+    let compiled = postgres(
+        &snapshot,
+        "ВЫБРАТЬ Д.ДоговорКонтрагента.Ссылка.Ссылка КАК К
+         ИЗ Документ.бит_ДополнительныеУсловияПоДоговору КАК Д;",
+    );
+    // The first hop guards each target by type…
+    assert_contains(
+        &compiled.sql,
+        "LEFT JOIN \"_document53\" AS \"__ref1\" ON \"Д\".\"_fld59_rrref\" = \"__ref1\".\"_idrref\" \
+         AND \"Д\".\"_fld59_rtref\" = decode('00000035', 'hex')",
+    );
+    // …and the next hop joins from that target without a guard.
+    assert_contains(
+        &compiled.sql,
+        "LEFT JOIN \"_document53\" AS \"__ref2\" ON \"__ref1\".\"_idrref\" = \"__ref2\".\"_idrref\"",
+    );
+    assert_contains(
+        &compiled.sql,
+        "CASE WHEN \"Д\".\"_fld59_rtref\" = decode('00000035', 'hex') \
+         THEN (decode('00000035', 'hex') || \"__ref2\".\"_idrref\")",
+    );
+
+    // A target in which the rest of the path does not resolve contributes
+    // no branch; when no target does, the field is reported unknown.
+    let missing = QueryCompiler::new(&snapshot, PostgresBackend)
         .compile(
-            "ВЫБРАТЬ ДоговорКонтрагента.Организация.Код КАК К
-             ИЗ Документ.бит_ДополнительныеУсловияПоДоговору;",
+            "ВЫБРАТЬ Д.ДоговорКонтрагента.Ссылка.НетТакого КАК К
+             ИЗ Документ.бит_ДополнительныеУсловияПоДоговору КАК Д;",
         )
         .unwrap_err();
-    // The walk cannot continue through a value selected by type.
+    assert_eq!(missing.kind(), QueryDiagnosticKind::UnknownField);
+
+    // A hop through a value that is not a reference keeps its diagnostic.
+    let scalar = QueryCompiler::new(&snapshot, PostgresBackend)
+        .compile(
+            "ВЫБРАТЬ Д.ДоговорКонтрагента.Ссылка.Наименование.Код КАК К
+             ИЗ Документ.бит_ДополнительныеУсловияПоДоговору КАК Д;",
+        )
+        .unwrap_err();
     assert!(
         matches!(
-            error.kind(),
-            QueryDiagnosticKind::UnsupportedFeature | QueryDiagnosticKind::UnknownObject
+            scalar.kind(),
+            QueryDiagnosticKind::UnsupportedFeature | QueryDiagnosticKind::UnknownField
         ),
-        "{error}"
+        "{scalar}"
     );
 }
 
