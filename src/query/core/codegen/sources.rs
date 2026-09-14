@@ -170,12 +170,7 @@ pub(super) fn compile_source_free_branch(
             "JOIN requires FROM",
         ));
     }
-    if ast.filter.is_some() {
-        return Err(QueryDiagnostic::unpositioned(
-            QueryDiagnosticKind::UnsupportedFeature,
-            "WHERE requires FROM",
-        ));
-    }
+
     if let Some(key) = ast.group.first() {
         return Err(QueryDiagnostic::at(
             QueryDiagnosticKind::UnsupportedFeature,
@@ -280,6 +275,18 @@ pub(super) fn compile_source_free_branch(
     }
     let mut sql = dialect.select_prefix(ast.distinct, ast.top);
     sql.push_str(&projections.join(", "));
+    // A statement without a source may still carry a condition; both
+    // providers accept a `WHERE` with no `FROM`, and so does the platform.
+    if let Some(filter) = &ast.filter {
+        sql.push_str(" WHERE ");
+        sql.push_str(&compile_source_free_predicate(
+            filter,
+            snapshot,
+            dialect,
+            parameters,
+            storage_domain,
+        )?);
+    }
     dialect.append_limit(&mut sql, ast.top);
     Ok(CompiledBranch {
         sql,

@@ -281,14 +281,17 @@ pub(super) fn standard_field_aliases(schema_name: &str) -> &'static [&'static st
         // The declaration order of an enumeration value, measured on the
         // platform: zero-based, in the order the values are declared.
         "EnumOrder" => &["EnumOrder", "Порядок", "Order"],
+        // The value type of a chart of characteristic types.
+        "Type" => &["Type", "ТипЗначения", "ValueType"],
         "OwnerID" => &["OwnerID", "Владелец", "Owner"],
         _ => &[],
     }
 }
 
 /// Every standard field the compiler knows, by SchemaStorage name.
-const STANDARD_FIELD_NAMES: [&str; 26] = [
+const STANDARD_FIELD_NAMES: [&str; 27] = [
     "ID",
+    "Type",
     "EnumOrder",
     "Document",
     "Completed",

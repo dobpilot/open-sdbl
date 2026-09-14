@@ -6485,3 +6485,19 @@ fn addresses_a_source_by_its_alias_alone() {
     .unwrap();
     assert!(bare.sql.contains("\"_code\""), "{}", bare.sql);
 }
+
+#[test]
+fn filters_a_statement_without_a_source() {
+    // The platform answers no row for a false condition and one row for a
+    // true one, with no source at all.
+    let snapshot = support::snapshot();
+    let compiled = postgres_compile!("ВЫБРАТЬ 1 КАК Т ГДЕ ЛОЖЬ;", &snapshot).unwrap();
+    assert!(compiled.sql.ends_with("WHERE FALSE"), "{}", compiled.sql);
+
+    let limited = postgres_compile!("ВЫБРАТЬ ПЕРВЫЕ 1 1 КАК Т ГДЕ ИСТИНА;", &snapshot).unwrap();
+    assert!(
+        limited.sql.contains("WHERE TRUE") && limited.sql.ends_with("LIMIT 1"),
+        "{}",
+        limited.sql
+    );
+}
