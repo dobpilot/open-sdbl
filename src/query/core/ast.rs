@@ -310,6 +310,8 @@ pub(super) enum PresentationOperation {
 pub(super) enum PresentationArgument<'tokens, 'source> {
     Field(FieldReference<'tokens, 'source>),
     Literal(&'tokens Token<'source>),
+    /// Any other expression, which the platform presents as its value.
+    Expression(Box<Expression<'tokens, 'source>>),
 }
 
 #[derive(Debug, Clone)]

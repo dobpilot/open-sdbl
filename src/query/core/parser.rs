@@ -713,7 +713,19 @@ impl<'tokens, 'source> Parser<'tokens, 'source> {
                 {
                     PresentationArgument::Literal(self.next().expect("peeked token"))
                 }
-                _ => PresentationArgument::Field(self.parse_field_reference()?),
+                // The platform presents any expression, not only a field.
+                _ => {
+                    let offset = self.offset;
+                    match self.parse_field_reference() {
+                        Ok(reference) if self.peek().is_some_and(|token| token.lexeme == ")") => {
+                            PresentationArgument::Field(reference)
+                        }
+                        _ => {
+                            self.offset = offset;
+                            PresentationArgument::Expression(Box::new(self.parse_or()?))
+                        }
+                    }
+                }
             };
             self.expect_lexeme(")")?;
             return Ok(Projection::Presentation {

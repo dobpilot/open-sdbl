@@ -6684,3 +6684,35 @@ fn states_the_types_the_server_resolves_by() {
         joined.sql
     );
 }
+
+#[test]
+fn presents_an_expression_as_its_value() {
+    // Measured on 8.3.27: `ПРЕДСТАВЛЕНИЕ` accepts any expression, and a
+    // value that is not a reference is its own presentation — a string
+    // answers itself, a number its digits. A reference expression needs a
+    // presentation plan, which the application answers only for a field.
+    let snapshot = snapshot();
+    let concatenated = postgres_compile!(
+        "ВЫБРАТЬ ПРЕДСТАВЛЕНИЕ(Т.Code + \"!\") КАК П ИЗ Справочник.OpenSdblMetadataProbe КАК Т;",
+        &snapshot,
+    )
+    .unwrap();
+    assert!(
+        concatenated.sql.contains("('!')::text))::text AS \"П\""),
+        "{}",
+        concatenated.sql
+    );
+    assert_eq!(
+        concatenated.columns[0].kind,
+        ColumnKind::String { length: None }
+    );
+
+    let reference = postgres_compile!(
+        "ВЫБРАТЬ ПРЕДСТАВЛЕНИЕ(ВЫБОР КОГДА ИСТИНА ТОГДА Т.Ссылка ИНАЧЕ НЕОПРЕДЕЛЕНО КОНЕЦ) КАК П
+         ИЗ Справочник.OpenSdblMetadataProbe КАК Т;",
+        &snapshot,
+    )
+    .unwrap_err();
+    assert_eq!(reference.kind(), QueryDiagnosticKind::UnsupportedFeature);
+    assert!(reference.message().contains("presented"), "{reference}");
+}

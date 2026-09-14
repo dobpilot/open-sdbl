@@ -326,3 +326,42 @@ fn compiles_the_demo_corpus_as_recorded() {
     // The share that compiles is recorded so an improvement is visible.
     assert_eq!(compiled, 339, "queries that compile");
 }
+
+/// Writes the corpus compiled for SQL Server into `MSSQL_CORPUS_OUT`, so
+/// that a T-SQL server can be asked whether it accepts every statement the
+/// compiler produces. The PostgreSQL side of the same check runs against a
+/// live base as well; neither is part of the workspace test run:
+/// `MSSQL_CORPUS_OUT=/tmp/corpus.sql cargo test -p open-sdbl --test
+/// query_corpus -- --ignored writes_the_corpus_for_sql_server`.
+#[test]
+#[ignore = "maintenance: writes the corpus compiled for SQL Server"]
+fn writes_the_corpus_for_sql_server() {
+    let Ok(out) = std::env::var("MSSQL_CORPUS_OUT") else {
+        return;
+    };
+    let root = fixture();
+    let snapshot = support::demo_resolved_at(&root).snapshot;
+    let corpus = std::fs::read_to_string(root.join("corpus.jsonl")).unwrap();
+    let mut written = String::new();
+    let mut compiled = 0usize;
+    for (index, line) in corpus
+        .lines()
+        .filter(|line| !line.trim().is_empty())
+        .enumerate()
+    {
+        let query = json_field(line, "text");
+        let (parameters, session) = options(&query);
+        let options = CompileOptions::new()
+            .parameters(&parameters)
+            .session(&session);
+        let backend = open_sdbl::query::MsSqlBackend::new(2000).unwrap();
+        let Ok(result) = QueryCompiler::new(&snapshot, backend).compile_with(&query, &options)
+        else {
+            continue;
+        };
+        compiled += 1;
+        written.push_str(&format!("-- query {}\n{}\n--;\n", index + 1, result.sql));
+    }
+    std::fs::write(&out, written).unwrap();
+    println!("wrote {compiled} statements to {out}");
+}
