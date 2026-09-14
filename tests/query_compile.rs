@@ -6426,3 +6426,25 @@ fn names_a_nested_tabular_section_projection() {
         assert!(error.message().contains("nested result"), "{error}");
     }
 }
+
+#[test]
+fn presents_the_reference_of_a_source() {
+    // `Источник.Представление` presents the source's own reference, which
+    // the platform answers for a catalog and a document alike.
+    let snapshot = support::snapshot();
+    let prepared = postgres_prepare!(
+        "ВЫБРАТЬ Т.Представление КАК П ИЗ Справочник.OpenSdblMetadataProbe КАК Т;",
+        &snapshot,
+    )
+    .unwrap();
+    assert_eq!(prepared.presentation_request().targets.len(), 1);
+
+    // A source whose rows carry no reference is named in the diagnostic.
+    let error =
+        postgres_compile!("ВЫБРАТЬ К.Представление ИЗ Константы КАК К;", &snapshot,).unwrap_err();
+    assert_eq!(
+        error.kind(),
+        QueryDiagnosticKind::UnsupportedFeature,
+        "{error}"
+    );
+}

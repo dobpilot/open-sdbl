@@ -593,6 +593,26 @@ impl CompilationContext<'_, '_> {
         Some((field, expression))
     }
 
+    /// The reference of a source itself: the field its rows are identified
+    /// by, which is what `Источник.Представление` presents.
+    fn source_identity(&self, scope: ScopeId) -> Option<ResolvedPath> {
+        let source = self.source(scope);
+        let index = source.fields.iter().position(|field| {
+            names_equal(&field.schema_name, "ID") || names_equal(&field.schema_name, "Document")
+        })?;
+        source.used_fields.borrow_mut().insert(index);
+        Some(ResolvedPath {
+            scope,
+            owner: source.object,
+            identity_is_base: source.identity_is_base,
+            fields: Arc::clone(&source.fields),
+            field_index: index,
+            sql_alias: source.sql_alias.clone(),
+            path_label: None,
+            expression: None,
+        })
+    }
+
     /// Resolves a computed standard field of one source scope.
     fn computed_scope_field(&self, scope: ScopeId, token: &Token<'_>) -> Option<ResolvedPath> {
         let source = self.source(scope);
@@ -1699,7 +1719,22 @@ pub(super) fn compile_presentation(
         let value = compile_literal(literal, context.dialect)?;
         return Ok((context.dialect.scalar_text(&value), label, false));
     };
-    let resolved = context.resolve(reference)?;
+    // `Источник.Представление` names the presentation of the source's own
+    // reference, which the platform answers for a catalog and a document
+    // alike.
+    let resolved = match reference.segments.as_slice() {
+        [only] => match context.qualifier_scope(only)? {
+            Some(scope) => context.source_identity(scope).ok_or_else(|| {
+                QueryDiagnostic::at(
+                    QueryDiagnosticKind::UnsupportedFeature,
+                    Some(token),
+                    format!("source {:?} has no reference to present", only.lexeme),
+                )
+            })?,
+            None => context.resolve(reference)?,
+        },
+        _ => context.resolve(reference)?,
+    };
     if resolved.expression.is_some() {
         return Err(QueryDiagnostic::at(
             QueryDiagnosticKind::UnsupportedFeature,

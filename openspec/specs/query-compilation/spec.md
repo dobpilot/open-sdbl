@@ -803,3 +803,14 @@ answers as the zero-based declaration order of the value.
 #### Scenario: Ordering by the declaration order
 - **WHEN** `ВЫБРАТЬ П.Порядок ИЗ Перечисление.X КАК П` is compiled
 - **THEN** the column answers 0, 1, 2 … in declaration order
+
+### Requirement: Presentation of a source
+`Источник.Представление` SHALL present the reference of that source,
+deferred to the application exactly as `ПРЕДСТАВЛЕНИЕССЫЛКИ` of its
+reference field is. A source whose rows carry no reference SHALL be
+refused with a diagnostic naming it.
+
+#### Scenario: Presentation of a catalog source
+- **WHEN** `ВЫБРАТЬ Т.Представление ИЗ Справочник.X КАК Т` is compiled
+- **THEN** the column is requested as a presentation of that catalog's
+  reference
