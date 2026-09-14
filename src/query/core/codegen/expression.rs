@@ -18,7 +18,8 @@ use crate::query::core::dialect::{SqlDialect, compile_literal, decode_binary_lit
 use crate::query::core::names::names_equal;
 use crate::query::core::params::{ParameterValue, Parameters};
 use crate::query::core::resolve::{
-    ColumnKind, QueryableColumn, QueryableField, kind_from_query_name,
+    ColumnKind, CompiledColumn, CompiledQuery, QueryableColumn, QueryableField,
+    kind_from_query_name,
 };
 use crate::query::core::types::TypeValue;
 use crate::query::core::{QueryDiagnostic, QueryDiagnosticKind};
@@ -2905,6 +2906,13 @@ fn compile_in_query(
         Some(token),
         &outer,
     )?;
+    // A subquery whose value is composite projects one column per member,
+    // and the platform compares the members side by side, measured on
+    // 8.3.27: `(T1._Fld70_TYPE, T1._Fld70_S, …) IN (SELECT …)`. Columns
+    // that are not the members of one value stay an error.
+    if let Some(members) = composite_result_members(&inner.columns) {
+        return compile_in_composite_query(token, value, &inner, &members, negated, context);
+    }
     let [column] = inner.columns.as_slice() else {
         return Err(QueryDiagnostic::at(
             QueryDiagnosticKind::UnsupportedFeature,
@@ -2974,6 +2982,93 @@ fn compile_in_query(
         _ => (outer_sql, inner.sql),
     };
     let sql = format!("({outer_sql} IN ({inner_sql}))");
+    Ok(if negated { format!("(NOT {sql})") } else { sql })
+}
+
+/// The member suffixes of a result that is one composite value: every
+/// column labels the same value with its member suffix, one of them is the
+/// discriminator and one carries the value itself. `None` for a result
+/// whose columns are separate values.
+fn composite_result_members(columns: &[CompiledColumn]) -> Option<Vec<&'static str>> {
+    if columns.len() < 2 {
+        return None;
+    }
+    let mut members = Vec::with_capacity(columns.len());
+    let mut base = None::<&str>;
+    for column in columns {
+        let suffix = ["_TYPE", "_S", "_N", "_T", "_L"]
+            .into_iter()
+            .find(|suffix| column.label.ends_with(suffix))
+            .unwrap_or("");
+        let label = column
+            .label
+            .strip_suffix(suffix)
+            .expect("the suffix was found in the label");
+        match base {
+            Some(base) if base != label => return None,
+            Some(_) => {}
+            None => base = Some(label),
+        }
+        members.push(suffix);
+    }
+    if !members.contains(&"_TYPE") || !members.contains(&"") {
+        return None;
+    }
+    Some(members)
+}
+
+/// Spreads one value over the members of a composite result: its own
+/// member carries the value, the discriminator carries its tag, every other
+/// member carries the zero of its type — and all of them stay `NULL` while
+/// the value is `NULL`, exactly as the platform writes them.
+fn spread_over_members(
+    sql: &str,
+    kind: &ColumnKind,
+    members: &[&'static str],
+    token: &Token<'_>,
+    context: &CompilationContext<'_, '_>,
+) -> Result<Vec<String>, QueryDiagnostic> {
+    let dialect = context.dialect;
+    let (own, tag) = composite_member_of(kind).ok_or_else(|| {
+        QueryDiagnostic::at(
+            QueryDiagnosticKind::UnsupportedFeature,
+            Some(token),
+            format!("value of kind {kind:?} has no place in a composite result"),
+        )
+    })?;
+    let (sql, _) = widen_reference(sql, kind, Some(token), context.snapshot, dialect)?;
+    let guarded = |value: &str| format!("CASE WHEN {sql} IS NOT NULL THEN {value} END");
+    members
+        .iter()
+        .map(|member| {
+            Ok(match *member {
+                "_TYPE" => guarded(&dialect.binary_literal(&[tag.tag()])),
+                other if other == own => sql.clone(),
+                other => guarded(&composite_member_zero(other, dialect)),
+            })
+        })
+        .collect()
+}
+
+/// Compiles `<значение> В (<подзапрос с составным значением>)`.
+fn compile_in_composite_query(
+    token: &Token<'_>,
+    value: &Expression<'_, '_>,
+    inner: &CompiledQuery,
+    members: &[&'static str],
+    negated: bool,
+    context: &mut CompilationContext<'_, '_>,
+) -> Result<String, QueryDiagnostic> {
+    if context.dialect != SqlDialect::Postgres {
+        return Err(QueryDiagnostic::at(
+            QueryDiagnosticKind::UnsupportedFeature,
+            Some(token),
+            "a composite subquery of В (…) needs a row comparison, which T-SQL has not",
+        ));
+    }
+    let (outer_sql, outer_kind) = value_operand(value, context)?;
+    let spread = spread_over_members(&outer_sql, &outer_kind, members, token, context)?;
+    let sql = format!("(({}) IN ({}))", spread.join(", "), inner.sql);
     Ok(if negated { format!("(NOT {sql})") } else { sql })
 }
 
