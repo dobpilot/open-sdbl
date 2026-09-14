@@ -1,4 +1,5 @@
 use super::context::{CompiledBranch, OrderKey, OuterScope};
+use super::expression::composite_member_of;
 use super::select::{BranchMode, compile_branch};
 use super::totals::wrap_totals;
 use crate::Token;
@@ -10,7 +11,106 @@ use crate::query::core::resolve::{
 };
 use crate::query::core::restrict::{AccessRestriction, RestrictionTarget};
 use crate::query::core::{QueryDiagnostic, QueryDiagnosticKind, SqlDialect};
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
+
+/// The projected values that the branches of a union carry with different
+/// shapes, and the members every branch must spread such a value over. A
+/// branch that already projects the members keeps them; the others are
+/// recompiled to match.
+fn composite_positions(branches: &[CompiledBranch]) -> BTreeMap<usize, Vec<&'static str>> {
+    let mut expand = BTreeMap::new();
+    if branches.len() < 2 {
+        return expand;
+    }
+    let width = branches
+        .iter()
+        .map(|branch| branch.logical_width)
+        .min()
+        .unwrap_or(0);
+    for logical in 0..width {
+        let spans = branches
+            .iter()
+            .map(|branch| logical_span(branch, logical))
+            .collect::<Vec<_>>();
+        if spans.iter().any(|span| span.is_empty()) {
+            continue;
+        }
+        if spans.iter().all(|span| span.len() == 1) {
+            let first = &spans[0][0].kind;
+            if spans
+                .iter()
+                .all(|span| span[0].kind.is_compatible_with(first))
+            {
+                continue;
+            }
+            let Some(members) = scalar_members(&spans) else {
+                continue;
+            };
+            expand.insert(logical, members);
+            continue;
+        }
+        // One branch already carries the members; the rest follow its
+        // layout. A wider span that is not a composite value — a field
+        // whose members SchemaStorage does not name — keeps its own
+        // diagnostic.
+        let Some(members) = spans
+            .iter()
+            .find(|span| span.len() > 1)
+            .map(|span| span.iter().map(member_suffix).collect::<Vec<_>>())
+            .filter(|members| {
+                members.contains(&"_TYPE")
+                    && members
+                        .iter()
+                        .collect::<std::collections::BTreeSet<_>>()
+                        .len()
+                        == members.len()
+            })
+        else {
+            continue;
+        };
+        if spans.iter().all(|span| {
+            span.len() == members.len()
+                && span.iter().map(member_suffix).eq(members.iter().copied())
+        }) {
+            continue;
+        }
+        expand.insert(logical, members);
+    }
+    expand
+}
+
+/// The output columns one projected value occupies in a branch.
+fn logical_span(branch: &CompiledBranch, logical: usize) -> &[CompiledColumn] {
+    let start: usize = branch.logical_columns[..logical.min(branch.logical_columns.len())]
+        .iter()
+        .sum();
+    let len = branch.logical_columns.get(logical).copied().unwrap_or(0);
+    branch.columns.get(start..start + len).unwrap_or_default()
+}
+
+/// The member suffix a column label carries.
+fn member_suffix(column: &CompiledColumn) -> &'static str {
+    ["_TYPE", "_S", "_N", "_T", "_L"]
+        .into_iter()
+        .find(|suffix| column.label.ends_with(suffix))
+        .unwrap_or("")
+}
+
+/// The members a group of single-column branches must spread over: the
+/// member of every kind present and the discriminator, ordered the way a
+/// `ВЫБОР` of alternatives orders them.
+fn scalar_members(spans: &[&[CompiledColumn]]) -> Option<Vec<&'static str>> {
+    let mut members = Vec::new();
+    for span in spans {
+        let (suffix, _) = composite_member_of(&span[0].kind)?;
+        if !members.contains(&suffix) {
+            members.push(suffix);
+        }
+    }
+    members.sort_by_key(|suffix| if suffix.is_empty() { 0 } else { 1 });
+    members.push("_TYPE");
+    Some(members)
+}
 
 /// Positions of reference columns that UNION branches project with different
 /// targets or widths. A fixed reference without exactly one target cannot be
@@ -216,6 +316,7 @@ pub(super) fn compile_query_ast_with_outer(
     let totals_mode = ast.totals.is_some();
     let unioned = !ast.unions.is_empty();
     let compile_branches = |widen: &BTreeSet<usize>,
+                            expand: &BTreeMap<usize, Vec<&'static str>>,
                             presentations: &mut PresentationCompilation<'_>|
      -> Result<Vec<CompiledBranch>, QueryDiagnostic> {
         let mut branches = Vec::with_capacity(ast.branches.len());
@@ -234,6 +335,7 @@ pub(super) fn compile_query_ast_with_outer(
                 presentations,
                 BranchMode {
                     widen,
+                    expand,
                     storage_domain: nested.is_some(),
                     totals: totals_mode,
                     outer,
@@ -242,7 +344,14 @@ pub(super) fn compile_query_ast_with_outer(
         }
         Ok(branches)
     };
-    let mut branches = compile_branches(&BTreeSet::new(), presentations)?;
+    let mut branches = compile_branches(&BTreeSet::new(), &BTreeMap::new(), presentations)?;
+    // A value that one branch carries as a composite is spread over the
+    // same members in every branch, the way the platform writes a union of
+    // values of different types.
+    let mut expand = composite_positions(&branches);
+    if !expand.is_empty() {
+        branches = compile_branches(&BTreeSet::new(), &expand, presentations)?;
+    }
 
     let first = branches.first().expect("a query has at least one branch");
     for (index, branch) in branches.iter().enumerate().skip(1) {
@@ -332,8 +441,9 @@ pub(super) fn compile_query_ast_with_outer(
     // reference there are compiled again with the widening instruction.
     let widen = widened_positions(&branches, ast.unions[0].token)?;
     if !widen.is_empty() {
-        branches = compile_branches(&widen, presentations)?;
+        branches = compile_branches(&widen, &expand, presentations)?;
     }
+    expand.clear();
     let first = branches.first().expect("a query has at least one branch");
 
     // The merged kind of each column is the first non-wildcard kind across

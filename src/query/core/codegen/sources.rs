@@ -290,6 +290,7 @@ pub(super) fn compile_source_free_branch(
     dialect.append_limit(&mut sql, ast.top);
     Ok(CompiledBranch {
         sql,
+        logical_columns: vec![1; columns.len()],
         logical_width: columns.len(),
         columns,
         deferred_presentations: Vec::new(),

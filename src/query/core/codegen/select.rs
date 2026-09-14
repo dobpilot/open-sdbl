@@ -6,7 +6,8 @@ use super::context::{
 };
 use super::expression::{
     compile_aggregate, compile_composite_projection, compile_expression, compile_predicate,
-    expression_kind, reference_column, reference_type_column, single_column, widen_reference,
+    expression_kind, reference_column, reference_type_column, single_column, spread_over_members,
+    widen_reference,
 };
 use super::orchestrate::{PresentationCompilation, compile_query_ast};
 use super::params::{reference_constant_of_bytes, reference_constant_of_value};
@@ -34,13 +35,16 @@ use crate::query::core::resolve::{
 use crate::query::core::{QueryDiagnostic, QueryDiagnosticKind};
 use crate::{Keyword, Token, TokenKind};
 use std::cell::RefCell;
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 /// How a branch is rendered within its statement.
 #[derive(Clone, Copy)]
 pub(super) struct BranchMode<'a> {
     /// Output positions whose fixed references must be widened to payloads.
     pub(super) widen: &'a BTreeSet<usize>,
+    /// Projected values that other UNION branches carry as a composite,
+    /// with the members every branch must spread that value over.
+    pub(super) expand: &'a BTreeMap<usize, Vec<&'static str>>,
     /// Whether the statement is nested and keeps values in the storage
     /// domain (no MSSQL year-offset correction on projections).
     pub(super) storage_domain: bool,
@@ -64,6 +68,7 @@ pub(super) fn compile_branch(
 ) -> Result<CompiledBranch, QueryDiagnostic> {
     let BranchMode {
         widen,
+        expand: _,
         storage_domain,
         totals,
         outer,
@@ -126,7 +131,8 @@ pub(super) fn compile_branch(
         columns,
         sql: mut projections,
         deferred_presentations,
-    } = render_selected_projections(&selected, &context, widen, storage_domain)?;
+        logical_columns,
+    } = render_selected_projections(&selected, &context, widen, mode.expand, storage_domain)?;
     if projections.is_empty() {
         return Err(empty_projection_diagnostic(source, joins.first()));
     }
@@ -230,6 +236,7 @@ pub(super) fn compile_branch(
         columns,
         deferred_presentations,
         logical_width: selected.len(),
+        logical_columns,
         order,
     })
 }
@@ -763,6 +770,8 @@ struct RenderedProjections {
     columns: Vec<CompiledColumn>,
     sql: Vec<String>,
     deferred_presentations: Vec<usize>,
+    /// How many columns each projected value occupies.
+    logical_columns: Vec<usize>,
 }
 
 fn compile_selected_projections(
@@ -870,13 +879,38 @@ fn render_selected_projections(
     selected: &[SelectedProjection],
     context: &CompilationContext<'_, '_>,
     widen: &BTreeSet<usize>,
+    expand: &BTreeMap<usize, Vec<&'static str>>,
     storage_domain: bool,
 ) -> Result<RenderedProjections, QueryDiagnostic> {
     let mut columns = Vec::new();
     let mut sql = Vec::new();
     let mut deferred_presentations = Vec::new();
+    let mut logical_columns = Vec::with_capacity(selected.len());
     let mut labels = OutputLabelAllocator::new(context.dialect);
-    for selected in selected {
+    for (logical, selected) in selected.iter().enumerate() {
+        let before = columns.len();
+        // Another branch of the union carries this value as a composite,
+        // so it is spread over the same members here.
+        if let Some(members) = expand.get(&logical)
+            && let Some((value_sql, kind, label)) = projection_scalar(selected, context)
+        {
+            for (member, sql_text) in members.iter().zip(spread_over_members(
+                &value_sql, &kind, members, None, context,
+            )?) {
+                context.catalog.charge(1, None)?;
+                let output_label = labels.allocate(&format!("{label}{member}"));
+                sql.push(format!(
+                    "{sql_text} AS {}",
+                    context.dialect.quote_identifier(&output_label)
+                ));
+                columns.push(CompiledColumn::new(
+                    output_label,
+                    composite_member_kind_of(member),
+                ));
+            }
+            logical_columns.push(columns.len() - before);
+            continue;
+        }
         match selected {
             SelectedProjection::Field(resolved) => {
                 for member in projected_members(resolved.field()) {
@@ -954,12 +988,77 @@ fn render_selected_projections(
                 columns.push(CompiledColumn::new(output_label, kind));
             }
         }
+        logical_columns.push(columns.len() - before);
     }
     Ok(RenderedProjections {
         columns,
         sql,
         deferred_presentations,
+        logical_columns,
     })
+}
+
+/// The value a projection carries when it occupies one output column, with
+/// the label that column would take. `None` for a projection that is
+/// already several columns.
+fn projection_scalar(
+    selected: &SelectedProjection,
+    context: &CompilationContext<'_, '_>,
+) -> Option<(String, ColumnKind, String)> {
+    match selected {
+        SelectedProjection::Generated {
+            sql,
+            label,
+            deferred,
+            kind,
+        } => (!*deferred).then(|| (sql.clone(), kind.clone(), label.clone())),
+        SelectedProjection::Field(resolved) => match projected_members(resolved.field()).as_slice()
+        {
+            [ProjectedMember::Single(column)] => Some((
+                context.sql_column(resolved, column),
+                column.kind.clone(),
+                resolved.output_label(column),
+            )),
+            [
+                ProjectedMember::Reference {
+                    type_member,
+                    value_member,
+                },
+            ] => Some((
+                context.dialect.reference_payload(
+                    &context.sql_column(resolved, type_member),
+                    &context.sql_column(resolved, value_member),
+                ),
+                ColumnKind::Reference {
+                    targets: match &value_member.kind {
+                        ColumnKind::Reference { targets, .. } => targets.clone(),
+                        _ => Vec::new(),
+                    },
+                    runtime_typed: true,
+                },
+                resolved.field_label(),
+            )),
+            _ => None,
+        },
+    }
+}
+
+/// The kind of one member column of a composite value.
+fn composite_member_kind_of(member: &str) -> ColumnKind {
+    match member {
+        "_TYPE" => ColumnKind::Binary { length: Some(1) },
+        "_S" => ColumnKind::String { length: None },
+        "_N" => ColumnKind::Number {
+            precision: None,
+            scale: None,
+        },
+        "_T" => ColumnKind::DateTime,
+        "_L" => ColumnKind::Boolean,
+        _ => ColumnKind::Reference {
+            targets: Vec::new(),
+            runtime_typed: true,
+        },
+    }
 }
 
 /// The output position (1-based) of the first column of projection `index`.

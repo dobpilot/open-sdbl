@@ -32,6 +32,9 @@ pub(super) struct CompiledBranch {
     pub(super) columns: Vec<CompiledColumn>,
     pub(super) deferred_presentations: Vec<usize>,
     pub(super) logical_width: usize,
+    /// How many output columns each projected value occupies, so that a
+    /// union can line the branches up by value rather than by column.
+    pub(super) logical_columns: Vec<usize>,
     pub(super) order: Vec<OrderKey>,
 }
 

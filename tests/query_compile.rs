@@ -2519,6 +2519,9 @@ fn rejects_union_branches_with_different_compound_expansion_widths() {
         ]);
     });
 
+    // The members of this field are not the members of a composite value:
+    // SchemaStorage names no `_TYPE` for it, so the branches cannot be
+    // lined up and the union keeps its diagnostic.
     let mismatch = postgres_compile!(
         "SELECT ProbeAttribute FROM Catalog.OpenSdblMetadataProbe
          UNION SELECT Code FROM Catalog.OpenSdblMetadataProbe;",
@@ -3151,11 +3154,26 @@ fn diagnoses_union_kind_mismatches_and_accepts_null_branches() {
          SELECT Date FROM Catalog.OpenSdblMetadataProbe;",
         &snapshot,
     );
-    let error = postgres.unwrap_err();
-    assert_eq!(error.kind(), QueryDiagnosticKind::UnsupportedFeature);
-    assert_eq!((error.line(), error.column()), (2, 10));
-    assert!(error.message().contains("DateTime"));
-    assert!(mssql.is_err());
+    // Branches of different types are one composite value: measured on
+    // 8.3.27, the platform spreads every branch over the members of the
+    // types present and marks the row with the tag of its own type.
+    let compiled = postgres.unwrap();
+    assert!(
+        compiled
+            .sql
+            .contains("CASE WHEN \"__src\".\"_code\" IS NOT NULL THEN decode('05', 'hex') END"),
+        "the string branch marks its rows with the string tag: {}",
+        compiled.sql
+    );
+    assert!(
+        compiled
+            .sql
+            .contains("CASE WHEN \"__src\".\"_date_time\" IS NOT NULL THEN '' END"),
+        "the date branch writes the zero of the string member: {}",
+        compiled.sql
+    );
+    assert_eq!(compiled.columns.len(), 3);
+    assert!(mssql.is_ok(), "SQL Server spreads the same members");
 
     let nullable = postgres_compile!("SELECT NULL UNION ALL SELECT 4;", &snapshot).unwrap();
     assert_eq!(

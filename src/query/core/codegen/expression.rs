@@ -1405,7 +1405,7 @@ pub(super) struct CompositeMember {
 /// The member a value of this kind occupies in a composite result, with
 /// the value every other branch writes there. Mirrors how the platform
 /// stores a value of several types and how a composite field is projected.
-fn composite_member_of(kind: &ColumnKind) -> Option<(&'static str, TypeValue)> {
+pub(super) fn composite_member_of(kind: &ColumnKind) -> Option<(&'static str, TypeValue)> {
     match kind {
         ColumnKind::String { .. } => Some(("_S", TypeValue::String)),
         ColumnKind::Number { .. } => Some(("_N", TypeValue::Number)),
@@ -3021,22 +3021,22 @@ fn composite_result_members(columns: &[CompiledColumn]) -> Option<Vec<&'static s
 /// member carries the value, the discriminator carries its tag, every other
 /// member carries the zero of its type — and all of them stay `NULL` while
 /// the value is `NULL`, exactly as the platform writes them.
-fn spread_over_members(
+pub(super) fn spread_over_members(
     sql: &str,
     kind: &ColumnKind,
     members: &[&'static str],
-    token: &Token<'_>,
+    token: Option<&Token<'_>>,
     context: &CompilationContext<'_, '_>,
 ) -> Result<Vec<String>, QueryDiagnostic> {
     let dialect = context.dialect;
     let (own, tag) = composite_member_of(kind).ok_or_else(|| {
-        QueryDiagnostic::at(
+        QueryDiagnostic::at_or_unpositioned(
             QueryDiagnosticKind::UnsupportedFeature,
-            Some(token),
+            token,
             format!("value of kind {kind:?} has no place in a composite result"),
         )
     })?;
-    let (sql, _) = widen_reference(sql, kind, Some(token), context.snapshot, dialect)?;
+    let (sql, _) = widen_reference(sql, kind, token, context.snapshot, dialect)?;
     let guarded = |value: &str| format!("CASE WHEN {sql} IS NOT NULL THEN {value} END");
     members
         .iter()
@@ -3067,7 +3067,7 @@ fn compile_in_composite_query(
         ));
     }
     let (outer_sql, outer_kind) = value_operand(value, context)?;
-    let spread = spread_over_members(&outer_sql, &outer_kind, members, token, context)?;
+    let spread = spread_over_members(&outer_sql, &outer_kind, members, Some(token), context)?;
     let sql = format!("(({}) IN ({}))", spread.join(", "), inner.sql);
     Ok(if negated { format!("(NOT {sql})") } else { sql })
 }

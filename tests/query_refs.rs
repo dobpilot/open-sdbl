@@ -199,3 +199,53 @@ fn compares_a_reference_with_a_composite_subquery() {
         .unwrap_err();
     assert_eq!(mssql.kind(), QueryDiagnosticKind::UnsupportedFeature);
 }
+
+#[test]
+fn spreads_union_branches_over_the_members_of_a_composite() {
+    // Measured on 8.3.27: a union whose branches carry values of different
+    // types is one composite value — every branch writes its own member,
+    // the zero of the others and the tag of its own type, and each member
+    // stays NULL while the branch value is NULL.
+    let mut session = open_sdbl::query::SessionParameters::new();
+    for name in ["ЗначениеРазделителя", "ОбластьДанныхОсновныеДанные"]
+    {
+        session.set(open_sdbl::query::QueryParameter::new(
+            name,
+            open_sdbl::query::ParameterValue::Number {
+                unscaled: 0,
+                scale: 0,
+            },
+        ));
+    }
+    session.set(open_sdbl::query::QueryParameter::new(
+        "ИспользованиеРазделителя",
+        open_sdbl::query::ParameterValue::Boolean(false),
+    ));
+    let snapshot = support::demo_resolved_at(
+        &std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/demo"),
+    )
+    .snapshot;
+    // A fixed reference beside a composite one: the fixed branch spreads
+    // over the members the composite branch already projects.
+    let compiled = QueryCompiler::new(&snapshot, PostgresBackend)
+        .compile_with(
+            "ВЫБРАТЬ С.Ссылка КАК З ИЗ Справочник.Сотрудники КАК С
+             ОБЪЕДИНИТЬ ВСЕ
+             ВЫБРАТЬ П.Руководитель ИЗ Справочник.Проекты КАК П;",
+            &open_sdbl::query::CompileOptions::new().session(&session),
+        )
+        .expect("branches of different shapes are one composite value");
+    assert_eq!(compiled.columns.len(), 2);
+    assert!(
+        compiled.columns[0].label.ends_with("_TYPE"),
+        "the composite branch keeps its member order: {:?}",
+        compiled.columns
+    );
+    assert!(
+        compiled
+            .sql
+            .contains("IS NOT NULL THEN decode('08', 'hex') END"),
+        "the fixed branch marks its rows with the reference tag: {}",
+        compiled.sql
+    );
+}
