@@ -6461,3 +6461,27 @@ fn presents_the_reference_of_a_source() {
         "{error}"
     );
 }
+
+#[test]
+fn addresses_a_source_by_its_alias_alone() {
+    // The platform accepts no bare object name at all; the compiler keeps
+    // it for a source without an alias and hides it behind one.
+    let snapshot = support::snapshot();
+    let aliased = postgres_compile!(
+        "ВЫБРАТЬ OpenSdblMetadataProbe.Код ИЗ Справочник.OpenSdblMetadataProbe КАК Т;",
+        &snapshot,
+    )
+    .unwrap_err();
+    assert_eq!(
+        aliased.kind(),
+        QueryDiagnosticKind::UnknownField,
+        "{aliased}"
+    );
+
+    let bare = postgres_compile!(
+        "ВЫБРАТЬ OpenSdblMetadataProbe.Код КАК К ИЗ Справочник.OpenSdblMetadataProbe;",
+        &snapshot,
+    )
+    .unwrap();
+    assert!(bare.sql.contains("\"_code\""), "{}", bare.sql);
+}

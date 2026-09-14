@@ -174,11 +174,16 @@ pub(super) struct SourceScope {
 }
 
 impl SourceScope {
+    /// A source is addressed by its alias where it has one; the object
+    /// name qualifies only a source written without an alias. The platform
+    /// is stricter still — it accepts no bare object name at all — but a
+    /// declared alias hides it there too, which is what keeps a name used
+    /// twice in one statement unambiguous.
     fn is_qualifier(&self, name: &str) -> bool {
-        self.source_alias
-            .as_deref()
-            .is_some_and(|alias| names_equal(alias, name))
-            || names_equal(&self.object_name, name)
+        match self.source_alias.as_deref() {
+            Some(alias) => names_equal(alias, name),
+            None => names_equal(&self.object_name, name),
+        }
     }
 }
 
@@ -388,6 +393,31 @@ impl CompilationContext<'_, '_> {
         }
     }
 
+    /// Whether a name that resolved to no field names a tabular section of
+    /// the source: the platform returns it as a nested result inside one
+    /// column, which one SQL statement cannot do.
+    fn names_tabular_section(&self, scope: ScopeId, name: &Token<'_>) -> bool {
+        let Some(object) = self.snapshot.object_by_id(self.source(scope).object) else {
+            return false;
+        };
+        self.snapshot
+            .descriptors()
+            .iter()
+            .filter(|descriptor| {
+                descriptor.resource_guid == object.guid
+                    && names_equal(&descriptor.name, name.lexeme)
+            })
+            .any(|descriptor| {
+                // Only a tabular section has a table of its own, which is
+                // what separates it from an attribute of the same name.
+                self.snapshot
+                    .db_names()
+                    .entries()
+                    .iter()
+                    .any(|entry| entry.alias == "VT" && entry.guid == descriptor.object_guid)
+            })
+    }
+
     fn direct_field(
         &self,
         scope: ScopeId,
@@ -397,7 +427,16 @@ impl CompilationContext<'_, '_> {
         let (field_index, _) = match resolve_named_field(&source.fields, field) {
             Ok(resolved) => resolved,
             Err(error) => {
-                return self.computed_scope_field(scope, field).ok_or(error);
+                return self.computed_scope_field(scope, field).ok_or_else(|| {
+                    if self.names_tabular_section(scope, field) {
+                        return QueryDiagnostic::at(
+                            QueryDiagnosticKind::UnsupportedFeature,
+                            Some(field),
+                            "a tabular section as a nested result of the selection is not supported",
+                        );
+                    }
+                    error
+                });
             }
         };
         source.used_fields.borrow_mut().insert(field_index);
@@ -671,6 +710,15 @@ impl CompilationContext<'_, '_> {
                     [] => (0..self.local_sources)
                         .find_map(|index| self.computed_scope_field(ScopeId(index), field))
                         .ok_or_else(|| {
+                            if (0..self.local_sources)
+                                .any(|index| self.names_tabular_section(ScopeId(index), field))
+                            {
+                                return QueryDiagnostic::at(
+                                    QueryDiagnosticKind::UnsupportedFeature,
+                                    Some(field),
+                                    "a tabular section as a nested result of the selection is not supported",
+                                );
+                            }
                             QueryDiagnostic::at(
                                 QueryDiagnosticKind::UnknownField,
                                 Some(field),
