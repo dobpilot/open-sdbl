@@ -103,6 +103,17 @@ fn is_contextual_identifier(kind: TokenKind) -> bool {
         )
 }
 
+/// Whether a word may be an alias written without `КАК`. The platform
+/// accepts the short form wherever the `КАК` form is accepted, and accepts
+/// a contextual keyword as the name — `ВЫБРАТЬ 1 Сумма` names a column
+/// `Сумма`, measured on 8.3.27. A word that opens the next clause is never
+/// the alias: `ИТОГИ` and `ИНДЕКСИРОВАТЬ` both follow a projection and a
+/// source directly.
+fn is_implicit_alias(kind: TokenKind) -> bool {
+    is_contextual_identifier(kind)
+        && !matches!(kind, TokenKind::Keyword(Keyword::Totals | Keyword::Index))
+}
+
 /// Whether a join nested inside another may be flattened into the same
 /// chain. Measured on the platform: a group of left joins answers exactly
 /// what the flat chain answers, while an inner join inside a left one
@@ -549,17 +560,19 @@ impl<'tokens, 'source> Parser<'tokens, 'source> {
                 self.parse_projection()?
             };
             let alias = if self.consume_keyword(Keyword::As) {
-                if matches!(expression, Projection::All) {
-                    return Err(self.diagnostic(
-                        QueryDiagnosticKind::UnsupportedFeature,
-                        self.peek(),
-                        "wildcard projection cannot have an alias",
-                    ));
-                }
                 Some(self.expect_identifier("expected projection alias after AS")?)
             } else {
-                None
+                // `КАК` is optional in front of an alias, in a projection
+                // as much as after a source.
+                self.consume_implicit_alias()
             };
+            if alias.is_some() && matches!(expression, Projection::All) {
+                return Err(self.diagnostic(
+                    QueryDiagnosticKind::UnsupportedFeature,
+                    self.peek(),
+                    "wildcard projection cannot have an alias",
+                ));
+            }
             projection.push(ProjectionItem { expression, alias });
             if !self.consume_lexeme(",") {
                 break;
@@ -782,11 +795,8 @@ impl<'tokens, 'source> Parser<'tokens, 'source> {
             let nested = self.parse_nested_query(opening)?;
             let alias = if self.consume_keyword(Keyword::As) {
                 self.expect_identifier("expected source alias after AS")?
-            } else if self
-                .peek()
-                .is_some_and(|token| token.kind == TokenKind::Identifier)
-            {
-                self.next().expect("peeked token")
+            } else if let Some(alias) = self.consume_implicit_alias() {
+                alias
             } else {
                 return Err(self.diagnostic(
                     QueryDiagnosticKind::Syntax,
@@ -811,13 +821,8 @@ impl<'tokens, 'source> Parser<'tokens, 'source> {
             let name = self.next().expect("checked identifier");
             let alias = if self.consume_keyword(Keyword::As) {
                 Some(self.expect_identifier("expected source alias after AS")?)
-            } else if self
-                .peek()
-                .is_some_and(|token| token.kind == TokenKind::Identifier)
-            {
-                self.next()
             } else {
-                None
+                self.consume_implicit_alias()
             };
             return Ok(SourceAst {
                 kind: name,
@@ -836,13 +841,8 @@ impl<'tokens, 'source> Parser<'tokens, 'source> {
             let name = self.next().expect("checked identifier");
             let alias = if self.consume_keyword(Keyword::As) {
                 Some(self.expect_identifier("expected source alias after AS")?)
-            } else if self
-                .peek()
-                .is_some_and(|token| token.kind == TokenKind::Identifier)
-            {
-                self.next()
             } else {
-                None
+                self.consume_implicit_alias()
             };
             return Ok(SourceAst {
                 kind: name,
@@ -868,13 +868,8 @@ impl<'tokens, 'source> Parser<'tokens, 'source> {
             self.expect_lexeme(")")?;
             let alias = if self.consume_keyword(Keyword::As) {
                 Some(self.expect_identifier("expected source alias after AS")?)
-            } else if self
-                .peek()
-                .is_some_and(|token| token.kind == TokenKind::Identifier)
-            {
-                self.next()
             } else {
-                None
+                self.consume_implicit_alias()
             };
             return Ok(SourceAst {
                 kind,
@@ -938,13 +933,8 @@ impl<'tokens, 'source> Parser<'tokens, 'source> {
         };
         let alias = if self.consume_keyword(Keyword::As) {
             Some(self.expect_identifier("expected source alias after AS")?)
-        } else if self
-            .peek()
-            .is_some_and(|token| token.kind == TokenKind::Identifier)
-        {
-            self.next()
         } else {
-            None
+            self.consume_implicit_alias()
         };
         Ok(SourceAst {
             kind,
@@ -2206,6 +2196,17 @@ impl<'tokens, 'source> Parser<'tokens, 'source> {
             ));
         }
         Ok(self.next().expect("peeked token"))
+    }
+
+    /// Takes an alias written without `КАК`, if the next word may be one.
+    fn consume_implicit_alias(&mut self) -> Option<&'tokens Token<'source>> {
+        if self
+            .peek()
+            .is_some_and(|token| is_implicit_alias(token.kind))
+        {
+            return self.next();
+        }
+        None
     }
 
     fn expect_kind(

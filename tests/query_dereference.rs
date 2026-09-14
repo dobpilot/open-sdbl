@@ -529,3 +529,45 @@ fn reads_the_point_in_time_pair() {
     .unwrap_err();
     assert_eq!(compared.kind(), QueryDiagnosticKind::UnsupportedFeature);
 }
+
+#[test]
+fn accepts_an_alias_written_without_as() {
+    // `КАК` is optional in front of an alias. Measured on 8.3.27: the
+    // short form names a field, an aggregate, a `ВЫБОР` and a constant,
+    // and a word that opens the next clause is never read as one.
+    let snapshot = support::snapshot();
+    let named = postgres(
+        &snapshot,
+        "ВЫБРАТЬ Т.Ссылка Имя ИЗ Справочник.OpenSdblMetadataProbe КАК Т;",
+    );
+    assert_contains(&named.sql, "AS \"Имя\"");
+    let aggregated = postgres(
+        &snapshot,
+        "ВЫБРАТЬ КОЛИЧЕСТВО(*) Кол ИЗ Справочник.OpenSdblMetadataProbe КАК Т;",
+    );
+    assert_contains(&aggregated.sql, "COUNT(*) AS \"Кол\"");
+    let chosen = postgres(
+        &snapshot,
+        "ВЫБРАТЬ ВЫБОР КОГДА ИСТИНА ТОГДА 1 ИНАЧЕ 2 КОНЕЦ Пс ИЗ Справочник.OpenSdblMetadataProbe КАК Т;",
+    );
+    assert_contains(&chosen.sql, "END AS \"Пс\"");
+    assert_contains(&postgres(&snapshot, "ВЫБРАТЬ 1 Один;").sql, "1 AS \"Один\"");
+
+    // A contextual keyword may name the column, as it may after `КАК`.
+    assert_contains(&postgres(&snapshot, "ВЫБРАТЬ 1 Сумма;").sql, "AS \"Сумма\"");
+
+    // `ИТОГИ` opens the totals clause; it never names the source before
+    // it, nor the projection.
+    let totals = postgres(
+        &snapshot,
+        "ВЫБРАТЬ Т.Ссылка КАК С, 1 КАК Ч ИЗ Справочник.OpenSdblMetadataProbe КАК Т
+         ИТОГИ СУММА(Ч) ПО ОБЩИЕ;",
+    );
+    assert_contains(&totals.sql, "__totals_rows");
+
+    // The wildcard keeps refusing an alias in either form.
+    let error = QueryCompiler::new(&snapshot, PostgresBackend)
+        .compile("ВЫБРАТЬ * Имя ИЗ Справочник.OpenSdblMetadataProbe КАК Т;")
+        .unwrap_err();
+    assert_eq!(error.kind(), QueryDiagnosticKind::UnsupportedFeature);
+}
