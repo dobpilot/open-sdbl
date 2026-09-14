@@ -161,13 +161,6 @@ fn compile_narrowed_reference(
     target: NarrowingTarget<'_, '_>,
     path: Option<&Token<'_>>,
 ) -> Result<NarrowedReference, QueryDiagnostic> {
-    let Expression::Field(reference) = argument else {
-        return Err(QueryDiagnostic::at(
-            QueryDiagnosticKind::Syntax,
-            Some(token),
-            "CAST to a metadata type expects a reference field",
-        ));
-    };
     let kind = kind_from_query_name(target.kind.lexeme).ok_or_else(|| {
         QueryDiagnostic::at(
             QueryDiagnosticKind::UnknownObject,
@@ -196,6 +189,64 @@ fn compile_narrowed_reference(
             "CAST target disappeared from the metadata index",
         )
     })?;
+    // `ВЫРАЗИТЬ` also narrows an expression: the platform accepts it when
+    // the value can hold the named type and reports incompatible types
+    // otherwise, measured on the probe base.
+    let Expression::Field(reference) = argument else {
+        if path.is_some() {
+            return Err(QueryDiagnostic::at(
+                QueryDiagnosticKind::UnsupportedFeature,
+                Some(token),
+                "a field of a narrowed expression is read through a narrowed field",
+            ));
+        }
+        let (sql, value_kind) = value_operand(argument, context)?;
+        let narrowed = ColumnKind::Reference {
+            targets: vec![target_id],
+            runtime_typed: false,
+        };
+        return match &value_kind {
+            ColumnKind::Reference {
+                targets,
+                runtime_typed: false,
+            } if targets.as_slice() == [target_id] => Ok(NarrowedReference {
+                sql,
+                kind: value_kind,
+            }),
+            ColumnKind::Reference {
+                runtime_typed: true,
+                ..
+            } => {
+                let number = object_type_number(target_id, token, context.snapshot)?;
+                Ok(NarrowedReference {
+                    sql: format!(
+                        "CASE WHEN {} = {} THEN {} END",
+                        context.dialect.payload_type(&sql),
+                        context.dialect.binary_u32(number),
+                        context.dialect.payload_reference(&sql),
+                    ),
+                    kind: narrowed,
+                })
+            }
+            // A value that is `NULL` whatever its type narrows to `NULL`
+            // of the named type; an unbound parameter is such a value.
+            ColumnKind::Null | ColumnKind::Undefined | ColumnKind::Unknown { .. } => {
+                Ok(NarrowedReference {
+                    sql,
+                    kind: narrowed,
+                })
+            }
+            other => Err(QueryDiagnostic::at(
+                QueryDiagnosticKind::Syntax,
+                Some(token),
+                format!(
+                    "CAST argument of kind {other:?} cannot hold {}.{}",
+                    kind.as_str(),
+                    target.object.lexeme
+                ),
+            )),
+        };
+    };
     let resolved = context.resolve_direct(reference)?;
     let field = resolved.field();
     let is_reference = !field.reference_targets.is_empty()

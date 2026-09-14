@@ -468,3 +468,28 @@ fn projects_alternatives_of_different_types_by_member() {
     );
     assert_eq!(single.columns.len(), 1);
 }
+
+#[test]
+fn narrows_an_expression_to_a_metadata_type() {
+    // Measured on the platform: a value that can hold the named type keeps
+    // its value, and one that cannot is refused.
+    let snapshot = universal_dereferenced_presentation_snapshot();
+    let compiled = postgres(
+        &snapshot,
+        &format!(
+            "ВЫБРАТЬ ВЫРАЗИТЬ(ВЫБОР КОГДА Ссылка ЕСТЬ NULL ТОГДА ДоговорКонтрагента
+                ИНАЧЕ ДоговорКонтрагента КОНЕЦ КАК Справочник.ЦентрыФинансовойОтветственности)
+                КАК Н ИЗ {DOCUMENT};"
+        ),
+    );
+    assert_contains(&compiled.sql, "CASE WHEN substring(");
+    assert_contains(&compiled.sql, "decode('0000003e', 'hex') THEN substring(");
+
+    let refused = QueryCompiler::new(&snapshot, PostgresBackend)
+        .compile(&format!(
+            "ВЫБРАТЬ ВЫРАЗИТЬ(1 КАК Справочник.ЦентрыФинансовойОтветственности) КАК Н
+             ИЗ {DOCUMENT};"
+        ))
+        .unwrap_err();
+    assert!(refused.message().contains("cannot hold"), "{refused}");
+}
