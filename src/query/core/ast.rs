@@ -603,6 +603,10 @@ pub(super) enum Expression<'tokens, 'source> {
     /// `ВЫБОР КОГДА … ТОГДА … [ИНАЧЕ …] КОНЕЦ`.
     Case {
         token: &'tokens Token<'source>,
+        /// The value every `КОГДА` is compared with in the simple form
+        /// `ВЫБОР <выражение> КОГДА <значение> ТОГДА …`; `None` when the
+        /// branches carry their own predicates.
+        subject: Option<Box<Self>>,
         branches: Vec<CaseBranch<'tokens, 'source>>,
         otherwise: Option<Box<Self>>,
     },

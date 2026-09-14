@@ -1301,7 +1301,52 @@ pub(super) fn check_like_operand(
 
 /// Compiles the alternatives of a `ВЫБОР` expression with the given operand
 /// compilers and renders the `CASE`.
+/// Renders one alternative of the simple form `ВЫБОР <выражение> КОГДА
+/// <значение> ТОГДА …` as the comparison of the subject with the value.
+/// Measured on the platform: the alternatives compare with `=`, so a
+/// `NULL` subject matches no alternative, not even a `NULL` one.
+pub(super) fn compile_case_match(
+    subject: &Expression<'_, '_>,
+    value: &Expression<'_, '_>,
+    when: &Token<'_>,
+    context: &mut CompilationContext<'_, '_>,
+) -> Result<String, QueryDiagnostic> {
+    let operator = Token {
+        kind: TokenKind::Operator,
+        lexeme: "=",
+        span: when.span,
+    };
+    if let Some(sql) = compile_undefined_comparison(subject, value, &operator, context)? {
+        return Ok(sql);
+    }
+    if let Some(sql) = compile_reference_pair_comparison(subject, value, &operator, context)? {
+        return Ok(sql);
+    }
+    if let Some(sql) = compile_composite_comparison(subject, value, &operator, context)? {
+        return Ok(sql);
+    }
+    Ok(format!(
+        "({} = {})",
+        compile_expression_operand(subject, value, context)?,
+        compile_expression_operand(value, subject, context)?,
+    ))
+}
+
+/// One operand a `ВЫБОР` renderer asks its caller to compile: the
+/// condition of a branch, which the simple form compares with the subject,
+/// or a resulting value.
+pub(super) enum CasePart<'part, 'tokens, 'source> {
+    Condition {
+        /// The subject of the simple form `ВЫБОР <выражение> КОГДА …`.
+        subject: Option<&'part Expression<'tokens, 'source>>,
+        when: &'part Expression<'tokens, 'source>,
+        token: &'tokens Token<'source>,
+    },
+    Value(&'part Expression<'tokens, 'source>),
+}
+
 pub(super) fn compile_case<'tokens, 'source, E>(
+    subject: Option<&Expression<'tokens, 'source>>,
     branches: &[CaseBranch<'tokens, 'source>],
     otherwise: Option<&Expression<'tokens, 'source>>,
     snapshot: &MetadataSnapshot,
@@ -1309,13 +1354,20 @@ pub(super) fn compile_case<'tokens, 'source, E>(
     mut compile: E,
 ) -> Result<(String, ColumnKind), QueryDiagnostic>
 where
-    E: FnMut(&Expression<'tokens, 'source>, bool) -> Result<(String, ColumnKind), QueryDiagnostic>,
+    E: FnMut(CasePart<'_, 'tokens, 'source>) -> Result<(String, ColumnKind), QueryDiagnostic>,
 {
     let mut whens = Vec::with_capacity(branches.len());
     let mut values = Vec::with_capacity(branches.len() + 1);
     for branch in branches {
-        whens.push(compile(&branch.when, true)?.0);
-        let (sql, kind) = compile(&branch.then, false)?;
+        whens.push(
+            compile(CasePart::Condition {
+                subject,
+                when: &branch.when,
+                token: branch.token,
+            })?
+            .0,
+        );
+        let (sql, kind) = compile(CasePart::Value(&branch.then))?;
         values.push(Operand {
             token: branch.token,
             sql,
@@ -1323,7 +1375,7 @@ where
         });
     }
     if let Some(otherwise) = otherwise {
-        let (sql, kind) = compile(otherwise, false)?;
+        let (sql, kind) = compile(CasePart::Value(otherwise))?;
         values.push(Operand {
             token: operand_token(otherwise).unwrap_or(branches[0].token),
             sql,
@@ -1720,6 +1772,7 @@ pub(super) fn compile_expression(
             ))
         }
         Expression::Case {
+            subject,
             branches,
             otherwise,
             ..
@@ -1728,16 +1781,24 @@ pub(super) fn compile_expression(
             let snapshot = context.snapshot;
             let dialect = context.dialect;
             compile_case(
+                subject.as_deref(),
                 branches,
                 otherwise.as_deref(),
                 snapshot,
                 dialect,
-                |expression, predicate| {
-                    if predicate {
-                        Ok((compile_predicate(expression, context)?, ColumnKind::Boolean))
-                    } else {
-                        value_operand(expression, context)
+                |part| match part {
+                    CasePart::Condition {
+                        subject: Some(subject),
+                        when,
+                        token,
+                    } => Ok((
+                        compile_case_match(subject, when, token, context)?,
+                        ColumnKind::Boolean,
+                    )),
+                    CasePart::Condition { when, .. } => {
+                        Ok((compile_predicate(when, context)?, ColumnKind::Boolean))
                     }
+                    CasePart::Value(expression) => value_operand(expression, context),
                 },
             )
             .map(|(sql, _)| sql)

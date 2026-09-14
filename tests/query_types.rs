@@ -389,3 +389,38 @@ fn compares_a_composite_field_with_a_list() {
     );
     assert_contains(&negated.sql, "WHERE (NOT ((\"Т\".\"_fld54_type\"");
 }
+
+#[test]
+fn compiles_the_simple_case_form() {
+    // `ВЫБОР <выражение> КОГДА <значение> ТОГДА …` compares every
+    // alternative with the subject. Measured on the platform, including a
+    // NULL subject, which matches no alternative.
+    let snapshot = universal_dereferenced_presentation_snapshot();
+    let compiled = postgres(
+        &snapshot,
+        &format!(
+            "ВЫБРАТЬ ВЫБОР ТИПЗНАЧЕНИЯ(ДоговорКонтрагента)
+                КОГДА ТИП(Справочник.ЦентрыФинансовойОтветственности) ТОГДА 1
+                ИНАЧЕ 0 КОНЕЦ КАК Р ИЗ {DOCUMENT};"
+        ),
+    );
+    assert_contains(&compiled.sql, "CASE WHEN (");
+    assert_contains(&compiled.sql, "decode('080000003e', 'hex')");
+
+    // A reference subject compares by member, as it does in a predicate.
+    let reference = postgres(
+        &snapshot,
+        &format!(
+            "ВЫБРАТЬ ВЫБОР Ссылка КОГДА ЗНАЧЕНИЕ(Документ.бит_ДополнительныеУсловияПоДоговору.ПустаяСсылка)
+                ТОГДА 1 ИНАЧЕ 0 КОНЕЦ КАК Р ИЗ {DOCUMENT};"
+        ),
+    );
+    assert_contains(&reference.sql, "\"__src\".\"_idrref\" = ");
+
+    // The searched form keeps working.
+    let searched = postgres(
+        &snapshot,
+        &format!("ВЫБРАТЬ ВЫБОР КОГДА Ссылка ЕСТЬ NULL ТОГДА 1 ИНАЧЕ 0 КОНЕЦ КАК Р ИЗ {DOCUMENT};"),
+    );
+    assert_contains(&searched.sql, "CASE WHEN (\"__src\".\"_idrref\" IS NULL)");
+}

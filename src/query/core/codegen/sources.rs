@@ -4,10 +4,10 @@ use std::sync::Arc;
 
 use super::context::{CompilationContext, CompiledBranch, JoinPlan, SourceScope};
 use super::expression::{
-    Operand, binary_operator_sql, check_like_operand, check_scalar_argument, compile_case,
-    compile_expression, compile_predicate, count_diagnostic, function_name, is_count_kind,
-    is_date_operand_kind, is_unbound_parameter, left_binary_spine, operand_token, reference_column,
-    reference_type_column, render_coalesce, render_like, single_column,
+    CasePart, Operand, binary_operator_sql, check_like_operand, check_scalar_argument,
+    compile_case, compile_expression, compile_predicate, count_diagnostic, function_name,
+    is_count_kind, is_date_operand_kind, is_unbound_parameter, left_binary_spine, operand_token,
+    reference_column, reference_type_column, render_coalesce, render_like, single_column,
     source_free_expression_kind, type_literal_value, value_type_sql, widen_reference,
 };
 use super::params::render_scalar_parameter;
@@ -632,38 +632,61 @@ fn compile_source_free_expression(
             None => Ok("NULL".to_owned()),
         },
         Expression::Case {
+            subject,
             branches,
             otherwise,
             ..
         } => compile_case(
+            subject.as_deref(),
             branches,
             otherwise.as_deref(),
             snapshot,
             dialect,
-            |expression, predicate| {
-                if predicate {
-                    Ok((
-                        compile_source_free_predicate(
-                            expression,
-                            snapshot,
-                            dialect,
-                            parameters,
-                            storage_domain,
-                        )?,
-                        ColumnKind::Boolean,
-                    ))
-                } else {
-                    Ok((
+            |part| match part {
+                CasePart::Condition {
+                    subject: Some(subject),
+                    when,
+                    ..
+                } => Ok((
+                    format!(
+                        "({} = {})",
                         compile_source_free_expression(
-                            expression,
+                            subject,
                             snapshot,
                             dialect,
                             parameters,
                             storage_domain,
                         )?,
-                        source_free_expression_kind(expression, snapshot, parameters),
-                    ))
-                }
+                        compile_source_free_expression(
+                            when,
+                            snapshot,
+                            dialect,
+                            parameters,
+                            storage_domain,
+                        )?,
+                    ),
+                    ColumnKind::Boolean,
+                )),
+                CasePart::Condition { when, .. } => Ok((
+                    compile_source_free_predicate(
+                        when,
+                        snapshot,
+                        dialect,
+                        parameters,
+                        storage_domain,
+                    )?,
+                    ColumnKind::Boolean,
+                )),
+                CasePart::Value(expression) => Ok((
+                    compile_source_free_expression(
+                        expression,
+                        snapshot,
+                        dialect,
+                        parameters,
+                        storage_domain,
+                    )?,
+                    source_free_expression_kind(expression, snapshot, parameters),
+                )),
             },
         )
         .map(|(sql, _)| sql),

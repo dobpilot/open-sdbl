@@ -1653,6 +1653,16 @@ impl<'tokens, 'source> Parser<'tokens, 'source> {
         }
         self.depth += 1;
         let result = (|| {
+            // `ВЫБОР <выражение> КОГДА <значение> ТОГДА …` compares every
+            // alternative with one value, as the platform does.
+            let subject = if self
+                .peek()
+                .is_some_and(|token| token.kind == TokenKind::Keyword(Keyword::When))
+            {
+                None
+            } else {
+                Some(Box::new(self.parse_or()?))
+            };
             let mut branches = Vec::new();
             while let Some(when_token) = self.consume_keyword_token(Keyword::When) {
                 self.record_binary_operator(when_token)?;
@@ -1680,6 +1690,7 @@ impl<'tokens, 'source> Parser<'tokens, 'source> {
             self.expect_keyword(Keyword::End)?;
             Ok(Expression::Case {
                 token,
+                subject,
                 branches,
                 otherwise,
             })
