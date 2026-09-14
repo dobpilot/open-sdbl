@@ -6326,3 +6326,31 @@ fn flattens_a_group_of_nested_joins() {
     .unwrap_err();
     assert_eq!(error.kind(), QueryDiagnosticKind::UnsupportedFeature);
 }
+
+#[test]
+fn reads_names_and_sources_real_configurations_use() {
+    // An enumeration value may be named like a keyword; nothing but a name
+    // can appear inside VALUE, so the keyword is read as one.
+    let snapshot = enumeration_value_snapshot();
+    let error = postgres_compile!(
+        "ВЫБРАТЬ ЗНАЧЕНИЕ(Перечисление.бит_ВидыСтатусовОбъектов.НЕОПРЕДЕЛЕНО) КАК З;",
+        &snapshot,
+    )
+    .unwrap_err();
+    assert_ne!(error.kind(), QueryDiagnosticKind::Syntax, "{error}");
+
+    // A tabular section is refused only for a kind that has none.
+    let registers = support::snapshot();
+    let refused = postgres_compile!(
+        "ВЫБРАТЬ Ссылка ИЗ РегистрСведений.ProbeInformationRegister.ТабличнаяЧасть;",
+        &registers,
+    )
+    .unwrap_err();
+    assert!(
+        matches!(
+            refused.kind(),
+            QueryDiagnosticKind::UnsupportedFeature | QueryDiagnosticKind::UnknownObject
+        ),
+        "{refused}"
+    );
+}

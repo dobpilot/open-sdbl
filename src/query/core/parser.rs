@@ -1934,11 +1934,11 @@ impl<'tokens, 'source> Parser<'tokens, 'source> {
         token: &'tokens Token<'source>,
     ) -> Result<Expression<'tokens, 'source>, QueryDiagnostic> {
         self.expect_lexeme("(")?;
-        let kind = self.expect_identifier("VALUE expects a metadata kind")?;
+        let kind = self.expect_metadata_name("VALUE expects a metadata kind")?;
         self.expect_lexeme(".")?;
-        let object = self.expect_identifier("VALUE expects a metadata object")?;
+        let object = self.expect_metadata_name("VALUE expects a metadata object")?;
         self.expect_lexeme(".")?;
-        let value = self.expect_identifier("VALUE expects a predefined value")?;
+        let value = self.expect_metadata_name("VALUE expects a predefined value")?;
         self.expect_lexeme(")")?;
         Ok(Expression::MetadataValue {
             token,
@@ -2120,6 +2120,26 @@ impl<'tokens, 'source> Parser<'tokens, 'source> {
                 format!("expected {}", keyword.as_str()),
             ))
         }
+    }
+
+    /// A name inside `ЗНАЧЕНИЕ(…)`, where nothing but a name may appear,
+    /// so a name the lexer reads as a keyword is accepted: real
+    /// configurations name an enumeration value `НеОпределено`.
+    fn expect_metadata_name(
+        &mut self,
+        message: &'static str,
+    ) -> Result<&'tokens Token<'source>, QueryDiagnostic> {
+        let token = self
+            .peek()
+            .ok_or_else(|| self.diagnostic(QueryDiagnosticKind::Syntax, None, message))?;
+        if !is_contextual_identifier(token.kind) && !matches!(token.kind, TokenKind::Keyword(_)) {
+            return Err(QueryDiagnostic::at(
+                QueryDiagnosticKind::Syntax,
+                Some(token),
+                message,
+            ));
+        }
+        Ok(self.next().expect("peeked token"))
     }
 
     fn expect_identifier(

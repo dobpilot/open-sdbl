@@ -1284,14 +1284,25 @@ pub(super) fn resolve_source_metadata<'snapshot>(
         return resolve_service_table_part(service, table_part, object, snapshot, catalog);
     }
 
+    // Every object kind that has tabular sections stores them the same
+    // way; the kinds left out have none.
     if !matches!(
         object.kind,
-        Some(MetadataKind::Catalog | MetadataKind::Document)
+        Some(
+            MetadataKind::Catalog
+                | MetadataKind::Document
+                | MetadataKind::ChartOfCharacteristicTypes
+                | MetadataKind::ChartOfAccounts
+                | MetadataKind::ChartOfCalculationTypes
+                | MetadataKind::BusinessProcess
+                | MetadataKind::Task
+                | MetadataKind::ExchangePlan
+        )
     ) {
         return Err(QueryDiagnostic::at(
             QueryDiagnosticKind::UnsupportedFeature,
             Some(table_part),
-            "tabular-section sources are supported only for catalogs and documents",
+            "this object kind has no tabular sections",
         ));
     }
     let descriptors = snapshot
