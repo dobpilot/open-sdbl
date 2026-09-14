@@ -179,16 +179,40 @@ fn compiles_the_balance_and_turnovers_table() {
     // The statement reads no dimension, so the register answers one row.
     assert_contains(&interval.sql, "\"__aggregate_used\"");
 
+    // A periodicity groups the movements into periods, as `Обороты` does,
+    // and exposes the period; the balances of such a split are running
+    // sums the platform accumulates outside SQL, so they are refused.
+    let periodic = QueryCompiler::new(&snapshot, PostgresBackend)
+        .compile(
+            "ВЫБРАТЬ О.Период КАК Период, О.КоличествоОборот КАК Обор
+             ИЗ РегистрНакопления.Остатки.ОстаткиИОбороты(, , Месяц, ) КАК О;",
+        )
+        .unwrap();
+    assert_contains(
+        &periodic.sql,
+        "date_trunc('month', \"__aggregate_base\".\"_period\") AS \"_period\"",
+    );
+
     for (source, message) in [
         (
-            "ВЫБРАТЬ О.КоличествоОборот КАК Обор
+            "ВЫБРАТЬ О.КоличествоНачальныйОстаток КАК Нач
              ИЗ РегистрНакопления.Остатки.ОстаткиИОбороты(, , Месяц, ) КАК О;",
-            "periodicity is not supported",
+            "answers no balance column",
+        ),
+        (
+            "ВЫБРАТЬ О.КоличествоОборот КАК Обор
+             ИЗ РегистрНакопления.Остатки.ОстаткиИОбороты(, , Месяц, Регистратор, ) КАК О;",
+            "completion method",
         ),
         (
             "ВЫБРАТЬ О.КоличествоОборот КАК Обор
              ИЗ РегистрНакопления.Остатки.ОстаткиИОбороты(, , , ДвиженияИГраницыПериода, ) КАК О;",
-            "period completion method is not supported",
+            "needs a periodicity",
+        ),
+        (
+            "ВЫБРАТЬ О.КоличествоОборот КАК Обор
+             ИЗ РегистрНакопления.Остатки.ОстаткиИОбороты(, , Регистратор, ) КАК О;",
+            "calendar periodicity",
         ),
     ] {
         let error = QueryCompiler::new(&snapshot, PostgresBackend)

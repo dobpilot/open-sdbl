@@ -184,6 +184,7 @@ pub(super) fn compile_accumulation_relation(
             &resource_fields,
             live_table,
             active_column,
+            period,
             period_column,
             record_kind.expect("a balance register has RecordKind"),
             restriction,
@@ -366,17 +367,62 @@ fn compile_balance_and_turnovers_relation(
     resource_fields: &[QueryableField],
     live_table: &LiveTable,
     active_column: &QueryableColumn,
+    period_field: &QueryableField,
     period_column: &QueryableColumn,
     record_kind: &QueryableColumn,
     restriction: Option<&SourceRestriction<'_>>,
     dialect: SqlDialect,
 ) -> Result<CompiledSourceRelation, QueryDiagnostic> {
-    for (index, name) in [(2, "periodicity"), (3, "period completion method")] {
-        if let Some(argument) = virtual_table.arguments.get(index).and_then(Option::as_ref) {
+    // A periodicity splits the interval into periods with movements, the
+    // way `Обороты` does. The balances of such a split are running sums
+    // the platform accumulates while reading the ordered rows rather than
+    // in SQL, so they are refused where the statement reads one.
+    let periodicity = virtual_table
+        .arguments
+        .get(2)
+        .and_then(Option::as_ref)
+        .map(|expression| {
+            let periodicity = turnovers_periodicity(expression, virtual_table)?;
+            match periodicity {
+                TurnoverPeriodicity::Calendar(unit) => Ok(unit),
+                TurnoverPeriodicity::Recorder | TurnoverPeriodicity::Record => {
+                    Err(QueryDiagnostic::at(
+                        QueryDiagnosticKind::UnsupportedFeature,
+                        operand_token(expression).or(Some(virtual_table.token)),
+                        "BalanceAndTurnovers takes a calendar periodicity",
+                    ))
+                }
+            }
+        })
+        .transpose()?;
+    if let Some(argument) = virtual_table.arguments.get(3).and_then(Option::as_ref) {
+        let token = operand_token(argument).unwrap_or(virtual_table.token);
+        let completion = match argument {
+            Expression::Field(reference) if reference.segments.len() == 1 => reference.last(),
+            _ => token,
+        };
+        // Measured: with a periodicity and no balance column the two
+        // methods answer the same rows, because a boundary row carries no
+        // turnover.
+        if !(names_equal(completion.lexeme, "Движения")
+            || names_equal(completion.lexeme, "Movements")
+            || names_equal(completion.lexeme, "ДвиженияИГраницыПериода")
+            || names_equal(completion.lexeme, "MovementsAndBoundaries"))
+        {
             return Err(QueryDiagnostic::at(
                 QueryDiagnosticKind::UnsupportedFeature,
-                operand_token(argument).or(Some(virtual_table.token)),
-                format!("BalanceAndTurnovers {name} is not supported yet"),
+                Some(token),
+                format!(
+                    "BalanceAndTurnovers period completion method {:?} is not supported",
+                    completion.lexeme
+                ),
+            ));
+        }
+        if periodicity.is_none() {
+            return Err(QueryDiagnostic::at(
+                QueryDiagnosticKind::UnsupportedFeature,
+                Some(token),
+                "a period completion method needs a periodicity",
             ));
         }
     }
@@ -421,6 +467,15 @@ fn compile_balance_and_turnovers_relation(
     if let Some(end) = &end {
         predicates.push(format!("({period} < {end})"));
     }
+    // Without a periodicity the movements before the interval are read to
+    // build its opening balance; a periodic table answers no balance, so
+    // it reads the interval alone and every period it reports has
+    // movements of its own, as on the platform.
+    if periodicity.is_some()
+        && let Some(begin) = &begin
+    {
+        predicates.push(format!("({period} >= {begin})"));
+    }
     if let Some(sql) = compile_accumulation_condition(
         condition,
         source,
@@ -450,6 +505,25 @@ fn compile_balance_and_turnovers_relation(
     }
     let kind = qualified(record_kind);
     let mut fields = dimension_fields.to_vec();
+    // A periodicity groups the movements into calendar periods, exactly
+    // as `Обороты` does; the period becomes a field of the relation and
+    // stays a grouping level even when the statement never reads it.
+    let mut split = Vec::new();
+    if let Some(unit) = periodicity {
+        let truncated = dialect.begin_of_period(&period, unit);
+        projections.push(format!(
+            "{truncated} AS {}",
+            dialect.quote_identifier(&period_column.physical_name)
+        ));
+        grouping.push(truncated);
+        let field = turnovers_period_field(period_field);
+        split = field
+            .columns
+            .iter()
+            .map(|column| column.physical_name.clone())
+            .collect();
+        fields.push(field);
+    }
     for field in resource_fields {
         let column = single_column(field, virtual_table.token)?;
         let value = qualified(column);
@@ -508,12 +582,36 @@ fn compile_balance_and_turnovers_relation(
     }
     relation.push(')');
     let mut aggregate = aggregate_source(dimension_fields, &[]);
+    let resource_start = dimension_fields.len() + usize::from(periodicity.is_some());
+    aggregate.split = split;
     aggregate.resources = fields
         .iter()
-        .skip(dimension_fields.len())
+        .skip(resource_start)
         .flat_map(|field| field.columns.iter())
         .map(|column| column.physical_name.clone())
         .collect();
+    if periodicity.is_some() {
+        // The balance of a period is a running sum over the periods before
+        // it, which the platform accumulates while reading the rows rather
+        // than in SQL.
+        let suffixes = AccumulationKind::balance_and_turnover_suffixes();
+        aggregate.forbidden = fields
+            .iter()
+            .enumerate()
+            .skip(resource_start)
+            .filter(|(_, field)| {
+                [suffixes[0], suffixes[4]].iter().any(|(russian, english)| {
+                    field.name.ends_with(russian) || field.name.ends_with(english)
+                })
+            })
+            .map(|(index, _)| {
+                (
+                    index,
+                    "a periodic BalanceAndTurnovers answers no balance column",
+                )
+            })
+            .collect();
+    }
     Ok(CompiledSourceRelation {
         sql: relation,
         fields: fields.into(),
@@ -627,6 +725,11 @@ pub(super) struct AggregateSource {
     /// Physical column of every resource; they are summed when a
     /// dimension is dropped.
     pub(super) resources: Vec<String>,
+    /// Fields the statement may not read from this relation, by index,
+    /// with the reason. A periodic `ОстаткиИОбороты` computes no running
+    /// balance, so its balance columns are refused rather than answered
+    /// with the balance of the whole interval.
+    pub(super) forbidden: Vec<(usize, &'static str)>,
     /// Physical columns a periodicity splits `Обороты` by: the period,
     /// and the recorder and line number of the record periodicities. A
     /// periodicity is an explicit request to split, so the platform keeps
@@ -637,17 +740,30 @@ pub(super) struct AggregateSource {
 /// Sums away the dimensions the statement never reads, as the platform
 /// does: a register table answers one row per combination of the
 /// dimensions the query actually selects, filters, or joins on.
-pub(super) fn finalize_aggregate_relation(scope: &mut SourceScope, dialect: SqlDialect) {
+pub(super) fn finalize_aggregate_relation(
+    scope: &mut SourceScope,
+    token: &Token<'_>,
+    dialect: SqlDialect,
+) -> Result<(), QueryDiagnostic> {
     let Some(aggregate) = &scope.aggregate else {
-        return;
+        return Ok(());
     };
     let used = scope.used_fields.borrow();
+    for (index, reason) in &aggregate.forbidden {
+        if used.contains(index) {
+            return Err(QueryDiagnostic::at(
+                QueryDiagnosticKind::UnsupportedFeature,
+                Some(token),
+                (*reason).to_owned(),
+            ));
+        }
+    }
     if aggregate
         .dimensions
         .iter()
         .all(|(index, _)| used.contains(index))
     {
-        return;
+        return Ok(());
     }
     let alias = dialect.quote_identifier("__aggregate_used");
     let columns = aggregate
@@ -685,6 +801,7 @@ pub(super) fn finalize_aggregate_relation(scope: &mut SourceScope, dialect: SqlD
     relation.push(')');
     drop(used);
     scope.relation = relation;
+    Ok(())
 }
 
 /// Describes the dimensions and resources of the relation the two
@@ -695,6 +812,7 @@ fn aggregate_source(
     resource_fields: &[QueryableField],
 ) -> AggregateSource {
     AggregateSource {
+        forbidden: Vec::new(),
         dimensions: dimension_fields
             .iter()
             .enumerate()

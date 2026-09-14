@@ -196,7 +196,7 @@ pub(super) fn compile_branch(
         .zip(std::iter::once(source).chain(joins.iter().map(|join| &join.source)))
     {
         finalize_constants_relation(scope, source.object, dialect)?;
-        finalize_aggregate_relation(scope, dialect);
+        finalize_aggregate_relation(scope, source.object, dialect)?;
     }
     let mut sql = compile_branch_sql(
         ast,
