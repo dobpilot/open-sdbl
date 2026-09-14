@@ -408,3 +408,124 @@ fn reads_a_filter_criterion() {
         .unwrap_err();
     assert_eq!(error.kind(), QueryDiagnosticKind::UnknownObject, "{error}");
 }
+
+#[test]
+fn reads_the_point_in_time_pair() {
+    // `МоментВремени` is the pair that orders a row past the second its
+    // date resolves: a document pairs its date with its reference, a
+    // register record its period with its recorder. Measured on 8.3.27:
+    // the platform spreads the pair over two columns in the projection,
+    // over two terms in the ordering, the grouping and `РАЗЛИЧНЫЕ`, and
+    // refuses the field where no such pair exists.
+    fn session() -> open_sdbl::query::SessionParameters {
+        let mut session = open_sdbl::query::SessionParameters::new();
+        for name in ["ЗначениеРазделителя", "ОбластьДанныхОсновныеДанные"]
+        {
+            session.set(open_sdbl::query::QueryParameter::new(
+                name,
+                open_sdbl::query::ParameterValue::Number {
+                    unscaled: 0,
+                    scale: 0,
+                },
+            ));
+        }
+        session.set(open_sdbl::query::QueryParameter::new(
+            "ИспользованиеРазделителя",
+            open_sdbl::query::ParameterValue::Boolean(false),
+        ));
+        session
+    }
+    let snapshot = support::demo_resolved_at(
+        &std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/demo"),
+    )
+    .snapshot;
+    let compile = |source: &str| {
+        QueryCompiler::new(&snapshot, PostgresBackend).compile_with(
+            source,
+            &open_sdbl::query::CompileOptions::new().session(&session()),
+        )
+    };
+
+    // The date is labelled with the `_T` member suffix, the reference
+    // keeps the alias itself, as a composite value does.
+    let projected =
+        compile("ВЫБРАТЬ Д.Номер КАК Н, Д.МоментВремени КАК М ИЗ Документ.ВходящееПисьмо КАК Д;")
+            .expect("the point in time of a document must compile");
+    assert_contains(
+        &projected.sql,
+        "\"Д\".\"_date_time\" AS \"М_T\", \"Д\".\"_idrref\" AS \"М\"",
+    );
+    assert_eq!(
+        projected
+            .columns
+            .iter()
+            .map(|column| column.label.as_str())
+            .collect::<Vec<_>>(),
+        ["Н", "М_T", "М"]
+    );
+    assert_eq!(
+        projected.columns[1].kind,
+        open_sdbl::query::ColumnKind::DateTime
+    );
+
+    // A register record pairs its period with its recorder, which is a
+    // composite reference here and keeps its `RTRef ‖ RRRef` payload.
+    let register = compile(
+        "ВЫБРАТЬ Р.МоментВремени КАК М ИЗ РегистрНакопления.КоличествоПредметовВПапках КАК Р;",
+    )
+    .expect("the point in time of a register record must compile");
+    assert_contains(
+        &register.sql,
+        "\"Р\".\"_period\" AS \"М_T\", (\"Р\".\"_recordertref\" || \"Р\".\"_recorderrref\") AS \"М\"",
+    );
+
+    // The ordering, the grouping and `РАЗЛИЧНЫЕ` all take both members,
+    // the date first.
+    let ordered = compile(
+        "ВЫБРАТЬ Д.Номер КАК Н ИЗ Документ.ВходящееПисьмо КАК Д УПОРЯДОЧИТЬ ПО Д.МоментВремени;",
+    )
+    .expect("ordering by a point in time must compile");
+    assert_contains(
+        &ordered.sql,
+        "ORDER BY \"Д\".\"_date_time\" ASC, \"Д\".\"_idrref\" ASC",
+    );
+    let grouped = compile(
+        "ВЫБРАТЬ Д.МоментВремени КАК М, КОЛИЧЕСТВО(*) КАК К ИЗ Документ.ВходящееПисьмо КАК Д
+         СГРУППИРОВАТЬ ПО Д.МоментВремени;",
+    )
+    .expect("grouping by a point in time must compile");
+    assert_contains(
+        &grouped.sql,
+        "GROUP BY \"Д\".\"_date_time\", \"Д\".\"_idrref\"",
+    );
+    let distinct =
+        compile("ВЫБРАТЬ РАЗЛИЧНЫЕ Д.МоментВремени КАК М ИЗ Документ.ВходящееПисьмо КАК Д;")
+            .expect("a distinct point in time must compile");
+    assert_contains(
+        &distinct.sql,
+        "SELECT DISTINCT \"Д\".\"_date_time\" AS \"М_T\", \"Д\".\"_idrref\" AS \"М\"",
+    );
+
+    // A catalog carries no such pair, and the platform refuses the field
+    // there too.
+    let unknown =
+        compile("ВЫБРАТЬ С.МоментВремени ИЗ Справочник.ГруппыДоступа КАК С;").unwrap_err();
+    assert_eq!(unknown.kind(), QueryDiagnosticKind::UnknownField);
+
+    // The platform refuses to aggregate the pair and refuses to walk
+    // through it; both are reported here as well.
+    let aggregated =
+        compile("ВЫБРАТЬ МАКСИМУМ(Д.МоментВремени) ИЗ Документ.ВходящееПисьмо КАК Д;").unwrap_err();
+    assert_eq!(aggregated.kind(), QueryDiagnosticKind::UnsupportedFeature);
+    let walked =
+        compile("ВЫБРАТЬ Д.МоментВремени.Дата ИЗ Документ.ВходящееПисьмо КАК Д;").unwrap_err();
+    assert_eq!(walked.kind(), QueryDiagnosticKind::UnknownField);
+
+    // Comparing two points in time is lexicographic on the platform; that
+    // is not compiled here, and the pair is refused in expressions.
+    let compared = compile(
+        "ВЫБРАТЬ Д.Номер ИЗ Документ.ВходящееПисьмо КАК Д ГДЕ Д.МоментВремени > ДАТАВРЕМЯ(2024, 1, 1);",
+    )
+    .unwrap_err();
+    assert_eq!(compared.kind(), QueryDiagnosticKind::UnsupportedFeature);
+}

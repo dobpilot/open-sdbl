@@ -80,6 +80,11 @@ pub(super) enum ProjectedMember<'field> {
     },
 }
 
+/// The schema name the compiler gives the synthesised point-in-time pair.
+/// The platform has no such column, so the name marks the field wherever
+/// the pair must spread over both of its members.
+pub(super) const POINT_IN_TIME_SCHEMA_NAME: &str = "PointInTime";
+
 /// Groups the physical members of a field into rendered SQL columns: a
 /// reference pair becomes one column, every other member stays separate.
 pub(super) fn projected_members(field: &QueryableField) -> Vec<ProjectedMember<'_>> {
@@ -632,6 +637,49 @@ impl CompilationContext<'_, '_> {
         Some((field, expression))
     }
 
+    /// `МоментВремени` orders a row past the second its date resolves: it
+    /// is the pair of that row's date and its reference. A document pairs
+    /// `Дата` with `Ссылка`, a register record subordinate to a recorder
+    /// pairs `Период` with `Регистратор`; every other source answers that
+    /// the field is unknown, as the platform does. Both members are real
+    /// columns of the same table, so the pair is spelled as one field of
+    /// two members and spreads over the output, the ordering and the
+    /// grouping the way the platform spreads it.
+    fn point_in_time_field(&self, fields: &[QueryableField]) -> Option<QueryableField> {
+        let named = |schema_name: &str| {
+            fields
+                .iter()
+                .find(|field| names_equal(&field.schema_name, schema_name))
+        };
+        let (date, reference) = match named("Recorder") {
+            Some(recorder) => (named("Period")?, recorder),
+            None => (named("Date")?, named("ID")?),
+        };
+        let name = "МоментВремени";
+        let mut columns = Vec::with_capacity(reference.columns.len() + 1);
+        let mut date_column = date.columns.first()?.clone();
+        date_column.output_label = format!("{name}_T");
+        columns.push(date_column);
+        for column in &reference.columns {
+            let mut column = column.clone();
+            if !column.is_reference_type_member() {
+                column.output_label = name.to_owned();
+            }
+            columns.push(column);
+        }
+        Some(QueryableField {
+            name: name.to_owned(),
+            schema_name: POINT_IN_TIME_SCHEMA_NAME.to_owned(),
+            aliases: vec![name.to_owned(), POINT_IN_TIME_SCHEMA_NAME.to_owned()],
+            columns,
+            // The pair is not a reference of its own: the platform refuses
+            // to aggregate it and refuses to dereference it, and leaving
+            // the targets out keeps both refusals here.
+            reference_target: None,
+            reference_targets: Vec::new(),
+        })
+    }
+
     /// The reference of a source itself: the field its rows are identified
     /// by, which is what `Источник.Представление` presents.
     fn source_identity(&self, scope: ScopeId) -> Option<ResolvedPath> {
@@ -655,6 +703,20 @@ impl CompilationContext<'_, '_> {
     /// Resolves a computed standard field of one source scope.
     fn computed_scope_field(&self, scope: ScopeId, token: &Token<'_>) -> Option<ResolvedPath> {
         let source = self.source(scope);
+        if names_equal(token.lexeme, "МоментВремени") || names_equal(token.lexeme, "PointInTime")
+        {
+            let field = self.point_in_time_field(&source.fields)?;
+            return Some(ResolvedPath {
+                scope,
+                owner: source.object,
+                identity_is_base: false,
+                fields: Arc::from(vec![field]),
+                field_index: 0,
+                sql_alias: source.sql_alias.clone(),
+                path_label: None,
+                expression: None,
+            });
+        }
         let (field, expression) =
             self.computed_standard_field(source.object, &source.fields, &source.sql_alias, token)?;
         Some(ResolvedPath {

@@ -1,7 +1,7 @@
 use super::constants::{constants_source_scope, finalize_constants_relation};
 use super::context::{
-    CompilationContext, CompiledBranch, JoinPlan, OrderKey, OuterScope, ProjectedMember,
-    ResolvedPath, ScopeId, SelectedProjection, SourceScope, attach_outer_scopes,
+    CompilationContext, CompiledBranch, JoinPlan, OrderKey, OuterScope, POINT_IN_TIME_SCHEMA_NAME,
+    ProjectedMember, ResolvedPath, ScopeId, SelectedProjection, SourceScope, attach_outer_scopes,
     compile_presentation, projected_members,
 };
 use super::expression::{
@@ -994,51 +994,72 @@ fn compile_order_terms(
     positional: bool,
     missing_message: &'static str,
 ) -> Result<Vec<OrderKey>, QueryDiagnostic> {
-    order_terms
-        .iter()
-        .map(|term| {
-            let field = match &term.key {
-                OrderKeyAst::Field(field) => field,
-                OrderKeyAst::Expression(expression) => {
-                    if positional {
-                        return Err(QueryDiagnostic::at(
-                            QueryDiagnosticKind::UnsupportedFeature,
-                            Some(term.token),
-                            missing_message,
-                        ));
+    let mut keys = Vec::with_capacity(order_terms.len());
+    for term in order_terms {
+        let field = match &term.key {
+            OrderKeyAst::Field(field) => field,
+            OrderKeyAst::Expression(expression) => {
+                if positional {
+                    return Err(QueryDiagnostic::at(
+                        QueryDiagnosticKind::UnsupportedFeature,
+                        Some(term.token),
+                        missing_message,
+                    ));
+                }
+                keys.push(OrderKey {
+                    sql: compile_expression(expression, context)?,
+                    position: None,
+                    descending: term.descending,
+                });
+                continue;
+            }
+        };
+        if let Some(index) = aliased_projection(ast, field) {
+            if positional {
+                keys.push(OrderKey {
+                    sql: String::new(),
+                    position: Some(projection_position(selected, index)),
+                    descending: term.descending,
+                });
+                continue;
+            }
+            // A projection alias orders a plain branch by the projected
+            // expression, as on the platform.
+            match &selected[index] {
+                SelectedProjection::Generated { sql, .. } => keys.push(OrderKey {
+                    sql: sql.clone(),
+                    position: None,
+                    descending: term.descending,
+                }),
+                SelectedProjection::Field(resolved) if is_ordered_pair(resolved) => {
+                    for column in &resolved.field().columns {
+                        keys.push(OrderKey {
+                            sql: context.sql_column(resolved, column),
+                            position: None,
+                            descending: term.descending,
+                        });
                     }
-                    return Ok(OrderKey {
-                        sql: compile_expression(expression, context)?,
+                }
+                SelectedProjection::Field(resolved) => {
+                    let column = single_column(resolved.field(), field.last())?;
+                    keys.push(OrderKey {
+                        sql: context.sql_column(resolved, column),
                         position: None,
                         descending: term.descending,
                     });
                 }
-            };
-            if let Some(index) = aliased_projection(ast, field) {
-                if positional {
-                    return Ok(OrderKey {
-                        sql: String::new(),
-                        position: Some(projection_position(selected, index)),
-                        descending: term.descending,
-                    });
-                }
-                // A projection alias orders a plain branch by the projected
-                // expression, as on the platform.
-                let sql = match &selected[index] {
-                    SelectedProjection::Generated { sql, .. } => sql.clone(),
-                    SelectedProjection::Field(resolved) => {
-                        let column = single_column(resolved.field(), field.last())?;
-                        context.sql_column(resolved, column)
-                    }
-                };
-                return Ok(OrderKey {
-                    sql,
-                    position: None,
-                    descending: term.descending,
-                });
             }
-            let resolved = context.resolve(field)?;
-            let column = single_column(resolved.field(), field.last())?;
+            continue;
+        }
+        let resolved = context.resolve(field)?;
+        // A point in time orders by its date and then by its reference,
+        // the way the platform spreads the pair over the ordering.
+        let columns = if is_ordered_pair(&resolved) {
+            resolved.field().columns.iter().collect::<Vec<_>>()
+        } else {
+            vec![single_column(resolved.field(), field.last())?]
+        };
+        for column in columns {
             if positional {
                 let position = selected_column_position(selected, &resolved, &column.physical_name)
                     .ok_or_else(|| {
@@ -1048,19 +1069,27 @@ fn compile_order_terms(
                             missing_message,
                         )
                     })?;
-                return Ok(OrderKey {
+                keys.push(OrderKey {
                     sql: String::new(),
                     position: Some(position),
                     descending: term.descending,
                 });
+                continue;
             }
-            Ok(OrderKey {
+            keys.push(OrderKey {
                 sql: context.sql_column(&resolved, column),
                 position: None,
                 descending: term.descending,
-            })
-        })
-        .collect()
+            });
+        }
+    }
+    Ok(keys)
+}
+
+/// Whether the field is the point-in-time pair, which orders by both of
+/// its members instead of refusing as a compound field does.
+fn is_ordered_pair(resolved: &ResolvedPath) -> bool {
+    resolved.expression.is_none() && resolved.field().schema_name == POINT_IN_TIME_SCHEMA_NAME
 }
 
 /// One resolved `GROUP BY` key.
