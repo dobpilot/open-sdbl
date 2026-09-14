@@ -6,6 +6,7 @@ use super::params::{
     ReferenceConstant, list_elements, object_type_number, parameter_kind,
     reference_constant_of_bytes, reference_constant_of_value, render_scalar_parameter,
 };
+use super::select::derived_data_type;
 use super::sources::compile_metadata_value;
 use super::totals::hierarchical_catalog_of;
 use crate::metadata::MetadataSnapshot;
@@ -1028,6 +1029,31 @@ pub(super) fn expression_kind(
                 other => expression_kind(other, context),
             },
         },
+        // `+` concatenates when any operand is a string, so the value it
+        // answers is a string and not the number a sum would be.
+        Expression::Binary { operator, .. } if operator.lexeme == "+" => {
+            let (left, terms) = left_binary_spine(expression);
+            if terms.iter().all(|(operator, _)| operator.lexeme == "+") {
+                let mut string = matches!(
+                    value_operand_kind(left, context)?,
+                    ColumnKind::String { .. }
+                );
+                for (_, right) in &terms {
+                    string |= matches!(
+                        value_operand_kind(right, context)?,
+                        ColumnKind::String { .. }
+                    );
+                }
+                if string {
+                    return Ok(ColumnKind::String { length: None });
+                }
+            }
+            Ok(source_free_expression_kind(
+                expression,
+                context.snapshot,
+                context.catalog.parameters(),
+            ))
+        }
         _ => Ok(source_free_expression_kind(
             expression,
             context.snapshot,
@@ -1495,30 +1521,43 @@ pub(super) fn compile_composite_alternatives(
     // The payload member comes first, the way a composite field projects
     // one; it is present only when a branch carries a reference.
     suffixes.sort_by_key(|suffix| if suffix.is_empty() { 0 } else { 1 });
+    // The string member mixes stored strings with literals, which are
+    // different SQL types on PostgreSQL, so every branch of that member is
+    // rendered as text.
+    let member_value = |member: &str, sql: &str| -> String {
+        if member == "_S" {
+            dialect.scalar_text(sql)
+        } else {
+            sql.to_owned()
+        }
+    };
     let render = |member: &str| -> String {
         let mut sql = String::from("CASE");
-        for (index, (condition, (operand, (suffix, _)))) in conditions
-            .iter()
-            .zip(values.iter().zip(tags.iter()))
-            .enumerate()
+        for (condition, (operand, (suffix, _))) in
+            conditions.iter().zip(values.iter().zip(tags.iter()))
         {
-            let _ = index;
             sql.push_str(" WHEN ");
             sql.push_str(condition);
             sql.push_str(" THEN ");
             if *suffix == member {
-                sql.push_str(&operand.sql);
+                sql.push_str(&member_value(member, &operand.sql));
             } else {
-                sql.push_str(&composite_member_zero(member, dialect));
+                sql.push_str(&member_value(
+                    member,
+                    &composite_member_zero(member, dialect),
+                ));
             }
         }
         if has_else {
             let last = values.len() - 1;
             sql.push_str(" ELSE ");
             if tags[last].0 == member {
-                sql.push_str(&values[last].sql);
+                sql.push_str(&member_value(member, &values[last].sql));
             } else {
-                sql.push_str(&composite_member_zero(member, dialect));
+                sql.push_str(&member_value(
+                    member,
+                    &composite_member_zero(member, dialect),
+                ));
             }
         }
         sql.push_str(" END");
@@ -1564,6 +1603,7 @@ pub(super) fn render_case(
     dialect: SqlDialect,
 ) -> Result<(String, ColumnKind), QueryDiagnostic> {
     let kind = unify_operands(values, snapshot, dialect)?;
+    unify_string_operands(&kind, values, dialect);
     let mut sql = String::from("CASE");
     for (when, value) in whens.iter().zip(values.iter()) {
         sql.push_str(" WHEN ");
@@ -1579,6 +1619,25 @@ pub(super) fn render_case(
     Ok((sql, kind))
 }
 
+/// Renders every operand of a string-valued alternative as text. A stored
+/// string and a literal are different SQL types on PostgreSQL, which has no
+/// common type for them, so an alternative mixing the two would be refused
+/// by the server.
+fn unify_string_operands(kind: &ColumnKind, values: &mut [Operand<'_, '_>], dialect: SqlDialect) {
+    if !matches!(kind, ColumnKind::String { .. }) || dialect != SqlDialect::Postgres {
+        return;
+    }
+    // A literal beside a stored string is coerced by the server; only an
+    // alternative already rendered as text has no common type with one, so
+    // the whole alternative becomes text just there.
+    if !values.iter().any(|value| value.sql.contains("::text")) {
+        return;
+    }
+    for value in values.iter_mut() {
+        value.sql = dialect.scalar_text(&value.sql);
+    }
+}
+
 /// Renders `COALESCE(value, fallback)` after unifying the operand kinds.
 pub(super) fn render_coalesce(
     values: &mut [Operand<'_, '_>; 2],
@@ -1586,6 +1645,7 @@ pub(super) fn render_coalesce(
     dialect: SqlDialect,
 ) -> Result<(String, ColumnKind), QueryDiagnostic> {
     let kind = unify_operands(values, snapshot, dialect)?;
+    unify_string_operands(&kind, values, dialect);
     Ok((
         format!("COALESCE({}, {})", values[0].sql, values[1].sql),
         kind,
@@ -2767,7 +2827,15 @@ fn compile_hierarchy_list_seeds(
             }
             continue;
         }
-        let sql = compile_expression(item, context)?;
+        let mut sql = compile_expression(item, context)?;
+        // The seed relation is the anchor of a recursive CTE, and an
+        // untyped `NULL` there leaves the column without a type to join the
+        // catalog's reference against.
+        if expression_kind(item, context)? == ColumnKind::Null {
+            sql = context
+                .dialect
+                .typed_null(context.dialect.reference_identifier_type());
+        }
         parts.push(format!("SELECT {sql} AS {node}"));
     }
     if parts.is_empty() {
@@ -3219,7 +3287,39 @@ fn compile_expression_operand(
         let column = single_column(resolved.field(), reference.last())?;
         return context.dialect.literal_for_type(token, &column.data_type);
     }
-    compile_expression(expression, context)
+    let sql = compile_expression(expression, context)?;
+    // A string value stands beside a stored string of the provider's own
+    // type, which has no common type with the text an expression answers,
+    // so the value takes the type of the field it is compared with. The
+    // field itself is left alone, or an index over it could not be used.
+    if let Expression::Field(reference) = other
+        && matches!(
+            expression_kind(expression, context)?,
+            ColumnKind::String { .. }
+        )
+    {
+        let resolved = context.resolve(reference)?;
+        let column = single_column(resolved.field(), reference.last())?;
+        let own = match expression {
+            Expression::Field(own) => {
+                let resolved = context.resolve(own)?;
+                single_column(resolved.field(), own.last())?
+                    .data_type
+                    .clone()
+            }
+            _ => String::new(),
+        };
+        let dialect = context.dialect;
+        if dialect.is_provider_string_type(&column.data_type)
+            && !dialect.is_provider_string_type(&own)
+        {
+            return Ok(format!(
+                "CAST({sql} AS {})",
+                column.data_type.trim().to_ascii_lowercase()
+            ));
+        }
+    }
+    Ok(sql)
 }
 
 fn compile_date_operand(
@@ -3242,7 +3342,15 @@ fn compile_date_operand(
         return Ok(context.sql_column(&resolved, column));
     }
     let sql = compile_expression(expression, context)?;
-    if is_date_operand_kind(&expression_kind(expression, context)?) {
+    let kind = expression_kind(expression, context)?;
+    if is_date_operand_kind(&kind) {
+        // A value that is `NULL` states the type it stands for, or
+        // PostgreSQL has none to resolve the date arithmetic against.
+        if kind == ColumnKind::Null {
+            return Ok(context
+                .dialect
+                .typed_null(&derived_data_type(&ColumnKind::DateTime, context.dialect)));
+        }
         return Ok(sql);
     }
     Err(QueryDiagnostic::at(

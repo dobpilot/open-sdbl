@@ -12,6 +12,7 @@ use super::expression::{
 };
 use super::params::render_scalar_parameter;
 use super::select::append_reference_join;
+use super::select::derived_data_type;
 use super::separators::separator_predicates;
 use super::virtual_tables::{
     AggregateSource, compile_accumulation_relation, compile_constant_date_expression,
@@ -309,9 +310,8 @@ fn compile_source_free_date(
     parameters: Parameters<'_>,
     storage_domain: bool,
 ) -> Result<String, QueryDiagnostic> {
-    if !is_date_operand_kind(&source_free_expression_kind(
-        expression, snapshot, parameters,
-    )) {
+    let kind = source_free_expression_kind(expression, snapshot, parameters);
+    if !is_date_operand_kind(&kind) {
         return Err(QueryDiagnostic::at(
             QueryDiagnosticKind::Syntax,
             Some(token),
@@ -320,6 +320,11 @@ fn compile_source_free_date(
                 function_name(token)
             ),
         ));
+    }
+    // A value that is `NULL` states the type it stands for, or the server
+    // has none to resolve the date function against.
+    if kind == ColumnKind::Null {
+        return Ok(dialect.typed_null(&derived_data_type(&ColumnKind::DateTime, dialect)));
     }
     compile_source_free_expression(expression, snapshot, dialect, parameters, storage_domain)
 }

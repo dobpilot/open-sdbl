@@ -6627,3 +6627,60 @@ fn orders_a_distinct_statement_by_its_projection() {
     assert_eq!(outside.kind(), QueryDiagnosticKind::UnsupportedFeature);
     assert!(outside.message().contains("DISTINCT"), "{outside}");
 }
+
+#[test]
+fn states_the_types_the_server_resolves_by() {
+    // Executing every compiled corpus query against a real base found
+    // thirteen statements the server refuses. The goldens could not show
+    // it: the SQL was what the compiler intended and wrong only in the
+    // types it left the server to resolve.
+    let snapshot = snapshot();
+    let parameters = [QueryParameter::new("П", ParameterValue::Null)];
+    let options = CompileOptions::new().parameters(&parameters);
+
+    // A value known to be NULL states the type it stands for, or
+    // PostgreSQL has none to resolve the date arithmetic against.
+    let dated = QueryCompiler::new(&snapshot, PostgresBackend)
+        .compile_with(
+            "ВЫБРАТЬ НАЧАЛОПЕРИОДА(&П, ДЕНЬ) КАК Д ИЗ Справочник.OpenSdblMetadataProbe КАК Т;",
+            &options,
+        )
+        .unwrap();
+    let free = QueryCompiler::new(&snapshot, PostgresBackend)
+        .compile_with("ВЫБРАТЬ НАЧАЛОПЕРИОДА(&П, ДЕНЬ) КАК Д;", &options)
+        .unwrap();
+    assert!(free.sql.contains("CAST(NULL AS timestamp"), "{}", free.sql);
+    assert!(
+        dated.sql.contains("CAST(NULL AS timestamp"),
+        "{}",
+        dated.sql
+    );
+
+    // A grouping key must carry a type as well, because SQL refuses a bare
+    // constant there.
+    let grouped = QueryCompiler::new(&snapshot, PostgresBackend)
+        .compile_with(
+            "ВЫБРАТЬ &П КАК К, КОЛИЧЕСТВО(*) КАК Н ИЗ Справочник.OpenSdblMetadataProbe КАК Т
+             СГРУППИРОВАТЬ ПО &П;",
+            &options,
+        )
+        .unwrap();
+    assert!(
+        grouped.sql.contains("GROUP BY CAST(NULL AS "),
+        "{}",
+        grouped.sql
+    );
+
+    // `+` over strings concatenates, so the value it answers is a string.
+    let joined = postgres_compile!(
+        "ВЫБРАТЬ Т.Code + \",\" + Т.Code КАК С ИЗ Справочник.OpenSdblMetadataProbe КАК Т;",
+        &snapshot,
+    )
+    .unwrap();
+    assert_eq!(
+        joined.columns[0].kind,
+        ColumnKind::String { length: None },
+        "{}",
+        joined.sql
+    );
+}

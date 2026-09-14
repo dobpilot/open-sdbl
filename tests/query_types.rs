@@ -444,7 +444,7 @@ fn projects_alternatives_of_different_types_by_member() {
         .map(|column| column.label.as_str())
         .collect::<Vec<_>>();
     assert_eq!(labels, ["Смесь", "Смесь_S", "Смесь_TYPE"]);
-    assert_contains(&compiled.sql, "THEN 'нет' ELSE ''");
+    assert_contains(&compiled.sql, "THEN ('нет')::text ELSE ('')::text");
     assert_contains(
         &compiled.sql,
         "THEN decode('05', 'hex') ELSE decode('08', 'hex') END AS \"Смесь_TYPE\"",

@@ -1435,6 +1435,7 @@ impl CompilationContext<'_, '_> {
                 .dialect
                 .qualified_column(Some(alias), &column.physical_name);
             return Ok(CompositeSource {
+                alias: alias.to_owned(),
                 schema_name: field.schema_name.clone(),
                 value_sql: self.dialect.payload_reference(&payload),
                 type_sql: self.dialect.payload_type(&payload),
@@ -1457,6 +1458,7 @@ impl CompilationContext<'_, '_> {
             _ => Vec::new(),
         };
         Ok(CompositeSource {
+            alias: alias.to_owned(),
             schema_name: field.schema_name.clone(),
             value_sql: self
                 .dialect
@@ -1619,7 +1621,9 @@ impl CompilationContext<'_, '_> {
             })?
             .physical_name
             .clone();
-        let source_alias = self.source(scope).sql_alias.clone();
+        // The join starts at the alias the composite field lives on, which
+        // is a join alias when the path continues past an earlier hop.
+        let source_alias = source.alias.clone();
         let join_key = JoinKey {
             source_alias: &source_alias,
             source_field: &source.schema_name,
@@ -2096,6 +2100,10 @@ pub(super) fn compile_presentation(
 
 /// The reference side of a composite dereference.
 struct CompositeSource {
+    /// The alias the composite field lives on, which is the base of the
+    /// joins its targets need: the scope's own alias for a field of the
+    /// source, a join alias for a path continuing past an earlier hop.
+    alias: String,
     schema_name: String,
     value_sql: String,
     type_sql: String,

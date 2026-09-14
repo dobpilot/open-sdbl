@@ -1239,7 +1239,15 @@ fn compile_group_keys(
                         "GROUP BY key cannot contain aggregate functions",
                     ));
                 }
-                let compiled = compile_expression(expression, context)?;
+                let mut compiled = compile_expression(expression, context)?;
+                // SQL refuses a bare constant as a grouping key, so a value
+                // that is `NULL` states the type it stands for.
+                if expression_kind(expression, context)? == ColumnKind::Null {
+                    compiled = context.dialect.typed_null(&derived_data_type(
+                        &ColumnKind::String { length: None },
+                        context.dialect,
+                    ));
+                }
                 push(compiled);
                 GroupKeyTarget::Scalar(expression_fingerprint(expression))
             }
@@ -2075,8 +2083,22 @@ fn compile_join_field_equality(
                 ..
             },
         ) if left_payload == right_payload => {
-            let left_sql = context.sql_column(left, left_column);
-            let right_sql = context.sql_column(right, right_column);
+            let mut left_sql = context.sql_column(left, left_column);
+            let mut right_sql = context.sql_column(right, right_column);
+            // A stored string of the provider's own type has no common type
+            // with the text a derived source projects, so the derived side
+            // takes the stored type; the stored column keeps its own, or an
+            // index over it could not be used.
+            let dialect = context.dialect;
+            if dialect.is_provider_string_type(&left_column.data_type)
+                && !dialect.is_provider_string_type(&right_column.data_type)
+            {
+                right_sql = format!("CAST({right_sql} AS {})", left_column.data_type.trim());
+            } else if dialect.is_provider_string_type(&right_column.data_type)
+                && !dialect.is_provider_string_type(&left_column.data_type)
+            {
+                left_sql = format!("CAST({left_sql} AS {})", right_column.data_type.trim());
+            }
             Ok(equality(
                 format!("{left_sql} = {right_sql}"),
                 left_sql,

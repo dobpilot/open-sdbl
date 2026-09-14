@@ -953,6 +953,27 @@ impl SqlDialect {
         }
     }
 
+    /// `NULL` carrying a type. An untyped `NULL` leaves PostgreSQL without
+    /// a type to resolve an operator or a function against, so a value that
+    /// is known to be `NULL` states the type it stands for.
+    pub(super) fn typed_null(self, data_type: &str) -> String {
+        format!("CAST(NULL AS {data_type})")
+    }
+
+    /// Whether a stored column type is the provider's own string type,
+    /// which PostgreSQL will not compare with text directly.
+    pub(super) fn is_provider_string_type(self, data_type: &str) -> bool {
+        matches!(self, Self::Postgres) && data_type.trim().eq_ignore_ascii_case("mvarchar")
+    }
+
+    /// The stored type of a reference identifier.
+    pub(super) fn reference_identifier_type(self) -> &'static str {
+        match self {
+            Self::Postgres => "bytea",
+            Self::MsSql { .. } => "binary(16)",
+        }
+    }
+
     pub(super) fn null_text(self) -> &'static str {
         match self {
             Self::Postgres => "NULL::text",
