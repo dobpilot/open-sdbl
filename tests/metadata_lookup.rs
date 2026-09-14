@@ -115,3 +115,55 @@ fn exercises_every_lookup_error_variant() {
         ]
     );
 }
+
+#[test]
+fn reads_the_reference_targets_a_type_description_names() {
+    // SchemaStorage names the target of a reference only when the field
+    // admits one table; with several it writes an empty target. The list
+    // lives in the Config type description instead: `{"Pattern", {"#",
+    // <reference type>}, …}`, and the third identifier of an object's class
+    // list is the reference type other objects name. Both were measured on
+    // 8.3.27 against a probe configuration.
+    let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/demo");
+    let pack = std::fs::read(root.join("config.pack")).unwrap();
+    let mut descriptors = Vec::new();
+    let mut offset = 0usize;
+    while offset < pack.len() {
+        let newline = offset
+            + pack[offset..]
+                .iter()
+                .position(|byte| *byte == b'\n')
+                .unwrap();
+        let header = std::str::from_utf8(&pack[offset..newline]).unwrap();
+        let (resource, length) = header.split_once('\t').unwrap();
+        let length: usize = length.parse().unwrap();
+        let start = newline + 1;
+        if let Ok(parsed) =
+            open_sdbl::metadata::parse_config_descriptors(resource, &pack[start..start + length])
+        {
+            descriptors.extend(parsed);
+        }
+        offset = start + length;
+    }
+    assert!(
+        descriptors
+            .iter()
+            .filter(|descriptor| descriptor.object_reference_type.is_some())
+            .count()
+            > 1000,
+        "every stored object carries its reference type"
+    );
+    let composite = descriptors
+        .iter()
+        .filter(|descriptor| descriptor.reference_types.len() > 1)
+        .count();
+    assert!(composite > 100, "composite attributes name their targets");
+    // Every named reference type is a real identifier, never the empty one.
+    assert!(
+        descriptors
+            .iter()
+            .flat_map(|descriptor| descriptor.reference_types.iter())
+            .all(|reference_type| reference_type.to_1c_bytes() != [0u8; 16]),
+        "a named reference type is never the empty identifier"
+    );
+}

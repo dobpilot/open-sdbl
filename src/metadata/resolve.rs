@@ -130,6 +130,11 @@ pub struct MetadataField {
     pub extension_origin: Option<String>,
     /// Canonical reference target for a reference-typed extension attribute.
     pub reference_target: Option<String>,
+    /// Physical tables the attribute's Config type description names.
+    /// SchemaStorage leaves the target of a reference that admits several
+    /// tables unnamed, so these are the only declared targets such a field
+    /// has; empty for every field whose type description names none.
+    pub declared_reference_tables: Vec<String>,
 }
 
 /// Separation settings of a data separator with its session parameters
@@ -901,6 +906,17 @@ pub fn resolve_metadata_with_predefined_values_and_extensions(
         .iter()
         .map(|descriptor| (&descriptor.object_guid, descriptor))
         .collect();
+    // An attribute names its reference targets by the reference type of
+    // each object, which that object's own descriptor carries.
+    let object_guid_by_reference_type: HashMap<&Guid, &Guid> = descriptors
+        .iter()
+        .filter_map(|descriptor| {
+            descriptor
+                .object_reference_type
+                .as_ref()
+                .map(|reference_type| (reference_type, &descriptor.object_guid))
+        })
+        .collect();
     let mut seen_primary = HashSet::new();
     let mut seen_entries = HashSet::new();
     let mut objects = Vec::new();
@@ -1033,6 +1049,18 @@ pub fn resolve_metadata_with_predefined_values_and_extensions(
         }
     }
 
+    // Every object's reference type resolved to the table it stores, so an
+    // attribute's declared targets become physical tables.
+    let table_by_reference_type: HashMap<&Guid, String> = object_guid_by_reference_type
+        .iter()
+        .filter_map(|(reference_type, object_guid)| {
+            objects
+                .iter()
+                .find(|object| &&object.guid == object_guid)
+                .and_then(|object| object.physical_table.clone())
+                .map(|table| (*reference_type, table))
+        })
+        .collect();
     let mut fields = Vec::new();
     for entry in db_names
         .entries()
@@ -1092,6 +1120,27 @@ pub fn resolve_metadata_with_predefined_values_and_extensions(
                 .get(&logical_name)
                 .or_else(|| extension_targets.get(&entry.number))
                 .cloned(),
+            // A type description that names something other than a stored
+            // object — a defined type, a characteristic — cannot be turned
+            // into a complete list of tables, and a partial list would
+            // silently narrow the field, so it is left empty.
+            declared_reference_tables: descriptor_by_guid
+                .get(&entry.guid)
+                .map(|descriptor| {
+                    let tables = descriptor
+                        .reference_types
+                        .iter()
+                        .filter_map(|reference_type| {
+                            table_by_reference_type.get(reference_type).cloned()
+                        })
+                        .collect::<Vec<_>>();
+                    if tables.len() == descriptor.reference_types.len() {
+                        tables
+                    } else {
+                        Vec::new()
+                    }
+                })
+                .unwrap_or_default(),
         });
     }
 

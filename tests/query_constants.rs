@@ -81,6 +81,8 @@ fn with_second_constant(base: MetadataSnapshot) -> MetadataSnapshot {
         field_purpose: None,
         enumeration_value: false,
         separation: None,
+        reference_types: Vec::new(),
+        object_reference_type: None,
     });
     let mut schema = base.schema().clone();
     schema.tables.push(schema_table(

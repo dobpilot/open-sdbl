@@ -434,6 +434,34 @@ pub(super) fn kind_from_query_name(name: &str) -> Option<MetadataKind> {
     })
 }
 
+/// The physical tables the Config type description of a custom field names.
+/// SchemaStorage leaves the target of a reference that admits several tables
+/// unnamed, so this is the only declared list such a field has.
+pub(super) fn declared_reference_tables(
+    snapshot: &MetadataSnapshot,
+    physical_table: &str,
+    schema_name: &str,
+) -> Vec<String> {
+    let Some(number) = schema_name
+        .strip_prefix("Fld")
+        .and_then(|number| number.parse::<u32>().ok())
+    else {
+        return Vec::new();
+    };
+    snapshot
+        .fields()
+        .iter()
+        .find(|field| {
+            field.number == number
+                && field
+                    .owner_tables
+                    .iter()
+                    .any(|owner| names_equal(owner, physical_table))
+        })
+        .map(|field| field.declared_reference_tables.clone())
+        .unwrap_or_default()
+}
+
 pub(super) fn custom_field_name(
     snapshot: &MetadataSnapshot,
     physical_table: &str,
@@ -1812,11 +1840,20 @@ fn project_queryable_fields(
         .into_iter()
         .map(|schema_name| {
             let columns = groups.remove(&schema_name).unwrap_or_default();
-            let reference_targets = schema_columns
+            let mut reference_targets = schema_columns
                 .get(&schema_name.to_lowercase())
                 .map(|(_, column)| *column)
                 .map(reference_targets)
                 .unwrap_or_default();
+            // SchemaStorage names the target only when the field admits one
+            // reference type; with several it writes an empty target, and
+            // the real list comes from the Config type description.
+            if reference_targets.iter().all(String::is_empty) {
+                let declared = declared_reference_tables(snapshot, physical_table, &schema_name);
+                if !declared.is_empty() {
+                    reference_targets = declared;
+                }
+            }
             let reference_target = match reference_targets.as_slice() {
                 [target] if !target.is_empty() => Some(target.clone()),
                 _ => None,

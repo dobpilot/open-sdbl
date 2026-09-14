@@ -83,6 +83,8 @@ pub fn extension_metadata_from_restructure(
             field_purpose: None,
             enumeration_value: false,
             separation: None,
+            reference_types: Vec::new(),
+            object_reference_type: None,
         });
         if let Some(target) = &field.reference_target {
             field_reference_targets.push((field.number, target.clone()));

@@ -685,3 +685,44 @@ fn renders_a_logical_expression_as_a_value() {
         "CASE WHEN (NOT ([Т].[_idrref] = [Т].[_idrref])) THEN 0x01",
     );
 }
+
+#[test]
+fn joins_only_the_declared_targets_of_a_composite() {
+    // The Config type description names the targets a composite reference
+    // may hold, so the dereference joins those and no others. Before, with
+    // SchemaStorage silent, every object carrying an attribute of that name
+    // was a candidate, and more than thirty of them were refused outright.
+    let mut session = open_sdbl::query::SessionParameters::new();
+    for name in ["ЗначениеРазделителя", "ОбластьДанныхОсновныеДанные"]
+    {
+        session.set(open_sdbl::query::QueryParameter::new(
+            name,
+            open_sdbl::query::ParameterValue::Number {
+                unscaled: 0,
+                scale: 0,
+            },
+        ));
+    }
+    session.set(open_sdbl::query::QueryParameter::new(
+        "ИспользованиеРазделителя",
+        open_sdbl::query::ParameterValue::Boolean(false),
+    ));
+    let snapshot = support::demo_resolved_at(
+        &std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/demo"),
+    )
+    .snapshot;
+    let compiled = QueryCompiler::new(&snapshot, PostgresBackend)
+        .compile_with(
+            "ВЫБРАТЬ О.ЭлектронныйДокумент.Комментарий КАК К
+             ИЗ РегистрСведений.ОбъектыУчетаДокументовЭДО КАК О;",
+            &open_sdbl::query::CompileOptions::new().session(&session),
+        )
+        .expect("the declared targets make the dereference compile");
+    let joins = compiled.sql.matches("LEFT JOIN").count();
+    assert!(
+        (1..=4).contains(&joins),
+        "only the declared targets are joined, not every object with that attribute: {joins}\n{}",
+        compiled.sql
+    );
+    assert_contains(&compiled.sql, "\"О\".\"_fld4324_rtref\" = decode(");
+}

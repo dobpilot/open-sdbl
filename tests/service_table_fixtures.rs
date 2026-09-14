@@ -208,6 +208,8 @@ fn descriptor(resource: &str, object: &str, name: &str) -> ConfigDescriptor {
         field_purpose: None,
         enumeration_value: false,
         separation: None,
+        reference_types: Vec::new(),
+        object_reference_type: None,
     }
 }
 

@@ -183,6 +183,15 @@ pub struct ConfigDescriptor {
     /// for every other descriptor and for a resource whose tail does not
     /// match the known layout.
     pub separation: Option<DataSeparationSettings>,
+    /// Reference type identifiers the type description of this field names,
+    /// in source order. SchemaStorage leaves the target of a reference that
+    /// admits several tables unnamed, so this is where those targets come
+    /// from. Empty for a descriptor that declares no reference type.
+    pub reference_types: Vec<Guid>,
+    /// The reference type identifier of the object the resource describes,
+    /// carried by that object's own descriptor. It is the identifier an
+    /// attribute of another object names to point at this one.
+    pub object_reference_type: Option<Guid>,
 }
 
 /// One catalog predefined value decoded from an authoritative `.1c` resource.
@@ -509,6 +518,10 @@ struct ConfigParser<'input, 'resource> {
     class_id: Option<&'input str>,
     /// Separation settings found in a common-attribute body list.
     separation: Option<DataSeparationSettings>,
+    /// Reference type of the object the resource describes: the third
+    /// identifier of the class list, measured on 8.3.27 against the
+    /// identifiers an attribute type description names.
+    object_reference_type: Option<Guid>,
 }
 
 struct ProjectedConfigDescriptor {
@@ -543,6 +556,9 @@ impl<'input> SimpleValue<'input> {
 enum ConfigCandidate<'input> {
     Scalar(SimpleValue<'input>),
     List(Vec<SimpleValue<'input>>),
+    /// A `{"Pattern", {"#", <id>}, …}` type description, reduced to the
+    /// reference types it names.
+    Pattern(Vec<Guid>),
     Other,
 }
 
@@ -550,7 +566,7 @@ impl<'input> ConfigCandidate<'input> {
     fn as_scalar(&self) -> Option<&SimpleValue<'input>> {
         match self {
             Self::Scalar(value) => Some(value),
-            Self::List(_) | Self::Other => None,
+            Self::List(_) | Self::Pattern(_) | Self::Other => None,
         }
     }
 
@@ -565,7 +581,7 @@ impl<'input> ConfigCandidate<'input> {
     fn as_list(&self) -> Option<&[SimpleValue<'input>]> {
         match self {
             Self::List(values) => Some(values),
-            Self::Scalar(_) | Self::Other => None,
+            Self::Scalar(_) | Self::Pattern(_) | Self::Other => None,
         }
     }
 }
@@ -578,6 +594,7 @@ impl<'input, 'resource> ConfigParser<'input, 'resource> {
             resource_guid,
             class_id: None,
             separation: None,
+            object_reference_type: None,
         }
     }
 
@@ -608,6 +625,13 @@ impl<'input, 'resource> ConfigParser<'input, 'resource> {
                 .find(|descriptor| &descriptor.object_guid == self.resource_guid)
         {
             owner.separation = Some(separation);
+        }
+        if let Some(reference_type) = self.object_reference_type.take()
+            && let Some(owner) = descriptors
+                .iter_mut()
+                .find(|descriptor| &descriptor.object_guid == self.resource_guid)
+        {
+            owner.object_reference_type = Some(reference_type);
         }
         Ok(descriptors)
     }
@@ -654,6 +678,9 @@ impl<'input, 'resource> ConfigParser<'input, 'resource> {
         // The class list `{5,{27,…},{3,…},…}` of a common-attribute resource
         // carries the separation settings after its content list.
         let mut separation: Option<SeparationTracker> = None;
+        // A `{"Pattern", …}` list describes the type of the field its
+        // sibling descriptor names.
+        let mut pattern: Option<Vec<Guid>> = None;
 
         loop {
             self.skip_whitespace();
@@ -705,6 +732,14 @@ impl<'input, 'resource> ConfigParser<'input, 'resource> {
                 Some(_) if expecting_value => {
                     let candidate =
                         self.value(&mut descendant_descriptors, field_purpose, depth + 1)?;
+                    // The class list opens with the class id and then the
+                    // identifiers of the object; the third of them is the
+                    // reference type an attribute of another object names.
+                    if depth == 1 && value_count == 3 && self.object_reference_type.is_none() {
+                        self.object_reference_type = candidate
+                            .as_str()
+                            .and_then(|atom| Guid::from_str(atom).ok());
+                    }
                     if depth == 1 && value_count == 0 {
                         self.class_id = candidate.as_scalar().and_then(|value| match value {
                             SimpleValue::Atom(atom) => Some(*atom),
@@ -717,6 +752,27 @@ impl<'input, 'resource> ConfigParser<'input, 'resource> {
                         }
                     } else if let Some(tracker) = &mut separation {
                         tracker.record(&candidate);
+                    }
+                    if value_count == 0 && candidate.as_string() == Some("Pattern") {
+                        pattern = Some(Vec::new());
+                    } else if let Some(types) = &mut pattern {
+                        if let Some([marker, identifier]) = candidate.as_list()
+                            && marker.as_string() == Some("#")
+                            && let Some(guid) = identifier
+                                .as_str()
+                                .and_then(|atom| Guid::from_str(atom).ok())
+                        {
+                            types.push(guid);
+                        }
+                    } else if let ConfigCandidate::Pattern(types) = &candidate {
+                        // The type description follows the descriptor of the
+                        // field it belongs to.
+                        if let Some(owner) = descendant_descriptors
+                            .last_mut()
+                            .or_else(|| local_descriptors.last_mut())
+                        {
+                            owner.descriptor.reference_types.clone_from(types);
+                        }
                     }
                     record_config_candidate(
                         candidate,
@@ -757,6 +813,9 @@ impl<'input, 'resource> ConfigParser<'input, 'resource> {
         descriptors.append(&mut descendant_descriptors);
         if let Some(settings) = separation.as_ref().and_then(SeparationTracker::settings) {
             self.separation = Some(settings);
+        }
+        if let Some(types) = pattern {
+            return Ok(ConfigCandidate::Pattern(types));
         }
         Ok(simple_values.map_or(ConfigCandidate::Other, ConfigCandidate::List))
     }
@@ -943,6 +1002,8 @@ fn project_config_descriptor(
             enumeration_value: field_purpose
                 .is_some_and(|(purpose, _)| purpose == ConfigCollectionPurpose::EnumerationValue),
             separation: None,
+            reference_types: Vec::new(),
+            object_reference_type: None,
         },
         purpose_depth: field_purpose.map(|(_, depth)| depth),
     });
@@ -1018,6 +1079,8 @@ fn collect_descriptors(
             }),
             enumeration_value: field_purpose == Some(ConfigCollectionPurpose::EnumerationValue),
             separation: None,
+            reference_types: Vec::new(),
+            object_reference_type: None,
         });
     }
     for value in values {

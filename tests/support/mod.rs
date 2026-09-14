@@ -309,6 +309,8 @@ pub(crate) fn descriptor(resource: &Guid, object: &Guid, name: &str) -> ConfigDe
         field_purpose: None,
         enumeration_value: false,
         separation: None,
+        reference_types: Vec::new(),
+        object_reference_type: None,
     }
 }
 
@@ -571,6 +573,8 @@ pub(crate) fn accumulation_register_snapshot() -> open_sdbl::metadata::MetadataS
         field_purpose: Some(ConfigFieldPurpose::AccumulationRegisterResource),
         enumeration_value: false,
         separation: None,
+        reference_types: Vec::new(),
+        object_reference_type: None,
     });
 
     let mut schema_storage = base.schema().clone();

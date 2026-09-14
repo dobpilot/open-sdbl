@@ -553,6 +553,8 @@ pub(crate) mod tests {
                 field_purpose: None,
                 enumeration_value,
                 separation: None,
+                reference_types: Vec::new(),
+                object_reference_type: None,
             };
         let status = descriptor(value, "Статус", true);
         let object = descriptor(owner.clone(), "бит_ВидыСтатусовОбъектов", false);
