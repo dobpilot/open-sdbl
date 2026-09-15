@@ -1440,6 +1440,13 @@ pub(super) fn composite_member_of(kind: &ColumnKind) -> Option<(&'static str, Ty
         ColumnKind::Reference { .. } => Some(("", TypeValue::Reference(0))),
         ColumnKind::Undefined => Some(("", TypeValue::Undefined)),
         ColumnKind::Null => Some(("", TypeValue::Null)),
+        // Neither a unique identifier nor raw bytes have a member in what
+        // 1C stores, because such a value never reaches a table; the
+        // platform answers both as binary data whose ТИПЗНАЧЕНИЯ is Null.
+        // They keep members of their own so that a value carrying both
+        // stays typed on each side.
+        ColumnKind::Uuid => Some(("_U", TypeValue::Null)),
+        ColumnKind::Binary { .. } => Some(("_B", TypeValue::Null)),
         _ => None,
     }
 }
@@ -1452,6 +1459,8 @@ fn composite_member_zero(suffix: &str, dialect: SqlDialect) -> String {
         "_N" => "0".to_owned(),
         "_T" => dialect.zero_datetime(),
         "_L" => dialect.boolean_literal(false).to_owned(),
+        "_U" => dialect.zero_uuid().to_owned(),
+        "_B" => dialect.binary_literal(&[]),
         _ => dialect.binary_literal(&[0; 20]),
     }
 }
@@ -1466,6 +1475,8 @@ fn composite_member_kind(suffix: &str) -> ColumnKind {
         },
         "_T" => ColumnKind::DateTime,
         "_L" => ColumnKind::Boolean,
+        "_U" => ColumnKind::Uuid,
+        "_B" => ColumnKind::Binary { length: None },
         _ => ColumnKind::Reference {
             targets: Vec::new(),
             runtime_typed: true,

@@ -562,6 +562,16 @@ impl SqlDialect {
         )
     }
 
+    /// The zero of a unique identifier, which a branch of another type
+    /// writes into the binary member of a composite value. It must carry
+    /// the identifier type, so that every branch of the `CASE` agrees.
+    pub(super) fn zero_uuid(self) -> &'static str {
+        match self {
+            Self::Postgres => "'00000000-0000-0000-0000-000000000000'::uuid",
+            Self::MsSql { .. } => "CAST(0x00000000000000000000000000000000 AS uniqueidentifier)",
+        }
+    }
+
     /// Decodes a 16-byte 1C reference (`d + e + c + b + a` field order) into
     /// a native UUID in canonical `a-b-c-d-e` order. `NULL` propagates.
     ///
