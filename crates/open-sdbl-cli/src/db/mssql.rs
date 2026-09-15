@@ -25,8 +25,8 @@ use crate::pipeline::{
 };
 use crate::progress::MetadataProgress;
 use crate::{
-    CONFIG_DECODE_BATCH_SIZE, CONNECTION_TIMEOUT, MSSQL_TRANSACTION_COUNT, MSSQL_VERIFY_READONLY,
-    QUERY_TIMEOUT, QueryRows, query_timeout,
+    CONFIG_DECODE_BATCH_SIZE, CONNECTION_TIMEOUT, MSSQL_TRANSACTION_COUNT, QUERY_TIMEOUT,
+    QueryRows, query_timeout,
 };
 
 type MsSqlTransport = Compat<TcpStream>;
@@ -262,32 +262,34 @@ impl MsSqlSession {
         }
     }
 
-    async fn verify_readonly(&mut self) -> Result<(), CliError> {
+    /// Checks server-side that the session carries no transaction of its
+    /// own before a read starts, which is what makes reusing a session
+    /// safe. What rights the login holds is the operator's decision: the
+    /// compiler generates SELECT statements only, so a wider role changes
+    /// nothing about what is sent.
+    async fn verify_no_open_transaction(&mut self) -> Result<(), CliError> {
         self.ensure_usable()?;
-        let rows = {
+        let count = {
             let client = self.client_mut()?;
             mssql_rows(
                 client,
-                "MSSQL read-only verification",
-                MSSQL_VERIFY_READONLY,
+                "MSSQL transaction-state verification",
+                MSSQL_TRANSACTION_COUNT,
             )
             .await
         };
-        if rows
+        if count
             .as_ref()
             .is_err_and(CliError::requires_mssql_disconnect)
         {
             self.poison_and_drop();
         }
-        let rows = rows?;
-        let row = exactly_one_mssql_row(&rows, "read-only verification")?;
+        let rows = count?;
+        let row = exactly_one_mssql_row(&rows, "transaction-state verification")?;
         let transaction_count = required_mssql_i32(row, 0, "@@TRANCOUNT")?;
-        let read_only = required_mssql_i32(row, 1, "read-only role result")?;
-        let isolation = required_mssql_i32(row, 2, "transaction isolation level")?;
-        if transaction_count != 0 || read_only != 1 || isolation != 2 {
+        if transaction_count != 0 {
             return Err(CliError::Data(format!(
-                "unsafe MSSQL session: transaction_count={transaction_count}, db_datareader_only={}, isolation_level={isolation}; use a login in db_datareader and not db_datawriter/db_owner/sysadmin",
-                read_only == 1
+                "MSSQL session already carries an open transaction (@@TRANCOUNT={transaction_count}); reconnect before reading"
             )));
         }
         Ok(())
@@ -352,7 +354,7 @@ impl MsSqlSession {
         sql: &str,
         column_count: usize,
     ) -> Result<QueryRows, CliError> {
-        self.verify_readonly().await?;
+        self.verify_no_open_transaction().await?;
         self.execute_batch("BEGIN TRANSACTION").await?;
         let client = self.client_mut()?;
         let result = query_timeout("MSSQL user query", async {
@@ -490,7 +492,7 @@ impl<'session> MsSqlMetadataSource<'session> {
 
 impl MetadataSource for MsSqlMetadataSource<'_> {
     async fn begin_readonly(&mut self) -> Result<(), CliError> {
-        self.session.verify_readonly().await?;
+        self.session.verify_no_open_transaction().await?;
         self.session.execute_batch("BEGIN TRANSACTION").await
     }
 
@@ -790,7 +792,6 @@ mod tests {
     use super::{
         MsSqlSession, apply_mssql_cleanup, decode_mssql_cell, should_disconnect_after_mssql_error,
     };
-    use crate::MSSQL_VERIFY_READONLY;
     use crate::args::{ConnectionOptions, MsSqlConnection};
     use crate::auth::pgpass::{Credentials, EnvironmentSecret};
     use crate::cells::{Cell, DateTimeParts};
@@ -1149,7 +1150,8 @@ mod tests {
         let mut poisoned = false;
         apply_mssql_cleanup(&mut poisoned, Ok(()), Ok(0)).unwrap();
         assert!(!poisoned);
-        assert!(MSSQL_VERIFY_READONLY.contains("db_datareader"));
-        assert!(MSSQL_VERIFY_READONLY.contains("@@TRANCOUNT"));
+        // The session verifies transaction state, not role membership:
+        // what rights the login holds is the operator's decision.
+        assert!(crate::MSSQL_TRANSACTION_COUNT.contains("@@TRANCOUNT"));
     }
 }

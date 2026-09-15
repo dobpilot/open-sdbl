@@ -544,8 +544,12 @@ TLS включён по умолчанию в режиме `verify-full`: про
 
 ### Microsoft SQL Server
 
-Используйте отдельный SQL login, включённый в `db_datareader`, но не в
-`db_datawriter`, `db_owner` или серверную роль `sysadmin`:
+Рекомендуется отдельный SQL login, включённый в `db_datareader`, но не в
+`db_datawriter`, `db_owner` или серверную роль `sysadmin`. Консоль этого не
+требует и не проверяет: она запрашивает режим «только чтение», перед каждым
+чтением убеждается, что сессия не несёт чужой открытой транзакции, и
+откатывает свою — а компилятор порождает только `SELECT`. Права учётной
+записи выбирает администратор:
 
 ```console
 MSSQL_PASSWORD='secret' ./target/release/open-sdbl console mssql \

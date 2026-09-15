@@ -42,7 +42,6 @@ const CONNECTION_TIMEOUT: Duration = Duration::from_secs(10);
 const QUERY_TIMEOUT: Duration = Duration::from_secs(120);
 const POSTGRES_CLOSE_TIMEOUT: Duration = Duration::from_secs(5);
 const CONFIG_DECODE_BATCH_SIZE: usize = 256;
-const MSSQL_VERIFY_READONLY: &str = "SELECT CONVERT(int, @@TRANCOUNT), CONVERT(int, CASE WHEN ISNULL(IS_MEMBER(N'db_datareader'), 0) = 1 AND ISNULL(IS_MEMBER(N'db_datawriter'), 0) = 0 AND ISNULL(IS_MEMBER(N'db_owner'), 0) = 0 AND ISNULL(IS_SRVROLEMEMBER(N'sysadmin'), 0) = 0 THEN 1 ELSE 0 END), CONVERT(int, transaction_isolation_level) FROM sys.dm_exec_sessions WHERE session_id = @@SPID";
 const MSSQL_TRANSACTION_COUNT: &str = "SELECT CONVERT(int, @@TRANCOUNT)";
 
 fn main() -> ExitCode {
