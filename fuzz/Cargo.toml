@@ -8,6 +8,9 @@ license = "MIT"
 [package.metadata]
 cargo-fuzz = true
 
+[lib]
+path = "src/lib.rs"
+
 [dependencies]
 libfuzzer-sys = "0.4"
 open-sdbl = { path = ".." }

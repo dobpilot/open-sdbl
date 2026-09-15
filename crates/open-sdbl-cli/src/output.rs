@@ -204,13 +204,28 @@ pub(crate) fn lex(output: &mut impl Write, tokens: &[open_sdbl::Token<'_>]) -> i
 
 #[cfg(test)]
 mod tests {
-    use super::{bounded_field, escape_field, write_top_level_error};
+    use super::{MAX_CELL_WIDTH, bounded_field, escape_field, write_top_level_error};
     use crate::error::CliError;
 
     #[test]
     fn escapes_controls_and_truncates_at_character_boundaries() {
-        assert_eq!(escape_field("\x1b]52;c;x\x07"), "\\u{1b}]52;c;x\\u{7}");
+        assert_eq!(escape_field("\\\t\r\n"), "\\\\\\t\\r\\n");
+        assert_eq!(escape_field("\x1b[2J"), "\\u{1b}[2J");
+        assert_eq!(
+            escape_field("\x1b]52;c;payload\x07"),
+            "\\u{1b}]52;c;payload\\u{7}"
+        );
+        // Line and paragraph separators and the bidirectional overrides
+        // would reorder a terminal line around the escaped text.
+        assert_eq!(
+            escape_field("a\u{2028}\u{2029}\u{202e}b\u{2066}c\u{2069}"),
+            "a\\u{2028}\\u{2029}\\u{202e}b\\u{2066}c\\u{2069}"
+        );
         assert!(bounded_field("界界", 3).ends_with('…'));
+        let wide = "界".repeat(MAX_CELL_WIDTH);
+        let bounded = bounded_field(&wide, MAX_CELL_WIDTH);
+        assert!(unicode_width::UnicodeWidthStr::width(bounded.as_str()) <= MAX_CELL_WIDTH);
+        assert!(bounded.ends_with('…'));
     }
 
     #[test]

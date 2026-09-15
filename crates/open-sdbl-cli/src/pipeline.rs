@@ -508,10 +508,12 @@ mod tests {
     use futures_util::StreamExt;
 
     use super::{
-        ConfigDecodeLimits, assemble_parts, assemble_single_resource, decode_catalog_values,
-        decode_config_stream_with_progress_timeout,
+        ConfigDecodeLimits, ConfigResource, assemble_parts, assemble_single_resource,
+        decode_catalog_values, decode_config_stream, decode_config_stream_with_progress_timeout,
     };
     use crate::progress::MetadataProgress;
+
+    use crate::hex_test_support::hex;
 
     async fn assembled(rows: Vec<(&str, i32, &[u8])>) -> Result<Vec<(String, Vec<u8>)>, String> {
         let rows = rows
@@ -572,9 +574,116 @@ mod tests {
         let tables = decode_catalog_values(vec![
             ["T", "_Reference1", "", "", ""].map(str::to_owned),
             ["C", "_Reference1", "_IDRRef", "binary(16)", ""].map(str::to_owned),
+            ["I", "_Reference1", "_Reference1_PK", "true", "_IDRRef"].map(str::to_owned),
         ])
         .unwrap();
+        assert_eq!(tables.len(), 1);
         assert_eq!(tables[0].columns[0].name, "_IDRRef");
+        assert_eq!(tables[0].columns[0].data_type, "binary(16)");
+        assert!(tables[0].indexes[0].unique);
+    }
+
+    #[tokio::test]
+    async fn streamed_config_decoding_preserves_order_and_propagates_errors() {
+        let compressed = hex(
+            "4d8d4b0ac3201400af22ae7d9018a3be650f505ae809def303857e426256c1bb37d850ba9e6166d36adb7ad529f64cc15986803d8389ce8327d741ce3460f631593455c9cb945eb7c88f732a14a9d0757e73926a4fc879955f2e965d10cfc31053536a3d467a0c68390e902918303a65608b23381390b219468fbc8f5af854ca7ce7b5fc1f1a10f423b5d60f",
+        );
+        let resources = futures_util::stream::iter([
+            Ok(ConfigResource {
+                file_name: "b8bac76b-c91b-4d78-8a70-ffa39f8de694".to_owned(),
+                compressed: compressed.clone(),
+            }),
+            Ok(ConfigResource {
+                file_name: "25c96bd3-fac4-42ef-b695-74c9af43589b".to_owned(),
+                compressed: compressed.clone(),
+            }),
+        ]);
+        let mut progress = MetadataProgress::disabled();
+        progress.config_totals(2, (compressed.len() * 2) as u64);
+        let (descriptors, predefined_values, _criteria) = decode_config_stream(
+            resources,
+            2,
+            2,
+            ConfigDecodeLimits::default(),
+            &mut progress,
+        )
+        .await
+        .unwrap();
+        assert!(!descriptors.is_empty());
+        assert!(predefined_values.is_empty());
+        assert_eq!(
+            descriptors.first().unwrap().resource_guid.as_str(),
+            "25c96bd3-fac4-42ef-b695-74c9af43589b"
+        );
+        assert_eq!(
+            descriptors.last().unwrap().resource_guid.as_str(),
+            "b8bac76b-c91b-4d78-8a70-ffa39f8de694"
+        );
+        assert_eq!(progress.completed_resources, 2);
+        assert_eq!(progress.completed_bytes, (compressed.len() * 2) as u64);
+
+        let invalid = futures_util::stream::iter([Ok(ConfigResource {
+            file_name: "b8bac76b-c91b-4d78-8a70-ffa39f8de694".to_owned(),
+            compressed: b"not deflate".to_vec(),
+        })]);
+        let error = decode_config_stream(
+            invalid,
+            2,
+            2,
+            ConfigDecodeLimits::default(),
+            &mut MetadataProgress::disabled(),
+        )
+        .await
+        .unwrap_err();
+        assert!(error.to_string().contains("DEFLATE"));
+
+        let limited = futures_util::stream::iter([Ok(ConfigResource {
+            file_name: "b8bac76b-c91b-4d78-8a70-ffa39f8de694".to_owned(),
+            compressed: compressed.clone(),
+        })]);
+        let error = decode_config_stream(
+            limited,
+            1,
+            1,
+            ConfigDecodeLimits {
+                resource_bytes: 1,
+                batch_bytes: 2,
+                total_bytes: 2,
+                in_flight_bytes: 2,
+            },
+            &mut MetadataProgress::disabled(),
+        )
+        .await
+        .unwrap_err();
+        assert!(
+            error
+                .to_string()
+                .contains("decoded metadata exceeds 1 byte limit")
+        );
+
+        let total_limited = futures_util::stream::iter([Ok(ConfigResource {
+            file_name: "b8bac76b-c91b-4d78-8a70-ffa39f8de694".to_owned(),
+            compressed,
+        })]);
+        let error = decode_config_stream(
+            total_limited,
+            1,
+            1,
+            ConfigDecodeLimits {
+                resource_bytes: 1024 * 1024,
+                batch_bytes: 1024 * 1024,
+                total_bytes: 1,
+                in_flight_bytes: 1024 * 1024,
+            },
+            &mut MetadataProgress::disabled(),
+        )
+        .await
+        .unwrap_err();
+        assert!(
+            error
+                .to_string()
+                .contains("Config total decoded size exceeds 1 byte")
+        );
     }
 
     #[tokio::test]

@@ -34,6 +34,10 @@ jobs:
       - run: cargo doc --workspace --no-deps
         env:
           RUSTDOCFLAGS: -D warnings
+      # The fuzz crate is a separate workspace: build it and check its fixed
+      # snapshot, but never run an unbounded fuzz campaign here.
+      - run: cargo check --manifest-path fuzz/Cargo.toml --all-targets
+      - run: cargo test --manifest-path fuzz/Cargo.toml
 
   windows-check:
     runs-on: windows-latest
