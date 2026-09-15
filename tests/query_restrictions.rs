@@ -257,7 +257,10 @@ fn restricts_joined_sources_independently() {
         &options,
     )
     .unwrap();
-    assert_eq!(inner.sql.matches("AS \"__restricted\"").count(), 2);
+    // One restricted source per side, each wrapped once: the full join is
+    // native, so neither side is repeated.
+    assert_eq!(inner.sql.matches("AS \"__restricted\"").count(), 1);
+    assert!(inner.sql.contains("FULL JOIN (SELECT"), "{}", inner.sql);
 }
 
 #[test]

@@ -319,9 +319,12 @@ fn places_predicates_by_join_shape() {
         "ВЫБРАТЬ Т.Ссылка ИЗ Справочник.Товары КАК Т ПОЛНОЕ СОЕДИНЕНИЕ Справочник.Товары КАК П ПО Т.Поставщик = П.Ссылка",
         &area(7),
     );
+    // A FULL JOIN null-extends both sides, so neither separator filter may
+    // move to WHERE: a row of the other area would there be dropped
+    // instead of surviving as an unmatched row.
     assert_eq!(
         full,
-        "SELECT * FROM ((SELECT \"Т\".\"_idrref\" AS \"ID\" FROM \"_reference53\" AS \"Т\" LEFT JOIN \"_reference53\" AS \"П\" ON \"Т\".\"_fld55rref\" = \"П\".\"_idrref\" AND \"П\".\"_fld56\" = 7 AND \"П\".\"_fld57\" = 7 WHERE \"Т\".\"_fld56\" = 7 AND \"Т\".\"_fld57\" = 7) UNION ALL (SELECT \"Т\".\"_idrref\" AS \"ID\" FROM \"_reference53\" AS \"П\" LEFT JOIN \"_reference53\" AS \"Т\" ON \"Т\".\"_fld55rref\" = \"П\".\"_idrref\" AND \"Т\".\"_fld56\" = 7 AND \"Т\".\"_fld57\" = 7 WHERE \"П\".\"_fld56\" = 7 AND \"П\".\"_fld57\" = 7 AND (\"Т\".\"_fld55rref\" IS NULL))) AS \"__full\""
+        "SELECT \"Т\".\"_idrref\" AS \"ID\" FROM \"_reference53\" AS \"Т\" FULL JOIN \"_reference53\" AS \"П\" ON \"Т\".\"_fld55rref\" = \"П\".\"_idrref\" AND \"Т\".\"_fld56\" = 7 AND \"Т\".\"_fld57\" = 7 AND \"П\".\"_fld56\" = 7 AND \"П\".\"_fld57\" = 7"
     );
 }
 

@@ -287,7 +287,7 @@ fn preserves_mssql_goldens_for_dialect_sensitive_features() {
             )
             .unwrap()
             .sql,
-            "SELECT * FROM (SELECT [l].[_code] AS [Code], [r].[_date_time] AS [Date] FROM [_reference53] AS [l] LEFT JOIN [_reference53] AS [r] ON [l].[_code] = [r].[_code] UNION ALL SELECT [l].[_code] AS [Code], [r].[_date_time] AS [Date] FROM [_reference53] AS [r] LEFT JOIN [_reference53] AS [l] ON [l].[_code] = [r].[_code] WHERE ([l].[_code] IS NULL)) AS [__full]",
+            "SELECT [l].[_code] AS [Code], [r].[_date_time] AS [Date] FROM [_reference53] AS [l] FULL JOIN [_reference53] AS [r] ON [l].[_code] = [r].[_code]",
         ),
         (
             "dereference",
@@ -1076,12 +1076,19 @@ fn bounds_count_aggregate_shapes() {
     .unwrap_err();
     assert!(mixed.message().contains("cannot be mixed"));
 
+    // The platform counts the null-extended rows of both sides, and so
+    // does the native join: measured, `КОЛИЧЕСТВО(*)` over a full join of
+    // a 13-row and a 2-row source answers 13.
     let full = postgres_compile!(
         "SELECT COUNT(*) FROM Catalog.OpenSdblMetadataProbe l FULL JOIN Catalog.OpenSdblMetadataProbe r ON l.Code = r.Code;",
         &snapshot,
     )
-    .unwrap_err();
-    assert!(full.message().contains("transposed FULL JOIN"));
+    .unwrap();
+    assert!(
+        full.sql.contains("COUNT(*)") && full.sql.contains("FULL JOIN"),
+        "{}",
+        full.sql
+    );
 }
 
 #[test]
@@ -1742,8 +1749,9 @@ fn preserves_presentations_through_full_join_and_union_branches() {
         )
         .unwrap();
     assert_eq!(compiled.columns.len(), 1);
-    assert!(compiled.sql.matches("UNION ALL").count() >= 2);
-    assert!(compiled.sql.contains("AS \"__full\""));
+    // One UNION ALL, the statement's own: a full join no longer adds any.
+    assert_eq!(compiled.sql.matches("UNION ALL").count(), 1);
+    assert!(compiled.sql.contains("FULL JOIN"), "{}", compiled.sql);
 }
 
 #[test]
@@ -2603,8 +2611,13 @@ fn compiles_join_key_with_additional_in_and_value_predicates() {
     }
 }
 
+/// An additional predicate of a full join condition stays in `ON`: moving
+/// it to `WHERE` would discard the null-extended rows the join produces.
+/// The server still plans the join, because the anchor equality makes the
+/// condition hash-joinable — measured against PostgreSQL, which accepts
+/// `ON a = b AND <predicate>` and refuses `ON a = b OR …`.
 #[test]
-fn keeps_additional_full_join_predicates_in_both_on_clauses() {
+fn keeps_additional_full_join_predicates_in_on() {
     let compiled = postgres_compile!(
         "SELECT l.Code, r.Date FROM Catalog.OpenSdblMetadataProbe l
          FULL JOIN Catalog.OpenSdblMetadataProbe r
@@ -2613,15 +2626,14 @@ fn keeps_additional_full_join_predicates_in_both_on_clauses() {
     )
     .unwrap();
 
-    let condition = "ON \"l\".\"_code\" = \"r\".\"_code\" AND (\"l\".\"_code\" <> 'Исключен')";
-    assert_eq!(
-        compiled.sql.matches(condition).count(),
-        2,
+    assert!(
+        compiled.sql.contains(
+            "FULL JOIN \"_reference53\" AS \"r\" ON \"l\".\"_code\" = \"r\".\"_code\" AND (\"l\".\"_code\" <> 'Исключен')"
+        ),
         "{}",
         compiled.sql
     );
-    assert!(!compiled.sql.contains("WHERE (\"l\".\"_code\" <>"));
-    assert!(compiled.sql.contains("WHERE (\"l\".\"_code\" IS NULL)"));
+    assert!(!compiled.sql.contains("WHERE"), "{}", compiled.sql);
 }
 
 #[test]
@@ -2648,8 +2660,13 @@ fn resolves_a_one_hop_reference_from_one_join_side() {
     );
 }
 
+/// A full join is a join like the others: one native `FULL JOIN`, with
+/// the result-level operators applied to the whole joined result. The
+/// platform expands it into three UNION ALL branches instead, but on an
+/// equality condition both answer the same rows, and every targeted
+/// server plans the native form directly.
 #[test]
-fn transposes_full_join_to_duplicate_safe_union_all() {
+fn renders_full_join_natively() {
     let snapshot = snapshot();
     let compiled = postgres_compile!(
         "SELECT DISTINCT TOP 3 l.Code, r.Date
@@ -2662,12 +2679,14 @@ fn transposes_full_join_to_duplicate_safe_union_all() {
     )
     .unwrap();
 
-    assert!(compiled.sql.starts_with("SELECT DISTINCT * FROM ((SELECT "));
-    assert!(!compiled.sql.contains("FULL JOIN"));
-    assert_eq!(compiled.sql.matches(" LEFT JOIN ").count(), 2);
-    assert_eq!(compiled.sql.matches(" UNION ALL ").count(), 1);
-    assert!(compiled.sql.contains("(\"l\".\"_code\" IS NULL)"));
-    assert_eq!(compiled.sql.matches("IS NOT NULL").count(), 2);
+    assert!(
+        compiled.sql.starts_with("SELECT DISTINCT "),
+        "{}",
+        compiled.sql
+    );
+    assert_eq!(compiled.sql.matches("FULL JOIN").count(), 1);
+    assert!(!compiled.sql.contains("UNION ALL"));
+    assert_eq!(compiled.sql.matches("IS NOT NULL").count(), 1);
     assert!(compiled.sql.ends_with("ORDER BY 1 ASC LIMIT 3"));
 
     let mssql = mssql_compile!(
@@ -2679,7 +2698,7 @@ fn transposes_full_join_to_duplicate_safe_union_all() {
     )
     .unwrap();
     assert!(!mssql.sql.contains('"'), "{}", mssql.sql);
-    assert!(mssql.sql.contains("AS [__full]"));
+    assert!(mssql.sql.contains("FULL JOIN"), "{}", mssql.sql);
 }
 
 #[test]
@@ -2736,18 +2755,6 @@ fn rejects_unsafe_or_ambiguous_join_shapes() {
     assert!(
         deep_condition.message().contains("is not a reference"),
         "{deep_condition}"
-    );
-
-    let full_join_condition = postgres_compile!(
-        "SELECT p.Code FROM Catalog.OpenSdblMetadataProbe p
-         FULL JOIN Catalog.Организации t ON p.Организация.Code = t.Code;",
-        &snapshot,
-    )
-    .unwrap_err();
-    assert!(
-        full_join_condition
-            .message()
-            .contains("FULL JOIN condition supports direct fields only")
     );
 
     let ambiguous = postgres_compile!(
@@ -4802,8 +4809,12 @@ fn diagnoses_invalid_grouping() {
         "SELECT l.Code, COUNT(*) FROM Catalog.OpenSdblMetadataProbe l FULL JOIN Catalog.OpenSdblMetadataProbe r ON l.Code = r.Code GROUP BY l.Code;",
         &snapshot,
     )
-    .unwrap_err();
-    assert!(full.message().contains("FULL JOIN"));
+    .unwrap();
+    assert!(
+        full.sql.contains("FULL JOIN") && full.sql.ends_with("GROUP BY \"l\".\"_code\""),
+        "{}",
+        full.sql
+    );
 
     let unknown_key = postgres_compile!(
         "SELECT COUNT(*) FROM Catalog.OpenSdblMetadataProbe GROUP BY Nothing;",
@@ -4919,15 +4930,21 @@ fn diagnoses_invalid_join_chains() {
     .unwrap_err();
     assert!(no_anchor.message().contains("earlier source"));
 
+    // A full join chains with other joins, as the platform allows: its
+    // probe answers such a chain rather than refusing it.
     let full = postgres_compile!(
         "SELECT a.Code FROM Catalog.OpenSdblMetadataProbe a
          FULL JOIN Catalog.OpenSdblMetadataProbe b ON a.Code = b.Code
          JOIN Catalog.OpenSdblMetadataProbe c ON c.Code = a.Code;",
         &snapshot,
     )
-    .unwrap_err();
-    assert!(full.message().contains("only join"));
-    assert_eq!((full.line(), full.column()), (2, 10));
+    .unwrap();
+    assert!(
+        full.sql.contains("FULL JOIN \"_reference53\" AS \"b\"")
+            && full.sql.contains("INNER JOIN \"_reference53\" AS \"c\""),
+        "{}",
+        full.sql
+    );
 
     let duplicate_alias = postgres_compile!(
         "SELECT a.Code FROM Catalog.OpenSdblMetadataProbe a
@@ -5891,7 +5908,7 @@ fn widens_reference_equalities_in_join_conditions() {
         "ON (\"А\".\"_fld54_rrref\" = \"Б\".\"_fld54_rrref\" AND \"А\".\"_fld54_rtref\" = \"Б\".\"_fld54_rtref\")"
     ));
 
-    // A transposed FULL JOIN anchors on the widened expression.
+    // A FULL JOIN widens its equality the same way.
     let full = session
         .compile(
             &snapshot,
@@ -5901,10 +5918,12 @@ fn widens_reference_equalities_in_join_conditions() {
         .0
         .unwrap()
         .unwrap();
-    assert!(full.sql.contains("UNION ALL"));
+    assert!(full.sql.contains("FULL JOIN"), "{}", full.sql);
     assert!(
         full.sql
-            .contains("(decode('00000035', 'hex') || \"Д\".\"_idrref\") IS NULL")
+            .contains("(decode('00000035', 'hex') || \"Д\".\"_idrref\") ="),
+        "{}",
+        full.sql
     );
 }
 

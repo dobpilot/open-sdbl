@@ -89,13 +89,6 @@ pub(super) fn compile_branch(
     let joins = ast.joins.as_slice();
     validate_join_projection(ast, joins)?;
     let grouped = !ast.group.is_empty() || ast.having.is_some();
-    if grouped && let Some(join) = joins.iter().find(|join| join.kind == JoinKind::Full) {
-        return Err(QueryDiagnostic::at(
-            QueryDiagnosticKind::UnsupportedFeature,
-            Some(join.token),
-            "GROUP BY and HAVING are not supported together with FULL JOIN",
-        ));
-    }
     let mut context = compile_branch_context(
         outer,
         source,
@@ -144,23 +137,9 @@ pub(super) fn compile_branch(
             Some(condition) => {
                 compile_join_condition(condition, &mut context, join.token, ScopeId(index + 1))
             }
-            None => Ok(FullJoinCondition {
-                sql: String::new(),
-                left_marker: String::new(),
-            }),
+            None => Ok(JoinCondition { sql: String::new() }),
         })
         .collect::<Result<Vec<_>, _>>()?;
-    // A transposed FULL JOIN duplicates its condition into two branches
-    // whose anti-match marker must be a column of the join itself.
-    if context.dereference_in_join
-        && let Some(join) = joins.iter().find(|join| join.kind == JoinKind::Full)
-    {
-        return Err(QueryDiagnostic::at(
-            QueryDiagnosticKind::UnsupportedFeature,
-            Some(join.token),
-            "FULL JOIN condition supports direct fields only",
-        ));
-    }
     let filter = ast
         .filter
         .as_ref()
@@ -252,26 +231,6 @@ fn validate_join_projection(
     let Some(first) = joins.first() else {
         return Ok(());
     };
-    if let Some(full) = joins.iter().find(|join| join.kind == JoinKind::Full) {
-        if joins.len() > 1 {
-            return Err(QueryDiagnostic::at(
-                QueryDiagnosticKind::UnsupportedFeature,
-                Some(full.token),
-                "FULL JOIN must be the only join of a branch",
-            ));
-        }
-        if ast
-            .projection
-            .iter()
-            .any(|projection| projection_is_aggregated(&projection.expression))
-        {
-            return Err(QueryDiagnostic::at(
-                QueryDiagnosticKind::UnsupportedFeature,
-                Some(full.token),
-                "aggregates over a transposed FULL JOIN are not supported",
-            ));
-        }
-    }
     if ast
         .projection
         .iter()
@@ -765,9 +724,8 @@ fn empty_projection_diagnostic(
     )
 }
 
-struct FullJoinCondition {
+struct JoinCondition {
     sql: String,
-    left_marker: String,
 }
 
 struct RenderedProjections {
@@ -1617,10 +1575,10 @@ fn compile_branch_sql(
     joins: &[JoinAst<'_, '_>],
     context: &CompilationContext<'_, '_>,
     projections: &[String],
-    conditions: &[FullJoinCondition],
+    conditions: &[JoinCondition],
     filter: Option<&str>,
 ) -> String {
-    let Some(join) = joins.first() else {
+    if joins.is_empty() {
         let dialect = context.dialect;
         let mut sql = dialect.select_prefix(ast.distinct, ast.top);
         sql.push_str(&projections.join(", "));
@@ -1637,51 +1595,8 @@ fn compile_branch_sql(
             filter,
         );
         return sql;
-    };
-    let condition = conditions
-        .first()
-        .expect("a JOIN branch always compiles its conditions");
-    let dialect = context.dialect;
-    if join.kind == JoinKind::Full {
-        let first = compile_directional_full_join(
-            context,
-            &context.sources[0],
-            &context.sources[1],
-            projections,
-            &condition.sql,
-            filter,
-            None,
-        );
-        let second = compile_directional_full_join(
-            context,
-            &context.sources[1],
-            &context.sources[0],
-            projections,
-            &condition.sql,
-            filter,
-            Some(&condition.left_marker),
-        );
-        let mut sql = dialect.select_prefix(ast.distinct, ast.top);
-        sql.push_str("* FROM (");
-        if dialect == SqlDialect::Postgres {
-            sql.push('(');
-        }
-        sql.push_str(&first);
-        sql.push_str(if dialect == SqlDialect::Postgres {
-            ") UNION ALL ("
-        } else {
-            " UNION ALL "
-        });
-        sql.push_str(&second);
-        if dialect == SqlDialect::Postgres {
-            sql.push(')');
-        }
-        sql.push_str(") AS ");
-        sql.push_str(&dialect.quote_identifier("__full"));
-        sql
-    } else {
-        compile_native_join(ast, joins, context, projections, conditions, filter)
     }
+    compile_native_join(ast, joins, context, projections, conditions, filter)
 }
 
 fn resolve_join_source(
@@ -1752,7 +1667,7 @@ fn compile_join_condition(
     context: &mut CompilationContext<'_, '_>,
     token: &Token<'_>,
     joined: ScopeId,
-) -> Result<FullJoinCondition, QueryDiagnostic> {
+) -> Result<JoinCondition, QueryDiagnostic> {
     let mut parts = Vec::new();
     let mut left_marker = None;
     context.compiling_join_condition = true;
@@ -1760,16 +1675,17 @@ fn compile_join_condition(
         compile_join_condition_parts(expression, context, &mut parts, &mut left_marker, joined);
     context.compiling_join_condition = false;
     compiled?;
-    let left_marker = left_marker.ok_or_else(|| {
+    // The anchor equality is what makes the condition joinable; a server
+    // plans a FULL JOIN only on such a condition.
+    left_marker.ok_or_else(|| {
         QueryDiagnostic::at(
             QueryDiagnosticKind::UnsupportedFeature,
             Some(token),
             "JOIN condition requires at least one top-level direct-field equality between the joined source and an earlier source combined by AND",
         )
     })?;
-    Ok(FullJoinCondition {
+    Ok(JoinCondition {
         sql: parts.join(" AND "),
-        left_marker,
     })
 }
 
@@ -2335,51 +2251,12 @@ fn fixed_reference_database_type(
     }
 }
 
-fn compile_directional_full_join(
-    context: &CompilationContext<'_, '_>,
-    base: &SourceScope,
-    joined: &SourceScope,
-    projections: &[String],
-    condition: &str,
-    filter: Option<&str>,
-    anti_match: Option<&str>,
-) -> String {
-    let mut sql = format!(
-        "SELECT {} FROM {} AS {} LEFT JOIN {} AS {} ON {}",
-        projections.join(", "),
-        base.relation,
-        context.dialect.quote_identifier(&base.sql_alias),
-        joined.relation,
-        context.dialect.quote_identifier(&joined.sql_alias),
-        condition,
-    );
-    // The joined side is null-extended, so its separator filter belongs
-    // to the join condition; the base side is preserved and filtered below.
-    for predicate in &joined.separator_predicates {
-        sql.push_str(" AND ");
-        sql.push_str(predicate);
-    }
-    append_joined_reference_joins(&mut sql, context);
-    let mut predicates = base.separator_predicates.clone();
-    if let Some(anti_match) = anti_match {
-        predicates.push(format!("({anti_match} IS NULL)"));
-    }
-    if let Some(filter) = filter {
-        predicates.push(filter.to_owned());
-    }
-    if !predicates.is_empty() {
-        sql.push_str(" WHERE ");
-        sql.push_str(&predicates.join(" AND "));
-    }
-    sql
-}
-
 fn compile_native_join(
     ast: &SelectAst<'_, '_>,
     joins: &[JoinAst<'_, '_>],
     context: &CompilationContext<'_, '_>,
     projections: &[String],
-    conditions: &[FullJoinCondition],
+    conditions: &[JoinCondition],
     filter: Option<&str>,
 ) -> String {
     // A condition that dereferences a reference can only see joins written
@@ -2391,6 +2268,12 @@ fn compile_native_join(
     sql.push_str(&projections.join(", "));
     sql.push_str(" FROM ");
     sql.push_str(&render_join_source(context, &context.sources[0], grouped));
+    // A comma-listed element joins as a whole: the platform answers
+    // `A, B ПРАВОЕ СОЕДИНЕНИЕ C` as `A × (B ⟕ C)`, so an element that
+    // carries joins of its own is parenthesized. Rendering it flat would
+    // make an unmatched row of `C` appear once instead of once per row of
+    // `A`, which is a different answer, not a different plan.
+    let mut element_open = false;
     for (index, ((join, condition), source)) in joins
         .iter()
         .zip(conditions)
@@ -2402,11 +2285,23 @@ fn compile_native_join(
             JoinKind::Left => "LEFT JOIN",
             JoinKind::Right => "RIGHT JOIN",
             JoinKind::Cross => "CROSS JOIN",
-            JoinKind::Full => unreachable!("FULL JOIN is transposed separately"),
+            JoinKind::Full => "FULL JOIN",
         };
+        if join.kind == JoinKind::Cross && element_open {
+            sql.push(')');
+            element_open = false;
+        }
         sql.push(' ');
         sql.push_str(operator);
         sql.push(' ');
+        if join.kind == JoinKind::Cross
+            && joins
+                .get(index + 1)
+                .is_some_and(|next| next.kind != JoinKind::Cross)
+        {
+            sql.push('(');
+            element_open = true;
+        }
         sql.push_str(&render_join_source(context, source, grouped));
         if join.kind == JoinKind::Cross {
             debug_assert!(placement.on[index].is_empty());
@@ -2418,6 +2313,9 @@ fn compile_native_join(
             sql.push_str(" AND ");
             sql.push_str(predicate);
         }
+    }
+    if element_open {
+        sql.push(')');
     }
     if !grouped {
         append_joined_reference_joins(&mut sql, context);
@@ -2450,12 +2348,19 @@ fn place_separator_predicates(
         }
         let own_join = position.checked_sub(1);
         let target = match own_join.map(|index| joins[index].kind) {
-            Some(JoinKind::Inner | JoinKind::Left) => own_join,
+            // A source a FULL JOIN introduces is null-extended like a
+            // LEFT-joined one, so its own ON carries the filter.
+            Some(JoinKind::Inner | JoinKind::Left | JoinKind::Full) => own_join,
+            // A preserved source keeps its rows only until a later join
+            // null-extends it, which RIGHT and FULL both do.
+            // The search stops at the next comma: a later element is
+            // joined as a whole and null-extends nothing of this one.
             _ => joins
                 .iter()
                 .enumerate()
                 .skip(position)
-                .find(|(_, join)| join.kind == JoinKind::Right)
+                .take_while(|(_, join)| join.kind != JoinKind::Cross)
+                .find(|(_, join)| matches!(join.kind, JoinKind::Right | JoinKind::Full))
                 .map(|(index, _)| index),
         };
         match target {

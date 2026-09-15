@@ -67,9 +67,11 @@ fn joins_stay_attached_to_their_comma_element() {
          LEFT JOIN Catalog.Организации AS c ON c.Code = b.Code
          WHERE a.Code = b.Code;",
     );
+    // An element that carries joins is parenthesized, so it joins as a
+    // whole — the platform answers a comma list that way.
     assert_contains(
         &after.sql,
-        "AS \"a\" CROSS JOIN \"_reference57\" AS \"b\" LEFT JOIN \"_reference57\" AS \"c\" ON \"c\".\"_code\" = \"b\".\"_code\" WHERE",
+        "AS \"a\" CROSS JOIN (\"_reference57\" AS \"b\" LEFT JOIN \"_reference57\" AS \"c\" ON \"c\".\"_code\" = \"b\".\"_code\") WHERE",
     );
 
     let before = postgres(
@@ -149,34 +151,49 @@ fn filters_comma_sources_by_separators_like_the_base() {
             &CompileOptions::new().session(&session),
         )
         .unwrap();
+    // The joined element is parenthesized, so its separator predicates
+    // stay inside it and the predicates of the first element, which the
+    // element cannot address, move to WHERE.
     assert_contains(
         &right.sql,
-        "RIGHT JOIN \"_reference53\" AS \"Г\" ON \"Г\".\"_fld55rref\" = \"Б\".\"_idrref\" AND \"А\".\"_fld56\" = 7 AND \"А\".\"_fld57\" = 7 AND \"Б\".\"_fld56\" = 7 AND \"Б\".\"_fld57\" = 7 WHERE \"Г\".\"_fld56\" = 7 AND \"Г\".\"_fld57\" = 7",
+        "CROSS JOIN (\"_reference53\" AS \"Б\" RIGHT JOIN \"_reference53\" AS \"Г\" ON \"Г\".\"_fld55rref\" = \"Б\".\"_idrref\" AND \"Б\".\"_fld56\" = 7 AND \"Б\".\"_fld57\" = 7) WHERE \"А\".\"_fld56\" = 7 AND \"А\".\"_fld57\" = 7 AND \"Г\".\"_fld56\" = 7 AND \"Г\".\"_fld57\" = 7",
+    );
+}
+
+/// A full join inside a comma element joins that element as a whole. The
+/// platform answers `Товары, Смешанные ПОЛНОЕ СОЕДИНЕНИЕ Клиенты` with
+/// 26 rows over a 13-row, empty and 2-row source, which is
+/// `13 × (0 ⟗ 2)`; a flat rendering would answer 2.
+#[test]
+fn groups_a_full_join_with_its_comma_element() {
+    let snapshot = reference_snapshot();
+    let compiled = postgres(
+        &snapshot,
+        "SELECT a.Code, b.Code FROM Catalog.OpenSdblMetadataProbe AS a, Catalog.Организации AS b
+         FULL JOIN Catalog.Организации AS c ON c.Code = b.Code;",
+    );
+    assert_contains(
+        &compiled.sql,
+        "AS \"a\" CROSS JOIN (\"_reference57\" AS \"b\" FULL JOIN \"_reference57\" AS \"c\" ON \"c\".\"_code\" = \"b\".\"_code\")",
     );
 }
 
 #[test]
-fn keeps_the_full_join_wildcard_and_ambiguity_refusals() {
+fn keeps_the_wildcard_and_ambiguity_refusals() {
     let snapshot = reference_snapshot();
-    for (query, message) in [
-        (
-            "SELECT a.Code, b.Code FROM Catalog.OpenSdblMetadataProbe AS a, Catalog.Организации AS b
-             FULL JOIN Catalog.Организации AS c ON c.Code = b.Code;",
-            "FULL JOIN must be the only join",
-        ),
-        (
-            "SELECT * FROM Catalog.OpenSdblMetadataProbe AS a, Catalog.Организации AS b;",
-            "wildcard projection over several sources",
-        ),
-    ] {
-        let error = compile(&snapshot, PostgresBackend, query).unwrap_err();
-        assert_eq!(
-            error.kind(),
-            QueryDiagnosticKind::UnsupportedFeature,
-            "{query}: {error}"
-        );
-        assert!(error.message().contains(message), "{query}: {error}");
-    }
+    let query = "SELECT * FROM Catalog.OpenSdblMetadataProbe AS a, Catalog.Организации AS b;";
+    let error = compile(&snapshot, PostgresBackend, query).unwrap_err();
+    assert_eq!(
+        error.kind(),
+        QueryDiagnosticKind::UnsupportedFeature,
+        "{query}: {error}"
+    );
+    assert!(
+        error
+            .message()
+            .contains("wildcard projection over several sources"),
+        "{query}: {error}"
+    );
 
     let ambiguous = compile(
         &snapshot,
