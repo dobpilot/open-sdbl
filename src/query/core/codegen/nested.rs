@@ -47,8 +47,18 @@ pub(super) struct SectionColumn {
     pub(super) table: String,
     /// Physical column holding the owner reference.
     pub(super) owner_column: String,
-    /// Physical column the predicate names.
-    pub(super) column: String,
+    /// Physical column the predicate names, or the pair of type and
+    /// identifier members when the column holds any reference.
+    pub(super) column: SectionValue,
+}
+
+/// How the compared column of a section is stored.
+pub(super) enum SectionValue {
+    /// One physical column.
+    Single(String),
+    /// A reference pair: the type member and the identifier member, which
+    /// compare as one `RTRef ‖ RRRef` payload.
+    ReferencePair { type_member: String, value: String },
 }
 
 /// Resolves `<источник>.<Состав>.<Поле>` for a predicate. Returns `None`
@@ -62,16 +72,29 @@ pub(super) fn section_column(
 ) -> Option<SectionColumn> {
     let resolved = resolve_section(context, scope, section, &[], String::new(), 0).ok()?;
     let (index, _) = resolve_named_field(&resolved.all_fields, field).ok()?;
-    // A composite column of a section would have to be compared member by
-    // member inside the EXISTS, which the ordinary path does not reach
-    // here; such a predicate keeps its diagnostic.
-    let [column] = resolved.all_fields[index].columns.as_slice() else {
-        return None;
+    let columns = resolved.all_fields[index].columns.as_slice();
+    // A reference pair compares as one payload; any other composite column
+    // would have to be compared member by member inside the EXISTS, which
+    // this path does not reach, so it keeps its diagnostic.
+    let value = match columns {
+        [column] => SectionValue::Single(column.physical_name.clone()),
+        _ => {
+            let type_member = columns
+                .iter()
+                .find(|column| column.is_reference_type_member())?;
+            let value_member = columns
+                .iter()
+                .find(|column| column.is_reference_value_member())?;
+            SectionValue::ReferencePair {
+                type_member: type_member.physical_name.clone(),
+                value: value_member.physical_name.clone(),
+            }
+        }
     };
     Some(SectionColumn {
         table: resolved.table.clone(),
         owner_column: resolved.owner_column.clone(),
-        column: column.physical_name.clone(),
+        column: value,
     })
 }
 

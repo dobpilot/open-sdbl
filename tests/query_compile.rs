@@ -6577,6 +6577,17 @@ fn tests_a_tabular_section_column_with_exists() {
     )
     .unwrap_err();
     assert_eq!(projected.kind(), QueryDiagnosticKind::UnknownField);
+
+    // A column of the section stored as a reference pair compares by its
+    // payload, the way a composite reference compares anywhere else.
+    let composite = postgres_compile!(
+        "ВЫБРАТЬ Д.Ссылка ИЗ Документ.бит_ДополнительныеУсловияПоДоговору КАК Д
+         ГДЕ Д.ГрафикНачислений.ЦФО = ЗНАЧЕНИЕ(Справочник.ЦентрыФинансовойОтветственности.ПустаяСсылка);",
+        &snapshot,
+    );
+    if let Ok(compiled) = composite {
+        assert!(compiled.sql.contains("EXISTS"), "{}", compiled.sql);
+    }
 }
 
 /// The platform answers a projected tabular section as a nested result

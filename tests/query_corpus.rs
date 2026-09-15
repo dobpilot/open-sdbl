@@ -532,7 +532,7 @@ fn compiles_the_demo_corpus_as_recorded() {
     // The share that compiles is recorded so an improvement is visible.
     // Entries whose metadata the pruned fixture does not carry say nothing
     // about the compiler, so they are counted out of the denominator.
-    assert_eq!(compiled, 376, "queries that compile");
+    assert_eq!(compiled, 377, "queries that compile");
     assert_eq!(
         queries.len() - beyond_fixture,
         381,

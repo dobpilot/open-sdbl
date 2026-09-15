@@ -1,5 +1,5 @@
 use super::context::{CompilationContext, ResolvedPath};
-use super::nested::section_column;
+use super::nested::{SectionValue, section_column};
 use super::orchestrate::{
     PresentationCompilation, compile_query_ast, compile_query_ast_with_outer,
 };
@@ -2778,13 +2778,30 @@ fn compile_tabular_section_comparison(
     let Some(column) = section_column(context, scope, section, field) else {
         return Ok(None);
     };
-    let other_sql = compile_expression(other, context)?;
     let alias = context.next_section_alias();
-    let quoted = context.dialect.quote_identifier(&alias);
-    let section_sql = format!(
-        "{quoted}.{}",
-        context.dialect.quote_identifier(&column.column)
-    );
+    let dialect = context.dialect;
+    let quoted = dialect.quote_identifier(&alias);
+    // A reference pair of the section compares as one payload, so the
+    // other side is widened to a payload the same way an ordinary
+    // comparison of a composite reference widens it.
+    let (section_sql, other_sql) = match &column.column {
+        SectionValue::Single(name) => (
+            format!("{quoted}.{}", dialect.quote_identifier(name)),
+            compile_expression(other, context)?,
+        ),
+        SectionValue::ReferencePair { type_member, value } => {
+            let (sql, kind) = value_operand(other, context)?;
+            let (payload, _) =
+                widen_reference(&sql, &kind, operand_token(other), context.snapshot, dialect)?;
+            (
+                dialect.reference_payload(
+                    &format!("{quoted}.{}", dialect.quote_identifier(type_member)),
+                    &format!("{quoted}.{}", dialect.quote_identifier(value)),
+                ),
+                payload,
+            )
+        }
+    };
     let (left_sql, right_sql) = if section_on_left {
         (section_sql, other_sql)
     } else {
@@ -2793,8 +2810,8 @@ fn compile_tabular_section_comparison(
     let owner_sql = context.identity_sql(scope)?;
     Ok(Some(format!(
         "EXISTS (SELECT 1 FROM {} AS {quoted} WHERE {quoted}.{} = {owner_sql} AND ({left_sql} {} {right_sql}))",
-        context.dialect.quote_identifier(&column.table),
-        context.dialect.quote_identifier(&column.owner_column),
+        dialect.quote_identifier(&column.table),
+        dialect.quote_identifier(&column.owner_column),
         binary_operator_sql(operator)?,
     )))
 }
