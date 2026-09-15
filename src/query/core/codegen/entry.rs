@@ -154,6 +154,8 @@ pub(crate) fn compile_presentation_lookup(
             ),
         ],
         deferred_presentations: Vec::new(),
+        nested: Vec::new(),
+        service_columns: Vec::new(),
     })
 }
 

@@ -247,6 +247,17 @@ fn options(entry: &CorpusEntry) -> (Vec<QueryParameter>, SessionParameters) {
     (parameters, session)
 }
 
+/// The recorded text of one compiled query: the main statement, then the
+/// statement of every tabular section it projects, so a change in either
+/// shows up as a diff.
+fn record(compiled: &open_sdbl::query::CompiledQuery) -> String {
+    let mut out = compiled.sql.clone();
+    for nested in &compiled.nested {
+        out.push_str(&format!("\n-- nested {} --\n{}", nested.label, nested.sql));
+    }
+    out
+}
+
 /// Compiles one corpus query. A query that asks for a reference
 /// presentation needs the two-phase protocol — the application answers the
 /// request with a plan — so the harness stands in for the application and
@@ -267,7 +278,7 @@ fn compile_corpus_query(
         &direct,
         Err(error) if error.kind() == open_sdbl::query::QueryDiagnosticKind::PresentationPlan
     ) {
-        return direct.map(|compiled| compiled.sql);
+        return direct.map(|compiled| record(&compiled));
     }
     let prepared = QueryCompiler::new(snapshot, PostgresBackend).prepare(query)?;
     let plans = prepared
@@ -278,7 +289,7 @@ fn compile_corpus_query(
         .collect::<Vec<_>>();
     prepared
         .compile_with(snapshot, &options.presentations(&plans))
-        .map(|compiled| compiled.sql)
+        .map(|compiled| record(&compiled))
 }
 
 /// The plan the harness answers with: the object's description, else its
@@ -521,7 +532,7 @@ fn compiles_the_demo_corpus_as_recorded() {
     // The share that compiles is recorded so an improvement is visible.
     // Entries whose metadata the pruned fixture does not carry say nothing
     // about the compiler, so they are counted out of the denominator.
-    assert_eq!(compiled, 344, "queries that compile");
+    assert_eq!(compiled, 373, "queries that compile");
     assert_eq!(
         queries.len() - beyond_fixture,
         381,

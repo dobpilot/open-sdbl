@@ -688,6 +688,67 @@ impl<'tokens, 'source> Parser<'tokens, 'source> {
         })
     }
 
+    /// Parses `<путь>.(Поле, …)` or `<путь>.*`, the two spellings that
+    /// name a tabular section outright. Returns `None` when the text is
+    /// something else, leaving the cursor for the caller to restore.
+    fn parse_tabular_section_projection(
+        &mut self,
+    ) -> Result<Option<Projection<'tokens, 'source>>, QueryDiagnostic> {
+        let Some(first) = self.peek() else {
+            return Ok(None);
+        };
+        if !is_contextual_identifier(first.kind) {
+            return Ok(None);
+        }
+        let mut segments = vec![self.next().expect("peeked token")];
+        loop {
+            if !self.consume_lexeme(".") {
+                return Ok(None);
+            }
+            let Some(token) = self.peek() else {
+                return Ok(None);
+            };
+            match token.lexeme {
+                "*" => {
+                    self.next();
+                    return Ok(Some(Projection::TabularSection {
+                        path: FieldReference { segments },
+                        columns: Vec::new(),
+                    }));
+                }
+                "(" => {
+                    self.next();
+                    let mut columns = Vec::new();
+                    loop {
+                        columns.push(self.expect_identifier("expected column name")?);
+                        // A column of the list may carry an alias, which
+                        // names it in the nested result; the section keeps
+                        // its own column names, so the alias is read and
+                        // dropped, as `Ссылка КАК Ссылка` means nothing
+                        // else.
+                        if self.consume_keyword(Keyword::As) {
+                            self.expect_identifier("expected column alias after AS")?;
+                        } else {
+                            self.consume_implicit_alias();
+                        }
+                        if !self.consume_lexeme(",") {
+                            break;
+                        }
+                    }
+                    self.expect_lexeme(")")?;
+                    return Ok(Some(Projection::TabularSection {
+                        path: FieldReference { segments },
+                        columns,
+                    }));
+                }
+                _ if is_contextual_identifier(token.kind) => {
+                    segments.push(self.next().expect("peeked token"));
+                }
+                _ => return Ok(None),
+            }
+        }
+    }
+
     fn parse_projection(&mut self) -> Result<Projection<'tokens, 'source>, QueryDiagnostic> {
         let function = if self.next_lexeme_is("(") {
             self.consume_keyword_token(Keyword::RefPresentation)
@@ -733,6 +794,17 @@ impl<'tokens, 'source> Parser<'tokens, 'source> {
                 operation,
                 argument,
             });
+        }
+
+        // `Состав.(Поле, …)` and `Состав.*` name a tabular section, which
+        // the platform answers as a nested result. The bare `Состав` form
+        // is indistinguishable from a field here and is recognized during
+        // compilation, where metadata is at hand.
+        let offset = self.offset;
+        match self.parse_tabular_section_projection() {
+            Ok(Some(projection)) => return Ok(projection),
+            Ok(None) => self.offset = offset,
+            Err(error) => return Err(error),
         }
 
         let expression = self.parse_or()?;

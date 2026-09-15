@@ -133,6 +133,8 @@ fn place_statement(
             sql: join_with_prefix(with_prefix(manager, &dependencies, dialect), &query.sql),
             columns: query.columns,
             deferred_presentations: query.deferred_presentations,
+            nested: query.nested,
+            service_columns: query.service_columns,
         }));
     };
     let CompiledStatement {
@@ -223,6 +225,8 @@ fn count_of_relation(
             },
         )],
         deferred_presentations: Vec::new(),
+        nested: Vec::new(),
+        service_columns: Vec::new(),
     }
 }
 

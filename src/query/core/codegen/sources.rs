@@ -198,6 +198,13 @@ pub(super) fn compile_source_free_branch(
     let mut labels = OutputLabelAllocator::new(dialect);
     for (index, projection) in ast.projection.iter().enumerate() {
         let (sql, default_label, kind) = match &projection.expression {
+            Projection::TabularSection { path, .. } => {
+                return Err(QueryDiagnostic::at(
+                    QueryDiagnosticKind::UnsupportedFeature,
+                    Some(path.last()),
+                    "a tabular section can be projected only by the outermost statement",
+                ));
+            }
             Projection::Aggregate {
                 token,
                 kind: AggregateKind::Count,
@@ -296,6 +303,9 @@ pub(super) fn compile_source_free_branch(
         columns,
         deferred_presentations: Vec::new(),
         order: Vec::new(),
+        keyed_sql: None,
+        sections: Vec::new(),
+        service_columns: Vec::new(),
     })
 }
 
@@ -1081,7 +1091,10 @@ pub(super) fn projection_is_aggregated(projection: &Projection<'_, '_>) -> bool 
     match projection {
         Projection::Aggregate { .. } => true,
         Projection::Scalar(expression) => contains_aggregate(expression),
-        Projection::All | Projection::Field(_) | Projection::Presentation { .. } => false,
+        Projection::All
+        | Projection::Field(_)
+        | Projection::Presentation { .. }
+        | Projection::TabularSection { .. } => false,
     }
 }
 
@@ -1306,6 +1319,7 @@ pub(super) fn projection_token<'tokens, 'source>(
 ) -> Option<&'tokens Token<'source>> {
     match projection {
         Projection::All => None,
+        Projection::TabularSection { path, .. } => Some(path.last()),
         Projection::Field(reference) => Some(reference.last()),
         Projection::Scalar(expression) => operand_token(expression),
         Projection::Aggregate { token, .. } | Projection::Presentation { token, .. } => Some(token),

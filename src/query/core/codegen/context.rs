@@ -30,6 +30,14 @@ use crate::query::core::{QueryDiagnostic, QueryDiagnosticKind};
 
 pub(super) struct CompiledBranch {
     pub(super) sql: String,
+    /// The same statement without its final ordering, which a nested
+    /// result embeds as a subquery: SQL Server refuses `ORDER BY` there.
+    /// Set only when the branch projects a tabular section.
+    pub(super) keyed_sql: Option<String>,
+    /// Tabular sections the branch projects, resolved but not rendered.
+    pub(super) sections: Vec<super::nested::PendingSection>,
+    /// Output columns the statement carries for the compiler itself.
+    pub(super) service_columns: Vec<usize>,
     pub(super) columns: Vec<CompiledColumn>,
     pub(super) deferred_presentations: Vec<usize>,
     pub(super) logical_width: usize,
@@ -384,7 +392,7 @@ impl CompilationContext<'_, '_> {
         &self.sources[0].sql_alias
     }
 
-    fn scope_description(&self) -> &'static str {
+    pub(super) fn scope_description(&self) -> &'static str {
         if self.sources.len() > 1 {
             "JOIN sources"
         } else {
@@ -411,6 +419,56 @@ impl CompilationContext<'_, '_> {
                         .is_some_and(|object| object.kind == Some(kind))
             })
             .map(|(index, _)| ScopeId(index))
+    }
+
+    /// The scope whose source owns the tabular section this path names, or
+    /// `None` when the path names something else. A path is `Состав` or
+    /// `<источник>.Состав`; only metadata tells a section from a field.
+    pub(super) fn section_scope_of(&self, path: &FieldReference<'_, '_>) -> Option<ScopeId> {
+        match path.segments.as_slice() {
+            [section] => (0..self.local_sources)
+                .map(ScopeId)
+                .find(|scope| self.names_tabular_section(*scope, section)),
+            [qualifier, section] => {
+                let scope = self.qualifier_scope(qualifier).ok().flatten()?;
+                self.names_tabular_section(scope, section).then_some(scope)
+            }
+            _ => None,
+        }
+    }
+
+    /// The reference column of a source, which a nested result links to.
+    pub(super) fn identity_sql(&self, scope: ScopeId) -> Result<String, QueryDiagnostic> {
+        let source = self.source(scope);
+        let field = source
+            .fields
+            .iter()
+            .find(|field| names_equal(&field.schema_name, "ID"))
+            .ok_or_else(|| {
+                QueryDiagnostic::at(
+                    QueryDiagnosticKind::UnsupportedFeature,
+                    None,
+                    format!(
+                        "source {:?} has no reference column to link a tabular section to",
+                        source.object_name
+                    ),
+                )
+            })?;
+        let [column] = field.columns.as_slice() else {
+            return Err(QueryDiagnostic::at(
+                QueryDiagnosticKind::UnsupportedFeature,
+                None,
+                format!(
+                    "source {:?} has a composite reference, which cannot link a tabular section",
+                    source.object_name
+                ),
+            ));
+        };
+        Ok(format!(
+            "{}.{}",
+            self.dialect.quote_identifier(&source.sql_alias),
+            self.dialect.quote_identifier(&column.physical_name)
+        ))
     }
 
     fn qualifier_scope(&self, qualifier: &Token<'_>) -> Result<Option<ScopeId>, QueryDiagnostic> {

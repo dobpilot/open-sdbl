@@ -9,6 +9,7 @@ use super::expression::{
     expression_kind, reference_column, reference_type_column, single_column, spread_over_members,
     widen_reference,
 };
+use super::nested::{PendingSection, resolve_section};
 use super::orchestrate::{PresentationCompilation, compile_query_ast};
 use super::params::{reference_constant_of_bytes, reference_constant_of_value};
 use super::separators::separator_predicates;
@@ -103,7 +104,11 @@ pub(super) fn compile_branch(
             .projection
             .iter()
             .any(|projection| projection_is_aggregated(&projection.expression));
-    let selected = compile_branch_projections(
+    // A projected tabular section is answered by a statement of its own,
+    // so it leaves the list of projections before they compile and comes
+    // back as a nested result once the main statement is rendered.
+    let sections = take_projected_sections(ast, &context)?;
+    let mut selected = compile_branch_projections(
         ast,
         source,
         joins.first(),
@@ -111,6 +116,11 @@ pub(super) fn compile_branch(
         presentations,
         storage_domain,
     )?;
+    let owner_keys = if sections.is_empty() {
+        0
+    } else {
+        push_owner_key(&sections, &mut selected, &context)?
+    };
     let group_by = compile_group_keys(ast, &selected, &mut context)?;
     context.aggregates_allowed = grouped;
     let having = ast
@@ -126,6 +136,9 @@ pub(super) fn compile_branch(
         deferred_presentations,
         logical_columns,
     } = render_selected_projections(&selected, &context, widen, mode.expand, storage_domain)?;
+    // A composite value occupies several output columns, so the owner keys
+    // are found by counting back from the end, where they were appended.
+    let service_columns = (columns.len() - owner_keys..columns.len()).collect::<Vec<_>>();
     if projections.is_empty() {
         return Err(empty_projection_diagnostic(source, joins.first()));
     }
@@ -203,6 +216,9 @@ pub(super) fn compile_branch(
         sql.push_str(" HAVING ");
         sql.push_str(&having);
     }
+    // A nested result embeds this statement as a subquery, where SQL
+    // Server refuses `ORDER BY`; the owners it names do not depend on it.
+    let keyed_sql = (!sections.is_empty()).then(|| sql.clone());
     if !order.is_empty() && !union_order && (!totals || ast.top.is_some()) {
         sql.push_str(" ORDER BY ");
         sql.push_str(
@@ -216,6 +232,9 @@ pub(super) fn compile_branch(
     dialect.append_limit(&mut sql, ast.top);
     Ok(CompiledBranch {
         sql,
+        keyed_sql,
+        sections,
+        service_columns,
         columns,
         deferred_presentations,
         logical_width: selected.len(),
@@ -702,6 +721,98 @@ fn compile_branch_projections(
     compile_selected_projections(ast, context, presentations, storage_domain)
 }
 
+/// Whether a projection names a tabular section rather than a value.
+fn is_section_projection(
+    context: &CompilationContext<'_, '_>,
+    projection: &Projection<'_, '_>,
+) -> bool {
+    match projection {
+        Projection::TabularSection { .. } => true,
+        Projection::Field(reference) => context.section_scope_of(reference).is_some(),
+        _ => false,
+    }
+}
+
+/// Takes the projected tabular sections out of the projection list. A
+/// section written as `Состав.(…)` or `Состав.*` says so outright; the
+/// bare `Состав` form looks like a field and only metadata tells them
+/// apart, so it is recognized here.
+fn take_projected_sections(
+    ast: &SelectAst<'_, '_>,
+    context: &CompilationContext<'_, '_>,
+) -> Result<Vec<PendingSection>, QueryDiagnostic> {
+    let mut sections = Vec::new();
+    let mut position = 0;
+    for projection in &ast.projection {
+        let (path, requested) = match &projection.expression {
+            Projection::TabularSection { path, columns } => (path, columns.as_slice()),
+            Projection::Field(reference) => {
+                let Some(scope) = context.section_scope_of(reference) else {
+                    position += 1;
+                    continue;
+                };
+                let _ = scope;
+                (reference, [].as_slice())
+            }
+            _ => {
+                position += 1;
+                continue;
+            }
+        };
+        let Some(scope) = context.section_scope_of(path) else {
+            return Err(QueryDiagnostic::at(
+                QueryDiagnosticKind::UnknownObject,
+                Some(path.last()),
+                format!(
+                    "tabular section {:?} was not found in {}",
+                    path.last().lexeme,
+                    context.scope_description()
+                ),
+            ));
+        };
+        let label = projection.alias.map_or_else(
+            || path.last().lexeme.to_owned(),
+            |alias| alias.lexeme.to_owned(),
+        );
+        sections.push(resolve_section(
+            context,
+            scope,
+            path.last(),
+            requested,
+            label,
+            position,
+        )?);
+        position += 1;
+    }
+    Ok(sections)
+}
+
+/// Adds the owner key of every source a section belongs to, so the nested
+/// statement can link its rows to the main ones. The key is a service
+/// column: a consumer showing the result leaves it out.
+fn push_owner_key(
+    sections: &[PendingSection],
+    selected: &mut Vec<SelectedProjection>,
+    context: &CompilationContext<'_, '_>,
+) -> Result<usize, QueryDiagnostic> {
+    let mut scopes = sections
+        .iter()
+        .map(|section| section.owner_scope)
+        .collect::<Vec<_>>();
+    scopes.dedup();
+    let keys = scopes.len();
+    for scope in scopes {
+        let sql = context.identity_sql(scope)?;
+        selected.push(SelectedProjection::Generated {
+            sql,
+            label: "__owner".to_owned(),
+            deferred: false,
+            kind: ColumnKind::Binary { length: None },
+        });
+    }
+    Ok(keys)
+}
+
 fn empty_projection_diagnostic(
     source: &SourceAst<'_, '_>,
     join: Option<&JoinAst<'_, '_>>,
@@ -744,6 +855,11 @@ fn compile_selected_projections(
 ) -> Result<Vec<SelectedProjection>, QueryDiagnostic> {
     let mut selected = Vec::with_capacity(ast.projection.len());
     for projection in &ast.projection {
+        // A tabular section is answered by a statement of its own, which
+        // `take_projected_sections` has already resolved.
+        if is_section_projection(context, &projection.expression) {
+            continue;
+        }
         match &projection.expression {
             Projection::Field(reference) => {
                 let mut resolved = context.resolve(reference)?;
@@ -826,6 +942,9 @@ fn compile_selected_projections(
                     deferred: false,
                     kind: output_kind,
                 });
+            }
+            Projection::TabularSection { .. } => {
+                unreachable!("tabular sections are taken out before projections compile")
             }
             Projection::All => unreachable!("wildcard projections are handled by the caller"),
         }

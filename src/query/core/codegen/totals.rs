@@ -455,6 +455,8 @@ pub(super) fn wrap_totals(
         sql,
         columns,
         deferred_presentations: compiled.deferred_presentations,
+        nested: Vec::new(),
+        service_columns: Vec::new(),
     })
 }
 

@@ -6534,24 +6534,60 @@ fn names_the_standard_fields_of_processes_and_tasks() {
     assert!(task.sql.contains("\"З\".\"_point_rrref\""), "{}", task.sql);
 }
 
+/// The platform answers a projected tabular section as a nested result
+/// inside that column — measured on 8.3.27, where `Д.Товары` yields the
+/// owner reference, the line number and every attribute, and
+/// `Д.Товары.(НомерСтроки, Товар)` yields exactly those columns. One SQL
+/// statement cannot carry that, so the compiler returns a statement of its
+/// own linked by the owner key.
 #[test]
-fn names_a_nested_tabular_section_projection() {
-    // The platform returns the tabular section as a nested result inside
-    // one column, which a single SQL statement cannot do, so the compiler
-    // names the construct instead of complaining about a missing name.
-    let snapshot = support::snapshot();
-    for source in [
-        "ВЫБРАТЬ Т.Состав.(Ссылка, НомерСтроки) ИЗ Справочник.OpenSdblMetadataProbe КАК Т;",
+fn compiles_a_projected_tabular_section_as_a_nested_result() {
+    let snapshot = support::tabular_section_snapshot();
+    let whole = postgres_compile!(
+        "ВЫБРАТЬ Д.Ссылка, Д.ГрафикНачислений ИЗ Документ.бит_ДополнительныеУсловияПоДоговору КАК Д;",
+        &snapshot,
+    )
+    .unwrap();
+    assert_eq!(whole.nested.len(), 1);
+    let section = &whole.nested[0];
+    assert_eq!(section.label, "ГрафикНачислений");
+    assert_eq!(section.position, 1);
+    assert!(
+        section.sql.contains("_document53_vt54X1"),
+        "{}",
+        section.sql
+    );
+    assert!(section.sql.contains("IN (SELECT"), "{}", section.sql);
+    assert!(section.sql.contains("ORDER BY"), "{}", section.sql);
+    // The owner key links the two results and is service on the main side.
+    assert_eq!(whole.service_columns, vec![section.owner_column]);
+    assert_eq!(
+        whole.columns[section.owner_column].label,
+        "__owner".to_owned()
+    );
+    assert_eq!(section.columns[section.key_column].label, "__owner");
+
+    let named = postgres_compile!(
+        "ВЫБРАТЬ Д.ГрафикНачислений.(НомерСтроки, Сумма) ИЗ Документ.бит_ДополнительныеУсловияПоДоговору КАК Д;",
+        &snapshot,
+    )
+    .unwrap();
+    assert_eq!(named.nested.len(), 1);
+    let labels = named.nested[0]
+        .columns
+        .iter()
+        .map(|column| column.label.as_str())
+        .collect::<Vec<_>>();
+    // Standard fields answer under their canonical labels, as everywhere
+    // else in the compiler.
+    assert_eq!(labels, ["LineNo", "Сумма", "__owner"]);
+
+    let missing = postgres_compile!(
         "ВЫБРАТЬ Т.Состав.* ИЗ Справочник.OpenSdblMetadataProbe КАК Т;",
-    ] {
-        let error = postgres_compile!(source, &snapshot).unwrap_err();
-        assert_eq!(
-            error.kind(),
-            QueryDiagnosticKind::UnsupportedFeature,
-            "{error}"
-        );
-        assert!(error.message().contains("nested result"), "{error}");
-    }
+        &support::snapshot(),
+    )
+    .unwrap_err();
+    assert_eq!(missing.kind(), QueryDiagnosticKind::UnknownObject);
 }
 
 #[test]

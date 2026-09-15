@@ -7,7 +7,7 @@ use crate::metadata::{MetadataSnapshot, ObjectId};
 use crate::query::core::ast::{OrderTerm, Projection, QueryAst};
 use crate::query::core::params::Parameters;
 use crate::query::core::resolve::{
-    ColumnKind, CompilationCatalog, CompiledColumn, CompiledQuery, PresentationPlan,
+    ColumnKind, CompilationCatalog, CompiledColumn, CompiledQuery, NestedResult, PresentationPlan,
 };
 use crate::query::core::restrict::{AccessRestriction, RestrictionTarget};
 use crate::query::core::{QueryDiagnostic, QueryDiagnosticKind, SqlDialect};
@@ -248,6 +248,46 @@ impl<'plans> PresentationCompilation<'plans> {
 /// which stays in the storage domain (no MSSQL year-offset correction on
 /// its projections), cannot project `*` or deferred presentations, and may
 /// order its rows only together with `ПЕРВЫЕ`.
+/// Renders the nested statement of every tabular section the branch
+/// projects. A section needs the main statement, which is why it is
+/// rendered here and not where the projections compile.
+fn render_sections(
+    branch: &CompiledBranch,
+    dialect: SqlDialect,
+    ast: &QueryAst<'_, '_>,
+) -> Result<Vec<NestedResult>, QueryDiagnostic> {
+    if branch.sections.is_empty() {
+        return Ok(Vec::new());
+    }
+    if ast.totals.is_some() {
+        return Err(QueryDiagnostic::at(
+            QueryDiagnosticKind::UnsupportedFeature,
+            ast.branches.first().and_then(|branch| {
+                branch
+                    .projection
+                    .first()
+                    .and_then(|projection| super::sources::projection_token(&projection.expression))
+            }),
+            "a tabular section cannot be projected together with ИТОГИ",
+        ));
+    }
+    let main = branch
+        .keyed_sql
+        .as_deref()
+        .expect("a branch with sections keeps its unordered statement");
+    let mut nested = Vec::with_capacity(branch.sections.len());
+    for (section, owner_column) in branch.sections.iter().zip(&branch.service_columns) {
+        let key_label = branch.columns[*owner_column].label.clone();
+        nested.push(section.render(
+            dialect,
+            &dialect.quote_identifier(&key_label),
+            main,
+            *owner_column,
+        ));
+    }
+    Ok(nested)
+}
+
 pub(super) fn compile_query_ast(
     ast: &QueryAst<'_, '_>,
     snapshot: &MetadataSnapshot,
@@ -415,10 +455,15 @@ pub(super) fn compile_query_ast_with_outer(
     }
     if !unioned {
         let branch = branches.pop().expect("a query has one branch");
+        // A projected tabular section is answered by a statement of its
+        // own, filtered by the owners this statement names.
+        let sections = render_sections(&branch, dialect, ast)?;
         let compiled = CompiledQuery {
             sql: branch.sql,
             columns: branch.columns,
             deferred_presentations: branch.deferred_presentations,
+            nested: sections,
+            service_columns: branch.service_columns,
         };
         let compiled = match &ast.totals {
             Some(totals) => wrap_totals(
@@ -515,6 +560,8 @@ pub(super) fn compile_query_ast_with_outer(
         sql,
         columns,
         deferred_presentations: first.deferred_presentations.clone(),
+        nested: Vec::new(),
+        service_columns: Vec::new(),
     };
     let compiled = match &ast.totals {
         Some(totals) => wrap_totals(

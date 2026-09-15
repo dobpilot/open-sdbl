@@ -7,10 +7,11 @@ use std::time::{Duration, Instant};
 
 use open_sdbl::metadata::{MetadataKind, MetadataObject, MetadataSnapshot, ObjectId};
 use open_sdbl::query::{
-    AccessRestriction, ColumnKind, CompileOptions, CompiledQuery, MsSqlBackend, PostgresBackend,
-    Prepared, PresentationExpression, PresentationPlan, PresentationRequest, QueryCompiler,
-    QueryParameter, RestrictionRequest, SessionParameters, TempTablesManager, TypeValue,
-    constants_table_fields, find_metadata_object, queryable_field_catalog, queryable_fields,
+    AccessRestriction, ColumnKind, CompileOptions, CompiledColumn, CompiledQuery, MsSqlBackend,
+    PostgresBackend, Prepared, PresentationExpression, PresentationPlan, PresentationRequest,
+    QueryCompiler, QueryParameter, RestrictionRequest, SessionParameters, TempTablesManager,
+    TypeValue, constants_table_fields, find_metadata_object, queryable_field_catalog,
+    queryable_fields,
 };
 use open_sdbl::{TokenKind, tokenize};
 use rustyline::completion::{Completer, Pair};
@@ -1131,6 +1132,27 @@ pub(super) async fn run(
                         validate_query_rows(&compiled, &rows)?;
                         print_query_rows(output, &snapshot, &compiled, &rows)
                             .map_err(CliError::standard_output)?;
+                        // A projected tabular section is answered by a
+                        // statement of its own, which the console runs and
+                        // prints under the section's name.
+                        for nested in &compiled.nested {
+                            writeln!(output, "-- {} --", escape_field(&nested.label))
+                                .map_err(CliError::standard_output)?;
+                            match session.query(&nested.sql, nested.columns.len()).await {
+                                Ok(nested_rows) => print_result_table(
+                                    output,
+                                    &snapshot,
+                                    &nested.columns,
+                                    &[],
+                                    &nested_rows,
+                                )
+                                .map_err(CliError::standard_output)?,
+                                Err(error) => {
+                                    eprintln!("error: {}", escape_field(&error.to_string()));
+                                    ensure_session_remains_usable(session.is_dead())?;
+                                }
+                            }
+                        }
                     }
                     Err(error) => {
                         let execution_elapsed = execution_started.elapsed();
@@ -1845,13 +1867,42 @@ fn print_query_rows(
     compiled: &CompiledQuery,
     rows: &QueryRows,
 ) -> io::Result<()> {
-    let headers: Vec<&str> = compiled
-        .columns
-        .iter()
-        .map(|column| column.label.as_str())
+    print_result_table(
+        output,
+        snapshot,
+        &compiled.columns,
+        &compiled.service_columns,
+        rows,
+    )
+}
+
+/// Prints one result table, leaving out the columns the compiler carries
+/// for itself — the owner key a nested result links to.
+fn print_result_table(
+    output: &mut impl Write,
+    snapshot: &MetadataSnapshot,
+    columns: &[CompiledColumn],
+    service: &[usize],
+    rows: &QueryRows,
+) -> io::Result<()> {
+    let shown: Vec<usize> = (0..columns.len())
+        .filter(|index| !service.contains(index))
         .collect();
-    let kinds: Vec<&ColumnKind> = compiled.columns.iter().map(|column| &column.kind).collect();
-    let typed: Vec<TypedRow<'_>> = rows
+    let headers: Vec<&str> = shown
+        .iter()
+        .map(|index| columns[*index].label.as_str())
+        .collect();
+    let kinds: Vec<&ColumnKind> = shown.iter().map(|index| &columns[*index].kind).collect();
+    let visible: Vec<Vec<Cell>> = rows
+        .iter()
+        .map(|cells| {
+            shown
+                .iter()
+                .map(|index| cells[*index].clone())
+                .collect::<Vec<_>>()
+        })
+        .collect();
+    let typed: Vec<TypedRow<'_>> = visible
         .iter()
         .map(|cells| TypedRow {
             cells,

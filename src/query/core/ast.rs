@@ -270,6 +270,18 @@ pub(super) enum Projection<'tokens, 'source> {
         operation: PresentationOperation,
         argument: PresentationArgument<'tokens, 'source>,
     },
+    /// `Состав.(Поле, …)` or `Состав.*`: the tabular section as a nested
+    /// result. The bare `Состав` form parses as a field and is recognized
+    /// during compilation, because only metadata tells a section from an
+    /// attribute.
+    TabularSection {
+        /// Path naming the section: the source qualifier when written, then
+        /// the section name.
+        path: FieldReference<'tokens, 'source>,
+        /// Columns the section contributes; empty means every column, which
+        /// is what `Состав` and `Состав.*` ask for.
+        columns: Vec<&'tokens Token<'source>>,
+    },
 }
 
 #[derive(Debug)]

@@ -5,6 +5,7 @@ mod constants;
 mod context;
 mod entry;
 mod expression;
+mod nested;
 mod orchestrate;
 mod params;
 mod select;

@@ -988,6 +988,7 @@ impl CompiledColumn {
 
 /// Native SQL text generated from one bounded 1C query.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct CompiledQuery {
     /// SELECT-only statement in the requested database dialect.
     pub sql: String,
@@ -997,6 +998,43 @@ pub struct CompiledQuery {
     /// Zero-based output columns whose cells contain deferred reference
     /// presentation payloads for application-side batch resolution.
     pub deferred_presentations: Vec<usize>,
+    /// Tabular sections the query projects, each answered by a statement
+    /// of its own. Empty for a query that projects none.
+    pub nested: Vec<NestedResult>,
+    /// Zero-based output columns the statement carries for the compiler's
+    /// own use — today the owner key a nested result links to. A consumer
+    /// showing the result to a person leaves them out.
+    pub service_columns: Vec<usize>,
+}
+
+/// One tabular section projected as a column. The platform answers such a
+/// column with a table of its own for every row of the main result, which
+/// one SQL statement cannot return, so the section comes back as a second
+/// statement linked to the first by the owner key.
+///
+/// A consumer runs [`Self::sql`], then groups its rows by the value of
+/// [`Self::key_column`], and attaches each group to the main row whose
+/// [`Self::owner_column`] holds the same value. The link is data on
+/// purpose: a consumer that builds its own plan — a database connector —
+/// never has to read the generated SQL.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct NestedResult {
+    /// Label the section takes in the logical result.
+    pub label: String,
+    /// Position of that label among the logical result columns, counting
+    /// the columns of the main statement that are not service columns.
+    pub position: usize,
+    /// SELECT-only statement returning the rows of the section, already
+    /// filtered to the owners the main statement names and ordered by
+    /// owner and line number.
+    pub sql: String,
+    /// Output columns of [`Self::sql`], in statement order.
+    pub columns: Vec<CompiledColumn>,
+    /// Zero-based column of the main statement holding the owner key.
+    pub owner_column: usize,
+    /// Zero-based column of [`Self::sql`] holding the same key.
+    pub key_column: usize,
 }
 
 /// Finds a tabular metadata object by qualified name, unique bare name, or
@@ -1727,7 +1765,10 @@ fn inline_service_physical(
     Ok(first.physical_name())
 }
 
-fn normalize_table_part_standard_fields(fields: &mut [QueryableField], parent_physical: &str) {
+pub(super) fn normalize_table_part_standard_fields(
+    fields: &mut [QueryableField],
+    parent_physical: &str,
+) {
     let parent = parent_physical.strip_prefix('_').unwrap_or(parent_physical);
     let owner_reference = format!("_{parent}_IDRRef");
     for field in fields {
