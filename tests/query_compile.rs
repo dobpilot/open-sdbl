@@ -6905,6 +6905,32 @@ fn presents_a_mixed_case_branch_by_branch() {
     assert!(compiled.sql.contains("LEFT JOIN"), "{}", compiled.sql);
 }
 
+/// `ПРЕДСТАВЛЕНИЕ` of an aggregate aggregates the branch. Measured on
+/// 8.3.27: the platform answers the presentation of the greatest
+/// reference and the count as text, grouped or not.
+#[test]
+fn presents_an_aggregate() {
+    let snapshot = snapshot();
+    let counted = postgres_compile!(
+        "ВЫБРАТЬ ПРЕДСТАВЛЕНИЕ(КОЛИЧЕСТВО(*)) КАК П ИЗ Справочник.OpenSdblMetadataProbe КАК Т;",
+        &snapshot,
+    )
+    .unwrap();
+    assert!(counted.sql.contains("COUNT(*)"), "{}", counted.sql);
+    assert_eq!(counted.columns[0].kind, ColumnKind::String { length: None });
+    assert!(counted.deferred_presentations.is_empty());
+
+    // A reference aggregate answers through the presentation protocol,
+    // like any other reference expression.
+    let reference = postgres_compile!(
+        "ВЫБРАТЬ ПРЕДСТАВЛЕНИЕ(МАКСИМУМ(Т.Ссылка)) КАК П ИЗ Справочник.OpenSdblMetadataProbe КАК Т;",
+        &snapshot,
+    )
+    .unwrap();
+    assert_eq!(reference.deferred_presentations, vec![0]);
+    assert!(reference.sql.contains("MAX("), "{}", reference.sql);
+}
+
 #[test]
 fn keeps_the_declared_gaps_declared() {
     // The capability table is the user-facing contract, and a row that

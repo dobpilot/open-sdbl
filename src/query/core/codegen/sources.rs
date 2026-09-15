@@ -1092,6 +1092,13 @@ pub(super) fn projection_is_aggregated(projection: &Projection<'_, '_>) -> bool 
     match projection {
         Projection::Aggregate { .. } => true,
         Projection::Scalar(expression) => contains_aggregate(expression),
+        // Presenting an aggregate aggregates the branch: the platform
+        // answers `ПРЕДСТАВЛЕНИЕ(МАКСИМУМ(Т.Клиент))` with the
+        // presentation of the greatest reference, measured on 8.3.27.
+        Projection::Presentation {
+            argument: PresentationArgument::Expression(expression),
+            ..
+        } => contains_aggregate(expression),
         Projection::All
         | Projection::Field(_)
         | Projection::Presentation { .. }
