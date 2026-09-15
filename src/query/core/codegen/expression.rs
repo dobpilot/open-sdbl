@@ -1607,6 +1607,26 @@ pub(super) fn compile_composite_alternatives(
 /// Renders `CASE WHEN … THEN … [ELSE …] END` from compiled alternatives.
 /// `values` holds one operand per `WHEN` followed by the `ELSE` operand when
 /// `has_else` is set.
+/// Gives an untyped `NULL` branch the type of the alternative. A branch
+/// that is nothing but `NULL` — a nested `ВЫБОР` of unbound parameters,
+/// say — has no type of its own, and PostgreSQL reads it as `text`, which
+/// has no common type with the reference payload the other branches
+/// carry; the server then refuses the whole `CASE`.
+fn type_null_operands(kind: &ColumnKind, values: &mut [Operand<'_, '_>], dialect: SqlDialect) {
+    if !matches!(
+        kind,
+        ColumnKind::Reference { .. } | ColumnKind::Binary { .. }
+    ) {
+        return;
+    }
+    let sql_type = dialect.reference_identifier_type();
+    for value in values.iter_mut() {
+        if value.kind == ColumnKind::Null {
+            value.sql = dialect.typed_null(sql_type);
+        }
+    }
+}
+
 pub(super) fn render_case(
     whens: &[String],
     values: &mut [Operand<'_, '_>],
@@ -1616,6 +1636,7 @@ pub(super) fn render_case(
 ) -> Result<(String, ColumnKind), QueryDiagnostic> {
     let kind = unify_operands(values, snapshot, dialect)?;
     unify_string_operands(&kind, values, dialect);
+    type_null_operands(&kind, values, dialect);
     let mut sql = String::from("CASE");
     for (when, value) in whens.iter().zip(values.iter()) {
         sql.push_str(" WHEN ");
@@ -2141,8 +2162,8 @@ fn compile_logical_or_value(
             hierarchy,
         } => {
             if *hierarchy {
-                let seeds = compile_hierarchy_query_seeds(token, query, context)?;
-                return compile_in_hierarchy(token, value, seeds, *negated, context);
+                let (seeds, target) = compile_hierarchy_query_seeds(token, query, context)?;
+                return compile_in_hierarchy(token, value, seeds, target, *negated, context);
             }
             compile_in_query(token, value, query, *negated, context)
         }
@@ -2154,8 +2175,8 @@ fn compile_logical_or_value(
             hierarchy,
         } => {
             if *hierarchy {
-                let seeds = compile_hierarchy_list_seeds(token, items, context)?;
-                return compile_in_hierarchy(token, value, seeds, *negated, context);
+                let (seeds, target) = compile_hierarchy_list_seeds(token, items, context)?;
+                return compile_in_hierarchy(token, value, seeds, target, *negated, context);
             }
             if let Some(sql) = compile_reference_pair_in_list(value, items, *negated, context)? {
                 return Ok(sql);
@@ -2873,10 +2894,23 @@ fn compile_hierarchy_list_seeds(
     token: &Token<'_>,
     items: &[Expression<'_, '_>],
     context: &mut CompilationContext<'_, '_>,
-) -> Result<String, QueryDiagnostic> {
+) -> Result<(String, Option<ObjectId>), QueryDiagnostic> {
     let node = context.dialect.quote_identifier(HIERARCHY_NODE);
     let mut parts = Vec::with_capacity(items.len());
+    // The catalog every seed belongs to, when they agree on one.
+    let mut target: Option<Option<ObjectId>> = None;
     for item in items {
+        if let Ok(ColumnKind::Reference { targets, .. }) = expression_kind(item, context) {
+            let seed = match targets.as_slice() {
+                [only] => Some(*only),
+                _ => None,
+            };
+            target = Some(match target {
+                Some(previous) if previous == seed => seed,
+                Some(_) => None,
+                None => seed,
+            });
+        }
         if matches!(item, Expression::Field(_)) {
             return Err(QueryDiagnostic::at(
                 QueryDiagnosticKind::UnsupportedFeature,
@@ -2912,7 +2946,7 @@ fn compile_hierarchy_list_seeds(
             "IN HIERARCHY list must contain at least one expression",
         ));
     }
-    Ok(parts.join(" UNION ALL "))
+    Ok((parts.join(" UNION ALL "), target.flatten()))
 }
 
 /// Compiles the nested query of `В ИЕРАРХИИ (ВЫБРАТЬ …)` into a relation
@@ -2921,7 +2955,7 @@ fn compile_hierarchy_query_seeds(
     token: &Token<'_>,
     query: &crate::query::core::ast::QueryAst<'_, '_>,
     context: &mut CompilationContext<'_, '_>,
-) -> Result<String, QueryDiagnostic> {
+) -> Result<(String, Option<ObjectId>), QueryDiagnostic> {
     let dialect = context.dialect;
     let mut presentations =
         PresentationCompilation::strict(&[], context.catalog.parameters(), dialect);
@@ -2942,12 +2976,24 @@ fn compile_hierarchy_query_seeds(
             ),
         ));
     };
+    // The catalog the seeds belong to, which a composite value must match
+    // by type to be under any of them.
+    let target = match &column.kind {
+        ColumnKind::Reference { targets, .. } => match targets.as_slice() {
+            [target] => Some(*target),
+            _ => None,
+        },
+        _ => None,
+    };
     let alias = dialect.quote_identifier("__seeds");
-    Ok(format!(
-        "SELECT {alias}.{} AS {} FROM ({}) AS {alias}",
-        dialect.quote_identifier(&column.label),
-        dialect.quote_identifier(HIERARCHY_NODE),
-        inner.sql
+    Ok((
+        format!(
+            "SELECT {alias}.{} AS {} FROM ({}) AS {alias}",
+            dialect.quote_identifier(&column.label),
+            dialect.quote_identifier(HIERARCHY_NODE),
+            inner.sql
+        ),
+        target,
     ))
 }
 
@@ -2960,6 +3006,7 @@ fn compile_in_hierarchy(
     token: &Token<'_>,
     value: &Expression<'_, '_>,
     seeds: String,
+    seeds_target: Option<ObjectId>,
     negated: bool,
     context: &mut CompilationContext<'_, '_>,
 ) -> Result<String, QueryDiagnostic> {
@@ -2971,21 +3018,51 @@ fn compile_in_hierarchy(
         ));
     };
     let resolved = context.resolve(reference)?;
-    let column = single_column(resolved.field(), reference.last())?;
-    let ColumnKind::Reference {
-        targets,
-        runtime_typed: false,
-    } = &column.kind
-    else {
-        return Err(hierarchy_target_diagnostic(reference.last()));
-    };
-    let [target] = targets.as_slice() else {
-        return Err(hierarchy_target_diagnostic(reference.last()));
-    };
     let dialect = context.dialect;
     let node = dialect.quote_identifier(HIERARCHY_NODE);
-    let value_sql = context.sql_column(&resolved, column);
-    let relation = match hierarchical_catalog_of(*target, context.snapshot, dialect) {
+    // A composite reference is tested member by member: its identifier is
+    // compared with the seeds, and its type must be the seeds' own, since
+    // a value of another type is under no seed — measured on 8.3.27.
+    let (target, value_sql, type_guard) = match reference_pair(resolved.field()) {
+        Some((type_member, value_member)) => {
+            // Without a known catalog behind the seeds — a parameter bound
+            // to NULL, say — there is no hierarchy to descend and no type
+            // to guard; the identifiers alone decide, and they are unique.
+            let guard = seeds_target
+                .map(|target| {
+                    object_type_number(target, reference.last(), context.snapshot).map(|number| {
+                        format!(
+                            "{} = {}",
+                            context.sql_column(&resolved, type_member),
+                            dialect.binary_literal(&number.to_be_bytes())
+                        )
+                    })
+                })
+                .transpose()?;
+            (
+                seeds_target,
+                context.sql_column(&resolved, value_member),
+                guard,
+            )
+        }
+        None => {
+            let column = single_column(resolved.field(), reference.last())?;
+            let ColumnKind::Reference {
+                targets,
+                runtime_typed: false,
+            } = &column.kind
+            else {
+                return Err(hierarchy_target_diagnostic(reference.last()));
+            };
+            let [target] = targets.as_slice() else {
+                return Err(hierarchy_target_diagnostic(reference.last()));
+            };
+            (Some(*target), context.sql_column(&resolved, column), None)
+        }
+    };
+    let relation = match target
+        .and_then(|target| hierarchical_catalog_of(target, context.snapshot, dialect))
+    {
         Some((table, id, parent)) => {
             let name = context.catalog.next_hierarchy_name();
             let quoted = dialect.quote_identifier(&name);
@@ -3002,10 +3079,12 @@ fn compile_in_hierarchy(
         // predicate is plain membership.
         None => format!("({seeds}) AS {}", dialect.quote_identifier("__seeds_flat")),
     };
-    Ok(format!(
-        "{}EXISTS (SELECT 1 FROM {relation} WHERE {node} = {value_sql})",
-        if negated { "NOT " } else { "" }
-    ))
+    let membership = format!("EXISTS (SELECT 1 FROM {relation} WHERE {node} = {value_sql})");
+    let tested = match type_guard {
+        Some(guard) => format!("({guard} AND {membership})"),
+        None => membership,
+    };
+    Ok(format!("{}{tested}", if negated { "NOT " } else { "" }))
 }
 
 fn hierarchy_target_diagnostic(token: &Token<'_>) -> QueryDiagnostic {
