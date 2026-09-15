@@ -11,8 +11,8 @@ use open_sdbl::metadata::{
 use tokio::sync::Semaphore;
 use tokio::time::timeout;
 
-use crate::QUERY_TIMEOUT;
 use crate::error::CliError;
+use crate::limits::QUERY_TIMEOUT;
 use crate::output::print_resolution_report;
 use crate::progress::MetadataProgress;
 

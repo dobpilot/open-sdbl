@@ -6,9 +6,9 @@ use tokio::net::TcpStream;
 use tokio::time::timeout;
 use zeroize::Zeroizing;
 
-use crate::CONNECTION_TIMEOUT;
 use crate::auth::pgpass::EnvironmentSecret;
 use crate::error::CliError;
+use crate::limits::CONNECTION_TIMEOUT;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct Socks5Proxy {

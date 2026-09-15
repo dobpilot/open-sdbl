@@ -6,6 +6,9 @@
 //! `YYYY-MM-DD HH:MM:SS` without fractional seconds, numbers with their
 //! declared scale, and UUIDs in canonical lower-case form.
 
+/// The rows a query returns, as the providers hand them over.
+pub(crate) type QueryRows = Vec<Vec<Cell>>;
+
 use std::borrow::Cow;
 use std::fmt::Write as _;
 

@@ -12,11 +12,15 @@ use zeroize::Zeroizing;
 
 use crate::args::MsSqlConnection;
 use crate::auth::pgpass::Credentials;
+use crate::cells::QueryRows;
 use crate::cells::{
     Cell, DAYS_FROM_1900_TO_UNIX_EPOCH, DAYS_FROM_YEAR_ONE_TO_UNIX_EPOCH, DateTimeParts,
     format_scaled_integer,
 };
 use crate::error::CliError;
+use crate::limits::{
+    CONFIG_DECODE_BATCH_SIZE, CONNECTION_TIMEOUT, MSSQL_TRANSACTION_COUNT, QUERY_TIMEOUT,
+};
 use crate::net::socks5::{connect_socks5, socks5_password};
 use crate::pipeline::{
     ConfigDecodeLimits, ConfigMetadata, ConfigResource, MetadataSource, acquire_metadata,
@@ -24,10 +28,7 @@ use crate::pipeline::{
     decode_config_stream, run_metadata_blocking, unsigned_progress_total,
 };
 use crate::progress::MetadataProgress;
-use crate::{
-    CONFIG_DECODE_BATCH_SIZE, CONNECTION_TIMEOUT, MSSQL_TRANSACTION_COUNT, QUERY_TIMEOUT,
-    QueryRows, query_timeout,
-};
+use crate::session::query_timeout;
 
 type MsSqlTransport = Compat<TcpStream>;
 
@@ -1117,6 +1118,6 @@ mod tests {
         assert!(!poisoned);
         // The session verifies transaction state, not role membership:
         // what rights the login holds is the operator's decision.
-        assert!(crate::MSSQL_TRANSACTION_COUNT.contains("@@TRANCOUNT"));
+        assert!(crate::limits::MSSQL_TRANSACTION_COUNT.contains("@@TRANCOUNT"));
     }
 }

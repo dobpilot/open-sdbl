@@ -23,8 +23,12 @@ use zeroize::Zeroizing;
 
 use crate::args::{PostgresConnection, PostgresSslMode};
 use crate::auth::pgpass::{Credentials, postgres_password};
+use crate::cells::QueryRows;
 use crate::cells::{Cell, DAYS_FROM_UNIX_EPOCH_TO_2000, DateTimeParts, decode_postgres_numeric};
 use crate::error::CliError;
+use crate::limits::{
+    CONFIG_DECODE_BATCH_SIZE, CONNECTION_TIMEOUT, POSTGRES_CLOSE_TIMEOUT, QUERY_TIMEOUT,
+};
 use crate::net::socks5::{connect_socks5, socks5_password};
 use crate::pipeline::{
     ConfigDecodeLimits, ConfigMetadata, ConfigResource, MetadataSource, acquire_metadata,
@@ -32,10 +36,7 @@ use crate::pipeline::{
     decode_config_stream, run_metadata_blocking, unsigned_progress_total,
 };
 use crate::progress::MetadataProgress;
-use crate::{
-    CONFIG_DECODE_BATCH_SIZE, CONNECTION_TIMEOUT, POSTGRES_CLOSE_TIMEOUT, QUERY_TIMEOUT, QueryRows,
-    query_timeout,
-};
+use crate::session::query_timeout;
 
 #[derive(Debug)]
 struct PostgresServerCertVerifier {

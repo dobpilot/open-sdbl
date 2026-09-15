@@ -8,7 +8,7 @@
 use open_sdbl::metadata::{MetadataSnapshot, ObjectId};
 use open_sdbl::query::{AccessRestriction, RestrictionRequest, find_metadata_object};
 
-use super::CliError;
+use crate::error::CliError;
 
 const RESTRICT_USAGE: &str = "usage: \\restrict [<Вид>.<Объект>[.<ТабличнаяЧасть>] <condition> | clear]  (\\restrict alone lists the restrictions)";
 

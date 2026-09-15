@@ -13,7 +13,7 @@ use open_sdbl::query::{
 };
 use open_sdbl::{Keyword, Token, TokenKind, tokenize};
 
-use super::CliError;
+use crate::error::CliError;
 
 const SET_USAGE: &str = "usage: \\set <name> <literal>  (number, \"string\", ИСТИНА/ЛОЖЬ, NULL, ДАТАВРЕМЯ(y, m, d[, h, m, s]), 0x…, ЗНАЧЕНИЕ(Перечисление.X.Y | <Вид>.<Объект>.ПустаяСсылка), or a (list, of, those))";
 const SESSION_USAGE: &str = "usage: \\session [<name> [=] <literal> | clear]  (literals as in \\set; \\session alone lists the session parameters)";

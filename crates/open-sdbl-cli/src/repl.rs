@@ -25,12 +25,12 @@ use tokio::io::{AsyncBufRead, AsyncBufReadExt, BufReader};
 use unicode_width::UnicodeWidthStr;
 
 use super::cells::Cell;
+use super::error::CliError;
+use super::output::{MAX_CELL_WIDTH, MAX_PRINTED_ROWS, bounded_field, escape_field, yes_no};
 use super::params::{ParameterStore, apply_parameter_command, parse_parameter_command};
 use super::restrict::{RestrictionStore, apply_restriction_command, parse_restriction_command};
-use super::{
-    CliError, DatabaseDialect, DatabaseSession, MAX_CELL_WIDTH, MAX_PRINTED_ROWS, QueryRows,
-    bounded_field, escape_field, yes_no,
-};
+use super::session::{DatabaseDialect, DatabaseSession};
+use crate::cells::QueryRows;
 
 const CONSOLE_HELP: &str = "Commands:
   \\dt                 list resolved metadata tables
@@ -2376,7 +2376,7 @@ mod tests {
         read_bounded_line, resolved_presentation, split_deferred_payload, statement_is_complete,
         timing_line,
     };
-    use crate::{MAX_CELL_WIDTH, MAX_PRINTED_ROWS};
+    use crate::output::{MAX_CELL_WIDTH, MAX_PRINTED_ROWS};
 
     #[test]
     fn recognizes_multiline_termination_outside_strings_and_comments() {
