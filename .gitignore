@@ -4,3 +4,6 @@
 .DS_Store
 .idea/
 .vscode/
+
+# Build output of the Trino connector, which is a separate Maven project.
+trino-open-sdbl/target/

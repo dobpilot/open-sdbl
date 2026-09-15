@@ -1,6 +1,0 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<project name="maven-antrun-" default="main">
-  <target name="main">
-    <copy file="/source/target/trino-open-sdbl-0.1.0-SNAPSHOT.jar" todir="/source/target/plugin" />
-  </target>
-</project>
