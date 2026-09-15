@@ -1841,7 +1841,8 @@ column of a derived source or temporary table. Candidate targets SHALL be
 the field's declared SchemaStorage targets when present, otherwise every
 reference-kind metadata object whose fields include the named attribute.
 Candidates without the attribute SHALL be skipped; no candidate SHALL fail
-with `UnknownField`; more than 32 candidates SHALL fail with
+with `UnknownField`; more candidates than the statement can carry — 256,
+the number of tables SQL Server accepts in one statement — SHALL fail with
 `UnsupportedFeature` naming `ВЫРАЗИТЬ`. Each candidate SHALL be joined with
 a `LEFT JOIN` guarded by its type number through the shared join key, and
 the value SHALL be a `CASE` over the reference type selecting the
@@ -1872,9 +1873,15 @@ with `UnsupportedFeature`.
 - **THEN** the payload column is split into its type and identifier parts
   for the guarded joins and the `CASE` value
 
+#### Scenario: Many candidates
+- **WHEN** an any-reference field of a real configuration is dereferenced
+  to an attribute defined by 94 objects
+- **THEN** every candidate is joined and the server plans the statement,
+  as the platform answers such a query
+
 #### Scenario: Too many candidates
 - **WHEN** an any-reference field is dereferenced to an attribute defined
-  by more than 32 objects
+  by more objects than one statement can join
 - **THEN** compilation fails with an `UnsupportedFeature` diagnostic that
   suggests narrowing the field with `ВЫРАЗИТЬ`
 
