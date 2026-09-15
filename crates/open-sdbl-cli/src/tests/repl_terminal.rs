@@ -1,7 +1,5 @@
 //! Tests of the console `terminal` module.
 
-
-
 use super::*;
 
 #[test]

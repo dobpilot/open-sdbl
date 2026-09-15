@@ -2,10 +2,7 @@
 
 use std::collections::HashSet;
 
-use open_sdbl::metadata::{
-    LiveTable, SchemaStorage, parse_db_names,
-    resolve_metadata,
-};
+use open_sdbl::metadata::{LiveTable, SchemaStorage, parse_db_names, resolve_metadata};
 use open_sdbl::query::{CompileOptions, PostgresBackend, QueryCompiler};
 
 use super::*;

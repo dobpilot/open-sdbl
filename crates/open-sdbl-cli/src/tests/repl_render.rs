@@ -1,6 +1,5 @@
 //! Tests of the console `render` module.
 
-
 use unicode_width::UnicodeWidthStr;
 
 use super::*;
