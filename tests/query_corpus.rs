@@ -10,8 +10,8 @@ use std::path::PathBuf;
 
 use open_sdbl::metadata::{FieldId, MetadataSnapshot, StandardFieldId};
 use open_sdbl::query::{
-    CompileOptions, ParameterValue, PostgresBackend, PresentationExpression, PresentationPlan,
-    QueryCompiler, QueryParameter, SessionParameters, queryable_fields,
+    CompileOptions, ParameterDate, ParameterValue, PostgresBackend, PresentationExpression,
+    PresentationPlan, QueryCompiler, QueryParameter, SessionParameters, queryable_fields,
 };
 use open_sdbl::{TokenKind, tokenize};
 
@@ -24,6 +24,142 @@ fn json_field(line: &str, name: &str) -> String {
     let key = format!("\"{name}\":");
     let start = line.find(&key).expect("field") + key.len();
     unescape(line[start..].trim_start())
+}
+
+/// Reads one optional string field, absent from most corpus entries.
+fn optional_json_field(line: &str, name: &str) -> Option<String> {
+    let key = format!("\"{name}\":");
+    let start = line.find(&key)? + key.len();
+    Some(unescape(line[start..].trim_start()))
+}
+
+/// One recorded corpus entry: the query text, the values its parameters
+/// take, and whether the pruned fixture carries the metadata it names.
+struct CorpusEntry {
+    source: String,
+    text: String,
+    /// Parameter bindings as `name` → recorded literal, in the spelling
+    /// [`parameter_value`] reads.
+    parameters: Vec<(String, String)>,
+    /// The pruned fixture does not carry the metadata this query names, so
+    /// it says nothing about the compiler.
+    beyond_fixture: bool,
+}
+
+impl CorpusEntry {
+    fn read(line: &str) -> Self {
+        Self {
+            source: json_field(line, "source"),
+            text: json_field(line, "text"),
+            parameters: read_parameters(line),
+            beyond_fixture: optional_json_field(line, "expect").as_deref() == Some("fixture"),
+        }
+    }
+
+    fn write(&self) -> String {
+        let mut out = format!(
+            "{{\"source\":{},\"text\":{}",
+            escape(&self.source),
+            escape(&self.text)
+        );
+        if !self.parameters.is_empty() {
+            out.push_str(",\"params\":{");
+            for (index, (name, value)) in self.parameters.iter().enumerate() {
+                if index > 0 {
+                    out.push(',');
+                }
+                out.push_str(&format!("{}:{}", escape(name), escape(value)));
+            }
+            out.push('}');
+        }
+        if self.beyond_fixture {
+            out.push_str(",\"expect\":\"fixture\"");
+        }
+        out.push('}');
+        out
+    }
+}
+
+/// Reads the `params` object: a flat map of parameter name to recorded
+/// literal.
+fn read_parameters(line: &str) -> Vec<(String, String)> {
+    let Some(start) = line.find("\"params\":") else {
+        return Vec::new();
+    };
+    let body = line[start + "\"params\":".len()..].trim_start();
+    let Some(body) = body.strip_prefix('{') else {
+        return Vec::new();
+    };
+    let mut parameters = Vec::new();
+    let mut rest = body;
+    loop {
+        rest = rest.trim_start();
+        if rest.starts_with('}') || rest.is_empty() {
+            break;
+        }
+        let name = unescape(rest);
+        rest = skip_string(rest);
+        rest = rest.trim_start().strip_prefix(':').unwrap_or(rest);
+        let value = unescape(rest.trim_start());
+        rest = skip_string(rest.trim_start());
+        parameters.push((name, value));
+        rest = rest.trim_start().strip_prefix(',').unwrap_or(rest);
+    }
+    parameters
+}
+
+/// Steps over one JSON string, honoring its escapes.
+fn skip_string(text: &str) -> &str {
+    let mut characters = text.char_indices();
+    let Some((_, '"')) = characters.next() else {
+        return text;
+    };
+    while let Some((index, character)) = characters.next() {
+        match character {
+            '\\' => {
+                characters.next();
+            }
+            '"' => return &text[index + 1..],
+            _ => {}
+        }
+    }
+    ""
+}
+
+/// Reads one recorded parameter literal. The letter says the type the use
+/// of the parameter requires, which an untyped `NULL` cannot satisfy:
+/// `D20260101` and `D20260101235959` are dates, `S…` a string, `N…` a
+/// number, `B0`/`B1` a boolean, and anything else `NULL`.
+fn parameter_value(recorded: &str) -> ParameterValue {
+    let (tag, rest) = recorded.split_at(recorded.len().min(1));
+    match tag {
+        "D" => {
+            let digits = |from: usize, to: usize| {
+                rest.get(from..to)
+                    .and_then(|part| part.parse::<u16>().ok())
+                    .unwrap_or(0)
+            };
+            let part = |from: usize, to: usize| u8::try_from(digits(from, to)).unwrap_or(0);
+            ParameterValue::Date(
+                ParameterDate::new(
+                    digits(0, 4),
+                    part(4, 6).max(1),
+                    part(6, 8).max(1),
+                    part(8, 10),
+                    part(10, 12),
+                    part(12, 14),
+                )
+                .expect("recorded corpus date must be valid"),
+            )
+        }
+        "S" => ParameterValue::String(rest.to_owned()),
+        "N" => ParameterValue::Number {
+            unscaled: rest.parse().unwrap_or(0),
+            scale: 0,
+        },
+        "B" => ParameterValue::Boolean(rest == "1"),
+        _ => ParameterValue::Null,
+    }
 }
 
 fn unescape(text: &str) -> String {
@@ -51,10 +187,12 @@ fn unescape(text: &str) -> String {
     out
 }
 
-/// Every named parameter is bound to `NULL` and the data separators are
-/// switched off, so the corpus compiles without inventing values.
-fn options(text: &str) -> (Vec<QueryParameter>, SessionParameters) {
-    let names = tokenize(text)
+/// A named parameter takes the value the entry records for it, `NULL`
+/// when it records none, and the data separators are switched off. A use
+/// that requires a type — a register slice takes a date — would refuse an
+/// untyped `NULL`, so those entries carry a recorded value.
+fn options(entry: &CorpusEntry) -> (Vec<QueryParameter>, SessionParameters) {
+    let names = tokenize(&entry.text)
         .map(|tokens| {
             tokens
                 .iter()
@@ -65,7 +203,14 @@ fn options(text: &str) -> (Vec<QueryParameter>, SessionParameters) {
         .unwrap_or_default();
     let parameters = names
         .iter()
-        .map(|name| QueryParameter::new(name, ParameterValue::Null))
+        .map(|name| {
+            let recorded = entry
+                .parameters
+                .iter()
+                .find(|(recorded, _)| recorded == name)
+                .map_or(ParameterValue::Null, |(_, value)| parameter_value(value));
+            QueryParameter::new(name, recorded)
+        })
         .collect::<Vec<_>>();
     let mut session = SessionParameters::new();
     for (name, value) in [
@@ -173,34 +318,75 @@ fn stand_in_plan(
     }
 }
 
-/// Rewrites `expected.jsonl` from the current compiler. Run it after a
-/// change that the corpus test reports, and commit the diff:
-/// `cargo test -p open-sdbl --test query_corpus -- --ignored`.
+/// Whether a recorded text is a query at all. The configuration stores
+/// interface captions that begin with the word `Выбрать` — "Выбрать
+/// пользователя", "Выбрать версию для восстановления…" — which the
+/// extraction cannot tell from a query by its first word, and which the
+/// parser reads as a projection of one field with an alias.
+///
+/// A text is taken as a query when it names something through a dot, which
+/// every query over metadata does and no caption does, or when it compiles
+/// — that keeps the source-less technical queries the configuration really
+/// issues, such as `ВЫБРАТЬ NULL КАК Ссылка`. A source-less query the
+/// compiler cannot yet compile would be dropped, which shows up as a
+/// shrinking corpus.
+fn is_query(snapshot: &MetadataSnapshot, entry: &CorpusEntry) -> bool {
+    let names_something = tokenize(&entry.text).is_ok_and(|tokens| {
+        tokens.windows(3).any(|window| {
+            window[1].kind == TokenKind::Punctuation
+                && window[1].lexeme == "."
+                && window[0].kind == TokenKind::Identifier
+                && window[2].kind == TokenKind::Identifier
+        })
+    });
+    if names_something {
+        return true;
+    }
+    let (parameters, session) = options(entry);
+    compile_corpus_query(snapshot, &entry.text, &parameters, &session).is_ok()
+}
+
+/// Rewrites `corpus.jsonl` and `expected.jsonl` from the current compiler.
+/// Run it after a change that the corpus test reports, and commit the
+/// diff: `cargo test -p open-sdbl --test query_corpus -- --ignored`.
 #[test]
 #[ignore = "maintenance: rewrites the recorded results"]
 fn rerecord_the_demo_corpus() {
     let root = fixture();
     let snapshot = support::demo_resolved_at(&root).snapshot;
     let corpus = std::fs::read_to_string(root.join("corpus.jsonl")).unwrap();
+    let mut recorded = String::new();
     let mut expected = String::new();
     let mut compiled = 0usize;
+    let mut refused = 0usize;
     for line in corpus.lines().filter(|line| !line.trim().is_empty()) {
-        let query = json_field(line, "text");
-        let (parameters, session) = options(&query);
-        let outcome = match compile_corpus_query(&snapshot, &query, &parameters, &session) {
+        let entry = CorpusEntry::read(line);
+        if !is_query(&snapshot, &entry) {
+            refused += 1;
+            continue;
+        }
+        let (parameters, session) = options(&entry);
+        let outcome = match compile_corpus_query(&snapshot, &entry.text, &parameters, &session) {
             Ok(sql) => {
                 compiled += 1;
                 sql
             }
             Err(error) => format!("!{:?}: {}", error.kind(), error.message()),
         };
+        recorded.push_str(&entry.write());
+        recorded.push('\n');
         expected.push_str(&escape(&outcome));
         expected.push('\n');
     }
+    std::fs::write(root.join("corpus.jsonl"), recorded).unwrap();
     std::fs::write(root.join("expected.jsonl"), expected).unwrap();
     println!(
-        "recorded {compiled} compiling queries of {}",
-        corpus.lines().count()
+        "recorded {compiled} compiling queries of {}, refused {refused} texts that are not queries",
+        corpus
+            .lines()
+            .filter(|line| !line.trim().is_empty())
+            .count()
+            - refused
     );
 }
 
@@ -220,8 +406,9 @@ fn locate_the_corpus_gaps() {
         .filter(|line| !line.trim().is_empty())
         .enumerate()
     {
-        let query = json_field(line, "text");
-        let (parameters, session) = options(&query);
+        let entry = CorpusEntry::read(line);
+        let query = entry.text.clone();
+        let (parameters, session) = options(&entry);
         let Err(error) = compile_corpus_query(&snapshot, &query, &parameters, &session) else {
             continue;
         };
@@ -274,10 +461,10 @@ fn compiles_the_demo_corpus_as_recorded() {
     let snapshot = support::demo_resolved_at(&root).snapshot;
     let corpus = std::fs::read_to_string(root.join("corpus.jsonl")).unwrap();
     let expected = std::fs::read_to_string(root.join("expected.jsonl")).unwrap();
-    let queries: Vec<String> = corpus
+    let queries: Vec<CorpusEntry> = corpus
         .lines()
         .filter(|line| !line.trim().is_empty())
-        .map(|line| json_field(line, "text"))
+        .map(CorpusEntry::read)
         .collect();
     let recorded: Vec<String> = expected
         .lines()
@@ -292,17 +479,25 @@ fn compiles_the_demo_corpus_as_recorded() {
 
     let mut differences = Vec::new();
     let mut compiled = 0usize;
-    for (index, (query, expected)) in queries.iter().zip(&recorded).enumerate() {
-        let (parameters, session) = options(query);
-        let outcome = match compile_corpus_query(&snapshot, query, &parameters, &session) {
+    let mut beyond_fixture = 0usize;
+    for (index, (entry, expected)) in queries.iter().zip(&recorded).enumerate() {
+        let (parameters, session) = options(entry);
+        let outcome = match compile_corpus_query(&snapshot, &entry.text, &parameters, &session) {
             Ok(sql) => {
                 compiled += 1;
                 sql
             }
             Err(error) => format!("!{:?}: {}", error.kind(), error.message()),
         };
+        if entry.beyond_fixture {
+            beyond_fixture += 1;
+            assert!(
+                outcome.starts_with('!') && outcome.contains("was not found"),
+                "query {index} is marked as beyond the fixture but resolves: {outcome}"
+            );
+        }
         if &outcome != expected {
-            let head: String = query.chars().take(70).collect();
+            let head: String = entry.text.chars().take(70).collect();
             differences.push(format!(
                 "query {index} ({}…):\n  expected: {}\n  actual:   {}",
                 head.replace('\n', " "),
@@ -324,7 +519,14 @@ fn compiles_the_demo_corpus_as_recorded() {
             .join("\n")
     );
     // The share that compiles is recorded so an improvement is visible.
-    assert_eq!(compiled, 339, "queries that compile");
+    // Entries whose metadata the pruned fixture does not carry say nothing
+    // about the compiler, so they are counted out of the denominator.
+    assert_eq!(compiled, 341, "queries that compile");
+    assert_eq!(
+        queries.len() - beyond_fixture,
+        381,
+        "queries the fixture can answer for"
+    );
 }
 
 /// Writes the corpus compiled for SQL Server into `MSSQL_CORPUS_OUT`, so
@@ -349,13 +551,13 @@ fn writes_the_corpus_for_sql_server() {
         .filter(|line| !line.trim().is_empty())
         .enumerate()
     {
-        let query = json_field(line, "text");
-        let (parameters, session) = options(&query);
+        let entry = CorpusEntry::read(line);
+        let (parameters, session) = options(&entry);
         let options = CompileOptions::new()
             .parameters(&parameters)
             .session(&session);
         let backend = open_sdbl::query::MsSqlBackend::new(2000).unwrap();
-        let Ok(result) = QueryCompiler::new(&snapshot, backend).compile_with(&query, &options)
+        let Ok(result) = QueryCompiler::new(&snapshot, backend).compile_with(&entry.text, &options)
         else {
             continue;
         };
