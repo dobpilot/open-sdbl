@@ -30,11 +30,49 @@ pub(super) struct PendingSection {
     /// Scope of the owning source.
     pub(super) owner_scope: ScopeId,
     /// Live table of the section.
-    table: String,
+    pub(super) table: String,
     /// Physical column of the section holding the owner reference.
-    owner_column: String,
+    pub(super) owner_column: String,
     /// Fields the nested statement selects, in order.
     fields: Vec<QueryableField>,
+    /// Every field of the section, including the storage columns a
+    /// projection leaves out; a predicate may name any of them.
+    all_fields: Arc<[QueryableField]>,
+}
+
+/// One column of a tabular section, addressed from a predicate of the
+/// owning statement.
+pub(super) struct SectionColumn {
+    /// Live table of the section.
+    pub(super) table: String,
+    /// Physical column holding the owner reference.
+    pub(super) owner_column: String,
+    /// Physical column the predicate names.
+    pub(super) column: String,
+}
+
+/// Resolves `<источник>.<Состав>.<Поле>` for a predicate. Returns `None`
+/// when the middle segment does not name a tabular section of the source,
+/// which leaves the ordinary dereference path to report the error.
+pub(super) fn section_column(
+    context: &CompilationContext<'_, '_>,
+    scope: ScopeId,
+    section: &Token<'_>,
+    field: &Token<'_>,
+) -> Option<SectionColumn> {
+    let resolved = resolve_section(context, scope, section, &[], String::new(), 0).ok()?;
+    let (index, _) = resolve_named_field(&resolved.all_fields, field).ok()?;
+    // A composite column of a section would have to be compared member by
+    // member inside the EXISTS, which the ordinary path does not reach
+    // here; such a predicate keeps its diagnostic.
+    let [column] = resolved.all_fields[index].columns.as_slice() else {
+        return None;
+    };
+    Some(SectionColumn {
+        table: resolved.table.clone(),
+        owner_column: resolved.owner_column.clone(),
+        column: column.physical_name.clone(),
+    })
 }
 
 /// Resolves `<источник>.<Состав>` against the metadata of the owning
@@ -202,6 +240,7 @@ pub(super) fn resolve_section(
         table: live.name.clone(),
         owner_column,
         fields: selected,
+        all_fields: fields,
     })
 }
 

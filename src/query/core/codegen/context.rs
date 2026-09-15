@@ -224,6 +224,8 @@ pub(super) struct CompilationContext<'snapshot, 'catalog> {
     /// them are the sources of the enclosing statement, visible to a
     /// correlated subquery by their qualifier and never rendered here.
     pub(super) local_sources: usize,
+    /// Aliases handed out to the `EXISTS` of a tabular-section predicate.
+    pub(super) section_aliases: std::cell::Cell<usize>,
 }
 
 /// One source of an enclosing statement, carried into a correlated
@@ -398,6 +400,40 @@ impl CompilationContext<'_, '_> {
         } else {
             "source"
         }
+    }
+
+    /// Splits `<источник>.<Состав>.<Поле>` into the owning scope and the
+    /// two names, when the middle segment names a tabular section of a
+    /// source. A predicate reads such a path as existence.
+    pub(super) fn section_path<'tokens, 'source>(
+        &self,
+        path: &FieldReference<'tokens, 'source>,
+    ) -> Option<(ScopeId, &'tokens Token<'source>, &'tokens Token<'source>)> {
+        match path.segments.as_slice() {
+            // The section must be named through its owner: a bare
+            // `<Состав>.<Поле>` is how a statement reading the section as
+            // its source addresses its own columns.
+            [qualifier, section, field] => self
+                .qualifier_scope(qualifier)
+                .ok()
+                .flatten()
+                .filter(|scope| self.names_tabular_section(*scope, section))
+                .map(|scope| (scope, *section, *field)),
+            // `Задача.ЗадачаИсполнителя.Предметы.Предмет`: the source is
+            // spelled by its full metadata name, so the section follows it.
+            [kind, name, section, field] => self
+                .full_name_scope(kind, name)
+                .filter(|scope| self.names_tabular_section(*scope, section))
+                .map(|scope| (scope, *section, *field)),
+            _ => None,
+        }
+    }
+
+    /// A fresh alias for the section an `EXISTS` reads.
+    pub(super) fn next_section_alias(&self) -> String {
+        let index = self.section_aliases.get() + 1;
+        self.section_aliases.set(index);
+        format!("__section{index}")
     }
 
     /// A source written without an alias can be addressed by its full

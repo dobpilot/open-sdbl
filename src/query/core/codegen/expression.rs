@@ -1,4 +1,5 @@
 use super::context::{CompilationContext, ResolvedPath};
+use super::nested::section_column;
 use super::orchestrate::{
     PresentationCompilation, compile_query_ast, compile_query_ast_with_outer,
 };
@@ -2309,6 +2310,15 @@ fn compile_binary_expression(
     context: &mut CompilationContext<'_, '_>,
 ) -> Result<String, QueryDiagnostic> {
     let (left, terms) = left_binary_spine(expression);
+    // `Д.Товары.Количество > 2` asks whether any row of the section
+    // satisfies the comparison; the platform answers the owner once even
+    // when several rows match, measured on 8.3.27.
+    if let [(operator, right)] = terms.as_slice()
+        && COMPARISON_LEXEMES.contains(&operator.lexeme)
+        && let Some(sql) = compile_tabular_section_comparison(left, right, operator, context)?
+    {
+        return Ok(sql);
+    }
     if let [(operator, right)] = terms.as_slice()
         && matches!(operator.lexeme, "=" | "<>")
         && let Some(sql) = compile_undefined_comparison(left, right, operator, context)?
@@ -2722,6 +2732,52 @@ fn composite_member_equality(
 /// Compares a composite field with one value. Returns `None` when the
 /// operands are not such a pair, leaving the generic path to report what
 /// it cannot render.
+/// Compiles a comparison naming `<источник>.<Состав>.<Поле>` as an
+/// `EXISTS` over the section, correlated with the owner row. Returns
+/// `None` when neither side names a section, leaving the ordinary path to
+/// compile — or to report — the expression.
+fn compile_tabular_section_comparison(
+    left: &Expression<'_, '_>,
+    right: &Expression<'_, '_>,
+    operator: &Token<'_>,
+    context: &mut CompilationContext<'_, '_>,
+) -> Result<Option<String>, QueryDiagnostic> {
+    let (path, other, section_on_left) = match (left, right) {
+        (Expression::Field(path), other) if context.section_path(path).is_some() => {
+            (path, other, true)
+        }
+        (other, Expression::Field(path)) if context.section_path(path).is_some() => {
+            (path, other, false)
+        }
+        _ => return Ok(None),
+    };
+    let (scope, section, field) = context
+        .section_path(path)
+        .expect("the guard resolved this path");
+    let Some(column) = section_column(context, scope, section, field) else {
+        return Ok(None);
+    };
+    let other_sql = compile_expression(other, context)?;
+    let alias = context.next_section_alias();
+    let quoted = context.dialect.quote_identifier(&alias);
+    let section_sql = format!(
+        "{quoted}.{}",
+        context.dialect.quote_identifier(&column.column)
+    );
+    let (left_sql, right_sql) = if section_on_left {
+        (section_sql, other_sql)
+    } else {
+        (other_sql, section_sql)
+    };
+    let owner_sql = context.identity_sql(scope)?;
+    Ok(Some(format!(
+        "EXISTS (SELECT 1 FROM {} AS {quoted} WHERE {quoted}.{} = {owner_sql} AND ({left_sql} {} {right_sql}))",
+        context.dialect.quote_identifier(&column.table),
+        context.dialect.quote_identifier(&column.owner_column),
+        binary_operator_sql(operator)?,
+    )))
+}
+
 fn compile_composite_comparison(
     left: &Expression<'_, '_>,
     right: &Expression<'_, '_>,

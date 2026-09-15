@@ -1111,6 +1111,7 @@ fn compile_accumulation_condition(
         compiling_join_condition: false,
         dereference_in_join: false,
         source_elements: vec![0],
+        section_aliases: std::cell::Cell::new(0),
         local_sources: 1,
     };
     let sql = compile_predicate(condition, &mut context)?;

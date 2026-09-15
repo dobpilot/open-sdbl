@@ -335,6 +335,7 @@ fn compile_branch_context<'snapshot, 'catalog>(
         }
         let local_sources = sources.len();
         let mut context = CompilationContext {
+            section_aliases: std::cell::Cell::new(0),
             snapshot,
             catalog,
             sources,
@@ -358,6 +359,7 @@ fn compile_branch_context<'snapshot, 'catalog>(
         compiling_join_condition: false,
         dereference_in_join: false,
         source_elements: vec![0],
+        section_aliases: std::cell::Cell::new(0),
         local_sources: 1,
     };
     attach_outer_scopes(&mut context, outer);

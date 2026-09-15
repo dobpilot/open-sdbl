@@ -6534,6 +6534,51 @@ fn names_the_standard_fields_of_processes_and_tasks() {
     assert!(task.sql.contains("\"З\".\"_point_rrref\""), "{}", task.sql);
 }
 
+/// A predicate naming a column of a tabular section asks whether any row
+/// of the section satisfies it. Measured on 8.3.27 over five documents
+/// with one row each plus one with two matching rows, the query answers
+/// four documents and `КОЛИЧЕСТВО(*)` answers four — a join would have
+/// answered five.
+#[test]
+fn tests_a_tabular_section_column_with_exists() {
+    let snapshot = support::tabular_section_snapshot();
+    let compiled = postgres_compile!(
+        "ВЫБРАТЬ Д.Ссылка ИЗ Документ.бит_ДополнительныеУсловияПоДоговору КАК Д
+         ГДЕ Д.ГрафикНачислений.Сумма > 2;",
+        &snapshot,
+    )
+    .unwrap();
+    assert!(
+        compiled
+            .sql
+            .contains("EXISTS (SELECT 1 FROM \"_document53_vt54X1\""),
+        "{}",
+        compiled.sql
+    );
+    assert!(
+        compiled.sql.contains("= \"Д\".\"_idrref\""),
+        "{}",
+        compiled.sql
+    );
+
+    // A statement reading the section as its own source keeps addressing
+    // its columns directly.
+    let direct = postgres_compile!(
+        "ВЫБРАТЬ Т.Сумма ИЗ Документ.бит_ДополнительныеУсловияПоДоговору.ГрафикНачислений КАК Т
+         ГДЕ Т.Сумма > 2;",
+        &snapshot,
+    )
+    .unwrap();
+    assert!(!direct.sql.contains("EXISTS"), "{}", direct.sql);
+
+    let projected = postgres_compile!(
+        "ВЫБРАТЬ Д.ГрафикНачислений.Сумма ИЗ Документ.бит_ДополнительныеУсловияПоДоговору КАК Д;",
+        &snapshot,
+    )
+    .unwrap_err();
+    assert_eq!(projected.kind(), QueryDiagnosticKind::UnknownField);
+}
+
 /// The platform answers a projected tabular section as a nested result
 /// inside that column — measured on 8.3.27, where `Д.Товары` yields the
 /// owner reference, the line number and every attribute, and
