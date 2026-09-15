@@ -349,8 +349,12 @@ impl ResolvedPath {
 
 impl CompilationContext<'_, '_> {
     /// Reference targets one dereference may reach before the query is
-    /// asked to narrow the field with `ВЫРАЗИТЬ`.
-    const MAX_DEREFERENCE_TARGETS: usize = 32;
+    /// asked to narrow the field with `ВЫРАЗИТЬ`. Each target costs one
+    /// `LEFT JOIN`, so the ceiling is the number of tables SQL Server
+    /// accepts in one statement. Real configurations do reach far past a
+    /// few dozen: a corpus query dereferences an attribute defined by 94
+    /// objects, and the server plans it.
+    const MAX_DEREFERENCE_TARGETS: usize = 256;
 
     pub(super) fn source(&self, scope: ScopeId) -> &SourceScope {
         &self.sources[scope.0]
@@ -1325,6 +1329,20 @@ impl CompilationContext<'_, '_> {
                 branches.push(branch);
             }
         }
+        // Only a target that defines the field costs a join, so the limit
+        // counts those and not the candidates a scan considered: a corpus
+        // query scans past 256 objects and joins 94 of them.
+        if branches.len() > Self::MAX_DEREFERENCE_TARGETS {
+            return Err(QueryDiagnostic::at(
+                QueryDiagnosticKind::UnsupportedFeature,
+                Some(target_token),
+                format!(
+                    "field {:?} is defined by more than {} reference targets; narrow the reference with ВЫРАЗИТЬ",
+                    target_token.lexeme,
+                    Self::MAX_DEREFERENCE_TARGETS
+                ),
+            ));
+        }
         if branches.is_empty() {
             return Err(QueryDiagnostic::at(
                 QueryDiagnosticKind::UnknownField,
@@ -1678,17 +1696,6 @@ impl CompilationContext<'_, '_> {
             candidates = self.scan_dereference_candidates(target_token)?;
         }
         candidates.dedup();
-        if candidates.len() > Self::MAX_DEREFERENCE_TARGETS {
-            return Err(QueryDiagnostic::at(
-                QueryDiagnosticKind::UnsupportedFeature,
-                Some(target_token),
-                format!(
-                    "field {:?} is defined by more than {} reference targets; narrow the reference with ВЫРАЗИТЬ",
-                    target_token.lexeme,
-                    Self::MAX_DEREFERENCE_TARGETS
-                ),
-            ));
-        }
         Ok(candidates)
     }
 
@@ -1724,9 +1731,6 @@ impl CompilationContext<'_, '_> {
             }
             self.catalog.charge(1, Some(target_token))?;
             candidates.push(ObjectId::from(&object.guid));
-            if candidates.len() > Self::MAX_DEREFERENCE_TARGETS {
-                break;
-            }
         }
         Ok(candidates)
     }
