@@ -134,14 +134,5 @@ impl From<tokio_postgres::Error> for CliError {
 }
 
 #[cfg(test)]
-mod tests {
-    use std::io;
-
-    use super::CliError;
-
-    #[test]
-    fn recognizes_broken_standard_output() {
-        let error = CliError::standard_output(io::Error::from(io::ErrorKind::BrokenPipe));
-        assert!(error.is_broken_pipe());
-    }
-}
+#[path = "tests/error.rs"]
+mod tests;
