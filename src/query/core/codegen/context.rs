@@ -4,9 +4,9 @@ use std::sync::Arc;
 
 use super::constants::ConstantsSource;
 use super::expression::{
-    composite_member_of, matching_fields, reference_column, reference_type_column,
-    resolve_named_field, single_column, spread_over_members, type_constant, value_operand,
-    value_type_sql, widen_reference,
+    CasePart, compile_case, compile_case_match, compile_predicate, composite_member_of,
+    matching_fields, reference_column, reference_type_column, resolve_named_field, single_column,
+    spread_over_members, type_constant, value_operand, value_type_sql, widen_reference,
 };
 use super::orchestrate::PresentationCompilation;
 use super::select::{composite_member_kind_of, derived_data_type, derived_owner};
@@ -18,7 +18,9 @@ use super::virtual_tables::AggregateSource;
 use super::virtual_tables::compile_presentation_plan;
 use crate::Token;
 use crate::metadata::{MetadataKind, MetadataSnapshot, ObjectId};
-use crate::query::core::ast::{FieldReference, PresentationArgument, PresentationOperation};
+use crate::query::core::ast::{
+    Expression, FieldReference, PresentationArgument, PresentationOperation,
+};
 use crate::query::core::dialect::{SqlDialect, compile_literal};
 use crate::query::core::names::names_equal;
 use crate::query::core::resolve::{
@@ -2245,6 +2247,28 @@ impl CompilationContext<'_, '_> {
     }
 }
 
+/// Presents one expression that is not a field: a value that is not a
+/// reference is its own presentation, and a reference is asked the
+/// deferred way, because only the application knows how it reads.
+fn present_value_expression(
+    context: &mut CompilationContext<'_, '_>,
+    token: &Token<'_>,
+    expression: &Expression<'_, '_>,
+) -> Result<(String, bool), QueryDiagnostic> {
+    let (value, kind) = value_operand(expression, context)?;
+    if matches!(kind, ColumnKind::Reference { .. }) {
+        let (payload, _) = widen_reference(
+            &value,
+            &kind,
+            Some(token),
+            context.snapshot,
+            context.dialect,
+        )?;
+        return Ok((payload, true));
+    }
+    Ok((context.dialect.scalar_text(&value), false))
+}
+
 pub(super) fn compile_presentation(
     context: &mut CompilationContext<'_, '_>,
     token: &Token<'_>,
@@ -2261,24 +2285,74 @@ pub(super) fn compile_presentation(
                 "Presentation property requires a reference field",
             ));
         }
+        // A `ВЫБОР` whose branches differ in type is presented branch by
+        // branch: the platform answers the string of a string branch and
+        // the presentation of a reference branch, measured on 8.3.27.
+        // Asking for one kind across the branches would refuse it.
+        if let PresentationArgument::Expression(case) = argument
+            && let Expression::Case {
+                subject,
+                branches,
+                otherwise,
+                ..
+            } = case.as_ref()
+            // Branches that agree on one kind keep the ordinary path: a
+            // reference answers the deferred way, which needs no plan.
+            && present_value_expression(context, token, case).is_err()
+        {
+            let snapshot = context.snapshot;
+            let dialect = context.dialect;
+            let (sql, _) = compile_case(
+                subject.as_deref(),
+                branches,
+                otherwise.as_deref(),
+                snapshot,
+                dialect,
+                |part| match part {
+                    CasePart::Condition {
+                        subject: Some(subject),
+                        when,
+                        token,
+                    } => Ok((
+                        compile_case_match(subject, when, token, context)?,
+                        ColumnKind::Boolean,
+                    )),
+                    CasePart::Condition { when, .. } => {
+                        Ok((compile_predicate(when, context)?, ColumnKind::Boolean))
+                    }
+                    CasePart::Value(value) => {
+                        let (sql, deferred) = match value {
+                            Expression::Field(reference) => {
+                                let branch = PresentationArgument::Field(reference.clone());
+                                let (sql, _, deferred) = compile_presentation(
+                                    context,
+                                    token,
+                                    operation,
+                                    &branch,
+                                    presentations,
+                                )?;
+                                (sql, deferred)
+                            }
+                            other => present_value_expression(context, token, other)?,
+                        };
+                        if deferred {
+                            return Err(QueryDiagnostic::at(
+                                QueryDiagnosticKind::UnsupportedFeature,
+                                Some(token),
+                                "a branch of this ВЫБОР can only be presented by the deferred protocol, which the other branches cannot join; present a field instead",
+                            ));
+                        }
+                        Ok((sql, ColumnKind::String { length: None }))
+                    }
+                },
+            )?;
+            return Ok((sql, label, false));
+        }
         // The platform presents any expression: a value that is not a
         // reference is its own presentation, measured on 8.3.27.
         if let PresentationArgument::Expression(expression) = argument {
-            let (value, kind) = value_operand(expression, context)?;
-            // A reference answers the presentation the application gives
-            // it, which for an expression is asked the deferred way: the
-            // column carries the reference itself.
-            if matches!(kind, ColumnKind::Reference { .. }) {
-                let (payload, _) = widen_reference(
-                    &value,
-                    &kind,
-                    Some(token),
-                    context.snapshot,
-                    context.dialect,
-                )?;
-                return Ok((payload, label, true));
-            }
-            return Ok((context.dialect.scalar_text(&value), label, false));
+            let (sql, deferred) = present_value_expression(context, token, expression)?;
+            return Ok((sql, label, deferred));
         }
         let PresentationArgument::Literal(literal) = argument else {
             unreachable!()

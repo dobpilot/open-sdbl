@@ -6867,6 +6867,44 @@ fn presents_an_expression_as_its_value() {
     );
 }
 
+/// `ПРЕДСТАВЛЕНИЕ` of a `ВЫБОР` whose branches differ in type presents
+/// each branch on its own: measured on 8.3.27, the string branch answers
+/// the string and the reference branch answers the presentation of the
+/// reference.
+#[test]
+fn presents_a_mixed_case_branch_by_branch() {
+    let snapshot = reference_snapshot();
+    let prepared = postgres_prepare!(
+        "ВЫБРАТЬ ПРЕДСТАВЛЕНИЕ(ВЫБОР КОГДА Т.Code = \"A\" ТОГДА \"нет\" ИНАЧЕ Т.Организация КОНЕЦ) КАК П
+         ИЗ Справочник.OpenSdblMetadataProbe КАК Т;",
+        &snapshot,
+    )
+    .unwrap();
+    let object = prepared.presentation_request().targets[0].object;
+    let code = FieldId::Standard(StandardFieldId::Code);
+    let compiled = prepared
+        .compile(
+            &snapshot,
+            &[PresentationPlan {
+                object,
+                fields: vec![code],
+                expression: PresentationExpression::Field(code),
+            }],
+        )
+        .unwrap();
+
+    assert_eq!(compiled.columns.len(), 1);
+    assert_eq!(
+        compiled.columns[0].kind,
+        ColumnKind::String { length: None }
+    );
+    // The string branch answers itself, the reference branch answers the
+    // plan; the column is one string, not a deferred payload.
+    assert!(compiled.deferred_presentations.is_empty());
+    assert!(compiled.sql.contains("'нет'"), "{}", compiled.sql);
+    assert!(compiled.sql.contains("LEFT JOIN"), "{}", compiled.sql);
+}
+
 #[test]
 fn keeps_the_declared_gaps_declared() {
     // The capability table is the user-facing contract, and a row that
