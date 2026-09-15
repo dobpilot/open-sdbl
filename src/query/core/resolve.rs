@@ -1073,6 +1073,44 @@ pub(super) fn find_metadata_object_at<'snapshot>(
     }
 }
 
+/// Renames the value field of a single-constant source to `Значение`.
+/// `Константа.<Имя>` answers to that name on the platform and not to the
+/// name of the constant — measured on 8.3.27, where `ВЫБРАТЬ * ИЗ
+/// Константа.ОсновнойТовар` yields `Значение` and `К.ОсновнойТовар` fails
+/// with "Поле не найдено". The `Константы` table is the other way round:
+/// there each constant is a field of its own name.
+fn constant_value_field_names(
+    fields: &Arc<[QueryableField]>,
+    constant_name: &str,
+) -> Arc<[QueryableField]> {
+    fields
+        .iter()
+        .map(|field| {
+            if !names_equal(&field.name, constant_name) {
+                return field.clone();
+            }
+            let mut renamed = field.clone();
+            renamed.name = CONSTANT_VALUE_NAME.to_owned();
+            renamed.aliases = vec![
+                CONSTANT_VALUE_NAME.to_owned(),
+                CONSTANT_VALUE_NAME_EN.to_owned(),
+            ];
+            for column in &mut renamed.columns {
+                if names_equal(&column.output_label, constant_name) {
+                    column.output_label = CONSTANT_VALUE_NAME.to_owned();
+                }
+            }
+            renamed
+        })
+        .collect::<Vec<_>>()
+        .into()
+}
+
+/// The name a `Константа.<Имя>` source gives its stored value.
+const CONSTANT_VALUE_NAME: &str = "Значение";
+/// Its English spelling, which the bilingual query language accepts.
+const CONSTANT_VALUE_NAME_EN: &str = "Value";
+
 /// Lists every live constant of the snapshot with the field carrying its
 /// value, sorted by constant name: the fields of the `Константы` table.
 ///
@@ -1334,10 +1372,15 @@ pub(super) fn resolve_source_metadata<'snapshot>(
                     "metadata table is not live",
                 )
             })?;
+        let fields = catalog.fields(object, Some(source.object))?;
         return Ok(ResolvedSourceMetadata {
             object,
             live_table,
-            fields: catalog.fields(object, Some(source.object))?,
+            fields: if object.kind == Some(MetadataKind::Constant) {
+                constant_value_field_names(&fields, object.name.as_deref().unwrap_or_default())
+            } else {
+                fields
+            },
             qualifier_name: source.object.lexeme.to_owned(),
             table_part: None,
             identity_is_base: true,

@@ -260,14 +260,31 @@ fn diagnoses_unknown_constants_and_disabled_separators() {
     assert!(count.is_ok(), "{count:?}");
 }
 
+/// `Константа.<Имя>` answers to `Значение`, not to the name of the
+/// constant: measured on 8.3.27, `ВЫБРАТЬ * ИЗ Константа.ОсновнойТовар`
+/// yields the column `Значение`, while `К.ОсновнойТовар` fails with
+/// "Поле не найдено". The `Константы` table is the other way round.
 #[test]
-fn a_single_constant_source_keeps_its_rendering() {
+fn a_single_constant_source_answers_to_значение() {
     let snapshot = separators_snapshot();
     assert_eq!(
         postgres_sql(
             &snapshot,
-            "ВЫБРАТЬ К.ОсновнойТовар ИЗ Константа.ОсновнойТовар КАК К"
+            "ВЫБРАТЬ К.Значение ИЗ Константа.ОсновнойТовар КАК К"
         ),
-        "SELECT \"К\".\"_fld62rref\" AS \"ОсновнойТовар\" FROM \"_const61\" AS \"К\" WHERE \"К\".\"_fld56\" = 7 AND \"К\".\"_fld57\" = 7"
+        "SELECT \"К\".\"_fld62rref\" AS \"Значение\" FROM \"_const61\" AS \"К\" WHERE \"К\".\"_fld56\" = 7 AND \"К\".\"_fld57\" = 7"
     );
+    assert_eq!(
+        postgres_sql(&snapshot, "SELECT К.Value FROM Constant.ОсновнойТовар AS К"),
+        "SELECT \"К\".\"_fld62rref\" AS \"Значение\" FROM \"_const61\" AS \"К\" WHERE \"К\".\"_fld56\" = 7 AND \"К\".\"_fld57\" = 7"
+    );
+
+    let by_constant_name = compile(
+        &snapshot,
+        PostgresBackend,
+        "ВЫБРАТЬ К.ОсновнойТовар ИЗ Константа.ОсновнойТовар КАК К",
+        &CompileOptions::new().session(&area(7)),
+    )
+    .unwrap_err();
+    assert_eq!(by_constant_name.kind(), QueryDiagnosticKind::UnknownField);
 }

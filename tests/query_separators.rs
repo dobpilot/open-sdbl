@@ -334,10 +334,10 @@ fn filters_constants_nested_queries_and_restricted_sources() {
     assert_eq!(
         postgres_sql(
             &snapshot,
-            "ВЫБРАТЬ К.ОсновнойТовар ИЗ Константа.ОсновнойТовар КАК К",
+            "ВЫБРАТЬ К.Значение ИЗ Константа.ОсновнойТовар КАК К",
             &area(7)
         ),
-        "SELECT \"К\".\"_fld62rref\" AS \"ОсновнойТовар\" FROM \"_const61\" AS \"К\" WHERE \"К\".\"_fld56\" = 7 AND \"К\".\"_fld57\" = 7"
+        "SELECT \"К\".\"_fld62rref\" AS \"Значение\" FROM \"_const61\" AS \"К\" WHERE \"К\".\"_fld56\" = 7 AND \"К\".\"_fld57\" = 7"
     );
     assert_eq!(
         postgres_sql(

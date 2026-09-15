@@ -23,7 +23,7 @@ use crate::query::core::dialect::{SqlDialect, compile_literal};
 use crate::query::core::names::names_equal;
 use crate::query::core::resolve::{
     ColumnKind, CompilationCatalog, CompiledColumn, QueryableColumn, QueryableField,
-    is_standard_field_name,
+    is_standard_field_name, kind_from_query_name,
 };
 use crate::query::core::types::TypeValue;
 use crate::query::core::{QueryDiagnostic, QueryDiagnosticKind};
@@ -386,6 +386,27 @@ impl CompilationContext<'_, '_> {
         } else {
             "source"
         }
+    }
+
+    /// A source written without an alias can be addressed by its full
+    /// metadata name — `Справочник.Товары.Наименование` over
+    /// `ИЗ Справочник.Товары`, as measured on 8.3.27. An aliased source
+    /// cannot: the platform answers "Поле не найдено" there, because the
+    /// alias replaces the name.
+    fn full_name_scope(&self, kind: &Token<'_>, name: &Token<'_>) -> Option<ScopeId> {
+        let kind = kind_from_query_name(kind.lexeme)?;
+        self.sources
+            .iter()
+            .enumerate()
+            .find(|(_, source)| {
+                source.source_alias.is_none()
+                    && names_equal(&source.object_name, name.lexeme)
+                    && self
+                        .snapshot
+                        .object_by_id(source.object)
+                        .is_some_and(|object| object.kind == Some(kind))
+            })
+            .map(|(index, _)| ScopeId(index))
     }
 
     fn qualifier_scope(&self, qualifier: &Token<'_>) -> Result<Option<ScopeId>, QueryDiagnostic> {
@@ -823,6 +844,12 @@ impl CompilationContext<'_, '_> {
                     format!("unknown source qualifier {:?}", qualifier.lexeme),
                 )),
             },
+            [kind, name, field] if self.full_name_scope(kind, name).is_some() => {
+                let scope = self
+                    .full_name_scope(kind, name)
+                    .expect("the guard resolved this scope");
+                self.direct_field(scope, field)
+            }
             [_, _, unsupported, ..] => Err(QueryDiagnostic::at(
                 QueryDiagnosticKind::UnsupportedFeature,
                 Some(unsupported),
@@ -866,6 +893,21 @@ impl CompilationContext<'_, '_> {
                 }
             },
             [qualifier, rest @ ..] => {
+                // `Справочник.Товары.Поле` over an unaliased source: the
+                // first two segments spell the source, not a dereference.
+                if let [name, tail @ ..] = rest
+                    && !tail.is_empty()
+                    && self.qualifier_scope(qualifier)?.is_none()
+                    && let Some(scope) = self.full_name_scope(qualifier, name)
+                {
+                    return match tail {
+                        [field] => self.direct_field(scope, field),
+                        [reference_field, target_field] => {
+                            self.resolve_dereference(scope, reference_field, target_field)
+                        }
+                        hops => self.resolve_deep_dereference(scope, hops),
+                    };
+                }
                 let Some(scope) = self.qualifier_scope(qualifier)? else {
                     return Err(QueryDiagnostic::at(
                         QueryDiagnosticKind::UnknownObject,

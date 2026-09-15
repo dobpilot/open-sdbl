@@ -2636,6 +2636,49 @@ fn keeps_additional_full_join_predicates_in_on() {
     assert!(!compiled.sql.contains("WHERE"), "{}", compiled.sql);
 }
 
+/// A source written without an alias answers to its full metadata name:
+/// measured on 8.3.27, `ВЫБРАТЬ Справочник.Товары.Наименование ИЗ
+/// Справочник.Товары` answers, while the same spelling over a source that
+/// carries an alias fails with "Поле не найдено", because the alias
+/// replaces the name.
+#[test]
+fn qualifies_an_unaliased_source_by_its_full_metadata_name() {
+    let snapshot = snapshot();
+    let projected = postgres_compile!(
+        "ВЫБРАТЬ Справочник.OpenSdblMetadataProbe.Code ИЗ Справочник.OpenSdblMetadataProbe;",
+        &snapshot,
+    )
+    .unwrap();
+    assert_eq!(labels(&projected), ["Code"]);
+
+    let filtered = postgres_compile!(
+        "ВЫБРАТЬ Code ИЗ Справочник.OpenSdblMetadataProbe
+         ГДЕ Справочник.OpenSdblMetadataProbe.Code <> \"A\";",
+        &snapshot,
+    )
+    .unwrap();
+    assert!(filtered.sql.contains("WHERE"), "{}", filtered.sql);
+
+    let aliased = postgres_compile!(
+        "ВЫБРАТЬ Т.Code ИЗ Справочник.OpenSdblMetadataProbe КАК Т
+         ГДЕ Справочник.OpenSdblMetadataProbe.Code <> \"A\";",
+        &snapshot,
+    )
+    .unwrap_err();
+    assert_eq!(aliased.kind(), QueryDiagnosticKind::UnknownObject);
+
+    let dereferenced = postgres_compile!(
+        "ВЫБРАТЬ Справочник.OpenSdblMetadataProbe.Организация.Код ИЗ Справочник.OpenSdblMetadataProbe;",
+        &reference_snapshot(),
+    )
+    .unwrap();
+    assert!(
+        dereferenced.sql.contains("LEFT JOIN"),
+        "{}",
+        dereferenced.sql
+    );
+}
+
 #[test]
 fn resolves_a_one_hop_reference_from_one_join_side() {
     let snapshot = reference_snapshot();

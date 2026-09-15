@@ -71,7 +71,7 @@ dependencies = [
 
 [[package]]
 name = "open-sdbl"
-version = "0.3.54"
+version = "0.3.55"
 
 [[package]]
 name = "open-sdbl-fuzz"
