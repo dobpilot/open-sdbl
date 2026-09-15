@@ -1,3 +1,8 @@
+## RENAMED Requirements
+
+- FROM: `### Requirement: Emit PostgreSQL SQL portable to 9.0`
+- TO: `### Requirement: Emit PostgreSQL SQL for a stated minimum server`
+
 ## MODIFIED Requirements
 
 ### Requirement: Emit PostgreSQL SQL for a stated minimum server

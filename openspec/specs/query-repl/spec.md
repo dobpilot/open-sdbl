@@ -18,14 +18,13 @@ alias with or without `КАК`/`AS`, one-hop reference property paths,
 expressions. A branch MAY instead chain one or more
 `[ВНУТРЕННЕЕ] СОЕДИНЕНИЕ` / `[INNER] JOIN`, `ЛЕВОЕ [ВНЕШНЕЕ]
 СОЕДИНЕНИЕ` / `LEFT [OUTER] JOIN`, and `ПРАВОЕ [ВНЕШНЕЕ] СОЕДИНЕНИЕ` /
-`RIGHT [OUTER] JOIN` in source order, each introducing one more source
-scope, or contain exactly one `ПОЛНОЕ [ВНЕШНЕЕ] СОЕДИНЕНИЕ` / `FULL
-[OUTER] JOIN`. The source list MAY contain several comma-separated
+`RIGHT [OUTER] JOIN`, and `ПОЛНОЕ [ВНЕШНЕЕ] СОЕДИНЕНИЕ` / `FULL
+[OUTER] JOIN` in source order, each introducing one more source scope. The source list MAY contain several comma-separated
 elements, each a source with its own joins; every element after the
 first SHALL be rendered as a `CROSS JOIN` in written order, SHALL be
 filtered like the base source, and a join condition SHALL see only the
 sources of its own element (`UnknownField` otherwise). A comma list
-SHALL keep the `FULL JOIN` and `*` refusals of joined branches. Joined
+SHALL keep the `*` refusals of joined branches. Joined
 branches SHALL support named direct fields and one-hop
 reference properties. Each join condition SHALL contain at least one top-level
 scalar equality between a direct field or one-hop reference property of the
@@ -33,7 +32,8 @@ joined source and one of an earlier source, and MAY combine that anchor with
 additional supported scalar predicates over direct fields and one-hop
 reference properties of the joined source and earlier sources by top-level
 `И`/`AND`. Additional predicates SHALL remain in ON. A `ПОЛНОЕ [ВНЕШНЕЕ]
-СОЕДИНЕНИЕ` condition SHALL use direct fields only. Final `УПОРЯДОЧИТЬ
+СОЕДИНЕНИЕ` condition MAY dereference, and the reference join it needs
+SHALL be resolved inside the side that owns it. Final `УПОРЯДОЧИТЬ
 ПО`/`ORDER BY` SHALL support `ВОЗР`/`ASC` and `УБЫВ`/`DESC` and SHALL
 accept a projection alias of the branch as a key, ordering by the aliased
 expression. Statements
@@ -129,14 +129,37 @@ batch. Unsupported syntax SHALL fail before execution.
   row from both sources with NULL values for the absent side
 
 #### Scenario: FULL JOIN transposition
-- **WHEN** a supported FULL JOIN is compiled for PostgreSQL
-- **THEN** generated SQL contains two LEFT JOIN branches connected by UNION ALL
-  and an IS NULL anti-match predicate, and contains no native FULL JOIN
+- **WHEN** a FULL JOIN is compiled
+- **THEN** no transposition is generated: the SQL carries a native `FULL
+  JOIN` between the two sources, and no UNION ALL with an anti-match
+  predicate
+
+#### Scenario: FULL JOIN in a chain
+- **WHEN** a branch chains a LEFT JOIN and a FULL JOIN in either order, or
+  two FULL JOINs
+- **THEN** every join is rendered in source order and the result matches
+  the platform row for row
+
+#### Scenario: FULL JOIN under aggregation
+- **WHEN** a branch aggregates or groups over a FULL JOIN
+- **THEN** the aggregate sees the null-extended rows of both sides, as the
+  platform answers
+
+#### Scenario: FULL JOIN condition that dereferences
+- **WHEN** a FULL JOIN condition compares `Т.Клиент.Наименование` with a
+  field of the joined source
+- **THEN** the reference join is placed inside the side that owns it, so it
+  cannot land after the full join
+
+#### Scenario: FULL JOIN condition that cannot be planned
+- **WHEN** a FULL JOIN condition is not an equality chain
+- **THEN** compilation fails, because the server plans a full join only on
+  merge- or hash-joinable conditions
 
 #### Scenario: FULL JOIN result operators
 - **WHEN** a FULL JOIN uses WHERE, DISTINCT, TOP, or final ordering
 - **THEN** filtering preserves null-extended row semantics and result-level
-  operations apply to the complete transposed result
+  operations apply to the whole joined result
 
 #### Scenario: Status predicates next to the join key
 - **WHEN** ON contains a cross-source equality followed by an IN-list of
@@ -2286,7 +2309,8 @@ The compiler SHALL accept `ПОДСТРОКА(x, n, m)`, `ДлинаСтроки
 render each per dialect. String functions SHALL return a string and the
 others a number. An argument of the wrong kind SHALL be a `Syntax`
 diagnostic, `NULL` and unclassified values passing. The arity SHALL be
-checked at parse time. PostgreSQL renderings SHALL stay portable to 9.0,
+checked at parse time. PostgreSQL renderings SHALL stay within the targeted
+minimum server,
 and a character column of the 1C extension types SHALL be cast to `text`
 before the call. `Log` SHALL be the natural logarithm, `Log10` the
 decimal one, `Окр` SHALL round half away from zero and accept a negative
