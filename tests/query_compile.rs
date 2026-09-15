@@ -6723,3 +6723,39 @@ fn presents_an_expression_as_its_value() {
         reference.sql
     );
 }
+
+#[test]
+fn keeps_the_declared_gaps_declared() {
+    // The capability table is the user-facing contract, and a row that
+    // claims a gap the compiler has since closed misleads. This test walks
+    // the constructs the table marks as unsupported and holds them to it,
+    // so a row and the compiler cannot drift apart unnoticed.
+    let snapshot = snapshot();
+    let refused = [
+        "ВЫБРАТЬ Т.Code КАК К ИЗ Справочник.OpenSdblMetadataProbe КАК Т СГРУППИРОВАТЬ ПО ГРУППИРУЮЩИМ НАБОРАМ ((Т.Code));",
+        "ВЫБРАТЬ Т.Code КАК К ИЗ Справочник.OpenSdblMetadataProbe КАК Т УПОРЯДОЧИТЬ ПО Т.Code ИЕРАРХИЯ;",
+        "ВЫБРАТЬ Т.Code КАК К ИЗ Справочник.OpenSdblMetadataProbe КАК Т АВТОУПОРЯДОЧИВАНИЕ;",
+        "ВЫБРАТЬ Т.Code КАК К ИЗ Справочник.OpenSdblMetadataProbe КАК Т ДЛЯ ИЗМЕНЕНИЯ;",
+        "ВЫБРАТЬ СГРУППИРОВАНОПО(Т.Code) КАК К ИЗ Справочник.OpenSdblMetadataProbe КАК Т;",
+        "ВЫБРАТЬ АВТОНОМЕРЗАПИСИ() КАК К ИЗ Справочник.OpenSdblMetadataProbe КАК Т;",
+        "ВЫБРАТЬ РАЗМЕРХРАНИМЫХДАННЫХ(Т.Code) КАК К ИЗ Справочник.OpenSdblMetadataProbe КАК Т;",
+        "ВЫБРАТЬ СТРОКА(Т.Code) КАК К ИЗ Справочник.OpenSdblMetadataProbe КАК Т;",
+    ];
+    for source in refused {
+        assert!(
+            postgres_compile!(source, &snapshot).is_err(),
+            "the capability table calls this unsupported: {source}"
+        );
+    }
+
+    // …and the row that says `+` concatenates must stay true.
+    let concatenated = postgres_compile!(
+        "ВЫБРАТЬ Т.Code + \"!\" КАК П ИЗ Справочник.OpenSdblMetadataProbe КАК Т;",
+        &snapshot,
+    )
+    .unwrap();
+    assert_eq!(
+        concatenated.columns[0].kind,
+        ColumnKind::String { length: None }
+    );
+}
