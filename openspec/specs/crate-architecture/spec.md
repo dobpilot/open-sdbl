@@ -216,7 +216,9 @@ Every module of `open-sdbl-cli` SHALL carry one feature — one reason to
 change. The console in particular SHALL be split so that the
 read-execute loop, completion, statement preparation, deferred
 presentations, meta commands, table rendering, metadata description and
-terminal handling each live in a module of their own.
+terminal handling each live in a module of their own, and each database
+provider SHALL be split so that driving a session, reading metadata and
+decoding provider values live in modules of their own.
 
 Unit tests SHALL live outside the implementation files, in `src/tests/`,
 one file per module they cover.
@@ -230,3 +232,8 @@ one file per module they cover.
 - **WHEN** a maintainer looks for the unit tests of a CLI module
 - **THEN** they are found in `src/tests/` under that module's name, and the
   implementation file contains no test code
+
+#### Scenario: Decode a provider value
+- **WHEN** a maintainer changes how a provider value becomes a `Cell`
+- **THEN** the change touches that provider's decoding module, which needs
+  no connection to be read or tested
