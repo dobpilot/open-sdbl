@@ -1048,7 +1048,7 @@ fn projection_scalar(
 }
 
 /// The kind of one member column of a composite value.
-fn composite_member_kind_of(member: &str) -> ColumnKind {
+pub(super) fn composite_member_kind_of(member: &str) -> ColumnKind {
     match member {
         "_TYPE" => ColumnKind::Binary { length: Some(1) },
         "_S" => ColumnKind::String { length: None },

@@ -4,11 +4,12 @@ use std::sync::Arc;
 
 use super::constants::ConstantsSource;
 use super::expression::{
-    matching_fields, reference_column, reference_type_column, resolve_named_field, single_column,
-    type_constant, value_operand, value_type_sql, widen_reference,
+    composite_member_of, matching_fields, reference_column, reference_type_column,
+    resolve_named_field, single_column, spread_over_members, type_constant, value_operand,
+    value_type_sql, widen_reference,
 };
 use super::orchestrate::PresentationCompilation;
-use super::select::{derived_data_type, derived_owner};
+use super::select::{composite_member_kind_of, derived_data_type, derived_owner};
 use super::sources::{
     ReferencePresentationTargets, compile_deferred_reference_presentation, compile_live_relation,
     presentation_targets, wrap_reference_presentation,
@@ -271,6 +272,9 @@ pub(super) struct ResolvedPath {
     /// Rendered value replacing `alias.column`, used by a dereference that
     /// selects across several reference targets.
     pub(super) expression: Option<String>,
+    /// One expression per column when the path answers a value of several
+    /// types, which the targets spread over the members of a composite.
+    pub(super) member_expressions: Vec<String>,
 }
 
 impl ResolvedPath {
@@ -290,6 +294,7 @@ impl ResolvedPath {
             sql_alias: source.sql_alias.clone(),
             path_label: None,
             expression: None,
+            member_expressions: Vec::new(),
         }
     }
 
@@ -303,6 +308,7 @@ impl ResolvedPath {
             field_index,
             path_label: None,
             expression: None,
+            member_expressions: Vec::new(),
             fields: Arc::clone(&self.fields),
             sql_alias: self.sql_alias.clone(),
             ..*self
@@ -457,6 +463,7 @@ impl CompilationContext<'_, '_> {
             sql_alias: source.sql_alias.clone(),
             path_label: None,
             expression: None,
+            member_expressions: Vec::new(),
         })
     }
 
@@ -700,6 +707,7 @@ impl CompilationContext<'_, '_> {
             sql_alias: source.sql_alias.clone(),
             path_label: None,
             expression: None,
+            member_expressions: Vec::new(),
         })
     }
 
@@ -718,6 +726,7 @@ impl CompilationContext<'_, '_> {
                 sql_alias: source.sql_alias.clone(),
                 path_label: None,
                 expression: None,
+                member_expressions: Vec::new(),
             });
         }
         let (field, expression) =
@@ -731,6 +740,7 @@ impl CompilationContext<'_, '_> {
             sql_alias: source.sql_alias.clone(),
             path_label: None,
             expression: Some(expression),
+            member_expressions: Vec::new(),
         })
     }
 
@@ -1064,6 +1074,7 @@ impl CompilationContext<'_, '_> {
                 reference_token.lexeme, target_token.lexeme
             )),
             expression,
+            member_expressions: Vec::new(),
         })
     }
 
@@ -1197,6 +1208,7 @@ impl CompilationContext<'_, '_> {
             sql_alias: alias,
             path_label: None,
             expression: None,
+            member_expressions: Vec::new(),
         })
     }
 
@@ -1281,7 +1293,23 @@ impl CompilationContext<'_, '_> {
                 ),
             ));
         }
-        let kind = unify_dereference_kinds(&branches, target_token)?;
+        // Targets that type the field differently answer one value of
+        // several types, which the platform spreads over the members of a
+        // composite, measured on 8.3.27.
+        let kind = match unify_dereference_kinds(&branches, target_token) {
+            Ok(kind) => kind,
+            Err(error) => {
+                return self.composite_dereference_members(
+                    scope,
+                    source,
+                    &branches,
+                    reference_token,
+                    target_token,
+                    rest,
+                    error,
+                );
+            }
+        };
         let widen = matches!(kind, ColumnKind::Reference { .. })
             && branches.iter().any(|branch| branch.kind != kind);
         let mut arms = Vec::with_capacity(branches.len());
@@ -1335,6 +1363,104 @@ impl CompilationContext<'_, '_> {
                     .join("."),
             ),
             expression: Some(expression),
+            member_expressions: Vec::new(),
+        })
+    }
+
+    /// Renders a dereference whose targets type the field differently as
+    /// one composite value: every branch writes the member of its own
+    /// type, the zero of the others and the tag of its own type, each
+    /// member staying `NULL` while the branch value is `NULL`. This is the
+    /// shape the platform writes, measured on 8.3.27.
+    #[allow(clippy::too_many_arguments)]
+    fn composite_dereference_members(
+        &mut self,
+        scope: ScopeId,
+        source: &CompositeSource,
+        branches: &[DereferenceBranch],
+        reference_token: &Token<'_>,
+        target_token: &Token<'_>,
+        rest: &[&Token<'_>],
+        mismatch: QueryDiagnostic,
+    ) -> Result<ResolvedPath, QueryDiagnostic> {
+        let mut spread = Vec::with_capacity(branches.len());
+        let mut members = Vec::new();
+        for branch in branches {
+            let Some((suffix, _)) = composite_member_of(&branch.kind) else {
+                return Err(mismatch);
+            };
+            if !members.contains(&suffix) {
+                members.push(suffix);
+            }
+            spread.push(self.branch_value(branch, false, target_token)?);
+        }
+        // The payload member comes first and the discriminator last, the
+        // way an alternative of several types is projected.
+        members.sort_by_key(|suffix| usize::from(!suffix.is_empty()));
+        members.push("_TYPE");
+        let mut member_expressions = Vec::with_capacity(members.len());
+        for member in &members {
+            let mut sql = String::from("CASE");
+            for (branch, value) in branches.iter().zip(spread.iter()) {
+                let spread_value = spread_over_members(
+                    value,
+                    &branch.kind,
+                    std::slice::from_ref(member),
+                    Some(target_token),
+                    self,
+                )?;
+                sql.push_str(&format!(
+                    " WHEN {} = {} THEN {}",
+                    source.type_sql,
+                    self.dialect.binary_u32(branch.database_type),
+                    spread_value[0]
+                ));
+            }
+            sql.push_str(" END");
+            member_expressions.push(sql);
+        }
+        let first = branches.first().expect("a branch was compiled");
+        let label = target_token.lexeme.to_owned();
+        let columns = members
+            .iter()
+            .map(|member| QueryableColumn {
+                physical_name: first.physical_name.clone(),
+                data_type: String::new(),
+                output_label: format!("{label}{member}"),
+                kind: composite_member_kind_of(member),
+            })
+            .collect::<Vec<_>>();
+        let field = QueryableField {
+            name: label.clone(),
+            schema_name: first.schema_name.clone(),
+            aliases: vec![label],
+            columns,
+            reference_target: None,
+            reference_targets: Vec::new(),
+        };
+        if self.compiling_join_condition {
+            self.dereference_in_join = true;
+        }
+        let expression = member_expressions
+            .first()
+            .cloned()
+            .expect("a member was rendered");
+        Ok(ResolvedPath {
+            scope,
+            owner: derived_owner(),
+            identity_is_base: false,
+            fields: Arc::from(vec![field]),
+            field_index: 0,
+            sql_alias: self.source(scope).sql_alias.clone(),
+            path_label: Some(
+                std::iter::once(reference_token.lexeme)
+                    .chain(std::iter::once(target_token.lexeme))
+                    .chain(rest.iter().map(|token| token.lexeme))
+                    .collect::<Vec<_>>()
+                    .join("."),
+            ),
+            expression: Some(expression),
+            member_expressions,
         })
     }
 
@@ -1682,6 +1808,7 @@ impl CompilationContext<'_, '_> {
                 sql_alias: alias.clone(),
                 path_label: None,
                 expression: None,
+                member_expressions: Vec::new(),
             };
             // A target whose rest of the path does not resolve contributes
             // nothing, exactly as the platform drops it from its `CASE`.
@@ -1868,6 +1995,18 @@ impl CompilationContext<'_, '_> {
     }
 
     pub(super) fn sql_column(&self, resolved: &ResolvedPath, column: &QueryableColumn) -> String {
+        // A path answering a value of several types renders one expression
+        // per member, so the column decides which one it is.
+        if !resolved.member_expressions.is_empty()
+            && let Some(index) = resolved
+                .field()
+                .columns
+                .iter()
+                .position(|candidate| std::ptr::eq(candidate, column))
+            && let Some(expression) = resolved.member_expressions.get(index)
+        {
+            return expression.clone();
+        }
         if let Some(expression) = &resolved.expression {
             return expression.clone();
         }

@@ -749,3 +749,54 @@ fn joins_only_the_declared_targets_of_a_composite() {
         category.sql
     );
 }
+
+#[test]
+fn spreads_a_mixed_kind_dereference_over_members() {
+    // Targets that type the field differently answer one value of several
+    // types. Measured on 8.3.27: the platform spreads it over the members
+    // of a composite — every target writes the member of its own type, the
+    // zero of the others and the tag of its own type, each member staying
+    // NULL while that target's value is NULL.
+    let mut session = open_sdbl::query::SessionParameters::new();
+    for name in ["ЗначениеРазделителя", "ОбластьДанныхОсновныеДанные"]
+    {
+        session.set(open_sdbl::query::QueryParameter::new(
+            name,
+            open_sdbl::query::ParameterValue::Number {
+                unscaled: 0,
+                scale: 0,
+            },
+        ));
+    }
+    session.set(open_sdbl::query::QueryParameter::new(
+        "ИспользованиеРазделителя",
+        open_sdbl::query::ParameterValue::Boolean(false),
+    ));
+    let snapshot = support::demo_resolved_at(
+        &std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/demo"),
+    )
+    .snapshot;
+    let compiled = QueryCompiler::new(&snapshot, PostgresBackend)
+        .compile_with(
+            "ВЫБРАТЬ Р.Регистратор.Организация КАК П
+             ИЗ РегистрНакопления.КоличествоПредметовВПапках КАК Р;",
+            &open_sdbl::query::CompileOptions::new().session(&session),
+        )
+        .expect("targets typing the field differently answer a composite value");
+    assert_eq!(
+        compiled
+            .columns
+            .iter()
+            .map(|column| column.label.as_str())
+            .collect::<Vec<_>>(),
+        ["П", "П_S", "П_TYPE"]
+    );
+    // Every member is selected by the type of the stored reference, and a
+    // target whose value is NULL writes NULL into each of them.
+    assert_contains(&compiled.sql, "IS NOT NULL THEN decode('05', 'hex')");
+    assert_contains(&compiled.sql, "IS NOT NULL THEN decode('08', 'hex')");
+    assert_eq!(
+        compiled.columns[2].kind,
+        open_sdbl::query::ColumnKind::Binary { length: Some(1) }
+    );
+}
