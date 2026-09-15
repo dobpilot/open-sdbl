@@ -262,39 +262,6 @@ impl MsSqlSession {
         }
     }
 
-    /// Checks server-side that the session carries no transaction of its
-    /// own before a read starts, which is what makes reusing a session
-    /// safe. What rights the login holds is the operator's decision: the
-    /// compiler generates SELECT statements only, so a wider role changes
-    /// nothing about what is sent.
-    async fn verify_no_open_transaction(&mut self) -> Result<(), CliError> {
-        self.ensure_usable()?;
-        let count = {
-            let client = self.client_mut()?;
-            mssql_rows(
-                client,
-                "MSSQL transaction-state verification",
-                MSSQL_TRANSACTION_COUNT,
-            )
-            .await
-        };
-        if count
-            .as_ref()
-            .is_err_and(CliError::requires_mssql_disconnect)
-        {
-            self.poison_and_drop();
-        }
-        let rows = count?;
-        let row = exactly_one_mssql_row(&rows, "transaction-state verification")?;
-        let transaction_count = required_mssql_i32(row, 0, "@@TRANCOUNT")?;
-        if transaction_count != 0 {
-            return Err(CliError::Data(format!(
-                "MSSQL session already carries an open transaction (@@TRANCOUNT={transaction_count}); reconnect before reading"
-            )));
-        }
-        Ok(())
-    }
-
     async fn transaction_count(&mut self) -> Result<i32, CliError> {
         let rows = mssql_rows(
             self.client_mut()?,
@@ -354,7 +321,6 @@ impl MsSqlSession {
         sql: &str,
         column_count: usize,
     ) -> Result<QueryRows, CliError> {
-        self.verify_no_open_transaction().await?;
         self.execute_batch("BEGIN TRANSACTION").await?;
         let client = self.client_mut()?;
         let result = query_timeout("MSSQL user query", async {
@@ -492,7 +458,6 @@ impl<'session> MsSqlMetadataSource<'session> {
 
 impl MetadataSource for MsSqlMetadataSource<'_> {
     async fn begin_readonly(&mut self) -> Result<(), CliError> {
-        self.session.verify_no_open_transaction().await?;
         self.session.execute_batch("BEGIN TRANSACTION").await
     }
 

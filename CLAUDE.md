@@ -40,7 +40,7 @@ openspec archive <change-name>             # after completion; merges into specs
 Two-crate split with a hard boundary:
 
 - **Root crate `open-sdbl`** (`src/`) — zero production dependencies, `#![forbid(unsafe_code)]`, `#![warn(missing_docs)]`, and **no I/O of any kind** (no process, filesystem, env, terminal, network). It only decodes caller-provided bytes and generates SQL text. Keep it that way; runtime/database dependencies belong only to application crates.
-- **`crates/open-sdbl-cli`** (binary `open-sdbl`) — all I/O: tokio, tokio-postgres, tiberius (MSSQL), rustyline REPL, TLS, SOCKS5, secrets handling (passwords come only from env vars, moved into zeroized memory at startup). Reads only: PG uses a `READ COMMITTED READ ONLY` transaction; MSSQL asks for read-only application intent, verifies `@@TRANCOUNT` before every read, and rolls back. Role membership and isolation level are the operator's decision, not the CLI's — the compiler generates SELECT statements only.
+- **`crates/open-sdbl-cli`** (binary `open-sdbl`) — all I/O: tokio, tokio-postgres, tiberius (MSSQL), rustyline REPL, TLS, SOCKS5, secrets handling (passwords come only from env vars, moved into zeroized memory at startup). Reads only: PG uses a `READ COMMITTED READ ONLY` transaction; MSSQL asks for read-only application intent, wraps each read in a transaction and rolls it back, poisoning the session when that rollback fails. It sends no verification statement of its own — role membership, isolation level and transaction state are the operator's business, and the compiler generates SELECT statements only.
 
 ### Core library flow
 
