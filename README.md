@@ -763,8 +763,10 @@ fn build_metadata(
 постройте `StorageLayout::from_flags`, затем берите выражения через
 `db_names(&layout)`, `config(&layout)`, `extension_resources(&layout)`; ядро
 намеренно не знает о сети, паролях и async runtime. Полные варианты загрузки через
-`tokio-postgres` и Tiberius есть в
-[`open-sdbl-cli`](crates/open-sdbl-cli/src/main.rs).
+`tokio-postgres` и Tiberius есть в `open-sdbl-cli`: по модулю на провайдера —
+[`db/postgres`](crates/open-sdbl-cli/src/db/postgres) и
+[`db/mssql`](crates/open-sdbl-cli/src/db/mssql), где ведение сессии, чтение
+метаданных и декодирование значений разнесены по отдельным файлам.
 
 `resolve_metadata*` возвращает `ResolvedMetadata`: поле `snapshot` используется
 для компиляции, а `report` содержит детерминированный список
