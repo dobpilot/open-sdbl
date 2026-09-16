@@ -7,4 +7,4 @@
 
 ## 2. Verification
 
-- [ ] 2.1 Check the workflow file parses and the jobs run green on a push.
+- [x] 2.1 Check the workflow file parses and the jobs run green on a push.
