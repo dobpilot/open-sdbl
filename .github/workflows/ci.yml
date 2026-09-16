@@ -45,3 +45,42 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - run: cargo check --workspace --all-targets
+
+  # The release build of every run is kept: the sources as they are tracked
+  # at that commit, and the Windows executable, so trying a version needs
+  # neither a clone nor a local toolchain.
+  source-archive:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Read the workspace version
+        id: version
+        run: echo "value=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)" >> "$GITHUB_OUTPUT"
+      - name: Archive the tracked sources
+        run: |
+          git archive --format=tar.gz \
+            --prefix="open-sdbl-${{ steps.version.outputs.value }}/" \
+            -o "open-sdbl-${{ steps.version.outputs.value }}-src.tar.gz" HEAD
+      - uses: actions/upload-artifact@v4
+        with:
+          name: open-sdbl-${{ steps.version.outputs.value }}-src
+          path: open-sdbl-${{ steps.version.outputs.value }}-src.tar.gz
+          if-no-files-found: error
+
+  windows-binary:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+      - name: Read the workspace version
+        id: version
+        shell: bash
+        run: echo "value=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)" >> "$GITHUB_OUTPUT"
+      - run: cargo build --release --locked --target x86_64-pc-windows-msvc -p open-sdbl-cli
+      - uses: actions/upload-artifact@v4
+        with:
+          name: open-sdbl-${{ steps.version.outputs.value }}-x86_64-pc-windows-msvc
+          path: target/x86_64-pc-windows-msvc/release/open-sdbl.exe
+          if-no-files-found: error
