@@ -138,6 +138,8 @@ fn descriptor(resource: &Guid, object: &Guid, name: &str) -> ConfigDescriptor {
         separation: None,
         reference_types: Vec::new(),
         object_reference_type: None,
+        balance: None,
+        chart_of_accounts: None,
     }
 }
 
