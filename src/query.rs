@@ -22,11 +22,12 @@ use crate::metadata::{MetadataSnapshot, SnapshotFingerprint};
 
 pub use core::{
     AccessRestriction, ColumnKind, CompileOptions, CompiledColumn, CompiledQuery,
-    InvalidParameterDate, ParameterDate, ParameterValue, PresentationExpression, PresentationPlan,
-    PresentationRequest, PresentationTarget, QueryDiagnostic, QueryDiagnosticKind, QueryParameter,
-    QueryableColumn, QueryableField, QueryableFieldCatalog, RestrictionRequest, RestrictionTarget,
-    SessionParameters, TempTable, TempTablesManager, TypeValue, constants_table_fields,
-    find_metadata_object, queryable_field_catalog, queryable_fields,
+    InvalidParameterDate, ParameterColumn, ParameterDate, ParameterValue, PresentationExpression,
+    PresentationPlan, PresentationRequest, PresentationTarget, QueryDiagnostic,
+    QueryDiagnosticKind, QueryParameter, QueryableColumn, QueryableField, QueryableFieldCatalog,
+    RestrictionRequest, RestrictionTarget, SessionParameters, TempTable, TempTablesManager,
+    TypeValue, constants_table_fields, find_metadata_object, object_query_name,
+    queryable_field_catalog, queryable_fields,
 };
 pub use mssql::{InvalidMsSqlYearOffset, MsSqlBackend, MsSqlDialectLevel};
 pub use postgres::PostgresBackend;

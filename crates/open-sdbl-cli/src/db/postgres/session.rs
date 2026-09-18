@@ -29,6 +29,7 @@ use crate::limits::{CONNECTION_TIMEOUT, POSTGRES_CLOSE_TIMEOUT, QUERY_TIMEOUT};
 use crate::net::socks5::{connect_socks5, socks5_password};
 use crate::pipeline::acquire_metadata;
 use crate::session::query_timeout;
+use open_sdbl::metadata::StorageLayout;
 
 #[cfg(test)]
 #[path = "../../tests/postgres_session.rs"]
@@ -188,6 +189,8 @@ pub(crate) struct PostgresSession {
     pub(super) driver: tokio::task::JoinHandle<Result<(), tokio_postgres::Error>>,
     pub(super) connection: PostgresConnection,
     pub(super) socks5_password: Option<Zeroizing<String>>,
+    /// The storage layout the last metadata read detected.
+    pub(super) layout: Option<StorageLayout>,
 }
 
 impl PostgresSession {
@@ -269,6 +272,7 @@ impl PostgresSession {
             driver,
             connection: connection.clone(),
             socks5_password,
+            layout: None,
         })
     }
 
@@ -283,7 +287,15 @@ impl PostgresSession {
                 .map_err(CliError::from)
         })
         .await?;
-        acquire_metadata(&mut PostgresMetadataSource::new(transaction)).await
+        let (snapshot, layout) =
+            acquire_metadata(&mut PostgresMetadataSource::new(transaction)).await?;
+        self.layout = Some(layout);
+        Ok(snapshot)
+    }
+
+    /// The storage layout of the base, known after a metadata read.
+    pub(crate) const fn layout(&self) -> Option<StorageLayout> {
+        self.layout
     }
 
     pub(crate) async fn query(

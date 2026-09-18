@@ -6,6 +6,7 @@ use crate::Token;
 use crate::metadata::ObjectId;
 use crate::query::core::ast::days_in_month;
 use crate::query::core::names::names_equal;
+use crate::query::core::resolve::ColumnKind;
 use crate::query::core::resolve::PresentationPlan;
 use crate::query::core::restrict::AccessRestriction;
 use crate::query::core::{QueryDiagnostic, QueryDiagnosticKind};
@@ -162,6 +163,45 @@ pub enum ParameterValue {
     Binary(Vec<u8>),
     /// A list of scalar values for `В (&Список)`.
     List(Vec<ParameterValue>),
+    /// A value table for `ИЗ &Таблица`: named columns and rows of scalar
+    /// values, one value per column. The compiler inlines the rows as a
+    /// common table expression of the statement — `SELECT 1 AS "__row",
+    /// <values> UNION ALL SELECT 2, …` — and the source reads it by name.
+    /// A column's kind comes from its values (`NULL` fits any); references
+    /// to several objects make a reference of several types.
+    Table {
+        /// The columns the query addresses as `Псевдоним.Колонка`, each
+        /// with the kind every value of the column must have.
+        columns: Vec<ParameterColumn>,
+        /// The rows, each as long as `columns`.
+        rows: Vec<Vec<ParameterValue>>,
+    },
+}
+
+/// One column of a value table parameter: its name and its kind. The kind
+/// types the CTE column — the first row is cast to it, `NULL`s and an
+/// empty table are typed `NULL`s — and every value must fit it: a string,
+/// a number, a boolean, a date, raw bytes, or a reference whose object is
+/// one of the kind's targets (any object for a universal reference with
+/// no targets).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ParameterColumn {
+    /// The name the query writes after the source alias.
+    pub name: String,
+    /// The kind of the column: [`ColumnKind::String`], `Number`, `Boolean`,
+    /// `DateTime`, `Binary` or `Reference`.
+    pub kind: ColumnKind,
+}
+
+impl ParameterColumn {
+    /// A column of `name` and `kind`.
+    #[must_use]
+    pub fn new(name: impl Into<String>, kind: ColumnKind) -> Self {
+        Self {
+            name: name.into(),
+            kind,
+        }
+    }
 }
 
 /// A named parameter supplied for one compilation.

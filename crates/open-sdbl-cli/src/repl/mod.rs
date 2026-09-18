@@ -14,6 +14,7 @@ use rustyline::error::ReadlineError;
 use rustyline::history::DefaultHistory;
 use tokio::io::BufReader;
 
+use crate::access::{AccessStore, apply_access_command, parse_access_command, user_restrictions};
 use crate::error::CliError;
 use crate::output::escape_field;
 use crate::params::{ParameterStore, apply_parameter_command, parse_parameter_command};
@@ -55,6 +56,17 @@ pub(super) const CONSOLE_HELP: &str = "Commands:
                       store, list, or clear access restrictions applied to
                       ВЫБРАТЬ РАЗРЕШЕННЫЕ (SDBL condition over the table)
   \\tables             list temporary tables placed in this session
+  \\users              list the users of the base (v8users)
+  \\user <name>        show one user with the names of its roles
+  \\roles [<text>]     list the roles of the configuration
+  \\role <name> [<Вид>.<Объект>]
+                      show what a role grants, or its rights and
+                      restriction texts on one object
+  \\rls <Вид>.<Объект> [<right>]
+                      show the restriction texts and the expanded access
+                      of the current user (or every role) to the object
+  \\as <user> | clear  run ВЫБРАТЬ РАЗРЕШЕННЫЕ as that user: the roles'
+                      restrictions apply where \\restrict sets none
   \\help               show this help
   \\q                  quit
 
@@ -290,6 +302,7 @@ pub(super) async fn run(
     let mut parameters = ParameterStore::new();
     let mut session_parameters = ParameterStore::new();
     let mut restrictions = RestrictionStore::new();
+    let mut access = AccessStore::new(&snapshot);
     let mut temporary_tables = TempTablesManager::new();
 
     if interactive {
@@ -392,6 +405,23 @@ pub(super) async fn run(
                 }
                 continue;
             }
+            if let Some(command) = parse_access_command(line.trim()) {
+                let session_values = session_parameters.session_parameters();
+                if let Err(error) = apply_access_command(
+                    &mut access,
+                    command,
+                    session,
+                    &snapshot,
+                    &session_values,
+                    output,
+                )
+                .await
+                {
+                    eprintln!("error: {}", escape_field(&error.to_string()));
+                    ensure_session_remains_usable(session.is_dead())?;
+                }
+                continue;
+            }
             match execute_meta_command(
                 session,
                 &mut snapshot,
@@ -404,6 +434,7 @@ pub(super) async fn run(
                 Ok(MetaOutcome::Continue) => {}
                 Ok(MetaOutcome::Refreshed) => {
                     presentation_cache.clear();
+                    access.reset(&snapshot);
                     // Definitions hold SQL generated against the old
                     // snapshot, so they cannot survive a reload.
                     if !temporary_tables.is_empty() {
@@ -450,7 +481,21 @@ pub(super) async fn run(
                 );
                 let values = parameters.values_for(&statement);
                 let session = session_parameters.session_parameters();
-                let applied = restrictions.for_request(prepared.restriction_request());
+                let mut applied = restrictions.for_request(prepared.restriction_request());
+                match user_restrictions(
+                    &access,
+                    &snapshot,
+                    prepared.restriction_request(),
+                    &applied,
+                    &session,
+                ) {
+                    Ok(derived) => applied.extend(derived),
+                    Err(error) => {
+                        eprintln!("error: {}", escape_field(&error.to_string()));
+                        statement.clear();
+                        continue;
+                    }
+                }
                 prepared.compile_batch(
                     &snapshot,
                     &plans,

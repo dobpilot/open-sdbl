@@ -1,4 +1,18 @@
-use super::{MetadataError, MetadataErrorKind};
+use super::{Guid, MetadataError, MetadataErrorKind};
+
+/// The quoted `<guid>.0` names of an `IN` list; a list that would be
+/// empty names a resource that cannot exist, so the statement stays valid
+/// and reads nothing.
+fn role_rights_names(roles: &[Guid], opening_quote: &str) -> String {
+    if roles.is_empty() {
+        return format!("{opening_quote}none.0'");
+    }
+    roles
+        .iter()
+        .map(|guid| format!("{opening_quote}{}.0'", guid.as_str()))
+        .collect::<Vec<_>>()
+        .join(", ")
+}
 
 /// Physical layout of the 1C service tables, detected from the database
 /// catalog before any metadata statement runs.
@@ -117,17 +131,17 @@ impl PostgresMetadataQueries {
     pub const DB_NAMES_LEGACY: &'static str =
         "SELECT 0::int, binarydata FROM params WHERE rtrim(filename::text) = 'DBNames'";
 
-    /// Reads every part of bare-GUID descriptors and `.1c` predefined values
+    /// Reads every part of bare-GUID descriptors and `.1c`/`.9`/`.7` predefined values
     /// as `(name, part, data)` rows ordered by name and part.
-    pub const CONFIG: &'static str = "SELECT rtrim(filename::text), partno, binarydata FROM config WHERE rtrim(filename::text) ~ '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}(\\.1c)?$' ORDER BY filename, partno";
+    pub const CONFIG: &'static str = "SELECT rtrim(filename::text), partno, binarydata FROM config WHERE rtrim(filename::text) ~ '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}(\\.1c|\\.9|\\.7)?$' ORDER BY filename, partno";
 
     /// Reads single-row descriptors of a base without `partno` as
     /// `(name, part, data)` rows with part zero.
-    pub const CONFIG_LEGACY: &'static str = "SELECT rtrim(filename::text), 0::int, binarydata FROM config WHERE rtrim(filename::text) ~ '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}(\\.1c)?$' ORDER BY filename";
+    pub const CONFIG_LEGACY: &'static str = "SELECT rtrim(filename::text), 0::int, binarydata FROM config WHERE rtrim(filename::text) ~ '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}(\\.1c|\\.9|\\.7)?$' ORDER BY filename";
 
     /// Counts distinct resources and the compressed bytes of every part
     /// matched by [`Self::CONFIG`] or [`Self::CONFIG_LEGACY`].
-    pub const CONFIG_TOTALS: &'static str = "SELECT count(DISTINCT filename), COALESCE(sum(octet_length(binarydata)), 0) FROM config WHERE rtrim(filename::text) ~ '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}(\\.1c)?$'";
+    pub const CONFIG_TOTALS: &'static str = "SELECT count(DISTINCT filename), COALESCE(sum(octet_length(binarydata)), 0) FROM config WHERE rtrim(filename::text) ~ '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}(\\.1c|\\.9|\\.7)?$'";
 
     /// Reads every part of the opaque configuration-extension resources as
     /// `(name, part, data)` rows ordered by name and part.
@@ -190,6 +204,29 @@ impl PostgresMetadataQueries {
             Self::CONFIG
         } else {
             Self::CONFIG_LEGACY
+        }
+    }
+
+    /// The statement reading the users of the base: name, description,
+    /// operating-system login, and the show-in-list, standard-authentication
+    /// and administrative flags as integers, then `Data`, ordered by name.
+    pub const USERS: &'static str = "SELECT name::text, descr::text, COALESCE(osname::text, ''), show::int, COALESCE(eauth, false)::int, COALESCE(admrole, false)::int, data FROM v8users ORDER BY name";
+
+    /// The statement reading the rights resources `<guid>.0` of the given
+    /// roles only, as `(file name, part, data)` rows ordered by file name
+    /// and part. The identifiers are typed, so the text carries no
+    /// untrusted input; an empty list reads nothing.
+    #[must_use]
+    pub fn role_rights(layout: &StorageLayout, roles: &[Guid]) -> String {
+        let names = role_rights_names(roles, "'");
+        if layout.config_parts {
+            format!(
+                "SELECT rtrim(filename::text), partno, binarydata FROM config WHERE rtrim(filename::text) IN ({names}) ORDER BY filename, partno"
+            )
+        } else {
+            format!(
+                "SELECT rtrim(filename::text), 0::int, binarydata FROM config WHERE rtrim(filename::text) IN ({names}) ORDER BY filename"
+            )
         }
     }
 
@@ -277,19 +314,19 @@ impl MsSqlMetadataQueries {
     pub const DB_NAMES_LEGACY: &'static str =
         "SELECT CONVERT(int, 0), [BinaryData] FROM [dbo].[Params] WHERE [FileName] = N'DBNames'";
 
-    /// Reads every part of canonical-GUID descriptors and `.1c` predefined
+    /// Reads every part of canonical-GUID descriptors and `.1c`/`.9`/`.7` predefined
     /// values as `(name, part, data)` rows ordered by name and part. The name
     /// filter uses `LIKE` character classes so that SQL Server 2005–2008 R2,
     /// which lack `TRY_CONVERT`, are supported.
-    pub const CONFIG: &'static str = "SELECT CONVERT(nvarchar(128), [FileName]), [PartNo], [BinaryData] FROM [dbo].[Config] WHERE ([FileName] LIKE N'[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]-[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]-[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]-[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]-[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]' OR [FileName] LIKE N'[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]-[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]-[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]-[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]-[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f].1c') ORDER BY [FileName], [PartNo]";
+    pub const CONFIG: &'static str = "SELECT CONVERT(nvarchar(128), [FileName]), [PartNo], [BinaryData] FROM [dbo].[Config] WHERE ([FileName] LIKE N'[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]-[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]-[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]-[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]-[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]' OR [FileName] LIKE N'[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]-[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]-[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]-[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]-[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f].1c' OR [FileName] LIKE N'[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]-[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]-[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]-[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]-[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f].9' OR [FileName] LIKE N'[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]-[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]-[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]-[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]-[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f].7') ORDER BY [FileName], [PartNo]";
 
     /// Reads single-row descriptors of a base without `PartNo` as
     /// `(name, part, data)` rows with part zero.
-    pub const CONFIG_LEGACY: &'static str = "SELECT CONVERT(nvarchar(128), [FileName]), CONVERT(int, 0), [BinaryData] FROM [dbo].[Config] WHERE ([FileName] LIKE N'[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]-[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]-[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]-[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]-[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]' OR [FileName] LIKE N'[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]-[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]-[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]-[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]-[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f].1c') ORDER BY [FileName]";
+    pub const CONFIG_LEGACY: &'static str = "SELECT CONVERT(nvarchar(128), [FileName]), CONVERT(int, 0), [BinaryData] FROM [dbo].[Config] WHERE ([FileName] LIKE N'[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]-[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]-[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]-[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]-[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]' OR [FileName] LIKE N'[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]-[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]-[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]-[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]-[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f].1c' OR [FileName] LIKE N'[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]-[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]-[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]-[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]-[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f].9' OR [FileName] LIKE N'[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]-[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]-[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]-[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]-[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f].7') ORDER BY [FileName]";
 
     /// Counts distinct resources and the compressed bytes of every part
     /// matched by [`Self::CONFIG`] or [`Self::CONFIG_LEGACY`].
-    pub const CONFIG_TOTALS: &'static str = "SELECT COUNT_BIG(DISTINCT [FileName]), COALESCE(SUM(CONVERT(bigint, DATALENGTH([BinaryData]))), CONVERT(bigint, 0)) FROM [dbo].[Config] WHERE ([FileName] LIKE N'[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]-[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]-[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]-[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]-[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]' OR [FileName] LIKE N'[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]-[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]-[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]-[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]-[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f].1c')";
+    pub const CONFIG_TOTALS: &'static str = "SELECT COUNT_BIG(DISTINCT [FileName]), COALESCE(SUM(CONVERT(bigint, DATALENGTH([BinaryData]))), CONVERT(bigint, 0)) FROM [dbo].[Config] WHERE ([FileName] LIKE N'[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]-[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]-[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]-[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]-[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]' OR [FileName] LIKE N'[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]-[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]-[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]-[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]-[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f].1c' OR [FileName] LIKE N'[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]-[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]-[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]-[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]-[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f].9' OR [FileName] LIKE N'[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]-[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]-[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]-[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]-[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f].7')";
 
     /// Reads every part of the opaque configuration-extension resources as
     /// `(name, part, data)` rows ordered by name and part.
@@ -331,6 +368,28 @@ impl MsSqlMetadataQueries {
             Self::CONFIG
         } else {
             Self::CONFIG_LEGACY
+        }
+    }
+
+    /// The statement reading the users of the base: name, description,
+    /// operating-system login, and the show-in-list, standard-authentication
+    /// and administrative flags as integers, then `Data`, ordered by name.
+    pub const USERS: &'static str = "SELECT [Name], [Descr], ISNULL([OSName], N''), CONVERT(int, [Show]), CONVERT(int, ISNULL([EAuth], 0x00)), CONVERT(int, ISNULL([AdmRole], 0x00)), [Data] FROM [dbo].[v8users] ORDER BY [Name]";
+
+    /// The statement reading the rights resources `<guid>.0` of the given
+    /// roles only, as `(file name, part, data)` rows ordered by file name
+    /// and part; an empty list reads nothing.
+    #[must_use]
+    pub fn role_rights(layout: &StorageLayout, roles: &[Guid]) -> String {
+        let names = role_rights_names(roles, "N'");
+        if layout.config_parts {
+            format!(
+                "SELECT CONVERT(nvarchar(128), [FileName]), [PartNo], [BinaryData] FROM [dbo].[Config] WHERE [FileName] IN ({names}) ORDER BY [FileName], [PartNo]"
+            )
+        } else {
+            format!(
+                "SELECT CONVERT(nvarchar(128), [FileName]), 0, [BinaryData] FROM [dbo].[Config] WHERE [FileName] IN ({names}) ORDER BY [FileName]"
+            )
         }
     }
 
@@ -471,6 +530,14 @@ mod tests {
             );
             assert!(
                 query.contains(&format!("[FileName] LIKE N'{guid}.1c'")),
+                "{query}"
+            );
+            assert!(
+                query.contains(&format!("[FileName] LIKE N'{guid}.9'")),
+                "{query}"
+            );
+            assert!(
+                query.contains(&format!("[FileName] LIKE N'{guid}.7'")),
                 "{query}"
             );
         }

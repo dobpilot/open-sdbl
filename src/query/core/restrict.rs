@@ -87,6 +87,12 @@ impl AccessRestriction {
         self.object
     }
 
+    /// The tabular section the restriction targets, if any.
+    #[must_use]
+    pub fn section(&self) -> Option<&str> {
+        self.table_part.as_deref()
+    }
+
     /// The tabular-section name, when the restriction addresses one.
     #[must_use]
     pub fn table_part_name(&self) -> Option<&str> {

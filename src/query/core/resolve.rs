@@ -271,6 +271,9 @@ pub(super) fn standard_field_aliases(schema_name: &str) -> &'static [&'static st
         // spells it `RecordKind`.
         "RecordKind" => &["RecordKind", "ВидДвижения", "RecordType"],
         "LineNo" => &["LineNo", "НомерСтроки"],
+        // The extra-dimension kinds of a chart of accounts (`_Acc<N>_ExtDim<M>`).
+        "DimKind" => &["DimKind", "ВидСубконто"],
+        "TurnoverOnly" => &["TurnoverOnly", "ТолькоОбороты"],
         "Period" => &["Period", "Период"],
         "Active" => &["Active", "Активность"],
         "ParentID" => &["ParentID", "Родитель", "Parent"],
@@ -288,12 +291,41 @@ pub(super) fn standard_field_aliases(schema_name: &str) -> &'static [&'static st
         // The value type of a chart of characteristic types.
         "Type" => &["Type", "ТипЗначения", "ValueType"],
         "OwnerID" => &["OwnerID", "Владелец", "Owner"],
+        // A chart of accounts, measured on the UNF chart: `Kind` holds 0
+        // for an active, 1 for a passive, 2 for an active/passive
+        // account.
+        "Kind" => &["Kind", "Вид"],
+        "OffBalance" => &["OffBalance", "Забалансовый"],
+        "OrderField" => &["OrderField", "Порядок", "Order"],
+        // The accounts of an accounting register: debit and credit with
+        // correspondence, a single account without.
+        // The extra-dimension table of an accounting register.
+        "Correspond" => &["Correspond", "ВидДвижения", "RecordType"],
+        "Value" => &["Value", "Значение"],
+        "PeriodAdjustment" => &["PeriodAdjustment", "УточнениеПериода"],
+        "AccountDt" => &["AccountDt", "СчетДт", "AccountDr"],
+        "AccountCt" => &["AccountCt", "СчетКт", "AccountCr"],
+        "Account" => &["Account", "Счет"],
+        // The change-registration table of an exchange plan.
+        "Node" => &["Node", "Узел"],
+        "MessageNo" => &["MessageNo", "НомерСообщения"],
         _ => &[],
     }
 }
 
 /// Every standard field the compiler knows, by SchemaStorage name.
-const STANDARD_FIELD_NAMES: [&str; 27] = [
+const STANDARD_FIELD_NAMES: [&str; 38] = [
+    "Correspond",
+    "Value",
+    "PeriodAdjustment",
+    "AccountDt",
+    "AccountCt",
+    "Account",
+    "Node",
+    "MessageNo",
+    "Kind",
+    "OffBalance",
+    "OrderField",
     "ID",
     "Type",
     "EnumOrder",
@@ -488,6 +520,21 @@ pub(super) fn custom_field_name(
         })?
         .name
         .clone()
+}
+
+/// The side a physical `Fld<N>Dt`/`Fld<N>Ct` column belongs to, as the
+/// base schema name and the Russian and English suffixes of the query
+/// name; `None` for every other column.
+fn accounting_side(schema_name: &str) -> Option<(&str, &'static str, &'static str)> {
+    let (base, russian, english) = schema_name
+        .strip_suffix("Dt")
+        .map(|base| (base, "Дт", "Dr"))
+        .or_else(|| {
+            schema_name
+                .strip_suffix("Ct")
+                .map(|base| (base, "Кт", "Cr"))
+        })?;
+    base.starts_with("Fld").then_some((base, russian, english))
 }
 
 pub(super) fn indexed_custom_field_name(
@@ -714,17 +761,19 @@ impl<'snapshot> CompilationCatalog<'snapshot> {
 
     /// The name of the next recursive CTE of this statement.
     pub(super) fn next_hierarchy_name(&self) -> String {
-        format!("__hier_{}", self.hierarchy_ctes.borrow().len() + 1)
+        self.next_cte_name("__hier")
+    }
+
+    /// The name of the next CTE of this statement under `prefix`: the
+    /// hierarchy descents and the value tables passed as parameters share
+    /// one list, so one counter numbers them.
+    pub(super) fn next_cte_name(&self, prefix: &str) -> String {
+        format!("{prefix}_{}", self.hierarchy_ctes.borrow().len() + 1)
     }
 
     /// Removes and returns the recursive CTEs registered so far.
     pub(super) fn take_hierarchy_ctes(&self) -> Vec<(String, String)> {
         std::mem::take(&mut self.hierarchy_ctes.borrow_mut())
-    }
-
-    /// Whether any recursive CTE is waiting to be defined.
-    pub(super) fn has_hierarchy_ctes(&self) -> bool {
-        !self.hierarchy_ctes.borrow().is_empty()
     }
 
     /// The data separators of the snapshot as resolved for this statement.
@@ -978,11 +1027,23 @@ pub struct CompiledColumn {
     pub label: String,
     /// Structured value type of the column.
     pub kind: ColumnKind,
+    /// The name the text gave the projection, by which a nested query or
+    /// temporary table exposes the column; `label` may be truncated to the
+    /// provider's limit or suffixed for uniqueness.
+    pub(crate) name: String,
 }
 
 impl CompiledColumn {
-    pub(crate) const fn new(label: String, kind: ColumnKind) -> Self {
-        Self { label, kind }
+    pub(crate) fn new(label: String, kind: ColumnKind) -> Self {
+        Self {
+            name: label.clone(),
+            label,
+            kind,
+        }
+    }
+
+    pub(crate) fn named(name: String, label: String, kind: ColumnKind) -> Self {
+        Self { name, label, kind }
     }
 }
 
@@ -1341,6 +1402,21 @@ impl ResolvedSourceMetadata<'_> {
     }
 }
 
+/// Spells a metadata object the way a query names it —
+/// `Справочник.Номенклатура`, `Документ.Заказ.Товары` for a tabular
+/// section — or answers nothing for an object a query cannot name.
+#[must_use]
+pub fn object_query_name(snapshot: &MetadataSnapshot, object: &MetadataObject) -> Option<String> {
+    let name = object.name.as_deref()?;
+    if let Some(owner) = object.owner.and_then(|owner| snapshot.object_by_id(owner)) {
+        let owner_name = object_query_name(snapshot, owner)?;
+        return Some(format!("{owner_name}.{name}"));
+    }
+    let kind = object.kind?;
+    let kind_name = kind_query_name(Some(kind));
+    (kind_name != "Метаданные").then(|| format!("{kind_name}.{name}"))
+}
+
 /// The query spelling of a metadata kind, for messages that name a table
 /// the way the query writes it.
 pub(super) fn kind_query_name(kind: Option<MetadataKind>) -> &'static str {
@@ -1602,6 +1678,8 @@ enum ServiceTablePart {
     LeadingCalculationKinds,
     DisplacedCalculationKinds,
     ExtraDimensions,
+    /// `Субконто` of an accounting register: the `_AccRgED` table.
+    ExtraDimensionValues,
 }
 
 fn service_table_part(name: &str) -> Option<ServiceTablePart> {
@@ -1634,6 +1712,10 @@ fn service_table_part(name: &str) -> Option<ServiceTablePart> {
         (
             ServiceTablePart::ExtraDimensions,
             &["ExtraDimensions", "ВидыСубконто"],
+        ),
+        (
+            ServiceTablePart::ExtraDimensionValues,
+            &["ExtDimensions", "Субконто"],
         ),
     ];
     choices.iter().find_map(|(kind, aliases)| {
@@ -1704,6 +1786,24 @@ fn resolve_service_table_part<'snapshot>(
         )?,
         ServiceTablePart::ExtraDimensions => {
             inline_service_physical(snapshot, parent, |name| name.starts_with("ExtDim"), token)?
+        }
+        ServiceTablePart::ExtraDimensionValues => {
+            let owner_id = ObjectId::from(&object.guid);
+            snapshot
+                .objects()
+                .iter()
+                .find(|candidate| {
+                    candidate.kind == Some(MetadataKind::AccountingExtraDimensions)
+                        && candidate.owner == Some(owner_id)
+                })
+                .and_then(|candidate| candidate.physical_table.clone())
+                .ok_or_else(|| {
+                    QueryDiagnostic::at(
+                        QueryDiagnosticKind::UnknownObject,
+                        Some(token),
+                        "this register keeps no extra-dimension values",
+                    )
+                })?
         }
     };
     let live_table = snapshot.live_table(&physical).ok_or_else(|| {
@@ -1943,13 +2043,24 @@ fn project_queryable_fields(
                 _ => None,
             };
             let query_schema_name = normalize_standard_field_name(&schema_name).to_owned();
+            // A non-balance field of an accounting register is stored per
+            // side: `Fld414Dt` is `ВалютаДт`, `Fld414Ct` is `ВалютаКт`.
+            let side = accounting_side(&schema_name);
+            let base_schema_name = side.map_or(schema_name.as_str(), |(base, _, _)| base);
             let custom_name = match custom_names {
                 CustomFieldNames::Scan(snapshot) => {
-                    custom_field_name(snapshot, physical_table, &schema_name)
+                    custom_field_name(snapshot, physical_table, base_schema_name)
                 }
                 CustomFieldNames::Indexed(names) => {
-                    indexed_custom_field_name(names, physical_table, &schema_name)
+                    indexed_custom_field_name(names, physical_table, base_schema_name)
                 }
+            };
+            let (custom_name, side_alias) = match (custom_name, side) {
+                (Some(base), Some((_, russian, english))) => (
+                    Some(format!("{base}{russian}")),
+                    Some(format!("{base}{english}")),
+                ),
+                (custom_name, _) => (custom_name, None),
             };
             let name = custom_name.unwrap_or_else(|| query_schema_name.clone());
             let mut aliases = standard_field_aliases(&query_schema_name)
@@ -1959,6 +2070,9 @@ fn project_queryable_fields(
             push_unique_name(&mut aliases, query_schema_name.clone());
             push_unique_name(&mut aliases, schema_name.clone());
             push_unique_name(&mut aliases, name.clone());
+            if let Some(alias) = side_alias {
+                push_unique_name(&mut aliases, alias);
+            }
             let compound = columns.len() > 1;
             let runtime_typed = columns
                 .iter()

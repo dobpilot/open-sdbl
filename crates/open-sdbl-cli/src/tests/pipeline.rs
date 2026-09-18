@@ -98,7 +98,7 @@ async fn streamed_config_decoding_preserves_order_and_propagates_errors() {
     ]);
     let mut progress = MetadataProgress::disabled();
     progress.config_totals(2, (compressed.len() * 2) as u64);
-    let (descriptors, predefined_values, _criteria) = decode_config_stream(
+    let (descriptors, predefined_values, _criteria, _roles) = decode_config_stream(
         resources,
         2,
         2,

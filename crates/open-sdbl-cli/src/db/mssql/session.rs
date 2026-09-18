@@ -1,9 +1,7 @@
 //! Opening and driving a SQL Server session: TLS, transactions,
 //! queries and recovery after a failure.
 
-#[cfg(test)]
-use open_sdbl::metadata::StorageLayout;
-use open_sdbl::metadata::{MetadataSnapshot, MsSqlMetadataQueries};
+use open_sdbl::metadata::{MetadataSnapshot, MsSqlMetadataQueries, StorageLayout};
 use open_sdbl::query::{MsSqlBackend, MsSqlDialectLevel};
 use tiberius::{AuthMethod, Client as MsSqlClient, Config as MsSqlConfig};
 use tokio::net::TcpStream;
@@ -44,6 +42,8 @@ pub(crate) struct MsSqlSession {
     pub(super) product_version: String,
     pub(super) poisoned: bool,
     pub(super) secrets: MsSqlSecrets,
+    /// The storage layout the last metadata read detected.
+    pub(super) layout: Option<StorageLayout>,
 }
 
 impl MsSqlSession {
@@ -129,6 +129,7 @@ impl MsSqlSession {
             product_version: String::new(),
             poisoned: false,
             secrets,
+            layout: None,
         };
         session
             .execute_batch(
@@ -304,7 +305,14 @@ impl MsSqlSession {
     }
 
     pub(crate) async fn metadata(&mut self) -> Result<MetadataSnapshot, CliError> {
-        acquire_metadata(&mut MsSqlMetadataSource::new(self)).await
+        let (snapshot, layout) = acquire_metadata(&mut MsSqlMetadataSource::new(self)).await?;
+        self.layout = Some(layout);
+        Ok(snapshot)
+    }
+
+    /// The storage layout of the base, known after a metadata read.
+    pub(crate) const fn layout(&self) -> Option<StorageLayout> {
+        self.layout
     }
 
     /// Probes the service-table layout without starting a transaction; used

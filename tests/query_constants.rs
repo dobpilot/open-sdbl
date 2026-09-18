@@ -83,6 +83,8 @@ fn with_second_constant(base: MetadataSnapshot) -> MetadataSnapshot {
         separation: None,
         reference_types: Vec::new(),
         object_reference_type: None,
+        balance: None,
+        chart_of_accounts: None,
     });
     let mut schema = base.schema().clone();
     schema.tables.push(schema_table(
@@ -276,7 +278,7 @@ fn a_single_constant_source_answers_to_значение() {
     );
     assert_eq!(
         postgres_sql(&snapshot, "SELECT К.Value FROM Constant.ОсновнойТовар AS К"),
-        "SELECT \"К\".\"_fld62rref\" AS \"Значение\" FROM \"_const61\" AS \"К\" WHERE \"К\".\"_fld56\" = 7 AND \"К\".\"_fld57\" = 7"
+        "SELECT \"К\".\"_fld62rref\" AS \"Value\" FROM \"_const61\" AS \"К\" WHERE \"К\".\"_fld56\" = 7 AND \"К\".\"_fld57\" = 7"
     );
 
     let by_constant_name = compile(

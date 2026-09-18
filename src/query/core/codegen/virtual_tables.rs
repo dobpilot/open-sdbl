@@ -1,11 +1,16 @@
 use std::cell::RefCell;
 use std::collections::BTreeSet;
 
-use super::context::{CompilationContext, SourceScope};
+use super::context::{CompilationContext, JoinPlan, SourceScope};
 use super::expression::{compile_predicate, operand_token, single_column, single_column_at};
 use super::params::render_scalar_parameter;
+use super::select::append_reference_join;
 use super::separators::separator_predicates;
 use super::sources::{CompiledSourceRelation, SourceRestriction, compile_restriction_predicate};
+use super::windowed::{
+    BucketSum, Grain, RelationVariant, RunningSum, WindowedSpec, auto_grains, grain_of,
+    windowed_relation,
+};
 use crate::metadata::{
     ConfigFieldPurpose, FieldId, LiveColumn, LiveTable, MetadataKind, MetadataObject,
     MetadataSnapshot, ObjectId,
@@ -35,6 +40,19 @@ pub(super) fn compile_accumulation_relation(
     restriction: Option<&SourceRestriction<'_>>,
     dialect: SqlDialect,
 ) -> Result<CompiledSourceRelation, QueryDiagnostic> {
+    if object.kind == Some(MetadataKind::AccountingRegister) {
+        return super::accounting::compile_accounting_relation(
+            source,
+            virtual_table,
+            snapshot,
+            catalog,
+            object,
+            live_table,
+            fields,
+            restriction,
+            dialect,
+        );
+    }
     if object.kind != Some(MetadataKind::AccumulationRegister) {
         return Err(QueryDiagnostic::at(
             QueryDiagnosticKind::UnsupportedFeature,
@@ -180,6 +198,7 @@ pub(super) fn compile_accumulation_relation(
             snapshot,
             catalog,
             object,
+            fields,
             &dimension_fields,
             &resource_fields,
             live_table,
@@ -197,7 +216,8 @@ pub(super) fn compile_accumulation_relation(
         .get(2)
         .and_then(Option::as_ref)
         .map(|expression| turnovers_periodicity(expression, virtual_table))
-        .transpose()?;
+        .transpose()?
+        .flatten();
     let begin = virtual_table.arguments.first().and_then(Option::as_ref);
     let end = virtual_table.arguments.get(1).and_then(Option::as_ref);
     let condition = virtual_table.arguments.get(3).and_then(Option::as_ref);
@@ -237,21 +257,24 @@ pub(super) fn compile_accumulation_relation(
     if let Some(end) = end {
         predicates.push(format!("({qualified_period} < {end})"));
     }
-    if let Some(sql) = compile_accumulation_condition(
-        condition,
+    let condition = compile_accumulation_condition(
+        condition.as_slice(),
         source,
         virtual_table,
         snapshot,
         catalog,
         object,
         &dimension_fields,
+        None,
         live_table,
         "__aggregate_base",
         restriction,
         dialect,
-    )? {
-        predicates.push(sql);
+    )?;
+    if let Some(sql) = &condition.predicate {
+        predicates.push(sql.clone());
     }
+    let joins = condition.joins_sql(dialect);
 
     let mut projections = Vec::new();
     let mut grouping = Vec::new();
@@ -267,6 +290,18 @@ pub(super) fn compile_accumulation_relation(
             ));
             grouping.push(truncated);
             split_fields.push(turnovers_period_field(period));
+        }
+        Some(TurnoverPeriodicity::Auto) => {
+            auto_split_fields(
+                fields,
+                period,
+                &qualified_period,
+                virtual_table,
+                dialect,
+                &mut projections,
+                &mut grouping,
+                &mut dimension_fields,
+            )?;
         }
         Some(periodicity @ (TurnoverPeriodicity::Recorder | TurnoverPeriodicity::Record)) => {
             projections.push(format!(
@@ -308,22 +343,41 @@ pub(super) fn compile_accumulation_relation(
     for field in &resource_fields {
         let column = single_column(field, virtual_table.token)?;
         let value = dialect.qualified_column(Some("__aggregate_base"), &column.physical_name);
-        let value = record_kind.map_or(value.clone(), |record_kind| {
+        let signed = record_kind.map_or(value.clone(), |record_kind| {
             format!(
                 "CASE WHEN {} = 0 THEN {value} ELSE -{value} END",
                 dialect.qualified_column(Some("__aggregate_base"), &record_kind.physical_name)
             )
         });
-        let aggregate = format!("SUM({value})");
         projections.push(format!(
-            "{aggregate} AS {}",
+            "SUM({signed}) AS {}",
             dialect.quote_identifier(&column.physical_name)
         ));
         virtual_resources.push(accumulation_resource_field(field, virtual_table.kind));
+        // A balance register also answers the receipts and the expenses
+        // of the interval, the way `ОстаткиИОбороты` does.
+        if let Some(record_kind) = record_kind {
+            let kind =
+                dialect.qualified_column(Some("__aggregate_base"), &record_kind.physical_name);
+            let suffixes = AccumulationKind::balance_and_turnover_suffixes();
+            for (code, suffix) in [(0, suffixes[1]), (1, suffixes[2])] {
+                let column_name = format!("{}{}", column.physical_name, suffix.1);
+                projections.push(format!(
+                    "SUM(CASE WHEN {kind} = {code} THEN {value} ELSE 0 END) AS {}",
+                    dialect.quote_identifier(&column_name)
+                ));
+                virtual_resources.push(balance_and_turnover_field(
+                    field,
+                    column,
+                    suffix,
+                    &column_name,
+                ));
+            }
+        }
     }
 
     let mut relation = format!(
-        "(SELECT {} FROM {} AS {} WHERE {}",
+        "(SELECT {} FROM {} AS {}{joins} WHERE {}",
         projections.join(", "),
         dialect.quote_identifier(&live_table.name),
         dialect.quote_identifier("__aggregate_base"),
@@ -335,7 +389,7 @@ pub(super) fn compile_accumulation_relation(
     }
     relation.push(')');
 
-    let mut aggregate = aggregate_source(&dimension_fields, &resource_fields);
+    let mut aggregate = aggregate_source(&dimension_fields, &virtual_resources);
     aggregate.split = split_fields
         .iter()
         .flat_map(|field| field.columns.iter())
@@ -363,6 +417,7 @@ fn compile_balance_and_turnovers_relation(
     snapshot: &MetadataSnapshot,
     catalog: &CompilationCatalog<'_>,
     object: &MetadataObject,
+    all_fields: &[QueryableField],
     dimension_fields: &[QueryableField],
     resource_fields: &[QueryableField],
     live_table: &LiveTable,
@@ -377,24 +432,26 @@ fn compile_balance_and_turnovers_relation(
     // way `Обороты` does. The balances of such a split are running sums
     // the platform accumulates while reading the ordered rows rather than
     // in SQL, so they are refused where the statement reads one.
+    let mut auto = false;
     let periodicity = virtual_table
         .arguments
         .get(2)
         .and_then(Option::as_ref)
         .map(|expression| {
             let periodicity = turnovers_periodicity(expression, virtual_table)?;
-            match periodicity {
-                TurnoverPeriodicity::Calendar(unit) => Ok(unit),
-                TurnoverPeriodicity::Recorder | TurnoverPeriodicity::Record => {
-                    Err(QueryDiagnostic::at(
-                        QueryDiagnosticKind::UnsupportedFeature,
-                        operand_token(expression).or(Some(virtual_table.token)),
-                        "BalanceAndTurnovers takes a calendar periodicity",
-                    ))
+            Ok::<_, QueryDiagnostic>(match periodicity {
+                Some(TurnoverPeriodicity::Calendar(unit)) => Some(Grain::Calendar(unit)),
+                Some(TurnoverPeriodicity::Recorder) => Some(Grain::Recorder),
+                Some(TurnoverPeriodicity::Record) => Some(Grain::Record),
+                None => None,
+                Some(TurnoverPeriodicity::Auto) => {
+                    auto = true;
+                    None
                 }
-            }
+            })
         })
-        .transpose()?;
+        .transpose()?
+        .flatten();
     if let Some(argument) = virtual_table.arguments.get(3).and_then(Option::as_ref) {
         let token = operand_token(argument).unwrap_or(virtual_table.token);
         let completion = match argument {
@@ -418,13 +475,8 @@ fn compile_balance_and_turnovers_relation(
                 ),
             ));
         }
-        if periodicity.is_none() {
-            return Err(QueryDiagnostic::at(
-                QueryDiagnosticKind::UnsupportedFeature,
-                Some(token),
-                "a period completion method needs a periodicity",
-            ));
-        }
+        // Without a periodicity the method has nothing to complete; the
+        // platform accepts it there, and real configurations write it.
     }
     let begin = virtual_table
         .arguments
@@ -476,21 +528,24 @@ fn compile_balance_and_turnovers_relation(
     {
         predicates.push(format!("({period} >= {begin})"));
     }
-    if let Some(sql) = compile_accumulation_condition(
-        condition,
+    let condition = compile_accumulation_condition(
+        condition.as_slice(),
         source,
         virtual_table,
         snapshot,
         catalog,
         object,
         dimension_fields,
+        None,
         live_table,
         "__aggregate_base",
         restriction,
         dialect,
-    )? {
-        predicates.push(sql);
+    )?;
+    if let Some(sql) = &condition.predicate {
+        predicates.push(sql.clone());
     }
+    let joins = condition.joins_sql(dialect);
     let mut projections = Vec::new();
     let mut grouping = Vec::new();
     for field in dimension_fields {
@@ -505,25 +560,65 @@ fn compile_balance_and_turnovers_relation(
     }
     let kind = qualified(record_kind);
     let mut fields = dimension_fields.to_vec();
-    // A periodicity groups the movements into calendar periods, exactly
-    // as `Обороты` does; the period becomes a field of the relation and
-    // stays a grouping level even when the statement never reads it.
-    let mut split = Vec::new();
-    if let Some(unit) = periodicity {
-        let truncated = dialect.begin_of_period(&period, unit);
-        projections.push(format!(
-            "{truncated} AS {}",
-            dialect.quote_identifier(&period_column.physical_name)
-        ));
-        grouping.push(truncated);
-        let field = turnovers_period_field(period_field);
-        split = field
-            .columns
-            .iter()
-            .map(|column| column.physical_name.clone())
-            .collect();
-        fields.push(field);
+    if auto {
+        auto_split_fields(
+            all_fields,
+            period_field,
+            &period,
+            virtual_table,
+            dialect,
+            &mut projections,
+            &mut grouping,
+            &mut fields,
+        )?;
     }
+    let auto_dimensions = dimension_fields.len()..fields.len();
+    // A periodicity groups the movements into calendar periods, exactly
+    // as `Обороты` does — or by the recorder (`Регистратор`) or the record
+    // (`Запись`); the split fields become fields of the relation and stay
+    // grouping levels even when the statement never reads them.
+    let mut split = Vec::new();
+    match periodicity {
+        Some(Grain::Calendar(unit)) => {
+            let truncated = dialect.begin_of_period(&period, unit);
+            projections.push(format!(
+                "{truncated} AS {}",
+                dialect.quote_identifier(&period_column.physical_name)
+            ));
+            grouping.push(truncated);
+            let field = turnovers_period_field(period_field);
+            split = field
+                .columns
+                .iter()
+                .map(|column| column.physical_name.clone())
+                .collect();
+            fields.push(field);
+        }
+        Some(grain @ (Grain::Recorder | Grain::Record)) => {
+            let mut split_fields = vec![
+                turnovers_period_field(period_field),
+                register_standard_field(all_fields, "Recorder", virtual_table)?.clone(),
+            ];
+            if grain == Grain::Record {
+                split_fields
+                    .push(register_standard_field(all_fields, "LineNo", virtual_table)?.clone());
+            }
+            for field in split_fields {
+                for column in &field.columns {
+                    let sql = qualified(column);
+                    projections.push(format!(
+                        "{sql} AS {}",
+                        dialect.quote_identifier(&column.physical_name)
+                    ));
+                    grouping.push(sql);
+                    split.push(column.physical_name.clone());
+                }
+                fields.push(field);
+            }
+        }
+        Some(Grain::Whole) | None => {}
+    }
+    let split_field_count = fields.len() - auto_dimensions.end;
     for field in resource_fields {
         let column = single_column(field, virtual_table.token)?;
         let value = qualified(column);
@@ -570,7 +665,7 @@ fn compile_balance_and_turnovers_relation(
         }
     }
     let mut relation = format!(
-        "(SELECT {} FROM {} AS {} WHERE {}",
+        "(SELECT {} FROM {} AS {}{joins} WHERE {}",
         projections.join(", "),
         dialect.quote_identifier(&live_table.name),
         dialect.quote_identifier("__aggregate_base"),
@@ -581,21 +676,19 @@ fn compile_balance_and_turnovers_relation(
         relation.push_str(&grouping.join(", "));
     }
     relation.push(')');
-    let mut aggregate = aggregate_source(dimension_fields, &[]);
-    let resource_start = dimension_fields.len() + usize::from(periodicity.is_some());
+    let mut aggregate = aggregate_source(&fields[..auto_dimensions.end], &[]);
+    let resource_start = auto_dimensions.end + split_field_count;
     aggregate.split = split;
+    aggregate.split_dimensions = auto_dimensions.collect();
     aggregate.resources = fields
         .iter()
         .skip(resource_start)
         .flat_map(|field| field.columns.iter())
         .map(|column| column.physical_name.clone())
         .collect();
-    if periodicity.is_some() {
-        // The balance of a period is a running sum over the periods before
-        // it, which the platform accumulates while reading the rows rather
-        // than in SQL.
+    if periodicity.is_some() || auto {
         let suffixes = AccumulationKind::balance_and_turnover_suffixes();
-        aggregate.forbidden = fields
+        let balances = fields
             .iter()
             .enumerate()
             .skip(resource_start)
@@ -604,13 +697,120 @@ fn compile_balance_and_turnovers_relation(
                     field.name.ends_with(russian) || field.name.ends_with(english)
                 })
             })
-            .map(|(index, _)| {
-                (
-                    index,
-                    "a periodic BalanceAndTurnovers answers no balance column",
-                )
-            })
-            .collect();
+            .map(|(index, _)| index)
+            .collect::<Vec<_>>();
+        if dialect.running_sums() {
+            // The balance of a period is a running sum over the buckets
+            // before it: a window over the bucketed movements, prepared
+            // per grain under `Авто` and picked once the statement is known.
+            let mut row_predicates = vec![format!(
+                "{} = {}",
+                qualified(active_column),
+                dialect.boolean_literal(true)
+            )];
+            if let Some(end) = &end {
+                row_predicates.push(format!("({period} < {end})"));
+            }
+            if let Some(sql) = &condition.predicate {
+                row_predicates.push(sql.clone());
+            }
+            let rows = format!(
+                "FROM {} AS {}{joins} WHERE {}",
+                dialect.quote_identifier(&live_table.name),
+                dialect.quote_identifier("__aggregate_base"),
+                row_predicates.join(" AND ")
+            );
+            let mut bucket_sums = Vec::new();
+            let mut running = Vec::new();
+            for field in resource_fields {
+                let column = single_column(field, virtual_table.token)?;
+                let value = qualified(column);
+                let signed = format!("CASE WHEN {kind} = 0 THEN {value} ELSE -{value} END");
+                let base = &column.physical_name;
+                bucket_sums.push(BucketSum {
+                    column: format!("{base}{}", suffixes[1].1),
+                    expression: format!("CASE WHEN {kind} = 0 THEN {value} ELSE 0 END"),
+                });
+                bucket_sums.push(BucketSum {
+                    column: format!("{base}{}", suffixes[2].1),
+                    expression: format!("CASE WHEN {kind} = 1 THEN {value} ELSE 0 END"),
+                });
+                bucket_sums.push(BucketSum {
+                    column: format!("{base}{}", suffixes[3].1),
+                    expression: signed.clone(),
+                });
+                running.push(RunningSum {
+                    column: format!("{base}{}", suffixes[0].1),
+                    expression: signed.clone(),
+                    exclusive: true,
+                });
+                running.push(RunningSum {
+                    column: format!("{base}{}", suffixes[4].1),
+                    expression: signed,
+                    exclusive: false,
+                });
+            }
+            let recorder = register_standard_field(all_fields, "Recorder", virtual_table)?;
+            let spec = WindowedSpec {
+                rows: &rows,
+                alias: "__aggregate_base",
+                dimension_columns: dimension_fields
+                    .iter()
+                    .flat_map(|field| field.columns.iter())
+                    .map(|column| column.physical_name.clone())
+                    .collect(),
+                period: period.clone(),
+                period_column: &period_column.physical_name,
+                recorder: recorder
+                    .columns
+                    .iter()
+                    .map(|column| column.physical_name.clone())
+                    .collect(),
+                line: register_standard_field(all_fields, "LineNo", virtual_table)
+                    .ok()
+                    .and_then(|field| field.columns.first())
+                    .map(|column| column.physical_name.clone()),
+                begin: begin.clone(),
+                bucket_sums,
+                running,
+                derived: Vec::new(),
+                auto_levels: auto,
+            };
+            aggregate.variants = match periodicity {
+                Some(grain) => vec![RelationVariant {
+                    grain: None,
+                    balances: true,
+                    sql: windowed_relation(&spec, grain, dialect),
+                }],
+                None => auto_grains()
+                    .into_iter()
+                    .map(|grain| RelationVariant {
+                        grain: Some(grain),
+                        balances: true,
+                        sql: windowed_relation(&spec, grain, dialect),
+                    })
+                    .collect(),
+            };
+            aggregate.balance_fields = balances;
+        } else {
+            // SQL Server 2008 has no window frame: the balances of a split
+            // table stay refused there. Under `Авто` the split exists only
+            // when the statement reads one of the split fields.
+            let forbidden = balances
+                .into_iter()
+                .map(|index| {
+                    (
+                        index,
+                        "a periodic BalanceAndTurnovers answers no balance column on this server",
+                    )
+                })
+                .collect();
+            if periodicity.is_none() {
+                aggregate.forbidden_with_split = forbidden;
+            } else {
+                aggregate.forbidden = forbidden;
+            }
+        }
     }
     Ok(CompiledSourceRelation {
         sql: relation,
@@ -621,7 +821,7 @@ fn compile_balance_and_turnovers_relation(
 }
 
 /// One of the five columns `ОстаткиИОбороты` exposes per resource.
-fn balance_and_turnover_field(
+pub(super) fn balance_and_turnover_field(
     field: &QueryableField,
     column: &QueryableColumn,
     (russian, english): (&str, &str),
@@ -644,31 +844,42 @@ fn balance_and_turnover_field(
 /// How `Обороты` splits its rows: by a calendar period, by the document
 /// that wrote the records, or by the record itself.
 #[derive(Clone, Copy, PartialEq, Eq)]
-enum TurnoverPeriodicity {
+pub(super) enum TurnoverPeriodicity {
     Calendar(PeriodKind),
     Recorder,
     Record,
+    /// `Авто`: the table splits by whatever the statement reads of the
+    /// record period, its calendar levels, the recorder and the line
+    /// number, and sums away the rest.
+    Auto,
 }
 
 /// Reads the periodicity of `Обороты`: the platform writes a bare name
-/// there, which parses as a one-segment field path.
-fn turnovers_periodicity(
+/// there, which parses as a one-segment field path. `None` for `Период`
+/// — the documented default, "only for the period, do not split".
+pub(super) fn turnovers_periodicity(
     expression: &Expression<'_, '_>,
     virtual_table: &AccumulationAst<'_, '_>,
-) -> Result<TurnoverPeriodicity, QueryDiagnostic> {
+) -> Result<Option<TurnoverPeriodicity>, QueryDiagnostic> {
     let token = match expression {
         Expression::Field(reference) if reference.segments.len() == 1 => reference.last(),
         other => operand_token(other).unwrap_or(virtual_table.token),
     };
+    if names_equal(token.lexeme, "Период") || names_equal(token.lexeme, "Period") {
+        return Ok(None);
+    }
+    if names_equal(token.lexeme, "Авто") || names_equal(token.lexeme, "Auto") {
+        return Ok(Some(TurnoverPeriodicity::Auto));
+    }
     if names_equal(token.lexeme, "Регистратор") || names_equal(token.lexeme, "Recorder")
     {
-        return Ok(TurnoverPeriodicity::Recorder);
+        return Ok(Some(TurnoverPeriodicity::Recorder));
     }
     if names_equal(token.lexeme, "Запись") || names_equal(token.lexeme, "Record") {
-        return Ok(TurnoverPeriodicity::Record);
+        return Ok(Some(TurnoverPeriodicity::Record));
     }
     PeriodKind::from_name(token.lexeme)
-        .map(TurnoverPeriodicity::Calendar)
+        .map(|unit| Some(TurnoverPeriodicity::Calendar(unit)))
         .ok_or_else(|| {
             QueryDiagnostic::at(
                 QueryDiagnosticKind::UnsupportedFeature,
@@ -682,7 +893,7 @@ fn turnovers_periodicity(
 }
 
 /// A standard field of the register exposed by a periodic `Обороты`.
-fn register_standard_field<'fields>(
+pub(super) fn register_standard_field<'fields>(
     fields: &'fields [QueryableField],
     schema_name: &str,
     virtual_table: &AccumulationAst<'_, '_>,
@@ -704,7 +915,7 @@ fn register_standard_field<'fields>(
 
 /// The `Период` field a periodic `Обороты` exposes: the beginning of the
 /// period the records fall into.
-fn turnovers_period_field(period: &QueryableField) -> QueryableField {
+pub(super) fn turnovers_period_field(period: &QueryableField) -> QueryableField {
     let mut result = period.clone();
     result.name = "Период".to_owned();
     result.schema_name = "Period".to_owned();
@@ -713,6 +924,89 @@ fn turnovers_period_field(period: &QueryableField) -> QueryableField {
         column.output_label = "Период".to_owned();
     }
     result
+}
+
+/// The calendar levels of the record period an `Авто` table exposes, as
+/// `(unit, Russian suffix, English prefix)`: `ПериодМесяц` /
+/// `MonthPeriod`.
+pub(super) const AUTO_PERIOD_LEVELS: [(PeriodKind, &str, &str); 10] = [
+    (PeriodKind::Second, "Секунда", "Second"),
+    (PeriodKind::Minute, "Минута", "Minute"),
+    (PeriodKind::Hour, "Час", "Hour"),
+    (PeriodKind::Day, "День", "Day"),
+    (PeriodKind::Week, "Неделя", "Week"),
+    (PeriodKind::TenDays, "Декада", "TenDays"),
+    (PeriodKind::Month, "Месяц", "Month"),
+    (PeriodKind::Quarter, "Квартал", "Quarter"),
+    (PeriodKind::HalfYear, "Полугодие", "HalfYear"),
+    (PeriodKind::Year, "Год", "Year"),
+];
+
+/// One calendar level of the record period: `ПериодМесяц` is the month
+/// the record falls into.
+pub(super) fn auto_period_level_field(
+    period: &QueryableField,
+    russian: &str,
+    english: &str,
+) -> QueryableField {
+    let name = format!("Период{russian}");
+    let mut result = period.clone();
+    result.name = name.clone();
+    result.schema_name = format!("{english}Period");
+    result.aliases = vec![name.clone(), format!("{english}Period")];
+    for column in &mut result.columns {
+        column.physical_name = format!("_Period{english}");
+        column.output_label = name.clone();
+    }
+    result
+}
+
+/// The split fields of the `Авто` periodicity, documented as "determined
+/// by the period fields the query uses": the record period, its ten
+/// calendar levels, the recorder and the line number. They are
+/// dimensions of the relation, so the ones the statement never reads are
+/// summed away, which leaves the whole interval when it reads none.
+#[allow(clippy::too_many_arguments)]
+fn auto_split_fields(
+    fields: &[QueryableField],
+    period: &QueryableField,
+    qualified_period: &str,
+    virtual_table: &AccumulationAst<'_, '_>,
+    dialect: SqlDialect,
+    projections: &mut Vec<String>,
+    grouping: &mut Vec<String>,
+    dimension_fields: &mut Vec<QueryableField>,
+) -> Result<(), QueryDiagnostic> {
+    let period_field = turnovers_period_field(period);
+    projections.push(format!(
+        "{qualified_period} AS {}",
+        dialect.quote_identifier(&period_field.columns[0].physical_name)
+    ));
+    grouping.push(qualified_period.to_owned());
+    dimension_fields.push(period_field);
+    for (unit, russian, english) in AUTO_PERIOD_LEVELS {
+        let field = auto_period_level_field(period, russian, english);
+        let truncated = dialect.begin_of_period(qualified_period, unit);
+        projections.push(format!(
+            "{truncated} AS {}",
+            dialect.quote_identifier(&field.columns[0].physical_name)
+        ));
+        grouping.push(truncated);
+        dimension_fields.push(field);
+    }
+    for schema_name in ["Recorder", "LineNo"] {
+        let field = register_standard_field(fields, schema_name, virtual_table)?;
+        for column in &field.columns {
+            let sql = dialect.qualified_column(Some("__aggregate_base"), &column.physical_name);
+            projections.push(format!(
+                "{sql} AS {}",
+                dialect.quote_identifier(&column.physical_name)
+            ));
+            grouping.push(sql);
+        }
+        dimension_fields.push(field.clone());
+    }
+    Ok(())
 }
 
 /// What an aggregating register table needs to drop the dimensions the
@@ -735,6 +1029,46 @@ pub(super) struct AggregateSource {
     /// periodicity is an explicit request to split, so the platform keeps
     /// those groupings even when the statement never reads the columns.
     pub(super) split: Vec<String>,
+    /// Dimensions the `Авто` periodicity adds: the record period, its
+    /// calendar levels, the recorder and the line number. Reading any of
+    /// them splits the table.
+    pub(super) split_dimensions: Vec<usize>,
+    /// Fields refused only when the statement reads one of
+    /// `split_dimensions`: the balances of an `Авто` table that is split.
+    pub(super) forbidden_with_split: Vec<(usize, &'static str)>,
+    /// Columns computed from the sum of another resource once the grain
+    /// is known: the debit and credit parts of an accounting balance are
+    /// the positive and the negated negative part of the balance at the
+    /// grain the statement reads, not sums of finer parts.
+    pub(super) derived: Vec<DerivedResource>,
+    /// Relations prepared for the grains and balance columns a split
+    /// table may be read at; the one matching what the statement reads
+    /// replaces the relation before the unread dimensions are dropped.
+    pub(super) variants: Vec<RelationVariant>,
+    /// Indexes of the balance columns, which pick a variant with running
+    /// sums when read.
+    pub(super) balance_fields: Vec<usize>,
+}
+
+/// A resource column derived from the sum of a base column at the final
+/// grain: `CASE WHEN SUM(base) > 0 THEN SUM(base) ELSE 0 END` for the
+/// positive part, the negated negative part otherwise.
+#[derive(Clone)]
+pub(super) struct DerivedResource {
+    pub(super) column: String,
+    pub(super) base: String,
+    pub(super) positive: bool,
+}
+
+impl DerivedResource {
+    /// The expression over an aggregate of the base column.
+    pub(super) fn expression(&self, sum: &str) -> String {
+        if self.positive {
+            format!("CASE WHEN {sum} > 0 THEN {sum} ELSE 0 END")
+        } else {
+            format!("CASE WHEN {sum} < 0 THEN -{sum} ELSE 0 END")
+        }
+    }
 }
 
 /// Sums away the dimensions the statement never reads, as the platform
@@ -749,7 +1083,37 @@ pub(super) fn finalize_aggregate_relation(
         return Ok(());
     };
     let used = scope.used_fields.borrow();
-    for (index, reason) in &aggregate.forbidden {
+    let split = aggregate
+        .split_dimensions
+        .iter()
+        .any(|index| used.contains(index));
+    // A split table prepared per grain takes the relation of the grain
+    // the statement reads, with the balances as running sums when a
+    // balance column is read.
+    if !aggregate.variants.is_empty() {
+        let grain = grain_of(
+            aggregate
+                .split_dimensions
+                .iter()
+                .enumerate()
+                .filter(|(_, index)| used.contains(index))
+                .map(|(position, _)| position),
+        );
+        let balances = aggregate
+            .balance_fields
+            .iter()
+            .any(|index| used.contains(index));
+        if let Some(variant) = aggregate.variants.iter().find(|variant| {
+            variant.balances == balances && variant.grain.is_none_or(|own| own == grain)
+        }) {
+            scope.relation = variant.sql.clone();
+        }
+    }
+    for (index, reason) in aggregate
+        .forbidden
+        .iter()
+        .chain(aggregate.forbidden_with_split.iter().filter(|_| split))
+    {
         if used.contains(index) {
             return Err(QueryDiagnostic::at(
                 QueryDiagnosticKind::UnsupportedFeature,
@@ -789,6 +1153,17 @@ pub(super) fn finalize_aggregate_relation(
             dialect.quote_identifier(column)
         ));
     }
+    for derived in &aggregate.derived {
+        let sum = format!(
+            "SUM({})",
+            dialect.qualified_column(Some("__aggregate_used"), &derived.base)
+        );
+        projection.push(format!(
+            "{} AS {}",
+            derived.expression(&sum),
+            dialect.quote_identifier(&derived.column)
+        ));
+    }
     let mut relation = format!(
         "(SELECT {} FROM {} AS {alias}",
         projection.join(", "),
@@ -807,7 +1182,7 @@ pub(super) fn finalize_aggregate_relation(
 /// Describes the dimensions and resources of the relation the two
 /// aggregating tables build, so unused dimensions can be aggregated away
 /// once the statement is known.
-fn aggregate_source(
+pub(super) fn aggregate_source(
     dimension_fields: &[QueryableField],
     resource_fields: &[QueryableField],
 ) -> AggregateSource {
@@ -833,6 +1208,11 @@ fn aggregate_source(
             .map(|column| column.physical_name.clone())
             .collect(),
         split: Vec::new(),
+        split_dimensions: Vec::new(),
+        forbidden_with_split: Vec::new(),
+        derived: Vec::new(),
+        variants: Vec::new(),
+        balance_fields: Vec::new(),
     }
 }
 
@@ -878,13 +1258,14 @@ fn compile_accumulation_balance_relation(
         })
         .transpose()?;
     let totals_condition = compile_accumulation_condition(
-        condition,
+        condition.as_slice(),
         source,
         virtual_table,
         snapshot,
         catalog,
         object,
         dimension_fields,
+        None,
         totals.table,
         "__totals_base",
         restriction,
@@ -893,13 +1274,14 @@ fn compile_accumulation_balance_relation(
 
     let relation = if let Some(boundary) = boundary {
         let movement_condition = compile_accumulation_condition(
-            condition,
+            condition.as_slice(),
             source,
             virtual_table,
             snapshot,
             catalog,
             object,
             dimension_fields,
+            None,
             movement_table,
             "__movement_base",
             restriction,
@@ -914,8 +1296,10 @@ fn compile_accumulation_balance_relation(
             movement_period,
             record_kind,
             &movement_table.name,
-            totals_condition.as_deref(),
-            movement_condition.as_deref(),
+            totals_condition.predicate.as_deref(),
+            &totals_condition.joins_sql(dialect),
+            movement_condition.predicate.as_deref(),
+            &movement_condition.joins_sql(dialect),
             dialect,
         )?
     } else {
@@ -923,7 +1307,8 @@ fn compile_accumulation_balance_relation(
             totals,
             dimension_fields,
             resource_fields,
-            totals_condition.as_deref(),
+            totals_condition.predicate.as_deref(),
+            &totals_condition.joins_sql(dialect),
             dialect,
         )?
     };
@@ -1049,20 +1434,46 @@ fn resolve_balance_totals<'snapshot>(
 }
 
 #[allow(clippy::too_many_arguments)]
-fn compile_accumulation_condition(
-    condition: Option<&Expression<'_, '_>>,
+/// The condition of a virtual table as SQL: the predicate over the base
+/// alias, and the reference joins a dereference in it needs, which the
+/// caller renders after the `FROM` of the relation.
+pub(super) struct ConditionSql {
+    pub(super) predicate: Option<String>,
+    pub(super) joins: Vec<JoinPlan>,
+}
+
+impl ConditionSql {
+    /// The joins rendered for the `FROM` clause of the relation.
+    pub(super) fn joins_sql(&self, dialect: SqlDialect) -> String {
+        let mut sql = String::new();
+        for join in &self.joins {
+            append_reference_join(&mut sql, join, dialect);
+        }
+        sql
+    }
+}
+
+/// Compiles the conditions of a virtual table in one context over the
+/// given fields of the base alias — the data separators, the access
+/// restriction, then each condition — so a dereference in any of them
+/// gets a join of its own on the base alias.
+#[allow(clippy::too_many_arguments)]
+pub(super) fn compile_accumulation_condition(
+    conditions: &[&Expression<'_, '_>],
     source: &SourceAst<'_, '_>,
     virtual_table: &AccumulationAst<'_, '_>,
     snapshot: &MetadataSnapshot,
     catalog: &CompilationCatalog<'_>,
     object: &MetadataObject,
     dimension_fields: &[QueryableField],
+    mirror: Option<&[QueryableField]>,
     table: &LiveTable,
     alias: &str,
     restriction: Option<&SourceRestriction<'_>>,
     dialect: SqlDialect,
-) -> Result<Option<String>, QueryDiagnostic> {
+) -> Result<ConditionSql, QueryDiagnostic> {
     let mut predicates = separator_predicates(catalog, table, alias, virtual_table.token, dialect)?;
+    let mut joins = Vec::new();
     if let Some(restriction) = restriction {
         let predicate = compile_restriction_predicate(
             restriction,
@@ -1074,21 +1485,15 @@ fn compile_accumulation_condition(
             alias,
             dialect,
         )?;
-        if !predicate.reference_joins.is_empty() {
-            return Err(QueryDiagnostic::unpositioned(
-                QueryDiagnosticKind::UnsupportedFeature,
-                format!(
-                    "{} condition supports direct dimensions and separators only",
-                    virtual_table.kind.name()
-                ),
-            )
-            .into_restriction(&restriction.label));
-        }
+        joins.extend(predicate.reference_joins);
         predicates.push(predicate.sql);
     }
-    let Some(condition) = condition else {
-        return Ok(conjunction(predicates));
-    };
+    if conditions.is_empty() {
+        return Ok(ConditionSql {
+            predicate: conjunction(predicates),
+            joins,
+        });
+    }
     let mut context = CompilationContext {
         snapshot,
         catalog,
@@ -1100,11 +1505,12 @@ fn compile_accumulation_condition(
             object_name: source.object.lexeme.to_owned(),
             source_alias: Some(alias.to_owned()),
             identity_is_base: true,
-            reference_joins: Vec::new(),
+            reference_joins: joins,
             separator_predicates: Vec::new(),
             constants: None,
             aggregate: None,
             used_fields: RefCell::new(BTreeSet::new()),
+            current_table: false,
         }],
         dialect,
         aggregates_allowed: false,
@@ -1114,24 +1520,67 @@ fn compile_accumulation_condition(
         section_aliases: std::cell::Cell::new(0),
         local_sources: 1,
     };
-    let sql = compile_predicate(condition, &mut context)?;
-    if !context.sources[0].reference_joins.is_empty() {
-        return Err(QueryDiagnostic::at(
-            QueryDiagnosticKind::UnsupportedFeature,
-            Some(virtual_table.token),
-            format!(
-                "{} condition supports direct dimensions and separators only",
-                virtual_table.kind.name()
-            ),
-        ));
+    // The names the mirror reads through other columns (as the join
+    // plans key them, by schema name): a condition on one of them holds
+    // when either reading does.
+    let two_sided = mirror
+        .map(|mirror| {
+            mirror
+                .iter()
+                .filter(|field| {
+                    dimension_fields.iter().any(|base| {
+                        names_equal(&base.name, &field.name)
+                            && base
+                                .columns
+                                .iter()
+                                .map(|column| &column.physical_name)
+                                .ne(field.columns.iter().map(|column| &column.physical_name))
+                    })
+                })
+                .map(|field| field.schema_name.clone())
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    for condition in conditions {
+        let predicate = compile_predicate(condition, &mut context)?;
+        let Some(mirror) = mirror else {
+            predicates.push(predicate);
+            continue;
+        };
+        retire_joins(&mut context, &two_sided);
+        let base = std::mem::replace(&mut context.sources[0].fields, mirror.to_vec().into());
+        let mirrored = compile_predicate(condition, &mut context)?;
+        context.sources[0].fields = base;
+        retire_joins(&mut context, &two_sided);
+        predicates.push(if mirrored == predicate {
+            predicate
+        } else {
+            format!("({predicate} OR {mirrored})")
+        });
     }
-    predicates.push(sql);
-    Ok(conjunction(predicates))
+    Ok(ConditionSql {
+        predicate: conjunction(predicates),
+        joins: std::mem::take(&mut context.sources[0].reference_joins),
+    })
+}
+
+/// Keeps the reference joins hung on a two-sided name from serving the
+/// other side's reading of it: the join stays in the plan under a name no
+/// field carries.
+fn retire_joins(context: &mut CompilationContext<'_, '_>, two_sided: &[String]) {
+    for join in &mut context.sources[0].reference_joins {
+        if two_sided
+            .iter()
+            .any(|name| names_equal(name, &join.source_field))
+        {
+            join.source_field.insert(0, '\u{1}');
+        }
+    }
 }
 
 /// `None` for no predicate, otherwise the predicates joined by `AND`; each
 /// one is already parenthesized by the expression compiler.
-fn conjunction(predicates: Vec<String>) -> Option<String> {
+pub(super) fn conjunction(predicates: Vec<String>) -> Option<String> {
     (!predicates.is_empty()).then(|| predicates.join(" AND "))
 }
 
@@ -1140,6 +1589,7 @@ fn compile_current_balance_sql(
     dimension_fields: &[QueryableField],
     resource_fields: &[QueryableField],
     condition: Option<&str>,
+    joins: &str,
     dialect: SqlDialect,
 ) -> Result<String, QueryDiagnostic> {
     let (dimension_projection, grouping) =
@@ -1169,7 +1619,7 @@ fn compile_current_balance_sql(
         predicates.push(condition.to_owned());
     }
     let mut sql = format!(
-        "(SELECT {} FROM {} AS {} WHERE {}",
+        "(SELECT {} FROM {} AS {}{joins} WHERE {}",
         projections.join(", "),
         dialect.quote_identifier(&totals.table.name),
         dialect.quote_identifier("__totals_base"),
@@ -1191,7 +1641,9 @@ fn compile_historical_balance_sql(
     record_kind: &QueryableColumn,
     movement_table: &str,
     totals_condition: Option<&str>,
+    totals_joins: &str,
     movement_condition: Option<&str>,
+    movement_joins: &str,
     dialect: SqlDialect,
 ) -> Result<String, QueryDiagnostic> {
     let totals_period = dialect.qualified_column(Some("__anchor_totals"), &totals.period.name);
@@ -1268,7 +1720,7 @@ fn compile_historical_balance_sql(
     let movement_base = dialect.quote_identifier("__movement_base");
     let mut sql = match dialect {
         SqlDialect::Postgres => format!(
-            "(WITH {balance_anchor} AS (SELECT {anchor} AS {period_alias} FROM {totals_table} AS {anchor_totals}), {balance_parts} AS (SELECT {} FROM {totals_table} AS {totals_base} CROSS JOIN {balance_anchor} WHERE {} UNION ALL SELECT {} FROM {movement_table} AS {movement_base} CROSS JOIN {balance_anchor} WHERE {}) SELECT {} FROM {balance_parts}",
+            "(WITH {balance_anchor} AS (SELECT {anchor} AS {period_alias} FROM {totals_table} AS {anchor_totals}), {balance_parts} AS (SELECT {} FROM {totals_table} AS {totals_base}{totals_joins} CROSS JOIN {balance_anchor} WHERE {} UNION ALL SELECT {} FROM {movement_table} AS {movement_base}{movement_joins} CROSS JOIN {balance_anchor} WHERE {}) SELECT {} FROM {balance_parts}",
             totals_parts.join(", "),
             totals_predicates.join(" AND "),
             movement_parts.join(", "),
@@ -1280,7 +1732,7 @@ fn compile_historical_balance_sql(
                 "(SELECT {anchor} AS {period_alias} FROM {totals_table} AS {anchor_totals}) AS {balance_anchor}"
             );
             format!(
-                "(SELECT {} FROM (SELECT {} FROM {totals_table} AS {totals_base} CROSS JOIN {anchor_relation} WHERE {} UNION ALL SELECT {} FROM {movement_table} AS {movement_base} CROSS JOIN {anchor_relation} WHERE {}) AS {balance_parts}",
+                "(SELECT {} FROM (SELECT {} FROM {totals_table} AS {totals_base}{totals_joins} CROSS JOIN {anchor_relation} WHERE {} UNION ALL SELECT {} FROM {movement_table} AS {movement_base}{movement_joins} CROSS JOIN {anchor_relation} WHERE {}) AS {balance_parts}",
                 outer_projection.join(", "),
                 totals_parts.join(", "),
                 totals_predicates.join(" AND "),
@@ -1395,7 +1847,7 @@ pub(super) fn compile_date_parameter(
     }
 }
 
-fn compile_virtual_period_literal(
+pub(super) fn compile_virtual_period_literal(
     expression: &Expression<'_, '_>,
     virtual_table: &AccumulationAst<'_, '_>,
     argument: &str,

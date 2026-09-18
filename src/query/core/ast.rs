@@ -87,12 +87,29 @@ pub(super) struct IntoAst<'tokens, 'source> {
     pub(super) append: bool,
 }
 
-/// `ИНДЕКСИРОВАТЬ ПО [НАБОРАМ]` with its field sets. `УНИКАЛЬНО` is parsed
+/// `ИНДЕКСИРОВАТЬ ПО [НАБОРАМ]` with its field sets — the label token of
+/// each field, the last segment of a qualified one. `УНИКАЛЬНО` is parsed
 /// and dropped because no index is generated.
 #[derive(Debug)]
 pub(super) struct IndexAst<'tokens, 'source> {
     pub(super) token: &'tokens Token<'source>,
-    pub(super) sets: Vec<Vec<&'tokens Token<'source>>>,
+    pub(super) sets: Vec<Vec<IndexField<'tokens, 'source>>>,
+}
+
+/// One field of `ИНДЕКСИРОВАТЬ ПО`: a label, or a path qualified by the
+/// source alias that names a projected field.
+#[derive(Debug)]
+pub(super) struct IndexField<'tokens, 'source> {
+    pub(super) segments: Vec<&'tokens Token<'source>>,
+}
+
+impl<'tokens, 'source> IndexField<'tokens, 'source> {
+    /// The label the field names when read as one: its last segment.
+    pub(super) fn label(&self) -> &'tokens Token<'source> {
+        self.segments
+            .last()
+            .expect("an index field has at least one segment")
+    }
 }
 
 #[derive(Debug)]
@@ -141,6 +158,9 @@ pub(super) struct SourceAst<'tokens, 'source> {
     pub(super) nested: Option<Box<QueryAst<'tokens, 'source>>>,
     /// A bare identifier naming a temporary table of the batch.
     pub(super) temporary: bool,
+    /// `&Таблица`: a value table passed as a parameter; `object` is the
+    /// parameter token.
+    pub(super) parameter: bool,
     /// The `Константы`/`Constants` table: one row with every constant.
     pub(super) constants: bool,
     /// The value a filter criterion searches for:
@@ -203,6 +223,10 @@ pub(super) enum AccumulationKind {
     Balance,
     Turnovers,
     BalanceAndTurnovers,
+    /// `ОборотыДтКт`, an accounting-register table.
+    DrCrTurnovers,
+    /// `ДвиженияССубконто`, an accounting-register table.
+    RecordsWithExtDimensions,
 }
 
 impl AccumulationKind {
@@ -211,6 +235,23 @@ impl AccumulationKind {
             Self::Balance => "Balance",
             Self::Turnovers => "Turnovers",
             Self::BalanceAndTurnovers => "BalanceAndTurnovers",
+            Self::DrCrTurnovers => "DrCrTurnovers",
+            Self::RecordsWithExtDimensions => "RecordsWithExtDimensions",
+        }
+    }
+
+    /// How many arguments the table takes: the accumulation-register
+    /// count, or the accounting-register count when `accounting`.
+    pub(super) const fn argument_count(self, accounting: bool) -> usize {
+        match (self, accounting) {
+            (Self::Balance, false) => 2,
+            (Self::Balance, true) => 4,
+            (Self::Turnovers, false) => 4,
+            (Self::Turnovers, true) => 8,
+            (Self::BalanceAndTurnovers, false) => 5,
+            (Self::BalanceAndTurnovers, true) => 7,
+            (Self::DrCrTurnovers, _) => 8,
+            (Self::RecordsWithExtDimensions, _) => 5,
         }
     }
 
@@ -229,7 +270,10 @@ impl AccumulationKind {
     pub(super) const fn resource_suffix(self) -> (&'static str, &'static str) {
         match self {
             Self::Balance => ("Остаток", "Balance"),
-            Self::Turnovers | Self::BalanceAndTurnovers => ("Оборот", "Turnover"),
+            Self::Turnovers
+            | Self::BalanceAndTurnovers
+            | Self::DrCrTurnovers
+            | Self::RecordsWithExtDimensions => ("Оборот", "Turnover"),
         }
     }
 }
@@ -359,6 +403,8 @@ pub(super) enum OrderKeyAst<'tokens, 'source> {
 /// A scalar function of the 1C string and arithmetic library.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum ScalarFunction {
+    /// `АВТОНОМЕРЗАПИСИ()`: a row number, unique within the statement.
+    RecordAutoNumber,
     Substring,
     StringLength,
     TrimAll,
@@ -393,6 +439,7 @@ impl ScalarFunction {
             Self::StrReplace => (3, 3),
             Self::Left | Self::Right | Self::StrFind | Self::Pow => (2, 2),
             Self::Round => (1, 2),
+            Self::RecordAutoNumber => (0, 0),
             _ => (1, 1),
         }
     }
@@ -434,6 +481,7 @@ impl ScalarFunction {
     /// The stable name used in diagnostics.
     pub(super) const fn name(self) -> &'static str {
         match self {
+            Self::RecordAutoNumber => "RECORDAUTONUMBER",
             Self::Substring => "SUBSTRING",
             Self::StringLength => "STRINGLENGTH",
             Self::TrimAll => "TRIMALL",
@@ -549,6 +597,21 @@ pub(super) enum Expression<'tokens, 'source> {
         kind: &'tokens Token<'source>,
         object: &'tokens Token<'source>,
         value: &'tokens Token<'source>,
+    },
+    /// `(<expression>, <expression>, …)`: the left side of a tuple
+    /// membership test `(А, Б) В (ВЫБРАТЬ …)`.
+    Tuple {
+        token: &'tokens Token<'source>,
+        items: Vec<Self>,
+    },
+    /// `ЗНАЧЕНИЕ(<system enumeration>.<value>)`: a value of
+    /// `ВидДвиженияНакопления`, `ВидДвиженияБухгалтерии` or `ВидСчета`,
+    /// carried as the number the platform stores for it.
+    SystemValue {
+        token: &'tokens Token<'source>,
+        enumeration: &'tokens Token<'source>,
+        value: &'tokens Token<'source>,
+        code: u8,
     },
     /// `УНИКАЛЬНЫЙИДЕНТИФИКАТОР(<reference field>)`.
     Uuid {

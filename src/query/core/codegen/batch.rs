@@ -5,7 +5,9 @@ use std::collections::BTreeSet;
 use super::orchestrate::{PresentationCompilation, compile_query_ast};
 use crate::Token;
 use crate::metadata::MetadataSnapshot;
-use crate::query::core::ast::{BatchAst, IndexAst, IntoAst, QueryAst, StatementAst};
+use crate::query::core::ast::{
+    BatchAst, Expression, IndexAst, IntoAst, Projection, QueryAst, StatementAst,
+};
 use crate::query::core::dialect::SqlDialect;
 use crate::query::core::names::names_equal;
 use crate::query::core::resolve::{ColumnKind, CompilationCatalog, CompiledColumn, CompiledQuery};
@@ -16,6 +18,9 @@ use crate::query::core::{QueryDiagnostic, QueryDiagnosticKind};
 struct CompiledStatement {
     query: CompiledQuery,
     dependencies: BTreeSet<u32>,
+    /// The recursive CTEs of `В ИЕРАРХИИ` a defining statement leaves to
+    /// the manager; a final statement attaches its own.
+    hierarchy: Vec<(String, String)>,
 }
 
 /// Compiles a batch against `manager`, which is updated only on success.
@@ -84,18 +89,13 @@ fn compile_statement(
         presentations,
         into.map(|into| into.token),
     )?;
-    if let Some(into) = into
-        && catalog.has_hierarchy_ctes()
-    {
-        return Err(QueryDiagnostic::at(
-            QueryDiagnosticKind::UnsupportedFeature,
-            Some(into.token),
-            format!(
-                "IN HIERARCHY cannot be used in a statement that defines the temporary table {:?}",
-                into.name.lexeme
-            ),
-        ));
-    }
+    // A defining statement cannot open a `WITH` of its own inside the
+    // table's CTE, so its hierarchy CTEs travel with the definition.
+    let hierarchy = if into.is_some() {
+        catalog.take_hierarchy_ctes()
+    } else {
+        Vec::new()
+    };
     presentations
         .restriction_targets
         .extend(catalog.restriction_targets());
@@ -103,11 +103,12 @@ fn compile_statement(
         .used_restrictions
         .extend(catalog.used_restrictions());
     if let Some(index) = &query.index {
-        check_index_fields(index, &compiled.columns)?;
+        check_index_fields(index, query, &compiled.columns)?;
     }
     Ok(CompiledStatement {
         query: compiled,
         dependencies: catalog.used_temporary(),
+        hierarchy,
     })
 }
 
@@ -128,6 +129,7 @@ fn place_statement(
         let CompiledStatement {
             query,
             dependencies,
+            hierarchy: _,
         } = compiled;
         return Ok(Some(CompiledQuery {
             sql: join_with_prefix(with_prefix(manager, &dependencies, dialect), &query.sql),
@@ -140,6 +142,7 @@ fn place_statement(
     let CompiledStatement {
         query: statement,
         dependencies,
+        hierarchy,
     } = compiled;
     if into.append {
         let previous = manager.source(into.name)?;
@@ -163,6 +166,7 @@ fn place_statement(
             body,
             previous.columns,
             definition,
+            hierarchy,
             dialect,
             fingerprint,
         )?;
@@ -181,6 +185,7 @@ fn place_statement(
         statement.sql,
         statement.columns,
         dependencies,
+        hierarchy,
         dialect,
         fingerprint,
     )?;
@@ -237,21 +242,33 @@ fn with_prefix(
     dependencies: &BTreeSet<u32>,
     dialect: SqlDialect,
 ) -> String {
+    let mut recursive = false;
     let definitions = dependencies
         .iter()
         .filter_map(|id| manager.entry(*id))
-        .map(|entry| {
-            format!(
-                "{} AS ({})",
-                dialect.quote_identifier(&cte_name(entry.id)),
-                entry.sql
-            )
+        .flat_map(|entry| {
+            recursive |= !entry.ctes.is_empty();
+            entry
+                .ctes
+                .iter()
+                .map(|(name, sql)| format!("{} AS ({sql})", dialect.quote_identifier(name)))
+                .chain(std::iter::once(format!(
+                    "{} AS ({})",
+                    dialect.quote_identifier(&cte_name(entry.id)),
+                    entry.sql
+                )))
+                .collect::<Vec<_>>()
         })
         .collect::<Vec<_>>();
     if definitions.is_empty() {
         return String::new();
     }
-    format!("WITH {} ", definitions.join(", "))
+    let keyword = if recursive && dialect == SqlDialect::Postgres {
+        "WITH RECURSIVE"
+    } else {
+        "WITH"
+    };
+    format!("{keyword} {} ", definitions.join(", "))
 }
 
 /// Prepends the temporary-table `WITH` list to a statement, merging the
@@ -260,16 +277,23 @@ fn join_with_prefix(prefix: String, sql: &str) -> String {
     if prefix.is_empty() {
         return sql.to_owned();
     }
-    let definitions = prefix
-        .trim_end()
-        .strip_prefix("WITH ")
-        .expect("the temporary-table prefix starts with WITH");
+    let prefix = prefix.trim_end();
+    let (definitions, recursive) = match prefix.strip_prefix("WITH RECURSIVE ") {
+        Some(definitions) => (definitions, true),
+        None => (
+            prefix
+                .strip_prefix("WITH ")
+                .expect("the temporary-table prefix starts with WITH"),
+            false,
+        ),
+    };
     if let Some(rest) = sql.strip_prefix("WITH RECURSIVE ") {
         return format!("WITH RECURSIVE {definitions}, {rest}");
     }
+    let keyword = if recursive { "WITH RECURSIVE" } else { "WITH" };
     match sql.strip_prefix("WITH ") {
-        Some(rest) => format!("WITH {definitions}, {rest}"),
-        None => prefix + sql,
+        Some(rest) => format!("{keyword} {definitions}, {rest}"),
+        None => format!("{keyword} {definitions} {sql}"),
     }
 }
 
@@ -330,21 +354,50 @@ fn references_match(target: &ColumnKind, appended: &ColumnKind) -> bool {
 
 /// Index fields name columns of the statement; no index is generated
 /// because a common table expression cannot carry one.
+/// An index field names a selection-list column: by its label, by the
+/// alias the text gave it when the label had to be truncated, or — when
+/// qualified — by the projected field path itself, as the platform
+/// accepts `ИНДЕКСИРОВАТЬ ПО Т.Поле` for `Т.Поле КАК Иное`.
 fn check_index_fields(
     index: &IndexAst<'_, '_>,
+    query: &QueryAst<'_, '_>,
     columns: &[CompiledColumn],
 ) -> Result<(), QueryDiagnostic> {
+    let projected_paths = query
+        .branches
+        .first()
+        .map(|branch| {
+            branch
+                .projection
+                .iter()
+                .filter_map(|item| match &item.expression {
+                    Projection::Field(reference)
+                    | Projection::Scalar(Expression::Field(reference)) => Some(&reference.segments),
+                    _ => None,
+                })
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
     for field in index.sets.iter().flatten() {
-        if !columns
-            .iter()
-            .any(|column| names_equal(&column.label, field.lexeme))
-        {
+        let label = field.label();
+        let named = columns.iter().any(|column| {
+            names_equal(&column.label, label.lexeme) || names_equal(&column.name, label.lexeme)
+        });
+        let projected = field.segments.len() > 1
+            && projected_paths.iter().any(|segments| {
+                segments.len() == field.segments.len()
+                    && segments
+                        .iter()
+                        .zip(&field.segments)
+                        .all(|(projected, named)| names_equal(projected.lexeme, named.lexeme))
+            });
+        if !named && !projected {
             return Err(QueryDiagnostic::at(
                 QueryDiagnosticKind::TemporaryTable,
-                Some(field),
+                Some(label),
                 format!(
                     "index field {:?} is not in the selection list",
-                    field.lexeme
+                    label.lexeme
                 ),
             ));
         }

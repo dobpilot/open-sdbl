@@ -318,3 +318,22 @@ identifier.
 #### Scenario: Virtual table name
 - **WHEN** input contains `ИЗ РегистрНакопления.Продажи.ОстаткиИОбороты КАК О`
 - **THEN** the name is the virtual table keyword
+
+### Requirement: Recognize accounting virtual-table keywords
+The lexer SHALL classify `ОБОРОТЫДТКТ`/`DRCRTURNOVERS` and
+`ДВИЖЕНИЯССУБКОНТО`/`RECORDSWITHEXTDIMENSIONS` as keywords that stay
+contextual identifiers, so a field or alias spelled the same way keeps
+parsing.
+
+#### Scenario: Keyword after a register name
+- **WHEN** `РегистрБухгалтерии.Управленческий.ОборотыДтКт(` is tokenized
+- **THEN** `ОборотыДтКт` is a keyword token
+
+### Requirement: Automatic ordering and record number keywords
+The lexer SHALL recognise `АВТОУПОРЯДОЧИВАНИЕ` / `AUTOORDER` as
+`Keyword::AutoOrder` and `АВТОНОМЕРЗАПИСИ` / `RECORDAUTONUMBER` as
+`Keyword::RecordAutoNumber`; the keyword table holds 108 entries.
+
+#### Scenario: Both spellings
+- **WHEN** `АВТОУПОРЯДОЧИВАНИЕ` and `RECORDAUTONUMBER` are tokenized
+- **THEN** each is a keyword token of the respective kind

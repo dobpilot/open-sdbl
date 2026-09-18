@@ -21,6 +21,14 @@ pub enum ConfigFieldPurpose {
     AccumulationRegisterResource,
     /// Accumulation-register attribute.
     AccumulationRegisterAttribute,
+    /// Accounting-register dimension; [`ConfigDescriptor::balance`] tells a
+    /// balance dimension from a non-balance one.
+    AccountingRegisterDimension,
+    /// Accounting-register resource; [`ConfigDescriptor::balance`] tells a
+    /// balance resource from a non-balance one.
+    AccountingRegisterResource,
+    /// Accounting-register attribute.
+    AccountingRegisterAttribute,
 }
 
 impl ConfigFieldPurpose {
@@ -32,6 +40,10 @@ impl ConfigFieldPurpose {
             "b64d9a43-1642-11d6-a3c7-0050bae0a776" => Some(Self::AccumulationRegisterDimension),
             "b64d9a41-1642-11d6-a3c7-0050bae0a776" => Some(Self::AccumulationRegisterResource),
             "b64d9a42-1642-11d6-a3c7-0050bae0a776" => Some(Self::AccumulationRegisterAttribute),
+            // Measured on 8.3.27 against the UNF register `Управленческий`.
+            "35b63b9d-0adf-4625-a047-10ae874c19a3" => Some(Self::AccountingRegisterDimension),
+            "63405499-7491-4ce3-ac72-43433cbe4112" => Some(Self::AccountingRegisterResource),
+            "9d28ee33-9c7e-4a1b-8f13-50aa9b36607b" => Some(Self::AccountingRegisterAttribute),
             _ => None,
         }
     }
@@ -192,17 +204,45 @@ pub struct ConfigDescriptor {
     /// carried by that object's own descriptor. It is the identifier an
     /// attribute of another object names to point at this one.
     pub object_reference_type: Option<Guid>,
+    /// Whether an accounting-register dimension or resource is a balance
+    /// one: the flag that follows the field's own block in its collection
+    /// entry (`{6, {27, …}, 1, …}`), measured on 8.3.27 against the UNF
+    /// register. `None` for every other descriptor.
+    pub balance: Option<bool>,
+    /// The chart of accounts an accounting register is bound to: the first
+    /// identifier after the register's own header in its class list,
+    /// measured on 8.3.27. `None` for every other descriptor.
+    pub chart_of_accounts: Option<Guid>,
 }
 
 /// One catalog predefined value decoded from an authoritative `.1c` resource.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ConfigPredefinedValue {
-    /// GUID of the owning catalog, taken from the resource file name.
+    /// GUID of the owning object, taken from the resource file name.
     pub owner_guid: Guid,
     /// Stable predefined-value GUID stored in `_PredefinedID`.
     pub value_guid: Guid,
     /// Exact symbolic metadata name accepted by `ЗНАЧЕНИЕ`/`VALUE`.
     pub name: String,
+    /// The resource the value was decoded from, which says the kind of
+    /// object it may belong to.
+    pub source: PredefinedSource,
+}
+
+/// The Config resource a predefined value comes from. A catalog keeps its
+/// predefined items in `<guid>.1c`; a chart of accounts keeps its accounts
+/// in `<guid>.9` (measured on 8.3.27 against the UNF chart
+/// `Управленческий`). The suffixes of other classes carry other content,
+/// so resolution keeps a value only for an object of the matching kind.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PredefinedSource {
+    /// A `<guid>.1c` resource of a catalog.
+    Catalog,
+    /// A `<guid>.9` resource of a chart of accounts.
+    ChartOfAccounts,
+    /// A `<guid>.7` resource of a chart of characteristic types (measured
+    /// on the demo Бухгалтерия предприятия base on 8.3.27).
+    ChartOfCharacteristicTypes,
 }
 
 /// One filter criterion decoded from its Config resource: the objects it
@@ -226,6 +266,9 @@ pub struct ParsedConfigResource {
     pub predefined_values: Vec<ConfigPredefinedValue>,
     /// The filter criterion this resource declares, if it declares one.
     pub criterion: Option<ConfigCriterion>,
+    /// The role identifiers the roles collection of the configuration
+    /// root lists, when this is the root resource; empty otherwise.
+    pub roles: Vec<Guid>,
     /// Number of inflated bytes charged to the caller's total budget.
     pub decoded_bytes: usize,
 }
@@ -281,7 +324,10 @@ pub fn parse_config_predefined_values(
     file_name: &str,
     compressed: &[u8],
 ) -> Result<Vec<ConfigPredefinedValue>, MetadataError> {
-    if file_name.strip_suffix(".1c").is_none() {
+    if [".1c", ".9", ".7"]
+        .iter()
+        .all(|suffix| file_name.strip_suffix(suffix).is_none())
+    {
         return Ok(Vec::new());
     }
     Ok(
@@ -323,18 +369,26 @@ pub fn parse_config_resource_bounded(
 ) -> Result<ParsedConfigResource, MetadataError> {
     enum ResourceKind {
         Descriptors(Guid),
-        Predefined(Guid),
+        Predefined(Guid, PredefinedSource),
     }
 
     let kind = if let Ok(resource) = Guid::from_str(file_name) {
         ResourceKind::Descriptors(resource)
     } else if let Some(owner) = file_name.strip_suffix(".1c") {
-        ResourceKind::Predefined(Guid::from_str(owner)?)
+        ResourceKind::Predefined(Guid::from_str(owner)?, PredefinedSource::Catalog)
+    } else if let Some(owner) = file_name.strip_suffix(".9") {
+        ResourceKind::Predefined(Guid::from_str(owner)?, PredefinedSource::ChartOfAccounts)
+    } else if let Some(owner) = file_name.strip_suffix(".7") {
+        ResourceKind::Predefined(
+            Guid::from_str(owner)?,
+            PredefinedSource::ChartOfCharacteristicTypes,
+        )
     } else {
         return Ok(ParsedConfigResource {
             descriptors: Vec::new(),
             predefined_values: Vec::new(),
             criterion: None,
+            roles: Vec::new(),
             decoded_bytes: 0,
         });
     };
@@ -345,16 +399,18 @@ pub fn parse_config_resource_bounded(
             descriptors: parse_config_descriptors_streaming(&decoded, &resource)?,
             predefined_values: Vec::new(),
             criterion: parse_criterion(&decoded, &resource),
+            roles: super::roles::roles_collection(&decoded),
             decoded_bytes,
         }),
-        ResourceKind::Predefined(owner) => {
+        ResourceKind::Predefined(owner, source) => {
             let value = parse_serialized(&decoded)?;
             let mut predefined_values = Vec::new();
-            collect_predefined_values(&value, &owner, &mut predefined_values);
+            collect_predefined_values(&value, &owner, source, &mut predefined_values);
             Ok(ParsedConfigResource {
                 descriptors: Vec::new(),
                 predefined_values,
                 criterion: None,
+                roles: Vec::new(),
                 decoded_bytes,
             })
         }
@@ -449,21 +505,38 @@ fn criterion_content(values: &[Value]) -> Vec<Guid> {
 fn collect_predefined_values(
     value: &Value,
     owner_guid: &Guid,
+    source: PredefinedSource,
     predefined: &mut Vec<ConfigPredefinedValue>,
 ) {
     let Value::List(values) = value else {
         return;
     };
-    if let Some(projected) = project_predefined_value(values, owner_guid) {
+    if let Some(projected) = project_predefined_value(values, owner_guid, source) {
         predefined.push(projected);
     }
     for value in values {
-        collect_predefined_values(value, owner_guid, predefined);
+        collect_predefined_values(value, owner_guid, source, predefined);
     }
 }
 
-fn project_predefined_value(values: &[Value], owner_guid: &Guid) -> Option<ConfigPredefinedValue> {
-    if values.len() != 11 || values.first()?.as_u32()? != 2 || values.get(2)?.as_u32()? != 7 {
+/// One row of a predefined-item table: `{2, <index>, <column count>,
+/// {"#", <type>, {1, <guid>}}, <columns…>, <trailer>}`. A catalog's `.1c`
+/// table has seven columns and names the item in its fourth; a chart of
+/// accounts' `.9` table has ten and names the account in its second — in
+/// both the name is the first string column after the reference.
+fn project_predefined_value(
+    values: &[Value],
+    owner_guid: &Guid,
+    source: PredefinedSource,
+) -> Option<ConfigPredefinedValue> {
+    if values.first()?.as_u32()? != 2 {
+        return None;
+    }
+    // A row of a chart of accounts whose account has subaccounts carries
+    // their rows in one more trailing element (measured on the demo
+    // Бухгалтерия chart: `…, 1, {1, <count>, {2, <index>, 13, …}, …}}`).
+    let column_count = values.get(2)?.as_u32()? as usize;
+    if column_count < 2 || values.len() < column_count + 4 {
         return None;
     }
     let identifier = values.get(3)?.as_list()?;
@@ -481,7 +554,7 @@ fn project_predefined_value(values: &[Value], owner_guid: &Guid) -> Option<Confi
     if value_guid.is_nil() {
         return None;
     }
-    let name = typed_string(values.get(6)?)?;
+    let name = values[4..].iter().find_map(typed_string)?;
     if name.is_empty() {
         return None;
     }
@@ -489,6 +562,7 @@ fn project_predefined_value(values: &[Value], owner_guid: &Guid) -> Option<Confi
         owner_guid: owner_guid.clone(),
         value_guid,
         name: name.to_owned(),
+        source,
     })
 }
 
@@ -522,7 +596,18 @@ struct ConfigParser<'input, 'resource> {
     /// identifier of the class list, measured on 8.3.27 against the
     /// identifiers an attribute type description names.
     object_reference_type: Option<Guid>,
+    /// Whether the header of the object has been read at depth one, after
+    /// which the class list of an accounting register names its chart of
+    /// accounts.
+    header_seen: bool,
+    /// The chart of accounts of an accounting-register resource.
+    chart_of_accounts: Option<Guid>,
 }
+
+/// The class id an accounting-register resource opens with, measured on
+/// 8.3.27 against the UNF register `Управленческий`.
+const ACCOUNTING_REGISTER_CLASS_ID: &str = "21";
+const ZERO_GUID: &str = "00000000-0000-0000-0000-000000000000";
 
 struct ProjectedConfigDescriptor {
     descriptor: ConfigDescriptor,
@@ -595,6 +680,8 @@ impl<'input, 'resource> ConfigParser<'input, 'resource> {
             class_id: None,
             separation: None,
             object_reference_type: None,
+            header_seen: false,
+            chart_of_accounts: None,
         }
     }
 
@@ -632,6 +719,13 @@ impl<'input, 'resource> ConfigParser<'input, 'resource> {
                 .find(|descriptor| &descriptor.object_guid == self.resource_guid)
         {
             owner.object_reference_type = Some(reference_type);
+        }
+        if let Some(chart) = self.chart_of_accounts.take()
+            && let Some(owner) = descriptors
+                .iter_mut()
+                .find(|descriptor| &descriptor.object_guid == self.resource_guid)
+        {
+            owner.chart_of_accounts = Some(chart);
         }
         Ok(descriptors)
     }
@@ -681,6 +775,20 @@ impl<'input, 'resource> ConfigParser<'input, 'resource> {
         // A `{"Pattern", …}` list describes the type of the field its
         // sibling descriptor names.
         let mut pattern: Option<Vec<Guid>> = None;
+        // The entry of an accounting-register dimension or resource is
+        // `{6, {27, …}, <balance>, …}`: two levels below the collection
+        // list, the scalar after the field's own block is the balance flag.
+        let accounting_entry = matches!(
+            inherited_purpose,
+            Some((
+                ConfigCollectionPurpose::Field(
+                    ConfigFieldPurpose::AccountingRegisterDimension
+                        | ConfigFieldPurpose::AccountingRegisterResource
+                ),
+                collection_depth
+            )) if depth == collection_depth + 2
+        );
+        let mut pending_balance: Option<usize> = None;
 
         loop {
             self.skip_whitespace();
@@ -730,8 +838,34 @@ impl<'input, 'resource> ConfigParser<'input, 'resource> {
                     expecting_value = true;
                 }
                 Some(_) if expecting_value => {
+                    let descendants_before = descendant_descriptors.len();
                     let candidate =
                         self.value(&mut descendant_descriptors, field_purpose, depth + 1)?;
+                    if let Some(index) = pending_balance.take() {
+                        if let Some(atom) = candidate.as_str()
+                            && let Some(owner) = descendant_descriptors.get_mut(index)
+                        {
+                            owner.descriptor.balance = Some(atom == "1");
+                        }
+                    } else if accounting_entry && descendant_descriptors.len() > descendants_before
+                    {
+                        pending_balance = Some(descendants_before);
+                    }
+                    // The class list of an accounting register names its
+                    // chart of accounts right after the register's header.
+                    if depth == 1 && self.class_id == Some(ACCOUNTING_REGISTER_CLASS_ID) {
+                        if descendant_descriptors.len() > descendants_before {
+                            self.header_seen = true;
+                        } else if self.header_seen
+                            && self.chart_of_accounts.is_none()
+                            && let Some(guid) = candidate
+                                .as_str()
+                                .filter(|atom| *atom != ZERO_GUID)
+                                .and_then(|atom| Guid::from_str(atom).ok())
+                        {
+                            self.chart_of_accounts = Some(guid);
+                        }
+                    }
                     // The class list opens with the class id and then the
                     // identifiers of the object; the third of them is the
                     // reference type an attribute of another object names.
@@ -1004,6 +1138,8 @@ fn project_config_descriptor(
             separation: None,
             reference_types: Vec::new(),
             object_reference_type: None,
+            balance: None,
+            chart_of_accounts: None,
         },
         purpose_depth: field_purpose.map(|(_, depth)| depth),
     });
@@ -1081,6 +1217,8 @@ fn collect_descriptors(
             separation: None,
             reference_types: Vec::new(),
             object_reference_type: None,
+            balance: None,
+            chart_of_accounts: None,
         });
     }
     for value in values {
@@ -1107,7 +1245,7 @@ fn parse_synonyms(value: &Value) -> Vec<Synonym> {
 #[cfg(test)]
 mod tests {
     use super::{
-        ConfigFieldPurpose, collect_descriptors, collect_predefined_values,
+        ConfigFieldPurpose, PredefinedSource, collect_descriptors, collect_predefined_values,
         parse_config_descriptor, parse_config_descriptors_streaming,
         parse_config_predefined_values, parse_synonyms,
     };
@@ -1232,6 +1370,142 @@ mod tests {
         assert!(!form.enumeration_value);
     }
 
+    /// The shape of an accounting-register resource, trimmed from the UNF
+    /// register `Управленческий` on 8.3.27: the class list opens with
+    /// `21`, names the chart of accounts after the register's header, and
+    /// each dimension or resource entry carries its balance flag after
+    /// the field's own block.
+    #[test]
+    fn reads_accounting_register_balance_flags_and_chart() {
+        let owner = Guid::from_str("7cbb9946-2e19-4797-8ed4-d7a0ece334bb").unwrap();
+        let source = "{1,\n{21,4076244c-8b8e-4570-ba9d-a827d6fb70b5,e5b2e77d-518b-48e3-bdc9-061eb16665f8,68167ac0-494f-4264-8207-a9747c95ff63,9384bcb5-228b-40ae-a0ee-b4ff8c29977b,\n{0,\n{3,\n{1,0,7cbb9946-2e19-4797-8ed4-d7a0ece334bb},\"Управленческий\",\n{1,\"ru\",\"Журнал проводок\"},\"\",0,0,00000000-0000-0000-0000-000000000000,0}\n},1,1,3b0c4744-6437-4ccc-bc96-9dd9bae7a7ae,00000000-0000-0000-0000-000000000000,1,1,0,0,\n{35b63b9d-0adf-4625-a047-10ae874c19a3,2,\n{\n{6,\n{27,\n{2,\n{3,\n{1,0,82bc429e-f433-4291-8ee0-32be4e838c9a},\"Организация\",\n{1,\"ru\",\"Организация\"},\"\",0,0,00000000-0000-0000-0000-000000000000,0},\n{\"Pattern\",\n{\"#\",a1af1af2-f26f-40c9-a516-a66ff64531ed} } },0},1,00000000-0000-0000-0000-000000000000,0,1,1},0},\n{\n{6,\n{27,\n{2,\n{3,\n{1,0,99f211b1-3ccc-4a3b-b494-76926ac4bbf2},\"Валюта\",\n{1,\"ru\",\"Валюта\"},\"\",0,0,00000000-0000-0000-0000-000000000000,0},\n{\"Pattern\",\n{\"#\",0f4ff832-736a-4115-a535-59166a4c1904} } },0},0,792ab2d9-7d4a-476c-bf3f-7ece60992129,0,0,1},0} },\n{63405499-7491-4ce3-ac72-43433cbe4112,1,\n{\n{2,\n{27,\n{2,\n{3,\n{1,0,d0b139bb-1ad7-4825-b238-e91efa2ba32b},\"Сумма\",\n{1,\"ru\",\"Сумма\"},\"\",0,0,00000000-0000-0000-0000-000000000000,0},\n{\"Pattern\",\n{\"N\",15,2,0} } },0},1,00000000-0000-0000-0000-000000000000,00000000-0000-0000-0000-000000000000,1},0} },\n{9d28ee33-9c7e-4a1b-8f13-50aa9b36607b,1,\n{\n{3,\n{27,\n{2,\n{3,\n{1,0,38f6382e-b801-4185-b096-eaf62c794186},\"Содержание\",\n{1,\"ru\",\"Содержание\"},\"\",0,0,00000000-0000-0000-0000-000000000000,0},\n{\"Pattern\",\n{\"S\",150,1} } },0},0},0} } } }";
+        let descriptors = parse_config_descriptors_streaming(source.as_bytes(), &owner).unwrap();
+        let by_name = |name: &str| {
+            descriptors
+                .iter()
+                .find(|descriptor| descriptor.name == name)
+                .unwrap_or_else(|| panic!("{name}"))
+        };
+        assert_eq!(
+            by_name("Управленческий").chart_of_accounts,
+            Some(Guid::from_str("3b0c4744-6437-4ccc-bc96-9dd9bae7a7ae").unwrap())
+        );
+        let organization = by_name("Организация");
+        assert_eq!(
+            organization.field_purpose,
+            Some(ConfigFieldPurpose::AccountingRegisterDimension)
+        );
+        assert_eq!(organization.balance, Some(true));
+        let currency = by_name("Валюта");
+        assert_eq!(
+            currency.field_purpose,
+            Some(ConfigFieldPurpose::AccountingRegisterDimension)
+        );
+        assert_eq!(currency.balance, Some(false));
+        let amount = by_name("Сумма");
+        assert_eq!(
+            amount.field_purpose,
+            Some(ConfigFieldPurpose::AccountingRegisterResource)
+        );
+        assert_eq!(amount.balance, Some(true));
+        let content = by_name("Содержание");
+        assert_eq!(
+            content.field_purpose,
+            Some(ConfigFieldPurpose::AccountingRegisterAttribute)
+        );
+        assert_eq!(content.balance, None);
+        assert_eq!(content.chart_of_accounts, None);
+    }
+
+    /// Two rows of the `.9` table of the UNF chart `Управленческий` on
+    /// 8.3.27: ten columns, the account's reference first and its name
+    /// in the first string column.
+    #[test]
+    fn reads_predefined_accounts_from_a_dot9_resource() {
+        let source = "{2, {1, {10, {0,\"\", {\"Pattern\", {\"#\",ae135932-4f94-44df-92c1-c91f15a92848} },\"\",0}, {1,\"\", {\"Pattern\", {\"S\"} },\"\",0} }, {2,10,0,0,1,1, {1,1, {2,0,7, {\"#\",ae135932-4f94-44df-92c1-c91f15a92848, {1,00000000-0000-0000-0000-000000000000} }, {\"S\",\"Счета\"}, {\"S\",\"\"}, {\"S\",\"\"}, {\"N\",0}, {\"B\",0}, {\"U\"},1, {1,2, {2,1,10, {\"#\",ae135932-4f94-44df-92c1-c91f15a92848, {1,ceacb23a-fb1f-4e1c-99a5-22726a63629b} }, {\"S\",\"Служебный\"}, {\"S\",\"00      \"}, {\"S\",\"Служебный\"}, {\"N\",2}, {\"B\",0}, {\"U\"}, {\"S\",\" 00\"}, {\"N\",0}, {\"B\",0},0}, {2,55,10, {\"#\",ae135932-4f94-44df-92c1-c91f15a92848, {1,814aeeef-6b5f-495c-b297-f2ce3f8a7901} }, {\"S\",\"ПрочиеРасходы\"}, {\"S\",\"91.02   \"}, {\"S\",\"Прочие расходы\"}, {\"N\",0}, {\"B\",0}, {\"U\"}, {\"S\",\" 91.02\"}, {\"N\",0}, {\"B\",0},0} } } } } } }";
+        let owner = Guid::from_str("3b0c4744-6437-4ccc-bc96-9dd9bae7a7ae").unwrap();
+        let value = parse_serialized(source.as_bytes()).unwrap();
+        let mut values = Vec::new();
+        collect_predefined_values(
+            &value,
+            &owner,
+            PredefinedSource::ChartOfAccounts,
+            &mut values,
+        );
+        let names = values
+            .iter()
+            .map(|value| value.name.as_str())
+            .collect::<Vec<_>>();
+        assert_eq!(names, ["Служебный", "ПрочиеРасходы"]);
+        assert!(
+            values
+                .iter()
+                .all(|value| value.source == PredefinedSource::ChartOfAccounts
+                    && value.owner_guid == owner)
+        );
+        assert_eq!(
+            values[1].value_guid,
+            Guid::from_str("814aeeef-6b5f-495c-b297-f2ce3f8a7901").unwrap()
+        );
+        // The root row names the folder `Счета` with a nil reference and
+        // is not a value.
+        assert_eq!(values.len(), 2);
+    }
+
+    /// A row of the demo Бухгалтерия chart whose account has subaccounts:
+    /// the flag `1` after the columns is followed by the children's list,
+    /// one element more than a leaf row carries.
+    #[test]
+    fn reads_an_account_with_subaccounts_and_its_children() {
+        let source = "{2,124,10, {\"#\",ae135932-4f94-44df-92c1-c91f15a92848, {1,d35af89e-5806-4c55-9c2e-6c19862fa8db} }, {\"S\",\"Касса\"}, {\"S\",\"50\"}, {\"S\",\"Касса\"}, {\"N\",0}, {\"B\",0}, {\"U\"}, {\"S\",\" 50\"}, {\"N\",0}, {\"B\",0},1, {1,1, {2,125,10, {\"#\",ae135932-4f94-44df-92c1-c91f15a92848, {1,ceacb23a-fb1f-4e1c-99a5-22726a63629b} }, {\"S\",\"КассаОрганизации\"}, {\"S\",\"50.01\"}, {\"S\",\"Касса организации\"}, {\"N\",0}, {\"B\",0}, {\"U\"}, {\"S\",\" 50.01\"}, {\"N\",0}, {\"B\",0},0} } }";
+        let owner = Guid::from_str("3796bdf5-5d0b-4232-b22e-6d2cd8beb488").unwrap();
+        let value = parse_serialized(source.as_bytes()).unwrap();
+        let mut values = Vec::new();
+        collect_predefined_values(
+            &value,
+            &owner,
+            PredefinedSource::ChartOfAccounts,
+            &mut values,
+        );
+        let names = values
+            .iter()
+            .map(|value| value.name.as_str())
+            .collect::<Vec<_>>();
+        assert_eq!(names, ["Касса", "КассаОрганизации"]);
+    }
+
+    /// Two rows of the `.7` table of the chart of characteristic types
+    /// `ВидыСубконтоХозрасчетные` of the demo Бухгалтерия предприятия base
+    /// on 8.3.27: seven columns, the item's reference first, a boolean,
+    /// then the name.
+    #[test]
+    fn reads_predefined_kinds_from_a_dot7_resource() {
+        let source = "{1, {1, {7, {1,\"\", {\"Pattern\", {\"#\",ae135932-4f94-44df-92c1-c91f15a92848} },\"\",0}, {2,\"\", {\"Pattern\", {\"B\"} },\"\",0} }, {2,7,0,1,1,2,2, {1,1, {2,0,6, {\"#\",ae135932-4f94-44df-92c1-c91f15a92848, {1,00000000-0000-0000-0000-000000000000} }, {\"B\",1}, {\"S\",\"Характеристики\"}, {\"S\",\"     \"}, {\"S\",\"\"}, {\"#\",f5c65050-3bbb-11d5-b988-0050bae0a95d, {\"Pattern\"} },1, {1,2, {2,23,7, {\"#\",ae135932-4f94-44df-92c1-c91f15a92848, {1,ac901067-a86f-48d4-93e0-bc525fc3dbe0} }, {\"B\",0}, {\"S\",\"Контрагенты\"}, {\"S\",\"00005\"}, {\"S\",\"Контрагенты\"}, {\"#\",f5c65050-3bbb-11d5-b988-0050bae0a95d, {\"Pattern\", {\"#\",9f6206b2-1ed6-423c-9b08-fd4978930c49} } }, {\"N\",0},0}, {2,24,7, {\"#\",ae135932-4f94-44df-92c1-c91f15a92848, {1,1c19c5a6-6cc6-4f6d-a5f3-4d8f7a3d9e10} }, {\"B\",0}, {\"S\",\"Договоры\"}, {\"S\",\"00006\"}, {\"S\",\"Договоры\"}, {\"#\",f5c65050-3bbb-11d5-b988-0050bae0a95d, {\"Pattern\"} }, {\"N\",0},0} } } } } } }";
+        let owner = Guid::from_str("46d9709b-4192-401b-bf2f-12b93eb1842b").unwrap();
+        let value = parse_serialized(source.as_bytes()).unwrap();
+        let mut values = Vec::new();
+        collect_predefined_values(
+            &value,
+            &owner,
+            PredefinedSource::ChartOfCharacteristicTypes,
+            &mut values,
+        );
+        let names = values
+            .iter()
+            .map(|value| value.name.as_str())
+            .collect::<Vec<_>>();
+        assert_eq!(names, ["Контрагенты", "Договоры"]);
+        assert_eq!(
+            values[0].value_guid,
+            Guid::from_str("ac901067-a86f-48d4-93e0-bc525fc3dbe0").unwrap()
+        );
+        assert!(
+            values
+                .iter()
+                .all(|value| value.source == PredefinedSource::ChartOfCharacteristicTypes)
+        );
+    }
+
     #[test]
     fn parses_empty_synonyms() {
         let value = parse_serialized(br#"{0}"#).unwrap();
@@ -1262,7 +1536,7 @@ mod tests {
         )
         .unwrap();
         let mut predefined = Vec::new();
-        collect_predefined_values(&value, &owner, &mut predefined);
+        collect_predefined_values(&value, &owner, PredefinedSource::Catalog, &mut predefined);
 
         assert_eq!(predefined.len(), 1);
         assert_eq!(predefined[0].owner_guid, owner);

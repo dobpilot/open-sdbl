@@ -619,7 +619,7 @@ fn keeps_nested_queries_of_a_restriction_unrestricted() {
     .unwrap();
 
     assert!(compiled.sql.contains(
-        "WHERE (\"__restricted\".\"_idrref\" IN (SELECT \"О\".\"_idrref\" AS \"ID\" FROM \"_reference57\" AS \"О\" WHERE (\"О\".\"_code\" = 'HQ')))) AS \"p\""
+        "WHERE (\"__restricted\".\"_idrref\" IN (SELECT \"О\".\"_idrref\" AS \"Ссылка\" FROM \"_reference57\" AS \"О\" WHERE (\"О\".\"_code\" = 'HQ')))) AS \"p\""
     ), "{}", compiled.sql);
     assert!(compiled.sql.contains(
         "LEFT JOIN (SELECT \"__restricted\".\"_idrref\" AS \"_idrref\", \"__restricted\".\"_code\" AS \"_code\", \"__restricted\".\"_date_time\" AS \"_date_time\" FROM \"_reference57\" AS \"__restricted\" WHERE (\"__restricted\".\"_code\" <> 'hidden')) AS \"o\""
@@ -660,4 +660,85 @@ fn wraps_the_extension_union_of_a_restricted_source() {
     assert!(compiled.sql.contains(
         "FROM \"_reference53X1\") AS \"__restricted\" WHERE (\"__restricted\".\"_code\" <> 'hidden')) AS \"p\""
     ));
+}
+
+#[test]
+fn accepts_the_platform_form_of_a_restriction_with_the_current_table_qualifier() {
+    let snapshot = reference_snapshot();
+    let session = session(&[("Орг", ParameterValue::String("HQ".to_owned()))]);
+    let source = "ВЫБРАТЬ РАЗРЕШЕННЫЕ p.Code ИЗ Catalog.OpenSdblMetadataProbe КАК p";
+    let plain = compile_both(
+        &snapshot,
+        source,
+        &CompileOptions::new()
+            .restrictions(&[restriction(
+                &snapshot,
+                "Catalog.OpenSdblMetadataProbe",
+                "Организация.Code = &Орг",
+            )])
+            .session(&session),
+    )
+    .unwrap();
+
+    // `ТекущаяТаблица КАК Т ГДЕ Т.…` compiles as the bare condition does.
+    for text in [
+        "ТекущаяТаблица КАК Т ГДЕ Т.Организация.Code = &Орг",
+        "ТекущаяТаблица ГДЕ ТекущаяТаблица.Организация.Code = &Орг",
+        "ГДЕ Организация.Code = &Орг",
+    ] {
+        let full = compile_both(
+            &snapshot,
+            source,
+            &CompileOptions::new()
+                .restrictions(&[restriction(
+                    &snapshot,
+                    "Catalog.OpenSdblMetadataProbe",
+                    text,
+                )])
+                .session(&session),
+        )
+        .unwrap();
+        assert_eq!(full.sql, plain.sql, "{text}");
+    }
+
+    // The qualifier reaches into a nested query of the condition, the way
+    // the access-key templates of БСП correlate the key with the row.
+    let correlated = compile_both(
+        &snapshot,
+        source,
+        &CompileOptions::new()
+            .restrictions(&[restriction(
+                &snapshot,
+                "Catalog.OpenSdblMetadataProbe",
+                "ТекущаяТаблица ГДЕ ИСТИНА В (ВЫБРАТЬ ПЕРВЫЕ 1 ИСТИНА ИЗ Catalog.OpenSdblMetadataProbe КАК К ГДЕ К.Code = ТекущаяТаблица.Code)",
+            )])
+            .session(&session),
+    )
+    .unwrap();
+    assert!(
+        correlated
+            .sql
+            .contains("WHERE (\"К\".\"_code\" = \"__restricted\".\"_code\")"),
+        "{}",
+        correlated.sql
+    );
+
+    // A join before ГДЕ is not a condition the wrapper can hold.
+    let joined = compile_both(
+        &snapshot,
+        source,
+        &CompileOptions::new()
+            .restrictions(&[restriction(
+                &snapshot,
+                "Catalog.OpenSdblMetadataProbe",
+                "ТекущаяТаблица ЛЕВОЕ СОЕДИНЕНИЕ Catalog.OpenSdblMetadataProbe КАК К ПО К.Code = ТекущаяТаблица.Code ГДЕ К.Code = \"A\"",
+            )])
+            .session(&session),
+    )
+    .unwrap_err();
+    assert_eq!(joined.kind(), QueryDiagnosticKind::Restriction);
+    assert!(
+        joined.message().contains("joining other tables"),
+        "{joined}"
+    );
 }

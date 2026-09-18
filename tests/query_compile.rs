@@ -267,7 +267,7 @@ fn preserves_mssql_goldens_for_dialect_sensitive_features() {
             )
             .unwrap()
             .sql,
-            "SELECT [__src].[_fld54] AS [Номенклатура], [__src].[_fld55] AS [КоличествоОборот] FROM (SELECT [__aggregate_base].[_fld54] AS [_fld54], SUM(CASE WHEN [__aggregate_base].[_recordkind] = 0 THEN [__aggregate_base].[_fld55] ELSE -[__aggregate_base].[_fld55] END) AS [_fld55] FROM [_accumrg53] AS [__aggregate_base] WHERE [__aggregate_base].[_active] = 0x01 AND ([__aggregate_base].[_period] >= N'2026-08-01') AND ([__aggregate_base].[_period] < N'2026-09-01') AND ([__aggregate_base].[_fld54] IS NOT NULL) GROUP BY [__aggregate_base].[_fld54]) AS [__src]",
+            "SELECT [__src].[_fld54] AS [Номенклатура], [__src].[_fld55] AS [КоличествоОборот] FROM (SELECT [__aggregate_base].[_fld54] AS [_fld54], SUM(CASE WHEN [__aggregate_base].[_recordkind] = 0 THEN [__aggregate_base].[_fld55] ELSE -[__aggregate_base].[_fld55] END) AS [_fld55], SUM(CASE WHEN [__aggregate_base].[_recordkind] = 0 THEN [__aggregate_base].[_fld55] ELSE 0 END) AS [_fld55Receipt], SUM(CASE WHEN [__aggregate_base].[_recordkind] = 1 THEN [__aggregate_base].[_fld55] ELSE 0 END) AS [_fld55Expense] FROM [_accumrg53] AS [__aggregate_base] WHERE [__aggregate_base].[_active] = 0x01 AND ([__aggregate_base].[_period] >= N'2026-08-01') AND ([__aggregate_base].[_period] < N'2026-09-01') AND ([__aggregate_base].[_fld54] IS NOT NULL) GROUP BY [__aggregate_base].[_fld54]) AS [__src]",
         ),
         (
             "union",
@@ -297,7 +297,7 @@ fn preserves_mssql_goldens_for_dialect_sensitive_features() {
             )
             .unwrap()
             .sql,
-            "SELECT [__ref1].[_code] AS [Организация.Код] FROM [_reference53] AS [p] LEFT JOIN [_reference57] AS [__ref1] ON [p].[_fld54] = [__ref1].[_idrref]",
+            "SELECT [__ref1].[_code] AS [ОрганизацияКод] FROM [_reference53] AS [p] LEFT JOIN [_reference57] AS [__ref1] ON [p].[_fld54] = [__ref1].[_idrref]",
         ),
         (
             "tabular",
@@ -307,7 +307,7 @@ fn preserves_mssql_goldens_for_dialect_sensitive_features() {
             )
             .unwrap()
             .sql,
-            "SELECT [__src].[_document53_idrref] AS [ID], [__src].[_lineno54] AS [LineNo], [__src].[_fld57] AS [Сумма] FROM [_document53_vt54X1] AS [__src]",
+            "SELECT [__src].[_document53_idrref] AS [Ссылка], [__src].[_lineno54] AS [НомерСтроки], [__src].[_fld57] AS [Сумма] FROM [_document53_vt54X1] AS [__src]",
         ),
         (
             "aggregate",
@@ -662,7 +662,11 @@ fn diagnoses_invalid_value_kinds_paths_and_names() {
         &snapshot,
     )
     .unwrap_err();
-    assert!(error.message().contains("only catalogs and enumerations"));
+    assert!(
+        error
+            .message()
+            .contains("charts of characteristic types only")
+    );
 
     let error = postgres_compile!(
         "SELECT VALUE(Catalog.OpenSdblMetadataProbe.Absent);",
@@ -864,6 +868,16 @@ fn applies_projection_aliases_and_diagnoses_a_missing_alias() {
     )
     .unwrap_err();
     assert!(error.message().contains("expected projection alias"));
+
+    // After `КАК` any word that opens no clause is the alias, a keyword
+    // included, as the platform accepts `КАК Конец`.
+    let keyword = postgres_compile!(
+        "ВЫБРАТЬ Date КАК Конец, Code КАК Порядок ИЗ Catalog.OpenSdblMetadataProbe КАК Выбор;",
+        &snapshot,
+    )
+    .unwrap();
+    assert_eq!(labels(&keyword), ["Конец", "Порядок"]);
+    assert!(keyword.sql.contains("AS \"Выбор\""), "{}", keyword.sql);
 }
 
 #[test]
@@ -1763,10 +1777,10 @@ fn compiles_a_russian_catalog_query_through_authoritative_metadata() {
     )
     .unwrap();
 
-    assert_eq!(labels(&compiled), ["Code", "ProbeAttribute"]);
+    assert_eq!(labels(&compiled), ["Код", "ProbeAttribute"]);
     assert_eq!(
         compiled.sql,
-        "SELECT \"p\".\"_code\"::text AS \"Code\", \"p\".\"_fld54\" AS \"ProbeAttribute\" FROM \"_reference53\" AS \"p\" WHERE (\"p\".\"_code\" = 'A') ORDER BY \"p\".\"_code\" ASC LIMIT 5"
+        "SELECT \"p\".\"_code\"::text AS \"Код\", \"p\".\"_fld54\" AS \"ProbeAttribute\" FROM \"_reference53\" AS \"p\" WHERE (\"p\".\"_code\" = 'A') ORDER BY \"p\".\"_code\" ASC LIMIT 5"
     );
 }
 
@@ -2349,6 +2363,78 @@ fn expands_a_compound_projection_and_rejects_it_in_predicates() {
 }
 
 #[test]
+fn a_case_compared_with_a_value_drops_alternatives_of_another_kind() {
+    let snapshot = snapshot();
+    // `ЛОЖЬ` never equals a string on the platform: the alternative
+    // compares as NULL, and the comparison stays a plain predicate.
+    let compiled = postgres_compile!(
+        "SELECT Code FROM Catalog.OpenSdblMetadataProbe \
+         WHERE CASE WHEN Date > DATETIME(2020, 1, 1) THEN Code ELSE FALSE END = \"A\";",
+        &snapshot,
+    )
+    .unwrap();
+    assert!(
+        compiled
+            .sql
+            .contains("THEN \"__src\".\"_code\" ELSE NULL END = "),
+        "{}",
+        compiled.sql
+    );
+    let reversed = postgres_compile!(
+        "SELECT Code FROM Catalog.OpenSdblMetadataProbe \
+         WHERE \"A\" = CASE WHEN Date > DATETIME(2020, 1, 1) THEN Code ELSE FALSE END;",
+        &snapshot,
+    )
+    .unwrap();
+    assert!(reversed.sql.contains("ELSE NULL END)"), "{}", reversed.sql);
+    // Projected, the same alternatives still make a composite value.
+    let projected = postgres_compile!(
+        "SELECT CASE WHEN Date > DATETIME(2020, 1, 1) THEN Code ELSE FALSE END AS З \
+         FROM Catalog.OpenSdblMetadataProbe;",
+        &snapshot,
+    )
+    .unwrap();
+    assert!(
+        labels(&projected).contains(&"З_TYPE"),
+        "{:?}",
+        labels(&projected)
+    );
+}
+
+#[test]
+fn orders_a_distinct_statement_by_a_projected_reference_of_several_types() {
+    let snapshot = presentation_reference_snapshot(true);
+    let compiled = postgres_compile!(
+        "SELECT DISTINCT ProbeAttribute AS Значение FROM Catalog.OpenSdblMetadataProbe ORDER BY ProbeAttribute DESC;",
+        &snapshot,
+    )
+    .unwrap();
+    assert!(
+        compiled.sql.ends_with("ORDER BY 1 DESC"),
+        "{}",
+        compiled.sql
+    );
+}
+
+#[test]
+fn labels_an_unaliased_dereference_by_its_segments_run_together() {
+    let snapshot = reference_snapshot();
+    let compiled = postgres_compile!(
+        "SELECT p.Организация.Код FROM Catalog.OpenSdblMetadataProbe AS p;",
+        &snapshot,
+    )
+    .unwrap();
+    assert_eq!(labels(&compiled), ["ОрганизацияКод"]);
+
+    let read_back = postgres_compile!(
+        "SELECT Т.ОрганизацияКод FROM (SELECT p.Организация.Код FROM Catalog.OpenSdblMetadataProbe AS p) AS Т;",
+        &snapshot,
+    )
+    .unwrap();
+    assert_eq!(labels(&read_back), ["ОрганизацияКод"]);
+}
+
+#[test]
 fn dereferences_a_reference_property_with_one_reused_left_join() {
     let snapshot = reference_snapshot();
     let compiled = postgres_compile!(
@@ -2357,11 +2443,11 @@ fn dereferences_a_reference_property_with_one_reused_left_join() {
     )
     .unwrap();
 
-    assert_eq!(labels(&compiled), ["Организация.Код"]);
+    assert_eq!(labels(&compiled), ["ОрганизацияКод"]);
     assert_eq!(compiled.sql.matches(" LEFT JOIN ").count(), 1);
     assert_eq!(
         compiled.sql,
-        "SELECT \"__ref1\".\"_code\"::text AS \"Организация.Код\" FROM \"_reference53\" AS \"__src\" LEFT JOIN \"_reference57\" AS \"__ref1\" ON \"__src\".\"_fld54\" = \"__ref1\".\"_idrref\" WHERE (\"__ref1\".\"_code\" = 'A') ORDER BY \"__ref1\".\"_code\" ASC"
+        "SELECT \"__ref1\".\"_code\"::text AS \"ОрганизацияКод\" FROM \"_reference53\" AS \"__src\" LEFT JOIN \"_reference57\" AS \"__ref1\" ON \"__src\".\"_fld54\" = \"__ref1\".\"_idrref\" WHERE (\"__ref1\".\"_code\" = 'A') ORDER BY \"__ref1\".\"_code\" ASC"
     );
 }
 
@@ -2388,7 +2474,7 @@ fn supports_a_qualified_reference_path_and_rejects_non_references() {
             .sql
             .contains("FROM \"_reference53\" AS \"d\" LEFT JOIN")
     );
-    assert_eq!(labels(&implicit), ["Организация.Code"]);
+    assert_eq!(labels(&implicit), ["ОрганизацияCode"]);
 
     let error = postgres_compile!(
         "SELECT Code.Value FROM Catalog.OpenSdblMetadataProbe;",
@@ -2407,7 +2493,7 @@ fn supports_a_qualified_reference_path_and_rejects_non_references() {
         &snapshot,
     )
     .unwrap();
-    assert_eq!(labels(&deep), ["Организация.Ссылка.Код"]);
+    assert_eq!(labels(&deep), ["ОрганизацияСсылкаКод"]);
     assert!(
         deep.sql
             .contains("AS \"__ref2\" ON \"__ref1\".\"_idrref\" = \"__ref2\".\"_idrref\""),
@@ -2690,7 +2776,7 @@ fn resolves_a_one_hop_reference_from_one_join_side() {
     )
     .unwrap();
 
-    assert_eq!(labels(&compiled), ["Организация.Код", "Code"]);
+    assert_eq!(labels(&compiled), ["ОрганизацияКод", "Code"]);
     assert!(
         compiled
             .sql
@@ -2755,21 +2841,36 @@ fn rejects_unsafe_or_ambiguous_join_shapes() {
     .unwrap_err();
     assert!(wildcard.message().contains("wildcard projection"));
 
+    // An inner or left join takes an inequality; a full join keeps
+    // needing the anchor equality.
     let inequality = postgres_compile!(
         "SELECT p.Code FROM Catalog.OpenSdblMetadataProbe p
          LEFT JOIN Catalog.Организации t ON p.Code > t.Code;",
         &snapshot,
     )
-    .unwrap_err();
+    .unwrap();
     assert!(
         inequality
+            .sql
+            .contains("ON (\"p\".\"_code\" > \"t\".\"_code\")"),
+        "{}",
+        inequality.sql
+    );
+    let full_inequality = postgres_compile!(
+        "SELECT p.Code FROM Catalog.OpenSdblMetadataProbe p
+         FULL JOIN Catalog.Организации t ON p.Code > t.Code;",
+        &snapshot,
+    )
+    .unwrap_err();
+    assert!(
+        full_inequality
             .message()
-            .contains("top-level direct-field equality")
+            .contains("FULL JOIN condition requires")
     );
 
     let nested_anchor = postgres_compile!(
         "SELECT p.Code FROM Catalog.OpenSdblMetadataProbe p
-         LEFT JOIN Catalog.Организации t
+         FULL JOIN Catalog.Организации t
          ON p.Code = t.Code OR p.Code <> t.Code;",
         &snapshot,
     )
@@ -2777,7 +2878,7 @@ fn rejects_unsafe_or_ambiguous_join_shapes() {
     assert!(
         nested_anchor
             .message()
-            .contains("top-level direct-field equality")
+            .contains("FULL JOIN condition requires")
     );
 
     let same_alias = postgres_compile!(
@@ -2885,10 +2986,10 @@ fn compiles_document_tabular_section_from_extension_table() {
         &snapshot,
     )
     .unwrap();
-    assert_eq!(labels(&direct), ["ID", "LineNo", "Сумма"]);
+    assert_eq!(labels(&direct), ["Ссылка", "НомерСтроки", "Сумма"]);
     assert!(direct.sql.contains("FROM \"_document53_vt54X1\""));
-    assert!(direct.sql.contains("\"_document53_idrref\" AS \"ID\""));
-    assert!(direct.sql.contains("\"_lineno54\" AS \"LineNo\""));
+    assert!(direct.sql.contains("\"_document53_idrref\" AS \"Ссылка\""));
+    assert!(direct.sql.contains("\"_lineno54\" AS \"НомерСтроки\""));
 }
 
 #[test]
@@ -3143,7 +3244,7 @@ fn reports_structured_column_kinds_for_fields_scalars_and_aggregates() {
             &ColumnKind::Binary { length: None },
         ]
     );
-    assert!(fields.sql.contains("\"__src\".\"_idrref\" AS \"ID\""));
+    assert!(fields.sql.contains("\"__src\".\"_idrref\" AS \"Ссылка\""));
     assert!(fields.sql.contains("\"__src\".\"_code\"::text AS \"Code\""));
     assert!(fields.sql.contains("\"__src\".\"_date_time\" AS \"Date\""));
 
@@ -4041,7 +4142,7 @@ fn widens_references_in_case_isnull_and_union() {
     assert!(
         union
             .sql
-            .contains("(decode('00000035', 'hex') || \"__src\".\"_idrref\") AS \"ID\"")
+            .contains("(decode('00000035', 'hex') || \"__src\".\"_idrref\") AS \"Ссылка\"")
     );
     assert!(union.sql.contains(
         "(\"__src\".\"_fld54_rtref\" || \"__src\".\"_fld54_rrref\") AS \"ProbeAttribute\""
@@ -4967,7 +5068,7 @@ fn diagnoses_invalid_join_chains() {
     let no_anchor = postgres_compile!(
         "SELECT a.Code FROM Catalog.OpenSdblMetadataProbe a
          JOIN Catalog.OpenSdblMetadataProbe b ON a.Code = b.Code
-         JOIN Catalog.OpenSdblMetadataProbe c ON a.Code = b.Code;",
+         FULL JOIN Catalog.OpenSdblMetadataProbe c ON a.Code = b.Code;",
         &snapshot,
     )
     .unwrap_err();
@@ -5037,13 +5138,13 @@ fn compiles_nested_sources_with_grouping_joins_and_dereference() {
     ));
 
     let dereferenced = postgres_compile!(
-        "SELECT Т.ID.Code AS Код, Т.ID AS Ссылка
+        "SELECT Т.Ссылка.Code AS Код, Т.Ссылка AS Ссылка
          FROM (SELECT Ссылка FROM Catalog.OpenSdblMetadataProbe) КАК Т;",
         &snapshot,
     )
     .unwrap();
     assert!(dereferenced.sql.contains(
-        "FROM (SELECT \"__src\".\"_idrref\" AS \"ID\" FROM \"_reference53\" AS \"__src\") AS \"Т\" LEFT JOIN \"_reference53\" AS \"__ref1\" ON \"Т\".\"ID\" = \"__ref1\".\"_idrref\""
+        "FROM (SELECT \"__src\".\"_idrref\" AS \"Ссылка\" FROM \"_reference53\" AS \"__src\") AS \"Т\" LEFT JOIN \"_reference53\" AS \"__ref1\" ON \"Т\".\"Ссылка\" = \"__ref1\".\"_idrref\""
     ));
     assert!(
         dereferenced
@@ -5101,7 +5202,7 @@ fn compiles_in_subqueries_with_reference_widening() {
     .unwrap();
     assert!(postgres_sql_ends_with(
         &scalar.sql,
-        "WHERE (((NOT (\"__src\".\"_code\" IN (SELECT \"__src\".\"_code\"::text AS \"Code\" FROM \"_reference53\" AS \"__src\" WHERE (\"__src\".\"_date_time\" IS NULL)))) AND (\"__src\".\"_idrref\" IN (SELECT \"__src\".\"_idrref\" AS \"ID\" FROM \"_reference53\" AS \"__src\"))) AND (NOT (\"__src\".\"_code\" IN ('1', '2'))))"
+        "WHERE (((NOT ((\"__src\".\"_code\")::text IN (SELECT \"__src\".\"_code\"::text AS \"Code\" FROM \"_reference53\" AS \"__src\" WHERE (\"__src\".\"_date_time\" IS NULL)))) AND (\"__src\".\"_idrref\" IN (SELECT \"__src\".\"_idrref\" AS \"Ссылка\" FROM \"_reference53\" AS \"__src\"))) AND (NOT (\"__src\".\"_code\" IN ('1', '2'))))"
     ));
 
     let pairs = presentation_reference_snapshot(true);
@@ -5112,7 +5213,7 @@ fn compiles_in_subqueries_with_reference_widening() {
     )
     .unwrap();
     assert!(widened_inner.sql.ends_with(
-        "WHERE ((\"__src\".\"_fld54_rtref\" || \"__src\".\"_fld54_rrref\") IN (SELECT (decode('00000035', 'hex') || \"__in\".\"ID\") FROM (SELECT \"__src\".\"_idrref\" AS \"ID\" FROM \"_reference53\" AS \"__src\") AS \"__in\"))"
+        "WHERE ((\"__src\".\"_fld54_rtref\" || \"__src\".\"_fld54_rrref\") IN (SELECT (decode('00000035', 'hex') || \"__in\".\"Ссылка\") FROM (SELECT \"__src\".\"_idrref\" AS \"Ссылка\" FROM \"_reference53\" AS \"__src\") AS \"__in\"))"
     ));
 
     let widened_outer = postgres_compile!(
@@ -5157,6 +5258,25 @@ fn diagnoses_invalid_nested_queries() {
             .contains("WHERE (\"__src\".\"_date_time\" = \"o\".\"_date_time\")"),
         "{}",
         correlated.sql
+    );
+
+    // The subquery's own source hides an outer one of the same name.
+    let shadowed = postgres_compile!(
+        "SELECT o.Code FROM Catalog.OpenSdblMetadataProbe o
+         WHERE o.Code IN (SELECT o.Code FROM Catalog.OpenSdblMetadataProbe o WHERE o.Date > DATETIME(2020, 1, 1));",
+        &snapshot,
+    )
+    .unwrap();
+    assert!(
+        shadowed.sql.contains("WHERE (\"o\".\"_date_time\" > "),
+        "{}",
+        shadowed.sql
+    );
+    assert_eq!(
+        shadowed.sql.matches("AS \"o\"").count(),
+        2,
+        "{}",
+        shadowed.sql
     );
 
     // A source of the enclosing statement stays invisible to a derived
@@ -5217,7 +5337,7 @@ fn diagnoses_invalid_nested_queries() {
         &presentation_reference_snapshot(true),
     )
     .unwrap();
-    assert_eq!(labels(&runtime_typed), ["ProbeAttribute.Code"]);
+    assert_eq!(labels(&runtime_typed), ["ProbeAttributeCode"]);
     assert_eq!(runtime_typed.sql.matches("LEFT JOIN").count(), 2);
 
     let mut deep = String::from("SELECT Code FROM Catalog.OpenSdblMetadataProbe");
@@ -5556,6 +5676,36 @@ fn accepts_index_clauses_without_generating_indexes() {
         .0
         .unwrap_err();
     assert_eq!(unknown_field.kind(), QueryDiagnosticKind::TemporaryTable);
+
+    // A field qualified by the source alias names the label of its last
+    // segment, as the platform accepts.
+    let qualified = postgres_batch(
+        &mut session,
+        &snapshot,
+        "ВЫБРАТЬ Т.Code КАК Код, Т.Date КАК Д ПОМЕСТИТЬ ВТ5 ИЗ Catalog.OpenSdblMetadataProbe КАК Т
+         ИНДЕКСИРОВАТЬ ПО Т.Код, Д;",
+    );
+    assert!(!qualified.to_uppercase().contains("INDEX"));
+    // The projected field path itself, whatever the alias.
+    let by_path = postgres_batch(
+        &mut session,
+        &snapshot,
+        "ВЫБРАТЬ Т.Code КАК Код ПОМЕСТИТЬ ВТ7 ИЗ Catalog.OpenSdblMetadataProbe КАК Т
+         ИНДЕКСИРОВАТЬ ПО Т.Code;",
+    );
+    assert!(!by_path.to_uppercase().contains("INDEX"));
+    let unknown_qualified = session
+        .compile(
+            &snapshot,
+            "ВЫБРАТЬ Т.Code КАК Код ПОМЕСТИТЬ ВТ6 ИЗ Catalog.OpenSdblMetadataProbe КАК Т
+             ИНДЕКСИРОВАТЬ ПО Т.Date;",
+        )
+        .0
+        .unwrap_err();
+    assert_eq!(
+        unknown_qualified.kind(),
+        QueryDiagnosticKind::TemporaryTable
+    );
     assert!(
         unknown_field
             .message()
@@ -5764,6 +5914,47 @@ fn diagnoses_temporary_table_failures() {
         .0
         .unwrap_err();
     assert!(ordered.message().contains("requires TOP"));
+
+    // A union of limited branches may be ordered: each branch limits
+    // itself, so the ordering of the whole changes nothing and is dropped.
+    let limited_union = session
+        .compile(
+            &snapshot,
+            "ВЫБРАТЬ ПЕРВЫЕ 10 Code КАК Имя ПОМЕСТИТЬ ВТ7 ИЗ Catalog.OpenSdblMetadataProbe \
+             ОБЪЕДИНИТЬ ВСЕ ВЫБРАТЬ ПЕРВЫЕ 5 Code ИЗ Catalog.OpenSdblMetadataProbe УПОРЯДОЧИТЬ ПО Имя;",
+        )
+        .0
+        .unwrap()
+        .expect("a definition answers its row count");
+    assert!(
+        limited_union.sql.contains("LIMIT 10"),
+        "{}",
+        limited_union.sql
+    );
+    assert!(
+        limited_union.sql.contains("LIMIT 5"),
+        "{}",
+        limited_union.sql
+    );
+    assert!(
+        !limited_union.sql.contains("ORDER BY"),
+        "{}",
+        limited_union.sql
+    );
+
+    let unlimited_branch = session
+        .compile(
+            &snapshot,
+            "ВЫБРАТЬ ПЕРВЫЕ 10 Code КАК Имя ПОМЕСТИТЬ ВТ8 ИЗ Catalog.OpenSdblMetadataProbe \
+             ОБЪЕДИНИТЬ ВСЕ ВЫБРАТЬ Code ИЗ Catalog.OpenSdblMetadataProbe УПОРЯДОЧИТЬ ПО Имя;",
+        )
+        .0
+        .unwrap_err();
+    assert!(
+        unlimited_branch
+            .message()
+            .contains("requires TOP on every branch")
+    );
 
     let nested_into = session
         .compile(
@@ -6952,10 +7143,8 @@ fn keeps_the_declared_gaps_declared() {
     let refused = [
         "ВЫБРАТЬ Т.Code КАК К ИЗ Справочник.OpenSdblMetadataProbe КАК Т СГРУППИРОВАТЬ ПО ГРУППИРУЮЩИМ НАБОРАМ ((Т.Code));",
         "ВЫБРАТЬ Т.Code КАК К ИЗ Справочник.OpenSdblMetadataProbe КАК Т УПОРЯДОЧИТЬ ПО Т.Code ИЕРАРХИЯ;",
-        "ВЫБРАТЬ Т.Code КАК К ИЗ Справочник.OpenSdblMetadataProbe КАК Т АВТОУПОРЯДОЧИВАНИЕ;",
         "ВЫБРАТЬ Т.Code КАК К ИЗ Справочник.OpenSdblMetadataProbe КАК Т ДЛЯ ИЗМЕНЕНИЯ;",
         "ВЫБРАТЬ СГРУППИРОВАНОПО(Т.Code) КАК К ИЗ Справочник.OpenSdblMetadataProbe КАК Т;",
-        "ВЫБРАТЬ АВТОНОМЕРЗАПИСИ() КАК К ИЗ Справочник.OpenSdblMetadataProbe КАК Т;",
         "ВЫБРАТЬ РАЗМЕРХРАНИМЫХДАННЫХ(Т.Code) КАК К ИЗ Справочник.OpenSdblMetadataProbe КАК Т;",
         "ВЫБРАТЬ СТРОКА(Т.Code) КАК К ИЗ Справочник.OpenSdblMetadataProbe КАК Т;",
     ];
@@ -6976,4 +7165,205 @@ fn keeps_the_declared_gaps_declared() {
         concatenated.columns[0].kind,
         ColumnKind::String { length: None }
     );
+}
+
+#[test]
+fn a_zero_top_count_answers_no_rows() {
+    let snapshot = snapshot();
+    let source = "ВЫБРАТЬ ПЕРВЫЕ 0 Код ИЗ Справочник.OpenSdblMetadataProbe;";
+    let postgres = compile_backend_generic(&snapshot, PostgresBackend, source).unwrap();
+    assert!(postgres.sql.ends_with(" LIMIT 0"), "{}", postgres.sql);
+    let mssql = compile_backend_generic(&snapshot, mssql_backend(2000), source).unwrap();
+    assert!(mssql.sql.starts_with("SELECT TOP (0) "), "{}", mssql.sql);
+}
+
+#[test]
+fn a_parameter_source_needs_a_value_table() {
+    let snapshot = snapshot();
+    let parameters = [QueryParameter::new("Таблица", ParameterValue::Null)];
+    let error = QueryCompiler::new(&snapshot, PostgresBackend)
+        .compile_with(
+            "ВЫБРАТЬ Т.Код ИЗ &Таблица КАК Т;",
+            &CompileOptions::new().parameters(&parameters),
+        )
+        .unwrap_err();
+    assert_eq!(
+        error.kind(),
+        QueryDiagnosticKind::Parameter,
+        "{}",
+        error.message()
+    );
+    assert!(
+        error.message().contains("must be bound to a value table"),
+        "{}",
+        error.message()
+    );
+    assert_eq!(error.offset(), "ВЫБРАТЬ Т.Код ИЗ ".len());
+}
+
+#[test]
+fn accepts_auto_order_and_compiles_record_auto_number() {
+    let snapshot = snapshot();
+    let ordered = postgres_compile!(
+        "ВЫБРАТЬ Code КАК Код ИЗ Catalog.OpenSdblMetadataProbe УПОРЯДОЧИТЬ ПО Код АВТОУПОРЯДОЧИВАНИЕ;",
+        &snapshot,
+    )
+    .unwrap();
+    assert!(
+        ordered.sql.ends_with("ORDER BY \"__src\".\"_code\" ASC"),
+        "{}",
+        ordered.sql
+    );
+    let bare = postgres_compile!(
+        "ВЫБРАТЬ Code КАК Код ИЗ Catalog.OpenSdblMetadataProbe АВТОУПОРЯДОЧИВАНИЕ;",
+        &snapshot,
+    )
+    .unwrap();
+    assert!(!bare.sql.contains("ORDER BY"), "{}", bare.sql);
+    let numbered = postgres_compile!(
+        "ВЫБРАТЬ АВТОНОМЕРЗАПИСИ() КАК Номер, Code КАК Код ИЗ Catalog.OpenSdblMetadataProbe;",
+        &snapshot,
+    )
+    .unwrap();
+    assert!(
+        numbered
+            .sql
+            .starts_with("SELECT ROW_NUMBER() OVER (ORDER BY (SELECT NULL)) AS \"Номер\""),
+        "{}",
+        numbered.sql
+    );
+    assert!(matches!(
+        numbered.columns[0].kind,
+        ColumnKind::Number { .. }
+    ));
+    let with_argument = postgres_compile!(
+        "ВЫБРАТЬ АВТОНОМЕРЗАПИСИ(1) КАК Номер ИЗ Catalog.OpenSdblMetadataProbe;",
+        &snapshot,
+    )
+    .unwrap_err();
+    assert!(
+        with_argument.message().contains("takes 0 arguments"),
+        "{with_argument}"
+    );
+}
+
+#[test]
+fn grouped_statements_take_dereferences_of_keys_and_aggregate_ordering() {
+    let snapshot = reference_snapshot();
+    // A dereference of a key in the projection is a function of the key;
+    // the joined column joins the grouping.
+    let projected = postgres_compile!(
+        "ВЫБРАТЬ p.Организация КАК Орг, p.Организация.Code КАК Код, КОЛИЧЕСТВО(*) КАК Н
+         ИЗ Catalog.OpenSdblMetadataProbe КАК p
+         СГРУППИРОВАТЬ ПО p.Организация
+         УПОРЯДОЧИТЬ ПО p.Организация.Code, МАКСИМУМ(p.Code) УБЫВ;",
+        &snapshot,
+    )
+    .unwrap();
+    assert!(
+        projected.sql.contains("GROUP BY \"p\".\"_fld54\", \"__ref1\".\"_code\" ORDER BY 2 ASC, MAX(\"p\".\"_code\") DESC"),
+        "{}",
+        projected.sql
+    );
+    // The key itself orders the statement without being projected; a
+    // dereference in the ordering alone still joins the grouping.
+    let ordered = postgres_compile!(
+        "ВЫБРАТЬ КОЛИЧЕСТВО(*) КАК Н ИЗ Catalog.OpenSdblMetadataProbe КАК p
+         СГРУППИРОВАТЬ ПО p.Организация
+         УПОРЯДОЧИТЬ ПО p.Организация.Code, p.Организация;",
+        &snapshot,
+    )
+    .unwrap();
+    assert!(
+        ordered.sql.contains("GROUP BY \"p\".\"_fld54\", \"__ref1\".\"_code\" ORDER BY \"__ref1\".\"_code\" ASC, \"p\".\"_fld54\" ASC"),
+        "{}",
+        ordered.sql
+    );
+    // An ungrouped field stays refused.
+    let ungrouped = postgres_compile!(
+        "ВЫБРАТЬ p.Code КАК Код ИЗ Catalog.OpenSdblMetadataProbe КАК p СГРУППИРОВАТЬ ПО p.Организация;",
+        &snapshot,
+    )
+    .unwrap_err();
+    assert!(
+        ungrouped.message().contains("must be grouped"),
+        "{ungrouped}"
+    );
+    let unordered = postgres_compile!(
+        "ВЫБРАТЬ КОЛИЧЕСТВО(*) КАК Н ИЗ Catalog.OpenSdblMetadataProbe КАК p СГРУППИРОВАТЬ ПО p.Организация УПОРЯДОЧИТЬ ПО p.Code;",
+        &snapshot,
+    )
+    .unwrap_err();
+    assert!(
+        unordered.message().contains("key or a projection alias"),
+        "{unordered}"
+    );
+}
+
+#[test]
+fn joined_statements_order_by_unprojected_fields() {
+    let snapshot = reference_snapshot();
+    let compiled = postgres_compile!(
+        "ВЫБРАТЬ p.Code КАК Код ИЗ Catalog.OpenSdblMetadataProbe КАК p
+         ЛЕВОЕ СОЕДИНЕНИЕ Catalog.Организации КАК o ПО p.Организация = o.Ссылка
+         УПОРЯДОЧИТЬ ПО o.Code, p.Code УБЫВ;",
+        &snapshot,
+    )
+    .unwrap();
+    assert!(
+        compiled
+            .sql
+            .ends_with("ORDER BY \"o\".\"_code\" ASC, 1 DESC"),
+        "{}",
+        compiled.sql
+    );
+}
+
+#[test]
+fn the_alias_wildcard_of_the_only_source_projects_every_field() {
+    let snapshot = snapshot();
+    let bare = postgres_compile!(
+        "ВЫБРАТЬ * ИЗ Catalog.OpenSdblMetadataProbe КАК Т;",
+        &snapshot
+    )
+    .unwrap();
+    let aliased = postgres_compile!(
+        "ВЫБРАТЬ Т.* ИЗ Catalog.OpenSdblMetadataProbe КАК Т;",
+        &snapshot
+    )
+    .unwrap();
+    assert_eq!(aliased.sql, bare.sql);
+    let by_name = postgres_compile!(
+        "ВЫБРАТЬ OpenSdblMetadataProbe.* ИЗ Catalog.OpenSdblMetadataProbe;",
+        &snapshot
+    )
+    .unwrap();
+    assert_eq!(by_name.columns.len(), bare.columns.len());
+    // Another qualifier still names a tabular section, which the probe has not.
+    let unknown = postgres_compile!(
+        "ВЫБРАТЬ Д.* ИЗ Catalog.OpenSdblMetadataProbe КАК Т;",
+        &snapshot
+    )
+    .unwrap_err();
+    assert!(unknown.message().contains("tabular section"), "{unknown}");
+
+    // Among named fields and in a join the wildcard adds the source's
+    // fields at its place; a repeated label is made unique.
+    let among = postgres_compile!(
+        "ВЫБРАТЬ Т.Code КАК Code, Т.*, Д.Code КАК Другой ИЗ Catalog.OpenSdblMetadataProbe КАК Т \
+         ЛЕВОЕ СОЕДИНЕНИЕ Catalog.OpenSdblMetadataProbe КАК Д ПО Т.Code = Д.Code;",
+        &snapshot
+    )
+    .unwrap();
+    assert_eq!(among.columns.len(), bare.columns.len() + 2);
+    assert_eq!(labels(&among)[0], "Code");
+    assert_eq!(labels(&among)[bare.columns.len() + 1], "Другой");
+    assert_eq!(
+        labels(&among)
+            .iter()
+            .filter(|label| **label == "Code")
+            .count(),
+        1
+    );
+    assert!(labels(&among).contains(&"Code_2"), "{:?}", labels(&among));
 }

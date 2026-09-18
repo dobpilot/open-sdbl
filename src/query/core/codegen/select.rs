@@ -1,7 +1,7 @@
 use super::constants::{constants_source_scope, finalize_constants_relation};
 use super::context::{
-    CompilationContext, CompiledBranch, JoinPlan, OrderKey, OuterScope, POINT_IN_TIME_SCHEMA_NAME,
-    ProjectedMember, ResolvedPath, ScopeId, SelectedProjection, SourceScope, attach_outer_scopes,
+    CompilationContext, CompiledBranch, JoinPlan, OrderKey, OuterScope, ProjectedMember,
+    ResolvedPath, ScopeId, SelectedProjection, SourceScope, attach_outer_scopes,
     compile_presentation, projected_members,
 };
 use super::expression::{
@@ -11,12 +11,15 @@ use super::expression::{
 };
 use super::nested::{PendingSection, resolve_section};
 use super::orchestrate::{PresentationCompilation, compile_query_ast};
-use super::params::{reference_constant_of_bytes, reference_constant_of_value};
+use super::params::{
+    object_type_number, parameter_kind, reference_constant_of_bytes, reference_constant_of_value,
+    render_scalar_parameter,
+};
 use super::separators::separator_predicates;
 use super::sources::{
     SourceRestriction, compile_source_free_branch, compile_source_free_expression,
-    compile_source_relation, contains_aggregate, projection_is_aggregated, projection_token,
-    references_a_field, validate_aggregate_projection,
+    compile_source_relation, contains_aggregate, expression_children, projection_is_aggregated,
+    projection_token, references_a_field, validate_aggregate_projection,
 };
 use super::virtual_tables::finalize_aggregate_relation;
 use crate::metadata::{Guid, MetadataSnapshot, ObjectId};
@@ -26,6 +29,7 @@ use crate::query::core::ast::{
 };
 use crate::query::core::dialect::{OutputLabelAllocator, SqlDialect, decode_binary_literal};
 use crate::query::core::names::names_equal;
+use crate::query::core::params::{ParameterColumn, ParameterValue};
 use crate::query::core::temp_tables::cte_name;
 use std::str::FromStr;
 
@@ -90,10 +94,12 @@ pub(super) fn compile_branch(
     let joins = ast.joins.as_slice();
     validate_join_projection(ast, joins)?;
     let grouped = !ast.group.is_empty() || ast.having.is_some();
+    let parameter_columns = parameter_source_columns(ast);
     let mut context = compile_branch_context(
         outer,
         source,
         joins,
+        &parameter_columns,
         snapshot,
         catalog,
         dialect,
@@ -121,7 +127,7 @@ pub(super) fn compile_branch(
     } else {
         push_owner_key(&sections, &mut selected, &context)?
     };
-    let group_by = compile_group_keys(ast, &selected, &mut context)?;
+    let mut group_by = compile_group_keys(ast, &selected, &mut context)?;
     context.aggregates_allowed = grouped;
     let having = ast
         .having
@@ -147,9 +153,13 @@ pub(super) fn compile_branch(
         .iter()
         .enumerate()
         .map(|(index, join)| match &join.condition {
-            Some(condition) => {
-                compile_join_condition(condition, &mut context, join.token, ScopeId(index + 1))
-            }
+            Some(condition) => compile_join_condition(
+                condition,
+                &mut context,
+                join.token,
+                join.kind,
+                ScopeId(index + 1),
+            ),
             None => Ok(JoinCondition { sql: String::new() }),
         })
         .collect::<Result<Vec<_>, _>>()?;
@@ -158,6 +168,7 @@ pub(super) fn compile_branch(
         .as_ref()
         .map(|filter| compile_predicate(filter, &mut context))
         .transpose()?;
+    let mut derived_grouping = Vec::new();
     let mut order = compile_order_terms(
         order_terms,
         ast,
@@ -166,6 +177,12 @@ pub(super) fn compile_branch(
         // `РАЗЛИЧНЫЕ` keeps only the projected values, so SQL orders such
         // a statement by its projected columns and nothing else.
         union_order || !joins.is_empty() || grouped || ast.distinct,
+        grouped,
+        // A joined statement orders by a field it does not project as
+        // well, by the column itself; a union, a grouping or РАЗЛИЧНЫЕ
+        // has only its projected columns to order by.
+        !joins.is_empty() && !union_order && !grouped && !ast.distinct,
+        &mut derived_grouping,
         if grouped {
             "GROUP BY ORDER BY field must be a key or a projection alias"
         } else if !joins.is_empty() {
@@ -176,6 +193,13 @@ pub(super) fn compile_branch(
             "UNION ORDER BY field must occur in the first branch projection"
         },
     )?;
+    // A dereference of a grouping key in the ordering reads joined
+    // columns, which the grouping must cover as well.
+    for expression in derived_grouping {
+        if !group_by.contains(&expression) {
+            group_by.push(expression);
+        }
+    }
     if totals {
         // A totals wrapper re-orders the rows by these keys, so expression
         // keys must be visible as columns of the wrapped statement.
@@ -284,10 +308,12 @@ fn source_elements(joins: &[JoinAst<'_, '_>]) -> Vec<usize> {
     elements
 }
 
+#[allow(clippy::too_many_arguments)]
 fn compile_branch_context<'snapshot, 'catalog>(
     outer: &[OuterScope],
     source: &SourceAst<'_, '_>,
     joins: &[JoinAst<'_, '_>],
+    parameter_columns: &ParameterColumns,
     snapshot: &'snapshot MetadataSnapshot,
     catalog: &'catalog CompilationCatalog<'snapshot>,
     dialect: SqlDialect,
@@ -296,6 +322,7 @@ fn compile_branch_context<'snapshot, 'catalog>(
     if !joins.is_empty() {
         let mut sources = vec![resolve_join_source(
             source,
+            parameter_columns,
             snapshot,
             catalog,
             "__left",
@@ -312,6 +339,7 @@ fn compile_branch_context<'snapshot, 'catalog>(
             };
             let scope = resolve_join_source(
                 &join.source,
+                parameter_columns,
                 snapshot,
                 catalog,
                 &default_alias,
@@ -349,7 +377,15 @@ fn compile_branch_context<'snapshot, 'catalog>(
         attach_outer_scopes(&mut context, outer);
         return Ok(context);
     }
-    let scope = resolve_join_source(source, snapshot, catalog, "__src", dialect, presentations)?;
+    let scope = resolve_join_source(
+        source,
+        parameter_columns,
+        snapshot,
+        catalog,
+        "__src",
+        dialect,
+        presentations,
+    )?;
     let mut context = CompilationContext {
         snapshot,
         catalog,
@@ -388,12 +424,7 @@ fn derived_source_scope(
         .expect("the parser requires an alias on a nested source")
         .lexeme
         .to_owned();
-    let fields = compiled
-        .columns
-        .iter()
-        .enumerate()
-        .map(|(index, column)| derived_field(index, &column.label, &column.kind, snapshot, dialect))
-        .collect::<Vec<_>>();
+    let fields = derived_fields(&compiled.columns, snapshot, dialect);
     Ok(SourceScope {
         object: derived_owner(),
         fields: fields.into(),
@@ -407,11 +438,304 @@ fn derived_source_scope(
         constants: None,
         aggregate: None,
         used_fields: RefCell::new(BTreeSet::new()),
+        current_table: false,
     })
 }
 
 /// Builds the scope of a temporary-table source: the stored CTE becomes the
 /// relation and the stored columns become the fields.
+/// The columns a branch reads from each source written as `&Таблица`,
+/// keyed by the source's alias: what an unbound compilation — the
+/// preparation pass, which sees no values — exposes on such a source.
+type ParameterColumns = BTreeMap<String, Vec<String>>;
+
+fn parameter_source_columns(ast: &SelectAst<'_, '_>) -> ParameterColumns {
+    let mut columns = ParameterColumns::new();
+    let sources = ast
+        .source
+        .iter()
+        .chain(ast.joins.iter().map(|join| &join.source))
+        .filter(|source| source.parameter);
+    for source in sources {
+        let alias = source
+            .alias
+            .map_or(source.object.lexeme.trim_start_matches('&'), |alias| {
+                alias.lexeme
+            });
+        columns.insert(alias.to_owned(), Vec::new());
+    }
+    if columns.is_empty() {
+        return columns;
+    }
+    let mut expressions: Vec<&Expression<'_, '_>> = Vec::new();
+    let mut references: Vec<&FieldReference<'_, '_>> = Vec::new();
+    for item in &ast.projection {
+        match &item.expression {
+            Projection::Field(reference) => references.push(reference),
+            Projection::Scalar(expression) => expressions.push(expression),
+            Projection::Aggregate {
+                argument: AggregateArgument::Expression(expression),
+                ..
+            } => expressions.push(expression),
+            Projection::Presentation { argument, .. } => match argument {
+                PresentationArgument::Field(reference) => references.push(reference),
+                PresentationArgument::Expression(expression) => expressions.push(expression),
+                PresentationArgument::Literal(_) => {}
+            },
+            Projection::Aggregate { .. } | Projection::All | Projection::TabularSection { .. } => {}
+        }
+    }
+    expressions.extend(ast.joins.iter().filter_map(|join| join.condition.as_ref()));
+    expressions.extend(ast.filter.iter());
+    expressions.extend(ast.group.iter().map(|key| &key.expression));
+    expressions.extend(ast.having.iter());
+    while let Some(expression) = expressions.pop() {
+        if let Expression::Field(reference) = expression {
+            references.push(reference);
+        }
+        expressions.extend(expression_children(expression));
+    }
+    for reference in references {
+        let [alias, column] = reference.segments.as_slice() else {
+            continue;
+        };
+        let Some(known) = columns
+            .iter_mut()
+            .find(|(name, _)| names_equal(name, alias.lexeme))
+            .map(|(_, columns)| columns)
+        else {
+            continue;
+        };
+        if !known.iter().any(|name| names_equal(name, column.lexeme)) {
+            known.push(column.lexeme.to_owned());
+        }
+    }
+    columns
+}
+
+/// Builds the scope of a value table passed as a parameter. The rows are
+/// inlined as a CTE of the statement — `SELECT 1 AS "__row", <values>
+/// UNION ALL SELECT 2, …` — which the source reads by name; an unbound
+/// compilation exposes the columns the branch names, of no kind.
+fn parameter_source_scope(
+    source: &SourceAst<'_, '_>,
+    parameter_columns: &ParameterColumns,
+    snapshot: &MetadataSnapshot,
+    catalog: &CompilationCatalog<'_>,
+    dialect: SqlDialect,
+) -> Result<SourceScope, QueryDiagnostic> {
+    let token = source.object;
+    let name = token.lexeme.trim_start_matches('&');
+    let alias = source
+        .alias
+        .map_or_else(|| name.to_owned(), |alias| alias.lexeme.to_owned());
+    let (columns, relation) = if catalog.is_bound() {
+        let value = catalog.parameters().lookup(token)?;
+        let Some(ParameterValue::Table { columns, rows }) = value else {
+            return Err(QueryDiagnostic::at(
+                QueryDiagnosticKind::Parameter,
+                Some(token),
+                format!(
+                    "parameter {:?} read as a source must be bound to a value table",
+                    token.lexeme
+                ),
+            ));
+        };
+        let (compiled, body) = render_parameter_table(columns, rows, token, snapshot, dialect)?;
+        let cte = catalog.next_cte_name("__param");
+        catalog.push_hierarchy_cte(cte.clone(), body);
+        (compiled, dialect.quote_identifier(&cte))
+    } else {
+        let columns = parameter_columns
+            .iter()
+            .find(|(known, _)| names_equal(known, &alias))
+            .map(|(_, columns)| columns.as_slice())
+            .unwrap_or_default()
+            .iter()
+            .map(|column| CompiledColumn::named(column.clone(), column.clone(), ColumnKind::Null))
+            .collect::<Vec<_>>();
+        (columns, dialect.quote_identifier("__param_unbound"))
+    };
+    let fields = derived_fields(&columns, snapshot, dialect);
+    Ok(SourceScope {
+        object: derived_owner(),
+        fields: fields.into(),
+        relation,
+        sql_alias: alias.clone(),
+        object_name: name.to_owned(),
+        source_alias: Some(alias),
+        identity_is_base: false,
+        reference_joins: Vec::new(),
+        separator_predicates: Vec::new(),
+        constants: None,
+        aggregate: None,
+        used_fields: RefCell::new(BTreeSet::new()),
+        current_table: false,
+    })
+}
+
+/// Renders a value table as the body of its CTE and describes its
+/// columns. Each column has the kind it declares: the first row is cast
+/// to it, so the CTE column carries that type whatever the later rows or
+/// the emptiness of the table; every value must fit the kind, and a
+/// reference must point at one of the kind's targets.
+fn render_parameter_table(
+    columns: &[ParameterColumn],
+    rows: &[Vec<ParameterValue>],
+    token: &Token<'_>,
+    snapshot: &MetadataSnapshot,
+    dialect: SqlDialect,
+) -> Result<(Vec<CompiledColumn>, String), QueryDiagnostic> {
+    let invalid = |message: String| {
+        QueryDiagnostic::at(
+            QueryDiagnosticKind::Parameter,
+            Some(token),
+            format!("table parameter {:?}: {message}", token.lexeme),
+        )
+    };
+    if columns.is_empty() {
+        return Err(invalid(
+            "a value table needs at least one column".to_owned(),
+        ));
+    }
+    let mut kinds = Vec::with_capacity(columns.len());
+    for (index, column) in columns.iter().enumerate() {
+        if column.name.is_empty()
+            || column
+                .name
+                .contains(|character: char| character.is_whitespace())
+        {
+            return Err(invalid(format!("column {index} has no usable name")));
+        }
+        if columns[..index]
+            .iter()
+            .any(|earlier| names_equal(&earlier.name, &column.name))
+        {
+            return Err(invalid(format!("column {:?} is named twice", column.name)));
+        }
+        let kind = match &column.kind {
+            ColumnKind::Reference {
+                targets,
+                runtime_typed,
+            } => ColumnKind::Reference {
+                targets: targets.clone(),
+                runtime_typed: *runtime_typed || targets.len() != 1,
+            },
+            ColumnKind::String { .. }
+            | ColumnKind::Number { .. }
+            | ColumnKind::Boolean
+            | ColumnKind::DateTime
+            | ColumnKind::Binary { .. } => column.kind.clone(),
+            other => {
+                return Err(invalid(format!(
+                    "column {:?} needs a scalar or reference kind, not {other:?}",
+                    column.name
+                )));
+            }
+        };
+        kinds.push(kind);
+    }
+    for (row_index, row) in rows.iter().enumerate() {
+        if row.len() != columns.len() {
+            return Err(invalid(format!(
+                "row {} has {} values for {} columns",
+                row_index + 1,
+                row.len(),
+                columns.len()
+            )));
+        }
+        for ((column, kind), value) in columns.iter().zip(&kinds).zip(row) {
+            let fits = match (kind, value) {
+                (_, ParameterValue::Null) => true,
+                (ColumnKind::String { .. }, ParameterValue::String(_))
+                | (ColumnKind::Number { .. }, ParameterValue::Number { .. })
+                | (ColumnKind::Boolean, ParameterValue::Boolean(_))
+                | (ColumnKind::DateTime, ParameterValue::Date(_))
+                | (ColumnKind::Binary { .. }, ParameterValue::Binary(_)) => true,
+                (
+                    ColumnKind::Reference { targets, .. },
+                    ParameterValue::Reference { object, .. },
+                ) => targets.is_empty() || targets.contains(object),
+                _ => false,
+            };
+            if !fits {
+                return Err(invalid(format!(
+                    "row {} holds {:?} in column {:?} of kind {kind:?}",
+                    row_index + 1,
+                    parameter_kind(value),
+                    column.name
+                )));
+            }
+        }
+    }
+    let cast_type = |kind: &ColumnKind| match derived_data_type(kind, dialect).as_str() {
+        "varbinary" => "varbinary(max)".to_owned(),
+        other => other.to_owned(),
+    };
+    let render = |kind: &ColumnKind, value: &ParameterValue| -> Result<String, QueryDiagnostic> {
+        Ok(match (kind, value) {
+            (
+                ColumnKind::Reference {
+                    runtime_typed: true,
+                    ..
+                },
+                ParameterValue::Reference { object, id },
+            ) => dialect.reference_payload(
+                &dialect.binary_u32(object_type_number(*object, token, snapshot)?),
+                &dialect.binary_literal(id),
+            ),
+            (_, other) => render_scalar_parameter(other, token, dialect, true)?,
+        })
+    };
+    let labelled = |values: Vec<String>| {
+        std::iter::once("__row".to_owned())
+            .chain(columns.iter().map(|column| column.name.clone()))
+            .zip(values)
+            .map(|(label, sql)| format!("{sql} AS {}", dialect.quote_identifier(&label)))
+            .collect::<Vec<_>>()
+            .join(", ")
+    };
+    // The first row types the CTE columns through casts; an empty table
+    // is one row of typed `NULL`s that never answers.
+    let mut body = match rows.first() {
+        Some(first) => {
+            let mut values = vec!["1".to_owned()];
+            for (kind, value) in kinds.iter().zip(first) {
+                values.push(format!(
+                    "CAST({} AS {})",
+                    render(kind, value)?,
+                    cast_type(kind)
+                ));
+            }
+            format!("SELECT {}", labelled(values))
+        }
+        None => {
+            let values = std::iter::once("1".to_owned())
+                .chain(
+                    kinds
+                        .iter()
+                        .map(|kind| format!("CAST(NULL AS {})", cast_type(kind))),
+                )
+                .collect();
+            format!("SELECT {} WHERE 1 = 0", labelled(values))
+        }
+    };
+    for (row_index, row) in rows.iter().enumerate().skip(1) {
+        let mut values = vec![(row_index + 1).to_string()];
+        for (kind, value) in kinds.iter().zip(row) {
+            values.push(render(kind, value)?);
+        }
+        body.push_str(" UNION ALL SELECT ");
+        body.push_str(&values.join(", "));
+    }
+    let compiled = columns
+        .iter()
+        .zip(kinds)
+        .map(|(column, kind)| CompiledColumn::named(column.name.clone(), column.name.clone(), kind))
+        .collect();
+    Ok((compiled, body))
+}
+
 fn temporary_source_scope(
     source: &SourceAst<'_, '_>,
     snapshot: &MetadataSnapshot,
@@ -422,12 +746,7 @@ fn temporary_source_scope(
     let alias = source
         .alias
         .map_or_else(|| table.name.clone(), |token| token.lexeme.to_owned());
-    let fields = table
-        .columns
-        .iter()
-        .enumerate()
-        .map(|(index, column)| derived_field(index, &column.label, &column.kind, snapshot, dialect))
-        .collect::<Vec<_>>();
+    let fields = derived_fields(&table.columns, snapshot, dialect);
     Ok(SourceScope {
         object: derived_owner(),
         fields: fields.into(),
@@ -441,6 +760,7 @@ fn temporary_source_scope(
         constants: None,
         aggregate: None,
         used_fields: RefCell::new(BTreeSet::new()),
+        current_table: false,
     })
 }
 
@@ -542,7 +862,14 @@ fn criterion_source_scope(
         targets,
         runtime_typed: true,
     };
-    let field = derived_field(0, CRITERION_FIELD, &kind, snapshot, dialect);
+    let field = derived_field(
+        0,
+        CRITERION_FIELD,
+        CRITERION_FIELD,
+        &kind,
+        snapshot,
+        dialect,
+    );
     Ok(SourceScope {
         object: derived_owner(),
         fields: vec![field].into(),
@@ -556,6 +883,7 @@ fn criterion_source_scope(
         constants: None,
         aggregate: None,
         used_fields: RefCell::new(BTreeSet::new()),
+        current_table: false,
     })
 }
 
@@ -592,8 +920,35 @@ fn criterion_value_sql(
 /// The only field a filter-criterion source exposes.
 const CRITERION_FIELD: &str = "Ссылка";
 
+/// The fields of a derived source: each column under the name the text
+/// gave it, except that a name two columns share — `А.Контрагент,
+/// Б.Контрагент` without aliases — falls back to the emitted labels, which
+/// the allocator keeps distinct.
+fn derived_fields(
+    columns: &[CompiledColumn],
+    snapshot: &MetadataSnapshot,
+    dialect: SqlDialect,
+) -> Vec<QueryableField> {
+    columns
+        .iter()
+        .enumerate()
+        .map(|(index, column)| {
+            let shared = columns
+                .iter()
+                .filter(|other| names_equal(&other.name, &column.name))
+                .count()
+                > 1;
+            let name = if shared { &column.label } else { &column.name };
+            derived_field(index, name, &column.label, &column.kind, snapshot, dialect)
+        })
+        .collect()
+}
+
+/// A field of a derived source: named by the alias the text gave the
+/// projection, read through the label the SQL emitted.
 fn derived_field(
     index: usize,
+    name: &str,
     label: &str,
     kind: &ColumnKind,
     snapshot: &MetadataSnapshot,
@@ -622,13 +977,13 @@ fn derived_field(
         _ => (None, Vec::new()),
     };
     QueryableField {
-        name: label.to_owned(),
+        name: name.to_owned(),
         schema_name: format!("__derived{}", index + 1),
-        aliases: vec![label.to_owned()],
+        aliases: vec![name.to_owned()],
         columns: vec![QueryableColumn {
             physical_name: label.to_owned(),
             data_type: derived_data_type(kind, dialect),
-            output_label: label.to_owned(),
+            output_label: name.to_owned(),
             kind: kind.clone(),
         }],
         reference_target,
@@ -691,15 +1046,22 @@ fn compile_branch_projections(
     presentations: &mut PresentationCompilation<'_>,
     storage_domain: bool,
 ) -> Result<Vec<SelectedProjection>, QueryDiagnostic> {
-    if join.is_none()
-        && matches!(
-            ast.projection.as_slice(),
-            [ProjectionItem {
+    let wildcard = match ast.projection.as_slice() {
+        [
+            ProjectionItem {
                 expression: Projection::All,
                 ..
-            }]
-        )
-    {
+            },
+        ] => true,
+        [
+            ProjectionItem {
+                expression: Projection::TabularSection { path, columns },
+                ..
+            },
+        ] => source_wildcard_scope(context, path, columns).is_some(),
+        _ => false,
+    };
+    if join.is_none() && wildcard {
         let scope = context.source(ScopeId(0));
         return Ok(scope
             .fields
@@ -739,6 +1101,22 @@ fn is_section_projection(
 /// section written as `Состав.(…)` or `Состав.*` says so outright; the
 /// bare `Состав` form looks like a field and only metadata tells them
 /// apart, so it is recognized here.
+/// The source `Псевдоним.*` names, when it names one rather than a
+/// tabular section: no columns listed and the qualifier a source's own.
+fn source_wildcard_scope(
+    context: &CompilationContext<'_, '_>,
+    path: &FieldReference<'_, '_>,
+    columns: &[&Token<'_>],
+) -> Option<ScopeId> {
+    if !columns.is_empty() {
+        return None;
+    }
+    let [qualifier] = path.segments.as_slice() else {
+        return None;
+    };
+    context.qualifier_scope(qualifier).ok().flatten()
+}
+
 fn take_projected_sections(
     ast: &SelectAst<'_, '_>,
     context: &CompilationContext<'_, '_>,
@@ -762,6 +1140,12 @@ fn take_projected_sections(
             }
         };
         let Some(scope) = context.section_scope_of(path) else {
+            // `Псевдоним.*` of a source stands for every field of it,
+            // taken up with the projections.
+            if let Some(source) = source_wildcard_scope(context, path, requested) {
+                position += context.source(source).fields.len();
+                continue;
+            }
             return Err(QueryDiagnostic::at(
                 QueryDiagnosticKind::UnknownObject,
                 Some(path.last()),
@@ -857,6 +1241,22 @@ fn compile_selected_projections(
 ) -> Result<Vec<SelectedProjection>, QueryDiagnostic> {
     let mut selected = Vec::with_capacity(ast.projection.len());
     for projection in &ast.projection {
+        // `Псевдоним.*` stands for every field of that source, in the
+        // metadata order, wherever in the list it is written.
+        if let Projection::TabularSection { path, columns } = &projection.expression
+            && let Some(scope_id) = source_wildcard_scope(context, path, columns)
+        {
+            let scope = context.source(scope_id);
+            selected.extend(
+                scope
+                    .fields
+                    .iter()
+                    .enumerate()
+                    .map(|field| ResolvedPath::from_source(scope_id, scope, field))
+                    .map(SelectedProjection::Field),
+            );
+            continue;
+        }
         // A tabular section is answered by a statement of its own, which
         // `take_projected_sections` has already resolved.
         if is_section_projection(context, &projection.expression) {
@@ -867,6 +1267,10 @@ fn compile_selected_projections(
                 let mut resolved = context.resolve(reference)?;
                 if let Some(alias) = projection.alias {
                     resolved.path_label = Some(alias.lexeme.to_owned());
+                } else if resolved.path_label.is_none() {
+                    // The platform names the column by the field as the
+                    // text spells it — `Ссылка`, not the schema's `ID`.
+                    resolved.path_label = Some(reference.last().lexeme.to_owned());
                 }
                 selected.push(SelectedProjection::Field(resolved));
             }
@@ -981,12 +1385,14 @@ fn render_selected_projections(
                 &value_sql, &kind, members, None, context,
             )?) {
                 context.catalog.charge(1, None)?;
-                let output_label = labels.allocate(&format!("{label}{member}"));
+                let requested = format!("{label}{member}");
+                let output_label = labels.allocate(&requested);
                 sql.push(format!(
                     "{sql_text} AS {}",
                     context.dialect.quote_identifier(&output_label)
                 ));
-                columns.push(CompiledColumn::new(
+                columns.push(CompiledColumn::named(
+                    requested,
                     output_label,
                     composite_member_kind_of(member),
                 ));
@@ -1044,7 +1450,11 @@ fn render_selected_projections(
                         "{expression} AS {}",
                         context.dialect.quote_identifier(&output_label)
                     ));
-                    columns.push(CompiledColumn::new(output_label, kind));
+                    columns.push(CompiledColumn::named(
+                        requested_label.clone(),
+                        output_label,
+                        kind,
+                    ));
                 }
             }
             SelectedProjection::Generated {
@@ -1068,7 +1478,7 @@ fn render_selected_projections(
                 if *deferred {
                     deferred_presentations.push(columns.len());
                 }
-                columns.push(CompiledColumn::new(output_label, kind));
+                columns.push(CompiledColumn::named(label.clone(), output_label, kind));
             }
         }
         logical_columns.push(columns.len() - before);
@@ -1168,28 +1578,39 @@ fn aliased_projection(ast: &SelectAst<'_, '_>, field: &FieldReference<'_, '_>) -
     })
 }
 
+#[allow(clippy::too_many_arguments)]
 fn compile_order_terms(
     order_terms: &[OrderTerm<'_, '_>],
     ast: &SelectAst<'_, '_>,
     selected: &[SelectedProjection],
     context: &mut CompilationContext<'_, '_>,
     positional: bool,
+    grouped: bool,
+    unprojected_fields: bool,
+    derived_grouping: &mut Vec<String>,
     missing_message: &'static str,
 ) -> Result<Vec<OrderKey>, QueryDiagnostic> {
     let mut keys = Vec::with_capacity(order_terms.len());
+    let key_paths = group_key_paths(ast);
     for term in order_terms {
         let field = match &term.key {
             OrderKeyAst::Field(field) => field,
             OrderKeyAst::Expression(expression) => {
-                if positional {
+                // A grouped statement orders by an aggregate expression
+                // — `МАКСИМУМ(Период) УБЫВ` — as the platform does.
+                if positional && !(grouped && contains_aggregate(expression)) {
                     return Err(QueryDiagnostic::at(
                         QueryDiagnosticKind::UnsupportedFeature,
                         Some(term.token),
                         missing_message,
                     ));
                 }
+                let aggregates_allowed = context.aggregates_allowed;
+                context.aggregates_allowed |= grouped;
+                let sql = compile_expression(expression, context);
+                context.aggregates_allowed = aggregates_allowed;
                 keys.push(OrderKey {
-                    sql: compile_expression(expression, context)?,
+                    sql: sql?,
                     position: None,
                     descending: term.descending,
                 });
@@ -1213,7 +1634,10 @@ fn compile_order_terms(
                     position: None,
                     descending: term.descending,
                 }),
-                SelectedProjection::Field(resolved) if is_ordered_pair(resolved) => {
+                // A compound field — a point in time, a reference of
+                // several types, a composite value — orders by its columns
+                // in turn, the type first, as the platform orders values.
+                SelectedProjection::Field(resolved) if resolved.field().columns.len() > 1 => {
                     for column in &resolved.field().columns {
                         keys.push(OrderKey {
                             sql: context.sql_column(resolved, column),
@@ -1235,22 +1659,60 @@ fn compile_order_terms(
         }
         let resolved = context.resolve(field)?;
         // A point in time orders by its date and then by its reference,
-        // the way the platform spreads the pair over the ordering.
-        let columns = if is_ordered_pair(&resolved) {
-            resolved.field().columns.iter().collect::<Vec<_>>()
+        // the way the platform spreads the pair over the ordering; any
+        // other compound field orders by its columns in turn as well.
+        // A projection renders a reference pair as one column, so a
+        // positional ordering names the rendered members, not the
+        // physical ones.
+        let columns = if positional {
+            projected_members(resolved.field())
+                .into_iter()
+                .map(|member| match member {
+                    ProjectedMember::Single(column) => column,
+                    ProjectedMember::Reference { value_member, .. } => value_member,
+                })
+                .collect::<Vec<_>>()
         } else {
-            vec![single_column(resolved.field(), field.last())?]
+            resolved.field().columns.iter().collect::<Vec<_>>()
         };
         for column in columns {
             if positional {
-                let position = selected_column_position(selected, &resolved, &column.physical_name)
-                    .ok_or_else(|| {
-                        QueryDiagnostic::at(
-                            QueryDiagnosticKind::UnsupportedFeature,
-                            Some(term.token),
-                            missing_message,
-                        )
-                    })?;
+                let position = selected_column_position(selected, &resolved, &column.physical_name);
+                // A grouping key, or a dereference of one —
+                // `Сотрудник.Наименование` over the key `Сотрудник` — orders
+                // a grouped statement whether or not it is projected; the
+                // dereferenced columns join the grouping.
+                if position.is_none()
+                    && grouped
+                    && (is_group_key_path(field, &key_paths)
+                        || extends_group_key(field, &key_paths))
+                {
+                    let sql = context.sql_column(&resolved, column);
+                    if extends_group_key(field, &key_paths) {
+                        derived_grouping.push(sql.clone());
+                    }
+                    keys.push(OrderKey {
+                        sql,
+                        position: None,
+                        descending: term.descending,
+                    });
+                    continue;
+                }
+                if position.is_none() && unprojected_fields {
+                    keys.push(OrderKey {
+                        sql: context.sql_column(&resolved, column),
+                        position: None,
+                        descending: term.descending,
+                    });
+                    continue;
+                }
+                let position = position.ok_or_else(|| {
+                    QueryDiagnostic::at(
+                        QueryDiagnosticKind::UnsupportedFeature,
+                        Some(term.token),
+                        missing_message,
+                    )
+                })?;
                 keys.push(OrderKey {
                     sql: String::new(),
                     position: Some(position),
@@ -1268,10 +1730,45 @@ fn compile_order_terms(
     Ok(keys)
 }
 
-/// Whether the field is the point-in-time pair, which orders by both of
-/// its members instead of refusing as a compound field does.
-fn is_ordered_pair(resolved: &ResolvedPath) -> bool {
-    resolved.expression.is_none() && resolved.field().schema_name == POINT_IN_TIME_SCHEMA_NAME
+/// The `СГРУППИРОВАТЬ ПО` keys written as field paths, upper-cased.
+fn group_key_paths(ast: &SelectAst<'_, '_>) -> Vec<Vec<String>> {
+    ast.group
+        .iter()
+        .filter_map(|key| match &key.expression {
+            Expression::Field(reference) => Some(
+                reference
+                    .segments
+                    .iter()
+                    .map(|token| token.lexeme.to_uppercase())
+                    .collect(),
+            ),
+            _ => None,
+        })
+        .collect()
+}
+
+fn path_matches(reference: &FieldReference<'_, '_>, path: &[String]) -> bool {
+    reference
+        .segments
+        .iter()
+        .zip(path)
+        .all(|(token, name)| names_equal(token.lexeme, name))
+}
+
+/// Whether the path is one of the grouping keys as written.
+fn is_group_key_path(reference: &FieldReference<'_, '_>, paths: &[Vec<String>]) -> bool {
+    paths
+        .iter()
+        .any(|path| reference.segments.len() == path.len() && path_matches(reference, path))
+}
+
+/// Whether the path dereferences a grouping key — `Сотрудник.Наименование`
+/// over the key `Сотрудник` — which the platform takes as a function of
+/// the key; the joined columns it reads must join the grouping.
+fn extends_group_key(reference: &FieldReference<'_, '_>, paths: &[Vec<String>]) -> bool {
+    paths
+        .iter()
+        .any(|path| reference.segments.len() > path.len() && path_matches(reference, path))
 }
 
 /// One resolved `GROUP BY` key.
@@ -1298,6 +1795,7 @@ fn compile_group_keys(
             sql.push(expression);
         }
     };
+    let key_paths = group_key_paths(ast);
     for key in &ast.group {
         context.catalog.charge(1, None)?;
         let target = match &key.expression {
@@ -1395,6 +1893,28 @@ fn compile_group_keys(
                 }
                 _ => false,
             });
+        // An expression over grouped fields — `-Сумма`, `ЕСТЬNULL(Счет,
+        // &Пустой) + 1` — is a function of the group, which the platform
+        // accepts without listing the expression itself.
+        let mut derived = Vec::new();
+        let matched = matched
+            || match (projection, &item.expression) {
+                (SelectedProjection::Field(resolved), Projection::Field(reference))
+                    if extends_group_key(reference, &key_paths) =>
+                {
+                    for column in &resolved.field().columns {
+                        derived.push(context.sql_column(resolved, column));
+                    }
+                    true
+                }
+                (_, Projection::Scalar(expression)) => {
+                    scalar_is_grouped(expression, &keys, &key_paths, context, &mut derived)
+                }
+                _ => false,
+            };
+        for expression in derived {
+            push(expression);
+        }
         if !matched {
             return Err(QueryDiagnostic::at_or_unpositioned(
                 QueryDiagnosticKind::UnsupportedFeature,
@@ -1432,6 +1952,57 @@ fn projection_label(item: &ProjectionItem<'_, '_>, projection: &SelectedProjecti
 
 /// A case- and whitespace-insensitive structural rendering used to match
 /// `GROUP BY` expressions with projected expressions.
+/// Whether a scalar expression is a function of the grouping keys: a key
+/// itself, a field a key names, a constant, or an expression whose every
+/// operand is.
+fn scalar_is_grouped(
+    expression: &Expression<'_, '_>,
+    keys: &[GroupKeyTarget],
+    key_paths: &[Vec<String>],
+    context: &mut CompilationContext<'_, '_>,
+    derived: &mut Vec<String>,
+) -> bool {
+    let fingerprint = expression_fingerprint(expression);
+    if keys
+        .iter()
+        .any(|key| matches!(key, GroupKeyTarget::Scalar(key) if *key == fingerprint))
+    {
+        return true;
+    }
+    match expression {
+        Expression::Field(reference) => {
+            if keys.iter().any(|key| match key {
+                GroupKeyTarget::Path(key) => context
+                    .resolve(reference)
+                    .is_ok_and(|resolved| key.same_path(&resolved)),
+                _ => false,
+            }) {
+                return true;
+            }
+            if extends_group_key(reference, key_paths)
+                && let Ok(resolved) = context.resolve(reference)
+            {
+                for column in &resolved.field().columns {
+                    derived.push(context.sql_column(&resolved, column));
+                }
+                return true;
+            }
+            false
+        }
+        Expression::Aggregate { .. } => true,
+        _ => {
+            if !references_a_field(expression) {
+                return true;
+            }
+            let children = expression_children(expression);
+            !children.is_empty()
+                && children
+                    .iter()
+                    .all(|child| scalar_is_grouped(child, keys, key_paths, context, derived))
+        }
+    }
+}
+
 fn expression_fingerprint(expression: &Expression<'_, '_>) -> String {
     let mut output = String::new();
     fingerprint_into(expression, &mut output);
@@ -1515,6 +2086,19 @@ fn fingerprint_into(expression: &Expression<'_, '_>, output: &mut String) {
                 upper(object),
                 upper(value)
             ));
+        }
+        Expression::Tuple { items, .. } => {
+            output.push_str("T(");
+            for item in items {
+                fingerprint_into(item, output);
+                output.push(',');
+            }
+            output.push(')');
+        }
+        Expression::SystemValue {
+            enumeration, value, ..
+        } => {
+            output.push_str(&format!("SV({}.{})", upper(enumeration), upper(value)));
         }
         Expression::Uuid { argument, .. } => {
             output.push_str("UUID(");
@@ -1722,6 +2306,7 @@ fn compile_branch_sql(
 
 fn resolve_join_source(
     source: &SourceAst<'_, '_>,
+    parameter_columns: &ParameterColumns,
     snapshot: &MetadataSnapshot,
     catalog: &CompilationCatalog<'_>,
     default_alias: &str,
@@ -1733,6 +2318,9 @@ fn resolve_join_source(
     }
     if source.temporary {
         return temporary_source_scope(source, snapshot, catalog, dialect);
+    }
+    if source.parameter {
+        return parameter_source_scope(source, parameter_columns, snapshot, catalog, dialect);
     }
     if source.constants {
         return constants_source_scope(source, snapshot, catalog, default_alias, dialect);
@@ -1777,6 +2365,7 @@ fn resolve_join_source(
         separator_predicates: compiled_source.separators,
         constants: None,
         used_fields: RefCell::new(BTreeSet::new()),
+        current_table: false,
     })
 }
 
@@ -1787,6 +2376,7 @@ fn compile_join_condition(
     expression: &Expression<'_, '_>,
     context: &mut CompilationContext<'_, '_>,
     token: &Token<'_>,
+    kind: JoinKind,
     joined: ScopeId,
 ) -> Result<JoinCondition, QueryDiagnostic> {
     let mut parts = Vec::new();
@@ -1796,15 +2386,17 @@ fn compile_join_condition(
         compile_join_condition_parts(expression, context, &mut parts, &mut left_marker, joined);
     context.compiling_join_condition = false;
     compiled?;
-    // The anchor equality is what makes the condition joinable; a server
-    // plans a FULL JOIN only on such a condition.
-    left_marker.ok_or_else(|| {
-        QueryDiagnostic::at(
+    // An inner, left or right join takes any condition — `ПО (ИСТИНА)`,
+    // a comparison with a parameter, an inequality of periods — the way
+    // the platform and the servers do; the anchor equality is what makes
+    // a FULL JOIN plannable, so it stays required there.
+    if kind == JoinKind::Full && left_marker.is_none() {
+        return Err(QueryDiagnostic::at(
             QueryDiagnosticKind::UnsupportedFeature,
             Some(token),
-            "JOIN condition requires at least one top-level direct-field equality between the joined source and an earlier source combined by AND",
-        )
-    })?;
+            "FULL JOIN condition requires at least one top-level direct-field equality between the joined source and an earlier source combined by AND",
+        ));
+    }
     Ok(JoinCondition {
         sql: parts.join(" AND "),
     })
@@ -1940,22 +2532,9 @@ fn validate_direct_join_condition_fields(
                 let resolved = context.resolve(argument)?;
                 check_join_scope(context, resolved.scope, argument.last(), joined)?;
             }
-            Expression::Cast {
-                argument,
-                path: None,
-                ..
-            } => pending.push(argument),
-            Expression::Cast {
-                token,
-                path: Some(_),
-                ..
-            } => {
-                return Err(QueryDiagnostic::at(
-                    QueryDiagnosticKind::UnsupportedFeature,
-                    Some(token),
-                    "JOIN condition supports direct fields only",
-                ));
-            }
+            // A dereference through a cast joins its target the way a
+            // dereferenced field does.
+            Expression::Cast { argument, .. } => pending.push(argument),
             Expression::Between {
                 value, low, high, ..
             } => {
@@ -2032,7 +2611,9 @@ fn validate_direct_join_condition_fields(
             Expression::Literal(_)
             | Expression::Parameter(_)
             | Expression::DateTime { .. }
-            | Expression::MetadataValue { .. } => {}
+            | Expression::MetadataValue { .. }
+            | Expression::SystemValue { .. } => {}
+            Expression::Tuple { items, .. } => pending.extend(items),
         }
     }
     Ok(())
@@ -2283,9 +2864,24 @@ fn compile_join_field_equality(
         _ => Err(QueryDiagnostic::at(
             QueryDiagnosticKind::UnsupportedFeature,
             Some(left_token),
-            "JOIN equality does not support these compound field shapes",
+            format!(
+                "JOIN equality does not support these compound field shapes: {} against {}",
+                field_shape(left.field()),
+                field_shape(right.field()),
+            ),
         )),
     }
+}
+
+/// The physical members of a field, for a diagnostic.
+fn field_shape(field: &QueryableField) -> String {
+    let members = field
+        .columns
+        .iter()
+        .map(|column| column.physical_name.as_str())
+        .collect::<Vec<_>>()
+        .join(", ");
+    format!("{:?} [{members}]", field.name)
 }
 
 /// A fixed reference rendered as the `RTRef ‖ RRRef` payload of its target.
@@ -2351,11 +2947,14 @@ fn fixed_reference_database_type(
             ),
         )
     })?;
+    // SchemaStorage names a table without the leading underscore of its
+    // physical name (`Reference347` for `_Reference347`).
+    let target = target.trim_start_matches('_');
     let matches = snapshot
         .schema()
         .tables
         .iter()
-        .filter(|table| names_equal(&table.name, target))
+        .filter(|table| names_equal(table.name.trim_start_matches('_'), target))
         .collect::<Vec<_>>();
     match matches.as_slice() {
         [table] => Ok(table.number),

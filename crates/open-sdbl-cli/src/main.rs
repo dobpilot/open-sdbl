@@ -7,6 +7,7 @@
 use std::io::{self, BufWriter, Write};
 use std::process::ExitCode;
 
+mod access;
 mod app;
 mod args;
 mod auth;

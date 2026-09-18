@@ -43,6 +43,7 @@ mod hex_test_support;
 
 pub use lexer::*;
 
+pub mod access;
 /// Reading and resolving metadata stored by the 1C platform.
 pub mod metadata;
 /// Bounded query parsing and database SQL generation through resolved metadata.

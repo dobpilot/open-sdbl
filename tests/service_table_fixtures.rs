@@ -210,6 +210,8 @@ fn descriptor(resource: &str, object: &str, name: &str) -> ConfigDescriptor {
         separation: None,
         reference_types: Vec::new(),
         object_reference_type: None,
+        balance: None,
+        chart_of_accounts: None,
     }
 }
 
@@ -514,6 +516,10 @@ fn compiles_service_table_sources_on_both_dialects() {
         ),
         (
             "ВЫБРАТЬ Node, MessageNo ИЗ РегистрНакопления.RegisteredTotals.Изменения;",
+            "_AccumRgChngR1273",
+        ),
+        (
+            "ВЫБРАТЬ Узел, НомерСообщения ИЗ РегистрНакопления.RegisteredTotals.Изменения ГДЕ НомерСообщения ЕСТЬ NULL;",
             "_AccumRgChngR1273",
         ),
         (

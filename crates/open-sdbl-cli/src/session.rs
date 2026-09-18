@@ -7,7 +7,7 @@
 use std::future::Future;
 use std::time::Duration;
 
-use open_sdbl::metadata::MetadataSnapshot;
+use open_sdbl::metadata::{MetadataSnapshot, StorageLayout};
 use open_sdbl::query::MsSqlBackend;
 use tokio::time::timeout;
 
@@ -137,6 +137,14 @@ impl DatabaseSession {
         match self {
             Self::Postgres(session) => session.metadata().await,
             Self::MsSql(session) => session.metadata().await,
+        }
+    }
+
+    /// The storage layout of the base, known after a metadata read.
+    pub(crate) fn layout(&self) -> Option<StorageLayout> {
+        match self {
+            Self::Postgres(session) => session.layout(),
+            Self::MsSql(session) => session.layout(),
         }
     }
 

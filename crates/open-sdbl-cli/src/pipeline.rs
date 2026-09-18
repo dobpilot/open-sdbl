@@ -4,8 +4,8 @@ use std::time::Duration;
 
 use futures_util::{Stream, StreamExt};
 use open_sdbl::metadata::{
-    ExtensionMetadata, LiveColumn, LiveIndex, LiveTable, MetadataSnapshot, StorageLayout,
-    extension_metadata_from_restructure, parse_config_resource_bounded,
+    ExtensionMetadata, LiveColumn, LiveIndex, LiveTable, MetadataErrorKind, MetadataSnapshot,
+    StorageLayout, extension_metadata_from_restructure, parse_config_resource_bounded,
     parse_extension_restructure, resolve_metadata_with_predefined_values_and_extensions,
 };
 use tokio::sync::Semaphore;
@@ -87,6 +87,7 @@ pub(crate) type ConfigMetadata = (
     Vec<open_sdbl::metadata::ConfigDescriptor>,
     Vec<open_sdbl::metadata::ConfigPredefinedValue>,
     Vec<open_sdbl::metadata::ConfigCriterion>,
+    Vec<open_sdbl::metadata::Guid>,
 );
 
 pub(crate) trait MetadataSource {
@@ -127,9 +128,11 @@ pub(crate) trait MetadataSource {
     async fn rollback_readonly(&mut self, original: CliError) -> CliError;
 }
 
+/// Reads the metadata of a base and answers the snapshot with the storage
+/// layout it was read from, which later reads of the same base reuse.
 pub(crate) async fn acquire_metadata(
     source: &mut impl MetadataSource,
-) -> Result<MetadataSnapshot, CliError> {
+) -> Result<(MetadataSnapshot, StorageLayout), CliError> {
     let result = async {
         let mut progress = MetadataProgress::new();
         progress.phase("transaction");
@@ -145,7 +148,7 @@ pub(crate) async fn acquire_metadata(
             "DBNames (legacy layout)"
         });
         let db_names = source.read_db_names(&layout).await?;
-        let (descriptors, predefined_values, criteria) =
+        let (descriptors, predefined_values, criteria, roles) =
             source.read_config(&layout, &mut progress).await?;
 
         progress.phase("extensions");
@@ -177,19 +180,20 @@ pub(crate) async fn acquire_metadata(
                 live_tables,
             );
             resolved.snapshot.attach_criteria(criteria);
+            resolved.snapshot.attach_roles(roles);
             Ok(resolved)
         })
         .await?;
         progress.finish();
         print_resolution_report(&resolved.report);
-        Ok(resolved.snapshot)
+        Ok((resolved.snapshot, layout))
     }
     .await;
 
     match result {
-        Ok(snapshot) => {
+        Ok(acquired) => {
             source.commit_readonly().await?;
-            Ok(snapshot)
+            Ok(acquired)
         }
         Err(error) => Err(source.rollback_readonly(error).await),
     }
@@ -319,6 +323,9 @@ struct DecodedConfigBatch {
     descriptors: Vec<open_sdbl::metadata::ConfigDescriptor>,
     predefined_values: Vec<open_sdbl::metadata::ConfigPredefinedValue>,
     criteria: Vec<open_sdbl::metadata::ConfigCriterion>,
+    roles: Vec<open_sdbl::metadata::Guid>,
+    /// Resources the decoder could not read, with the reason.
+    skipped: Vec<String>,
 }
 
 pub(crate) async fn decode_config_stream<S>(
@@ -327,14 +334,7 @@ pub(crate) async fn decode_config_stream<S>(
     pipeline_depth: usize,
     limits: ConfigDecodeLimits,
     progress: &mut MetadataProgress,
-) -> Result<
-    (
-        Vec<open_sdbl::metadata::ConfigDescriptor>,
-        Vec<open_sdbl::metadata::ConfigPredefinedValue>,
-        Vec<open_sdbl::metadata::ConfigCriterion>,
-    ),
-    CliError,
->
+) -> Result<ConfigMetadata, CliError>
 where
     S: Stream<Item = Result<ConfigResource, CliError>>,
 {
@@ -395,6 +395,8 @@ where
                         descriptors: Vec::new(),
                         predefined_values: Vec::new(),
                         criteria: Vec::new(),
+                        roles: Vec::new(),
+                        skipped: Vec::new(),
                     };
                     for resource in batch {
                         let remaining = limits.batch_bytes.saturating_sub(result.decoded_bytes);
@@ -404,11 +406,29 @@ where
                                 limits.batch_bytes
                             )));
                         }
-                        let mut parsed = parse_config_resource_bounded(
+                        // A resource the decoder cannot read — a `.7` of some
+                        // charts of characteristic types is a binary format,
+                        // not the brace text — is skipped with a warning; it
+                        // carries no name the query language needs.
+                        let mut parsed = match parse_config_resource_bounded(
                             &resource.file_name,
                             &resource.compressed,
                             limits.resource_bytes.min(remaining),
-                        )?;
+                        ) {
+                            Ok(parsed) => parsed,
+                            Err(error)
+                                if matches!(
+                                    error.kind(),
+                                    MetadataErrorKind::Utf8 | MetadataErrorKind::Serialization
+                                ) =>
+                            {
+                                result
+                                    .skipped
+                                    .push(format!("{}: {error}", resource.file_name));
+                                continue;
+                            }
+                            Err(error) => return Err(error.into()),
+                        };
                         result.decoded_bytes = result
                             .decoded_bytes
                             .checked_add(parsed.decoded_bytes)
@@ -420,6 +440,7 @@ where
                             .predefined_values
                             .append(&mut parsed.predefined_values);
                         result.criteria.extend(parsed.criterion);
+                        result.roles.append(&mut parsed.roles);
                     }
                     drop(permit);
                     Ok::<_, CliError>(result)
@@ -435,6 +456,8 @@ where
     let mut descriptors = Vec::new();
     let mut predefined_values = Vec::new();
     let mut criteria = Vec::new();
+    let mut roles = Vec::new();
+    let mut skipped = Vec::new();
     loop {
         let next = timeout(progress_timeout, jobs.next()).await.map_err(|_| {
             CliError::DatabaseTimeout {
@@ -459,6 +482,20 @@ where
         descriptors.append(&mut batch.descriptors);
         predefined_values.append(&mut batch.predefined_values);
         criteria.append(&mut batch.criteria);
+        roles.append(&mut batch.roles);
+        skipped.append(&mut batch.skipped);
+    }
+    if !skipped.is_empty() {
+        eprintln!(
+            "warning: skipped {} unreadable Config resources: {}",
+            skipped.len(),
+            skipped
+                .iter()
+                .take(3)
+                .cloned()
+                .collect::<Vec<_>>()
+                .join("; ")
+        );
     }
     descriptors.sort_by(|left, right| {
         left.resource_guid
@@ -475,7 +512,7 @@ where
             .then_with(|| left.name.cmp(&right.name))
     });
     criteria.sort_by(|left, right| left.name.cmp(&right.name));
-    Ok((descriptors, predefined_values, criteria))
+    Ok((descriptors, predefined_values, criteria, roles))
 }
 
 pub(crate) async fn run_metadata_blocking<T, F>(label: &'static str, work: F) -> Result<T, CliError>

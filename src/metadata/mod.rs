@@ -16,12 +16,14 @@ mod identity;
 mod normalize;
 mod queries;
 mod resolve;
+mod roles;
 mod schema;
+mod users;
 mod value;
 
 pub use config::{
     ConfigCriterion, ConfigDescriptor, ConfigFieldPurpose, ConfigPredefinedValue,
-    DataSeparationSettings, ParsedConfigResource, SeparatedDataUse, Synonym,
+    DataSeparationSettings, ParsedConfigResource, PredefinedSource, SeparatedDataUse, Synonym,
     parse_config_criterion, parse_config_descriptor, parse_config_descriptors,
     parse_config_predefined_values, parse_config_resource_bounded,
 };
@@ -47,10 +49,16 @@ pub use resolve::{
     resolve_metadata_with_predefined_values,
     resolve_metadata_with_predefined_values_and_extensions,
 };
+pub use roles::{
+    GrantedRight, ObjectMember, ObjectRights, ROLES_COLLECTION, Restriction, RestrictionTemplate,
+    Right, RoleCatalog, RoleEntry, RoleRights, parse_role_rights, parse_role_rights_bounded,
+    roles_collection,
+};
 pub use schema::{
     ColumnType, SchemaAnomaly, SchemaColumn, SchemaIndex, SchemaStorage, SchemaTable,
     parse_schema_storage,
 };
+pub use users::{InfoBaseUser, UserData, UserRow, decode_user_data};
 pub use value::{Value, parse_serialized};
 
 use std::fmt;

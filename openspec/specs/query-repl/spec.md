@@ -1597,9 +1597,11 @@ The compiler SHALL accept `(<query>) [КАК] <alias>` as a source in `ИЗ` and
 in any join, compiling the nested query as an independent statement whose
 output columns become the derived source's fields with their column kinds.
 A nested query MAY use unions, grouping, joins, `ПЕРВЫЕ`, `РАЗЛИЧНЫЕ`,
-inline presentations, and final ordering together with `ПЕРВЫЕ`, but SHALL
-NOT contain ordering without `ПЕРВЫЕ`, deferred reference presentations, or
-`*`. A
+inline presentations, and final ordering when every branch has `ПЕРВЫЕ`,
+but SHALL NOT contain ordering over a branch without `ПЕРВЫЕ`, deferred
+reference presentations, or `*`. The ordering of a nested union SHALL be
+dropped: each branch limits itself and the union has no limit of its own,
+so the order changes nothing. A
 derived column whose kind is a fixed single-target reference SHALL support
 one-hop dereference through the shared join cache; a runtime-typed derived
 column SHALL be dereferenced under the composite-reference rules with its
@@ -1626,6 +1628,16 @@ parser depth limit and the work budget.
 #### Scenario: Correlated reference
 - **WHEN** a nested query's filter names a field of the outer source
 - **THEN** compilation fails with a positional diagnostic at that field
+
+#### Scenario: Nested union of limited branches
+- **WHEN** `ВЫБРАТЬ ПЕРВЫЕ 10 Д.Ссылка КАК Ссылка ПОМЕСТИТЬ ВТ ИЗ Документ.X КАК Д ОБЪЕДИНИТЬ ВСЕ ВЫБРАТЬ ПЕРВЫЕ 10 Д.Ссылка ИЗ Документ.Y КАК Д УПОРЯДОЧИТЬ ПО Ссылка;`
+  is compiled
+- **THEN** the definition compiles with a limit on each branch and no
+  `ORDER BY`
+
+#### Scenario: Nested union with an unlimited branch
+- **WHEN** one branch of an ordered nested union has no `ПЕРВЫЕ`
+- **THEN** compilation fails with a positional diagnostic
 
 ### Requirement: Compile subquery membership predicates
 The compiler SHALL accept `<expr> [НЕ] В (<query>)` / `[NOT] IN (SELECT …)`
@@ -2050,8 +2062,10 @@ functions and SHALL be accepted as `GROUP BY` keys.
 ### Requirement: Test reference types with the REFS operator
 The compiler SHALL accept `<поле> ССЫЛКА <Вид>.<Объект>` /
 `<field> REFS <Kind>.<Object>` as a predicate wherever comparisons are
-accepted, the operand being a direct field or a one-hop reference
-property. For a composite reference field it SHALL compare the field's
+accepted, the operand being a direct field, a one-hop reference
+property, or `ВЫРАЗИТЬ(<поле> КАК <Вид>.<Объект>)` naming the same
+target as the operator — such a cast keeps a reference of that type and
+turns any other into NULL, so the test is the field's. For a composite reference field it SHALL compare the field's
 type member with the target's database type number; for a runtime-typed
 nested-query column it SHALL compare the first four payload bytes; for a
 fixed-target field of the named table it SHALL be a constant true
@@ -2075,6 +2089,12 @@ diagnostics, and a source-free statement SHALL refuse the operator.
 - **WHEN** `ВЫБОР КОГДА Т.Объект ССЫЛКА Справочник.Товары ТОГДА 1 ИНАЧЕ 0 КОНЕЦ`
   is compiled
 - **THEN** the type test is the `CASE` condition
+
+#### Scenario: Cast operand
+- **WHEN** `ГДЕ ВЫРАЗИТЬ(Т.Объект КАК Справочник.Товары) ССЫЛКА Справочник.Товары`
+  is compiled for a composite attribute
+- **THEN** generated SQL compares the attribute's type member with the
+  catalog's type number, as the uncast field would
 
 ### Requirement: Compute query totals
 The compiler SHALL accept `ИТОГИ [<поле> [КАК Псевдоним], …] ПО [ОБЩИЕ]
@@ -2819,3 +2839,881 @@ another way SHALL keep its diagnostic.
 - **WHEN** the compared column spreads over members that are not a
   reference pair
 - **THEN** compilation fails, naming the column
+
+### Requirement: Compile system enumeration values
+`ЗНАЧЕНИЕ`/`VALUE` SHALL accept a two-segment path naming a system
+enumeration and one of its values, bilingually, and SHALL compile it to
+the number the platform stores for that value: `ВидДвиженияНакопления`
+(`AccumulationRecordType`) with `Приход`/`Receipt` 0 and
+`Расход`/`Expense` 1; `ВидДвиженияБухгалтерии` (`AccountingRecordType`)
+with `Дебет`/`Debit` 0 and `Кредит`/`Credit` 1; `ВидСчета`
+(`AccountType`) with `Активный`/`Active` 0, `Пассивный`/`Passive` 1 and
+`АктивноПассивный`/`ActivePassive` 2. The expression SHALL be accepted
+wherever a numeric literal is, including the conditions of virtual
+tables, and an unknown enumeration or value SHALL be a `Syntax`
+diagnostic naming it.
+
+#### Scenario: Movement kind in a predicate
+- **WHEN** `ГДЕ Т.ВидДвижения = ЗНАЧЕНИЕ(ВидДвиженияНакопления.Расход)` is compiled
+- **THEN** the SQL compares the `_RecordKind` column with `1`
+
+#### Scenario: Account kind
+- **WHEN** `ВЫБОР КОГДА О.Счет.Вид = ЗНАЧЕНИЕ(ВидСчета.АктивноПассивный) ТОГДА …` is compiled
+- **THEN** the dereferenced `_Kind` column of the chart of accounts is
+  compared with `2`
+
+#### Scenario: Unknown value
+- **WHEN** `ЗНАЧЕНИЕ(ВидСчета.Дебет)` is compiled
+- **THEN** compilation fails with a `Syntax` diagnostic that names the value
+
+### Requirement: Expose chart-of-accounts standard fields
+A chart of accounts SHALL expose `Вид`/`Kind`, `Забалансовый`/`OffBalance`
+and `Порядок`/`Order` as standard fields, also through a dereference.
+
+#### Scenario: Off-balance accounts
+- **WHEN** `ГДЕ Счета.Забалансовый` is compiled over `ПланСчетов.Управленческий`
+- **THEN** the SQL reads the `_OffBalance` column
+
+### Requirement: Accept a zero row count
+`ПЕРВЫЕ 0`/`TOP 0` SHALL be accepted like any other count and SHALL
+render as `LIMIT 0` on PostgreSQL and `TOP (0)` on SQL Server, so the
+statement answers its columns and no rows, as on the platform.
+
+#### Scenario: Empty temporary table
+- **WHEN** `ВЫБРАТЬ ПЕРВЫЕ 0 Т.Ссылка КАК Ссылка ПОМЕСТИТЬ ВТ ИЗ Справочник.Номенклатура КАК Т` is compiled
+- **THEN** the PostgreSQL text ends the temporary table's statement with
+  `LIMIT 0` and no diagnostic is reported
+
+### Requirement: Expose receipts and expenses on turnovers
+`РегистрНакопления.<Имя>.Обороты` of a balance register SHALL expose,
+per resource, `<Ресурс>Приход` (`<Resource>Receipt`) — the sum of the
+resource over the receipt records of the interval — and `<Ресурс>Расход`
+(`<Resource>Expense`) — the sum over the expense records — beside
+`<Ресурс>Оборот`, and SHALL sum them over the dimensions the statement
+never reads like every resource column. A turnover-only register SHALL
+keep exposing the turnover only.
+
+#### Scenario: Receipts of an order
+- **WHEN** `ВЫБРАТЬ О.КоличествоПриход, О.КоличествоРасход ИЗ РегистрНакопления.Заказы.Обороты(, , , Заказ = &Заказ) КАК О` is compiled
+- **THEN** the SQL sums the resource over records with `_RecordKind = 0`
+  for the receipt and `_RecordKind = 1` for the expense
+
+#### Scenario: Turnover-only register
+- **WHEN** `О.КоличествоПриход` is read from a turnover-only register
+- **THEN** compilation fails with an `UnknownField` diagnostic
+
+### Requirement: Accept the period and auto periodicities
+The periodicity argument of `Обороты` and `ОстаткиИОбороты` SHALL accept
+`Период`/`Period` and `Авто`/`Auto` and SHALL compile either like an
+omitted periodicity: the table answers one row per combination of the
+dimensions in use over the whole interval and exposes no `Период`
+column. (`Период` is the platform's documented default; `Авто` splits by
+the period fields a query reads, which the compiler refuses, so without
+them it is the default too.)
+
+#### Scenario: Turnovers for the whole period
+- **WHEN** `РегистрНакопления.Продажи.Обороты(&Н, &К, Период, )` is read by товар
+- **THEN** the SQL groups by товар only and applies the interval bounds
+
+#### Scenario: Auto without period fields
+- **WHEN** `РегистрНакопления.Продажи.ОстаткиИОбороты(&Н, &К, Авто, , )` is read
+- **THEN** it compiles like the table without a periodicity
+
+### Requirement: Expose the change-registration fields
+The change-registration table of an object SHALL expose `Узел`/`Node` —
+the exchange-plan node the change is registered for, with the reference
+behaviour of any reference field — and `НомерСообщения`/`MessageNo` as
+standard fields beside the registered object's key.
+
+#### Scenario: Changes of one node
+- **WHEN** `ВЫБРАТЬ И.Ссылка ИЗ Справочник.Номенклатура.Изменения КАК И ГДЕ И.Узел = &Узел И И.НомерСообщения ЕСТЬ NULL` is compiled
+- **THEN** the SQL compares the node columns of the change table with
+  the parameter and tests `_MessageNo` for NULL
+
+### Requirement: Report a parameter used as a source
+A parameter written where a source is expected (`ИЗ &Таблица`, or after
+a join keyword) SHALL be reported as an `UnsupportedFeature` diagnostic
+positioned at the parameter and stating that a table passed as a
+parameter is not supported.
+
+#### Scenario: Value table parameter
+- **WHEN** `ВЫБРАТЬ Т.Номенклатура ИЗ &ТаблицаТоваров КАК Т` is compiled
+- **THEN** compilation fails with `UnsupportedFeature` at `&ТаблицаТоваров`
+
+### Requirement: Split by the fields the statement reads under Auto
+Under the `Авто`/`Auto` periodicity, `Обороты` and `ОстаткиИОбороты`
+SHALL expose `Период` (the record period), `ПериодСекунда`, `ПериодМинута`,
+`ПериодЧас`, `ПериодДень`, `ПериодНеделя`, `ПериодДекада`, `ПериодМесяц`,
+`ПериодКвартал`, `ПериодПолугодие`, `ПериодГод` (`SecondPeriod` …
+`YearPeriod`: the beginning of that period of the record), `Регистратор`
+and `НомерСтроки`, and SHALL treat them as dimensions of the relation:
+the ones the statement reads split the rows, the others are summed away
+like an unread dimension. `ОстаткиИОбороты` SHALL refuse its balance
+columns with an `UnsupportedFeature` diagnostic when the statement reads
+one of these split fields, and SHALL answer them otherwise; a period
+completion method SHALL be accepted with `Авто`.
+
+#### Scenario: Turnovers by month and recorder
+- **WHEN** `ВЫБРАТЬ О.ПериодМесяц, О.Регистратор, О.СуммаОборот ИЗ РегистрНакопления.Продажи.Обороты(&Н, &К, Авто, ) КАК О` is compiled
+- **THEN** the SQL groups by the beginning of the month of the record
+  period and by the recorder columns
+
+#### Scenario: Auto without split fields
+- **WHEN** the statement reads dimensions and resources only
+- **THEN** the SQL is the same as without a periodicity
+
+#### Scenario: Balance with a split field
+- **WHEN** `О.Регистратор` and `О.СуммаКонечныйОстаток` are read from `ОстаткиИОбороты(&Н, &К, Авто, ДвиженияИГраницыПериода, )`
+- **THEN** compilation fails with an `UnsupportedFeature` diagnostic
+
+### Requirement: Compile tuple membership tests
+`(<expression>, <expression>, …) [НЕ] В (<query>)` SHALL compile when
+the subquery projects one column per tuple item of a compatible kind:
+the test SHALL render as `EXISTS` over the subquery with an equality per
+column, `NOT EXISTS` when negated, on both dialects, and SHALL be
+accepted wherever a predicate is, including the condition of a virtual
+table. A tuple anywhere else, a column count that differs from the
+tuple, an incompatible column, or a reference of several types on either
+side SHALL be an `UnsupportedFeature` diagnostic.
+
+#### Scenario: Pair in a slice condition
+- **WHEN** `РегистрСведений.Цены.СрезПоследних(&Дата, (Номенклатура, Характеристика) В (ВЫБРАТЬ С.Номенклатура, С.Характеристика ИЗ Документ.Заказ.Товары КАК С ГДЕ С.Ссылка = &Заказ))` is compiled
+- **THEN** the slice's condition holds `EXISTS (SELECT 1 FROM (…) AS "__in" WHERE "__in"."Номенклатура" = … AND "__in"."Характеристика" = …)`
+
+#### Scenario: Column count mismatch
+- **WHEN** a two-item tuple is tested against a one-column subquery
+- **THEN** compilation fails with an `UnsupportedFeature` diagnostic
+
+### Requirement: Expose accounting-register main-table fields
+The main table `РегистрБухгалтерии.<Имя>` SHALL expose `СчетДт`/`СчетКт`
+(`AccountDr`/`AccountCr`) for a register with correspondence and `Счет`
+(`Account`) without it, every balance dimension and resource under its
+own name, every non-balance dimension and resource as `<Имя>Дт`/`<Имя>Кт`
+(`<Name>Dr`/`<Name>Cr`), the attributes, and the standard fields `Период`,
+`Регистратор`, `НомерСтроки`, `Активность`. The names come from Config
+purposes and the physical side suffix of the column, never guessed from
+a column's data.
+
+#### Scenario: Debit account
+- **WHEN** `ВЫБРАТЬ Т.СчетДт, Т.Сумма, Т.СуммаВалДт ИЗ РегистрБухгалтерии.Управленческий КАК Т`
+  is compiled
+- **THEN** the SQL reads the debit account column, the balance resource
+  column, and the debit column of the non-balance resource
+
+#### Scenario: Non-balance name without a side
+- **WHEN** a non-balance resource is read as `Т.СуммаВал`
+- **THEN** compilation fails with an `UnknownField` diagnostic
+
+### Requirement: Parse accounting virtual tables with the platform's arity
+`РегистрБухгалтерии.<Имя>.Остатки`, `.Обороты`, `.ОстаткиИОбороты`,
+`.ОборотыДтКт` and `.ДвиженияССубконто` SHALL accept at most 4, 8, 7, 8
+and 5 arguments respectively, and SHALL be reported as an
+`UnsupportedFeature` diagnostic naming the table until the stage that
+compiles them lands; one argument more SHALL stay a `Syntax` diagnostic.
+
+#### Scenario: Turnovers with an account condition
+- **WHEN** `РегистрБухгалтерии.Управленческий.Обороты(&Н, &К, , Счет = &Счет, , , , )` is compiled
+- **THEN** compilation fails with `UnsupportedFeature`, not with a
+  syntax error about the argument count
+
+### Requirement: Resolve predefined accounts
+`ЗНАЧЕНИЕ`/`VALUE` SHALL accept a `ПланСчетов` object and SHALL resolve
+the named predefined account through the chart's `_PredefinedID` column,
+as it does for a catalog. Charts of characteristic types and of
+calculation types SHALL stay refused until their resources are measured.
+
+#### Scenario: Predefined account
+- **WHEN** `ГДЕ О.Счет = ЗНАЧЕНИЕ(ПланСчетов.Управленческий.ПрочиеРасходы)` is compiled
+- **THEN** the SQL selects `_IDRRef` of the chart's table by
+  `_PredefinedID` equal to the stable identifier of `ПрочиеРасходы`
+
+### Requirement: Compile accounting turnovers
+`РегистрБухгалтерии.<Имя>.Обороты(Начало, Конец, Периодичность,
+УсловиеСчета, Субконто, Условие, УсловиеКорСчета, КорСубконто)` of a
+register with correspondence — or `Обороты(Начало, Конец, Периодичность,
+УсловиеСчета, Условие, УсловиеКорСчета)` when the register keeps no
+extra dimensions, the platform omitting the `Субконто` arguments then
+(measured on the UNF configuration) — SHALL answer, per account (`Счет`), the
+dimensions in use and the calendar period when a periodicity is given,
+`<Ресурс>Оборот` (debit minus credit), `<Ресурс>ОборотДт` and
+`<Ресурс>ОборотКт`, computed from the active records of `[Начало,
+Конец)` folded into a debit row and a credit row each; a non-balance
+dimension or resource SHALL be read from the side's own column under its
+side-less name. Unread dimensions SHALL be summed away like every
+register table. `УсловиеСчета` SHALL be a predicate on `Счет`, the
+side's account; `Условие` SHALL be a predicate on the side's view of the
+record. The extra-dimension list, the balanced-account arguments, the
+`Авто` periodicity and a register without correspondence SHALL be
+`UnsupportedFeature` diagnostics naming what is missing; `Регистратор`
+and `Запись` SHALL split the rows like the accumulation table does.
+
+#### Scenario: Turnovers by account and organization
+- **WHEN** `ВЫБРАТЬ О.Счет, О.Организация, О.СуммаОборотДт ИЗ РегистрБухгалтерии.Управленческий.Обороты(&Н, &К, , Счет = &Счет) КАК О`
+  is compiled
+- **THEN** the SQL unions a debit branch and a credit branch of the main
+  table, applies the account condition to each side's account, and sums
+  the debit rows into `СуммаОборотДт`
+
+#### Scenario: Non-balance resource
+- **WHEN** `О.СуммаВалОборотКт` is read
+- **THEN** the credit branch reads `_Fld<N>Ct` and the debit branch
+  `_Fld<N>Dt` under one column, and the credit sum answers the column
+
+#### Scenario: Condition fifth without extra dimensions
+- **WHEN** `Обороты(&Н, &К, МЕСЯЦ, , СценарийПланирования = &С)` is compiled for the UNF register
+- **THEN** the fifth argument is the condition and a seventh argument is
+  a `Syntax` diagnostic
+
+#### Scenario: Balanced account requested
+- **WHEN** the balanced-account condition is given
+- **THEN** compilation fails with an `UnsupportedFeature` diagnostic
+
+### Requirement: Compile accounting balances
+`РегистрБухгалтерии.<Имя>.Остатки(Период, УсловиеСчета, [Субконто],
+Условие)` of a register with correspondence SHALL answer, per account
+and dimensions in use, `<Ресурс>Остаток` — the debit rows minus the
+credit rows of the active records before `Период` (all records when it
+is omitted) — and `<Ресурс>ОстатокДт`/`<Ресурс>ОстатокКт` as the
+positive part and the negated negative part of that balance at the grain
+the statement reads, computed after unread dimensions are summed away,
+and SHALL drop combinations whose every balance is zero. The
+`Субконто` argument SHALL be absent for a register without extra
+dimensions.
+
+#### Scenario: Balance parts after pruning
+- **WHEN** `ВЫБРАТЬ О.Счет, О.СуммаОстатокДт ИЗ РегистрБухгалтерии.Управленческий.Остатки(&Д) КАК О`
+  is compiled
+- **THEN** the organization is summed away first and the debit part is
+  the positive part of the summed balance, not a sum of the parts
+
+#### Scenario: Zero balance
+- **WHEN** every resource balance of one combination is zero
+- **THEN** the combination is absent from the result
+
+### Requirement: Compile accounting balances and turnovers
+`РегистрБухгалтерии.<Имя>.ОстаткиИОбороты(Начало, Конец, Периодичность,
+МетодДополненияПериодов, УсловиеСчета, [Субконто], Условие)` SHALL
+answer, per account and dimensions in use, `<Ресурс>НачальныйОстаток`
+(the balance of the records before `Начало`), `<Ресурс>Оборот`,
+`<Ресурс>ОборотДт`, `<Ресурс>ОборотКт` of `[Начало, Конец)`, and
+`<Ресурс>КонечныйОстаток`, with the debit and credit parts of both
+balances derived at the grain read. A calendar or record periodicity
+SHALL split the rows and refuse the balance columns; `Авто` SHALL expose
+the split fields as dimensions and refuse the balance columns only when
+one of them is read; the completion method follows the accumulation
+table's rules.
+
+#### Scenario: Balances by account
+- **WHEN** `ВЫБРАТЬ О.Счет, О.СуммаНачальныйОстаток, О.СуммаКонечныйОстатокКт ИЗ РегистрБухгалтерии.Управленческий.ОстаткиИОбороты(&Н, &К, , , Счет = &Счет) КАК О`
+  is compiled
+- **THEN** the opening balance sums the records before `&Н`, the closing
+  balance every record before `&К`, and the credit part is derived from
+  the closing balance
+
+#### Scenario: Auto with a balance
+- **WHEN** the table is read under `Авто` with `Организация` and
+  `СуммаКонечныйОстаток`
+- **THEN** it compiles as the whole interval; reading `Регистратор` as
+  well fails with an `UnsupportedFeature` diagnostic
+
+### Requirement: Dereference in virtual-table conditions
+A reference path in the condition or the account condition of
+`Остатки`, `Обороты` or `ОстаткиИОбороты` of an accumulation or an
+accounting register SHALL compile: the target table is joined to the
+relation the condition filters with the `LEFT JOIN` and type guard an
+ordinary query renders, on the alias of that relation — each side's
+branch of a folded accounting table on its own account, the totals and
+the movement branch of an accumulation balance on their own base — and
+the predicate reads the joined column. A dereference in the access
+restriction of such a table SHALL be rendered the same way.
+
+#### Scenario: Account condition through the account's kind
+- **WHEN** `РегистрБухгалтерии.Управленческий.Обороты(&Н, &К, , Счет.Вид = ЗНАЧЕНИЕ(ВидСчета.Активный))` is compiled
+- **THEN** the debit branch joins the chart on `_AccountDtRRef`, the
+  credit branch on `_AccountCtRRef`, and both filter on the chart's
+  `_Kind`
+
+#### Scenario: Balance filtered through a parent
+- **WHEN** `РегистрНакопления.ЗапасыНаСкладах.Остатки(&Д, Номенклатура.Родитель = &Р)` is compiled
+- **THEN** both the totals branch and the movement branch join the
+  catalog on their own alias
+
+### Requirement: Running balances of a split table
+On PostgreSQL and SQL Server 2012 and newer, `ОстаткиИОбороты` of an
+accumulation or an accounting register split by a calendar period, the
+recorder, the record, or — under `Авто` — by the split fields the
+statement reads, SHALL answer its balance columns as running sums: the
+active movements before `Конец` are bucketed by the grain, the
+movements before `Начало` forming one bucket that sorts first and is
+dropped after the window; `НачальныйОстаток` is the sum of the buckets
+before the current one, `КонечныйОстаток` the sum up to it, partitioned
+by the dimensions; the debit and credit parts of an accounting balance
+are derived from those sums. Under `Авто` the grain SHALL be the record
+when `НомерСтроки` is read, the recorder when `Регистратор` or `Период`
+is read, otherwise the finest calendar level read; a statement reading
+no balance column SHALL keep the relation without windows. On SQL
+Server 2008 the balance columns of a split table SHALL be refused with
+an `UnsupportedFeature` diagnostic naming the server.
+
+#### Scenario: Balances by recorder
+- **WHEN** `ВЫБРАТЬ О.Регистратор, О.КоличествоНачальныйОстаток, О.КоличествоКонечныйОстаток ИЗ РегистрНакопления.Остатки.ОстаткиИОбороты(&Н, &К, Авто, , ) КАК О`
+  is compiled for PostgreSQL
+- **THEN** the balances are `SUM(SUM(…)) OVER (PARTITION BY <dimensions>
+  ORDER BY … ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING)` and `…
+  CURRENT ROW` over the record buckets, and the bucket before `&Н` is
+  dropped
+
+#### Scenario: Turnovers only
+- **WHEN** the same table is read for `ПериодДень` and `КоличествоОборот`
+- **THEN** the relation carries no window
+
+#### Scenario: SQL Server 2008
+- **WHEN** a split table's balance is read with the `Sql2008` dialect level
+- **THEN** compilation fails with an `UnsupportedFeature` diagnostic
+
+### Requirement: Compile the extra-dimension values table
+`РегистрБухгалтерии.<Имя>.Субконто` (`ExtDimensions`) SHALL compile as
+the register's `_AccRgED` table with `Период`, `Регистратор`,
+`НомерСтроки`, `УточнениеПериода`, `ВидДвижения` (`Correspond`, the
+side of the record), `Вид` (a reference to the chart of characteristic
+types) and `Значение` (a value of several types).
+
+#### Scenario: Values of a record
+- **WHEN** `ВЫБРАТЬ С.Вид, С.Значение, С.ВидДвижения ИЗ РегистрБухгалтерии.Хозрасчетный.Субконто КАК С ГДЕ С.Регистратор = &Д` is compiled
+- **THEN** the SQL reads `_KindRRef`, the `_Value_*` members and
+  `_Correspond` of the register's `_AccRgED` table
+
+### Requirement: Extra dimensions of the aggregating tables
+`Остатки`, `Обороты` and `ОстаткиИОбороты` of an accounting register
+SHALL expose `Субконто<k>` (`ExtDimension<k>`) and `ВидСубконто<k>`
+(`ExtDimensionType<k>`) for `k` up to the register's level count, read
+from the side's inline columns (`_ValueDt<k>_*`/`_KindDt<k>RRef` on the
+debit side, `Ct` on the credit side) under one name, as dimensions
+summed away when unread; `Условие` SHALL see them. Without the
+`Субконто` argument the positions are the account's own order. With
+the argument — one kind or a parenthesized list of kinds, each
+`ЗНАЧЕНИЕ(ПланВидовХарактеристик.…)` or a parameter bound to a
+reference — `Субконто<j>` SHALL take the value of whichever level
+carries the `j`-th listed kind, and records whose account lacks a listed
+kind SHALL be excluded.
+
+#### Scenario: Positional extra dimensions
+- **WHEN** `ВЫБРАТЬ О.Счет, О.Субконто1, О.СуммаОстаток ИЗ РегистрБухгалтерии.Хозрасчетный.Остатки(&Д, Счет = &Счет) КАК О` is compiled
+- **THEN** each branch reads its side's first value under one name and
+  the balance is grouped by account and that value
+
+#### Scenario: Listed kinds
+- **WHEN** `Остатки(&Д, , ЗНАЧЕНИЕ(ПланВидовХарактеристик.ВидыСубконтоХозрасчетные.Контрагенты))` is read for `Субконто1`
+- **THEN** `Субконто1` is the value of the level whose kind is
+  `Контрагенты` on the record's side, and records of accounts without
+  that kind are excluded
+
+#### Scenario: Unread extra dimensions
+- **WHEN** the statement reads `Счет` and a resource only
+- **THEN** the extra dimensions are summed away like any dimension
+
+### Requirement: Compile debit-credit turnovers
+`РегистрБухгалтерии.<Имя>.ОборотыДтКт(Начало, Конец, Периодичность,
+УсловиеСчетаДт, СубконтоДт, УсловиеСчетаКт, СубконтоКт, Условие)` — the
+`Субконто` arguments absent for a register without extra dimensions —
+SHALL answer one row per `СчетДт`/`СчетКт` pair, the balance
+dimensions, the `Дт`/`Кт` sides of the non-balance dimensions,
+`СубконтоДт<k>`/`ВидСубконтоДт<k>`/`СубконтоКт<k>`/`ВидСубконтоКт<k>` in
+use and the split of the periodicity, over the active records of
+`[Начало, Конец)`, with `<Ресурс>Оборот` per balance resource and
+`<Ресурс>ОборотДт`/`<Ресурс>ОборотКт` per non-balance one, unread
+dimensions summed away. A listed kind of one side SHALL map that side's
+`Субконто<j>` and exclude the records whose account on that side lacks
+it. The conditions SHALL see the record's own fields.
+
+#### Scenario: Correspondence with extra dimensions
+- **WHEN** `ВЫБРАТЬ О.СчетДт, О.СчетКт, О.СубконтоДт1, О.СуммаОборот ИЗ РегистрБухгалтерии.Хозрасчетный.ОборотыДтКт(&Н, &К, , СчетДт В (&Счета), , , , Организация = &Орг) КАК О`
+  is compiled
+- **THEN** the SQL groups the main table by both accounts and the debit
+  side's first value and sums the balance resource
+
+#### Scenario: Without extra dimensions
+- **WHEN** the UNF register is read with six arguments
+- **THEN** it compiles, and an eighth argument is a `Syntax` diagnostic
+
+### Requirement: Compile the records with extra dimensions
+`РегистрБухгалтерии.<Имя>.ДвиженияССубконто(Начало, Конец, Условие,
+Порядок, Первые)` SHALL answer the records of `[Начало, Конец)` with
+the main table's fields and `СубконтоДт<k>`, `ВидСубконтоДт<k>`,
+`СубконтоКт<k>`, `ВидСубконтоКт<k>` read from the inline columns;
+`Условие` SHALL see the same fields; `Порядок` and `Первые` SHALL be
+`UnsupportedFeature` diagnostics.
+
+#### Scenario: Records of one contractor
+- **WHEN** `ВЫБРАТЬ Д.Регистратор, Д.СубконтоКт1, Д.Сумма ИЗ РегистрБухгалтерии.Хозрасчетный.ДвиженияССубконто(&Н, &К, СубконтоКт1 = &Контрагент) КАК Д`
+  is compiled
+- **THEN** the SQL reads the register's rows with the period bounds and
+  the credit side's first value compared
+
+### Requirement: Project expressions of grouped fields
+In a statement with `СГРУППИРОВАТЬ ПО`, a projection that is neither a
+key nor aggregated SHALL be accepted when every field it reads is named
+by a grouping key or the projection is an expression a key spells;
+otherwise it SHALL stay an `UnsupportedFeature` diagnostic.
+
+#### Scenario: Negated grouped resource
+- **WHEN** `ВЫБРАТЬ Д.Сумма, -Д.Сумма КАК Минус ИЗ … КАК Д СГРУППИРОВАТЬ ПО Д.Сумма`
+  is compiled
+- **THEN** the SQL groups by the resource column and projects its
+  negation
+
+#### Scenario: Ungrouped operand
+- **WHEN** a projection reads a field no key names
+- **THEN** the diagnostic names the projection
+
+### Requirement: Two-sided condition of the records table
+The condition of `РегистрБухгалтерии.<Имя>.ДвиженияССубконто` SHALL
+accept, besides the record's fields, the side-less names `Счет`,
+`Субконто<k>`, `ВидСубконто<k>` and the names of the non-balance
+dimensions and resources; a condition reading any of them SHALL select
+the records for which it holds with the debit fields or with the credit
+fields substituted. A condition reading none of them SHALL be compiled
+once.
+
+#### Scenario: Account of either side
+- **WHEN** `ДвиженияССубконто(&Н, &К, Организация = &О И Счет = &С)` is
+  compiled
+- **THEN** the predicate is the organisation test with the debit account
+  test, `OR` the organisation test with the credit account test
+
+#### Scenario: Dereference through a two-sided name
+- **WHEN** the condition reads `Счет.Код`
+- **THEN** the debit and the credit account are each joined to the chart
+  of accounts
+
+### Requirement: Long aliases of nested sources resolve by their text
+A field of a nested query or temporary table SHALL resolve by the alias
+the text gave the projection, even when the emitted SQL label is
+truncated to the provider's limit or suffixed for uniqueness.
+
+#### Scenario: Alias over the PostgreSQL limit
+- **WHEN** a nested query projects `… КАК БольничныйЗаСчетРаботодателяСпецРежим`
+  and the outer statement reads that alias
+- **THEN** the query compiles and the outer projection reads the
+  truncated label the nested SELECT emitted
+
+### Requirement: Correspondence of accounting turnovers
+`РегистрБухгалтерии.<Имя>.Обороты` SHALL expose `КорСчет`
+(`BalancedAccount`), `<Измерение>Кор` (`<Dimension>Balanced`) for each
+non-balance dimension and `КорСубконто<k>`/`ВидКорСубконто<k>`
+(`BalancedExtDimension<k>`/`BalancedExtDimensionType<k>`): for a debit
+row the credit side's values, for a credit row the debit side's. The
+`КорСубконто` argument SHALL list the kinds of the correspondence the
+way `Субконто` lists the account's, excluding the records whose other
+side lacks the kind. `УсловиеКорСчета` SHALL be compiled with the
+account condition and the condition, over the same names. An unread
+correspondence SHALL be summed away.
+
+#### Scenario: Turnovers with the correspondent account
+- **WHEN** `ВЫБРАТЬ О.Счет, О.КорСчет, О.СуммаОборотДт ИЗ РегистрБухгалтерии.Хозрасчетный.Обороты(&Н, &К, , , , , НЕ КорСчет В (&Счета), ) КАК О`
+  is compiled
+- **THEN** the debit branch projects the credit account as the
+  correspondence and tests it against the list, the credit branch the
+  debit account, and the outer aggregation groups by both accounts
+
+#### Scenario: Listed balanced kind
+- **WHEN** the `КорСубконто` argument lists a kind
+- **THEN** each branch picks the value by the opposite side's kinds
+
+### Requirement: Shared names of a derived source fall back to labels
+When two or more columns of a nested query or temporary table carry the
+same name, each SHALL be addressable by its emitted label — the first
+under the name itself, the next under the allocator's suffixed label —
+instead of an `AmbiguousField` diagnostic.
+
+#### Scenario: Two unaliased fields of one name
+- **WHEN** a nested query projects `Д.Организация, Д.ПодразделениеДт КАК Организация`
+  and the outer statement reads `Организация` and `Организация_2`
+- **THEN** both resolve to their columns
+
+### Requirement: Compound accounting fields carry member labels
+A compound field of an accounting virtual table or record table SHALL
+label its columns as `<Имя>_TYPE`, `<Имя>_S`, `<Имя>_N`, `<Имя>_T`,
+`<Имя>_L` and `<Имя>` for the reference member, so that a `UNION` branch
+projecting a scalar or `НЕОПРЕДЕЛЕНО` in that position is spread over
+the same members. The member SHALL be told by the requested name even
+when the output label is cut to the dialect's identifier limit.
+
+#### Scenario: Undefined against an extra dimension
+- **WHEN** one branch projects `О.Субконто2` of `Обороты` and the other
+  `НЕОПРЕДЕЛЕНО`
+- **THEN** the union compiles with the second branch spread over the
+  members of the first
+
+#### Scenario: Undefined against a long-named composite field
+- **WHEN** one branch projects `Д.СубконтоПоАмортизационнойПремии1` and
+  the other `НЕОПРЕДЕЛЕНО`, the `_TYPE` label exceeding the PostgreSQL
+  identifier limit
+- **THEN** the union compiles with the second branch spread over both
+  members
+
+### Requirement: Qualified index fields
+`ИНДЕКСИРОВАТЬ ПО` SHALL accept a field written as a path
+(`Псевдоним.Поле`); the last segment SHALL name the selection-list
+label, and a label absent from the selection list SHALL remain a
+`TemporaryTable` diagnostic.
+
+#### Scenario: Index field qualified by the source alias
+- **WHEN** `ВЫБРАТЬ Т.Код, Т.Наименование ПОМЕСТИТЬ ВТ ИЗ Справочник.Номенклатура КАК Т ИНДЕКСИРОВАТЬ ПО Т.Код, Наименование;`
+  is compiled
+- **THEN** the statement compiles as with `ИНДЕКСИРОВАТЬ ПО Код, Наименование`
+
+#### Scenario: Qualified field outside the selection list
+- **WHEN** `ИНДЕКСИРОВАТЬ ПО Т.Артикул` names a label not projected
+- **THEN** the diagnostic is `TemporaryTable`
+
+### Requirement: Index fields by name and by projected path
+An index field of `ИНДЕКСИРОВАТЬ ПО` SHALL be accepted when its last
+segment equals a column's emitted label or the alias the text gave that
+column, or — for a qualified field — when the first branch projects
+exactly that field path under any alias.
+
+#### Scenario: Qualified field projected under another alias
+- **WHEN** `ВЫБРАТЬ Т.Code КАК Код ПОМЕСТИТЬ ВТ ИЗ … КАК Т ИНДЕКСИРОВАТЬ ПО Т.Code`
+  is compiled
+- **THEN** the statement compiles
+
+#### Scenario: Unprojected qualified field
+- **WHEN** `ИНДЕКСИРОВАТЬ ПО Т.Date` names a field the branch does not
+  project
+- **THEN** the diagnostic is `TemporaryTable`
+
+### Requirement: Order by a compound field
+An `УПОРЯДОЧИТЬ ПО` term naming a field of several columns — by path or
+by the alias of its projection — SHALL order by each column in the
+field's column order, every column with the term's direction.
+
+#### Scenario: Recorder and extra dimension
+- **WHEN** `… УПОРЯДОЧИТЬ ПО Д.Регистратор, Д.СубконтоДт1 УБЫВ` is compiled
+- **THEN** the `ORDER BY` lists the recorder's type and reference columns
+  ascending, then the extra dimension's type and reference columns
+  descending
+
+### Requirement: Accumulation balance and turnovers by recorder
+`РегистрНакопления.<Имя>.ОстаткиИОбороты` SHALL accept `Регистратор` and
+`Запись` as the periodicity: one row per dimensions combination, record
+period and recorder — and line number for `Запись` — with the receipts,
+expenses and turnover of the bucket and the opening and closing balances
+as running sums over the buckets before it, on a server with window
+frames; SQL Server 2008 SHALL refuse the balance columns as for a
+calendar periodicity.
+
+#### Scenario: By recorder
+- **WHEN** `ОстаткиИОбороты(&Н, &К, Регистратор, , )` is compiled and
+  `Регистратор` and `СуммаНачальныйОстаток` are read
+- **THEN** the relation groups by the record period and the recorder and
+  the opening balance is a window sum over the earlier buckets
+
+### Requirement: Tuple membership with references of several types
+In `(<элементы>) [НЕ] В (<подзапрос>)`, an item or a subquery column that
+is a reference of several types SHALL be compared as the RTRef ‖ RRRef
+payload, the fixed side widened to it; a composite field item SHALL be
+compared member by member with a composite projection of the subquery,
+its type-reference member included.
+
+#### Scenario: Recorder and line number
+- **WHEN** `(Д.Регистратор, Д.НомерСтроки) В (ВЫБРАТЬ П.Регистратор, П.НомерСтроки ИЗ …)` is compiled
+- **THEN** the `EXISTS` compares the recorder payloads and the line
+  numbers
+
+#### Scenario: Extra dimensions
+- **WHEN** `(Д.СубконтоДт1, Д.СубконтоДт2) В (ВЫБРАТЬ П.СубконтоДт1, П.СубконтоДт2 ИЗ …)` is compiled
+- **THEN** each item compares its type column and its payload with the
+  projection's members
+
+### Requirement: Hierarchy tests in temporary-table definitions
+`[НЕ] В ИЕРАРХИИ (…)` SHALL be accepted in a statement with `ПОМЕСТИТЬ`
+or `ДОБАВИТЬ`: the recursive CTEs it needs SHALL be defined before the
+table's CTE in the `WITH` list of every statement reading the table,
+under names unique per table, with `WITH RECURSIVE` on PostgreSQL.
+
+#### Scenario: Temporary table filtered by a hierarchy
+- **WHEN** `ВЫБРАТЬ Т.Код ПОМЕСТИТЬ ВТ ИЗ Справочник.Номенклатура КАК Т ГДЕ Т.Ссылка В ИЕРАРХИИ (&Группа); ВЫБРАТЬ ВТ.Код ИЗ ВТ КАК ВТ;`
+  is compiled
+- **THEN** the final SQL opens with `WITH RECURSIVE`, defines the
+  hierarchy CTE, then the table's CTE, and the table's body reads the
+  hierarchy by that name
+
+### Requirement: Unaliased fields are labelled as written
+A projected field without `КАК` SHALL carry the label of its path
+segments after the source alias, as the text spells them and run
+together — `Ссылка` for `Т.Ссылка`, `Ref` for `Т.Ref`, `Регистратор`
+for `Д.Регистратор`, `ОрганизацияНаименование` for
+`Д.Организация.Наименование` — with the member suffixes of a compound
+field appended; a nested query or temporary table exposes the column
+under that name.
+
+#### Scenario: Temporary table read by the written name
+- **WHEN** `ВЫБРАТЬ Д.Регистратор ПОМЕСТИТЬ ВТ ИЗ … КАК Д; ВЫБРАТЬ ВТ.Регистратор ИЗ ВТ КАК ВТ;`
+  is compiled
+- **THEN** the table's column is `Регистратор` and the second statement
+  reads it
+
+#### Scenario: Dereferenced path read by the run-together name
+- **WHEN** `ВЫБРАТЬ Д.Организация.Наименование ПОМЕСТИТЬ ВТ ИЗ … КАК Д; ВЫБРАТЬ ВТ.ОрганизацияНаименование ИЗ ВТ КАК ВТ;`
+  is compiled
+- **THEN** the table's column is `ОрганизацияНаименование` and the
+  second statement reads it
+
+### Requirement: Join conditions without an anchor equality
+An inner, left or right join SHALL accept any condition over the joined
+source and earlier ones — a constant, a comparison with a parameter, an
+inequality, `МЕЖДУ`, a dereference through `ВЫРАЗИТЬ` — rendered as the
+`ON` predicate; a full join SHALL keep requiring a top-level direct-field
+equality between the joined source and an earlier source, reported as
+an `UnsupportedFeature` diagnostic naming the full join.
+
+#### Scenario: Left join on a constant
+- **WHEN** `… ЛЕВОЕ СОЕДИНЕНИЕ ПланСчетов.Хозрасчетный КАК Х ПО (ИСТИНА)` is compiled
+- **THEN** the SQL joins with `ON TRUE`
+
+#### Scenario: Cast dereference in the condition
+- **WHEN** the condition reads `ВЫРАЗИТЬ(Д.Регистратор КАК Документ.X).Поле = Т.Поле`
+- **THEN** the target of the cast is joined before the condition's join
+
+#### Scenario: Full join without an anchor
+- **WHEN** `… ПОЛНОЕ СОЕДИНЕНИЕ … ПО (ИСТИНА)` is compiled
+- **THEN** the diagnostic is `UnsupportedFeature`
+
+### Requirement: Value table parameters as sources
+`ParameterValue::Table { columns, rows }` SHALL bind a value table whose
+columns are `ParameterColumn { name, kind }` with a declared kind: a
+string, a number, a boolean, a date, raw bytes, or a reference — to one
+object (a 16-byte identifier), to several objects or to none (the
+`RTRef ‖ RRRef` payload of a reference of several types). A source
+written `&Таблица [КАК Псевдоним]` — after `ИЗ` or a join keyword —
+SHALL read that table: the compiler SHALL inline its rows as a common
+table expression of the statement, `SELECT 1 AS "__row", CAST(<value>
+AS <type>) … UNION ALL SELECT 2, <values>, …`, the first row cast to the
+column types and an empty table as a single row of typed `NULL`s with
+`WHERE 1 = 0`, and the source SHALL read the CTE by name. Dates SHALL be
+rendered in the storage domain. In a statement with
+`ПОМЕСТИТЬ`/`ДОБАВИТЬ` the CTE SHALL travel with the table's definition.
+
+#### Scenario: Two rows joined to a catalog
+- **WHEN** `ВЫБРАТЬ Т.Код, П.Code ИЗ &Таблица КАК Т ВНУТРЕННЕЕ СОЕДИНЕНИЕ Справочник.X КАК П ПО П.Code = Т.Код`
+  is compiled with `Таблица` bound to two rows of a string and a number
+- **THEN** the SQL opens with the CTE whose first branch casts `'A'` to
+  text and `1` to numeric, the second branch lists the values, and the
+  catalog joins the CTE
+
+#### Scenario: Empty table
+- **WHEN** the table has no rows
+- **THEN** the CTE selects `CAST(NULL AS <type>)` per column with
+  `WHERE 1 = 0`
+
+### Requirement: Diagnostics of value table parameters
+A parameter read as a source that is unbound or not a table, a table
+with uneven rows, a value that does not fit its column's kind, a
+reference to an object outside the column's targets, a duplicate or
+empty column name, no columns, a column of kind `Null`, `Undefined`,
+`Type`, `Uuid` or `Unknown`, or a list or table inside a row SHALL be a
+`Parameter` diagnostic at the parameter token; a table used where a
+scalar is expected SHALL be a `Parameter` diagnostic as well. The
+unbound preparation pass SHALL not fail on such a source: it exposes the
+columns the statement names, of no kind.
+
+#### Scenario: Uneven row
+- **WHEN** a row has two values for one column
+- **THEN** the diagnostic names the row
+
+#### Scenario: Value of another kind
+- **WHEN** a string column holds a number in some row
+- **THEN** the diagnostic names the row, the column and the kinds
+
+### Requirement: Automatic ordering is accepted
+`АВТОУПОРЯДОЧИВАНИЕ` after the keys of `УПОРЯДОЧИТЬ ПО`, or where the
+clause would stand, SHALL be accepted and SHALL not change the SQL.
+
+#### Scenario: After the keys
+- **WHEN** `… УПОРЯДОЧИТЬ ПО Код АВТОУПОРЯДОЧИВАНИЕ` is compiled
+- **THEN** the SQL orders by the code alone
+
+### Requirement: Record auto number
+`АВТОНОМЕРЗАПИСИ()` SHALL compile to `ROW_NUMBER() OVER (ORDER BY (SELECT
+NULL))` of kind number in any statement; an argument SHALL be a `Syntax`
+diagnostic naming zero arguments.
+
+#### Scenario: Numbered projection
+- **WHEN** `ВЫБРАТЬ АВТОНОМЕРЗАПИСИ() КАК Номер, Code ИЗ …` is compiled
+- **THEN** the first column is the row number
+
+### Requirement: Dereferences of grouping keys
+In a statement with `СГРУППИРОВАТЬ ПО`, a projection or a scalar
+operand whose path extends a key written as a field path —
+`Сотрудник.Наименование` over the key `Сотрудник` — SHALL be accepted,
+and every column it reads SHALL be added to the `GROUP BY` list. An
+`УПОРЯДОЧИТЬ ПО` key of a grouped statement SHALL be accepted when it is
+a grouping key, a dereference of one (its columns joining the grouping)
+or an expression containing an aggregate; other unprojected fields SHALL
+stay an `UnsupportedFeature` diagnostic.
+
+#### Scenario: Projected dereference
+- **WHEN** `ВЫБРАТЬ p.Орг, p.Орг.Код … СГРУППИРОВАТЬ ПО p.Орг` is compiled
+- **THEN** the SQL groups by the key column and the joined code column
+
+#### Scenario: Ordering by an aggregate
+- **WHEN** `… СГРУППИРОВАТЬ ПО p.Орг УПОРЯДОЧИТЬ ПО МАКСИМУМ(p.Код) УБЫВ` is compiled
+- **THEN** the SQL orders by `MAX(...) DESC`
+
+### Requirement: Joined statements order by unprojected fields
+A statement with joins and neither a union, a grouping nor `РАЗЛИЧНЫЕ`
+SHALL accept an `УПОРЯДОЧИТЬ ПО` field it does not project, ordering by
+the field's columns; a projected field SHALL keep ordering by its
+position.
+
+#### Scenario: Unprojected field of the joined source
+- **WHEN** `ВЫБРАТЬ p.Code ИЗ … КАК p ЛЕВОЕ СОЕДИНЕНИЕ … КАК o ПО … УПОРЯДОЧИТЬ ПО o.Code, p.Code УБЫВ`
+  is compiled
+- **THEN** the SQL orders by the joined column, then by position 1
+  descending
+
+### Requirement: First records of the accounting records table
+`РегистрБухгалтерии.<Имя>.ДвиженияССубконто(Начало, Конец, Условие,
+Порядок, Первые)` SHALL keep the first `Первые` records — a number
+literal or a parameter bound to a number, rendered as `LIMIT` on
+PostgreSQL and `TOP (N)` on SQL Server — ordered by `Порядок`: record
+fields ascending, singly or as a tuple, or the record order (period,
+recorder, line number) when `Порядок` is absent or a parameter bound to
+`NULL`. `Порядок` without `Первые` SHALL change nothing. Another
+`Первые` or `Порядок` SHALL be an `UnsupportedFeature` diagnostic.
+
+#### Scenario: First record by period
+- **WHEN** `ДвиженияССубконто(&Н, &К, , Период, 1)` is compiled for PostgreSQL
+- **THEN** the relation ends with `ORDER BY` the period column and `LIMIT 1`
+
+#### Scenario: First five in record order
+- **WHEN** `ДвиженияССубконто(&Н, &К, Организация = &О, , 5)` is compiled
+- **THEN** the relation orders by period, recorder and line number and
+  keeps five rows
+
+### Requirement: Fixed references of derived sources join typed references
+A join equality between a column of a nested query or temporary table
+that is a reference to one object and a field that is a reference of
+several types SHALL compare the field's type discriminator with the
+object's database type number found in SchemaStorage, whose table names
+carry no leading underscore, and the identifiers.
+
+#### Scenario: Temporary table joined to a recorder
+- **WHEN** `… ИЗ (ВЫБРАТЬ Д.Ссылка КАК Ссылка ИЗ Документ.X КАК Д) КАК Т ВНУТРЕННЕЕ СОЕДИНЕНИЕ … КАК Р ПО Р.Регистратор = Т.Ссылка`
+  is compiled
+- **THEN** the `ON` compares the recorder's type column with the
+  document's number and its reference column with the derived column
+
+### Requirement: Expanded balances of the accounting register
+`Остатки` SHALL expose `<Ресурс>РазвернутыйОстатокДт` and
+`<Ресурс>РазвернутыйОстатокКт`, and `ОстаткиИОбороты` without a
+periodicity `<Ресурс>НачальныйРазвернутыйОстатокДт/Кт` and
+`<Ресурс>КонечныйРазвернутыйОстатокДт/Кт`: per account, dimensions and
+extra dimensions the positive part of the balance and the negated
+negative part, which the outer aggregation sums over the dimensions the
+statement does not read. A periodic `ОстаткиИОбороты` SHALL refuse them
+with an `UnsupportedFeature` diagnostic. The period completion method
+SHALL be accepted without a periodicity.
+
+#### Scenario: Expanded balance by account
+- **WHEN** `ВЫБРАТЬ О.Счет, О.СуммаРазвернутыйОстатокДт ИЗ РегистрБухгалтерии.Хозрасчетный.Остатки(&Д, , , ) КАК О`
+  is compiled
+- **THEN** the inner aggregation projects the positive part of the
+  group sum and the outer sums it by account
+
+#### Scenario: Periodic table
+- **WHEN** the same column is read from `ОстаткиИОбороты(&Н, &К, МЕСЯЦ, , , , )`
+- **THEN** the diagnostic is `UnsupportedFeature`
+
+### Requirement: Alias wildcard of the only source
+`<Псевдоним>.*` naming a source — by its alias or, without one, by its
+object name — SHALL stand for every field of that source in the
+metadata order, wherever in the projection list it is written: alone
+it equals `*`, and next to named fields or in a joined statement it
+adds the source's fields at its place, their labels made unique as any
+repeated label is. Any other `<Имя>.*` keeps naming a tabular section.
+
+#### Scenario: Alias wildcard
+- **WHEN** `ВЫБРАТЬ Т.* ИЗ Справочник.X КАК Т` is compiled
+- **THEN** the SQL equals that of `ВЫБРАТЬ * ИЗ Справочник.X КАК Т`
+
+#### Scenario: Alias wildcard among fields in a join
+- **WHEN** `ВЫБРАТЬ Т.Код КАК Код, Т.* ИЗ Справочник.X КАК Т ЛЕВОЕ СОЕДИНЕНИЕ Справочник.Y КАК Д ПО Т.Код = Д.Код`
+  is compiled
+- **THEN** the projection is `Код` followed by every field of `Т`, the
+  repeated `Код` labelled uniquely
+
+### Requirement: Dereferences across targets in expressions
+A value read through a reference of several types (`Регистратор.Поле`)
+SHALL be usable in an expression as its value member — the `CASE` over
+the targets the projection renders — and compared with a reference
+constant SHALL compare that member with the constant's `RTRef ‖ RRRef`
+payload when the constant's type is known, or with the constant itself
+otherwise.
+
+#### Scenario: Filter by the recorder's organisation
+- **WHEN** `… ГДЕ П.Регистратор.Организация = ЗНАЧЕНИЕ(Справочник.Организации.ПустаяСсылка)` is compiled
+- **THEN** the predicate compares the `CASE` over the recorder's targets
+  with the payload of the empty reference
+
+### Requirement: Browse users, roles and their rights in the console
+The console SHALL provide `\users` listing the users of the base — name,
+description, operating-system login, the show-in-list, authentication
+and administrative flags and the role count — `\user <имя>` showing one
+user with the names of its roles, `\roles [<подстрока>]` listing the
+roles of the configuration by name and synonym, `\role <имя>
+[<Вид.Объект>]` listing what the role grants — every object with its
+granted rights, or one object with its rights and restriction texts —
+and `\rls <Вид.Объект> [<право>]` showing, for the current user or every
+role when no user is set, the raw restriction of each role and the
+expanded access: `не ограничено`, `запрещено` or the condition. Users
+and rights SHALL be read on the first command that needs them through
+the read-only query path and forgotten on `\refresh`; an unknown user,
+role, object or right SHALL be reported without changing the console
+state.
+
+#### Scenario: Users listed
+- **WHEN** the user enters `\users` on the УНФ demo base
+- **THEN** the console prints one line per user with `Абдулов (директор)`
+  holding three roles
+
+#### Scenario: Role of a user
+- **WHEN** the user enters `\user Абдулов (директор)`
+- **THEN** the console prints the user's flags and the role names
+  `АдминистраторСистемы`, `ПолныеПрава` and
+  `ИнтерактивноеОткрытиеВнешнихОтчетовИОбработок`
+
+### Requirement: Run allowed queries as a user
+`\as <пользователь>` SHALL make that user current and `\as clear` SHALL
+forget it; `\as` alone SHALL print the current user. With a current user,
+every target a `РАЗРЕШЕННЫЕ` batch requests that no `\restrict` covers
+SHALL take the access of the user's roles for `Чтение`, expanded against
+the session parameters: no restriction when unrestricted, `ЛОЖЬ` when no
+role grants the right, and the restrictions joined by `ИЛИ` otherwise.
+A tabular section SHALL take its owner's access as
+`Ссылка В (ВЫБРАТЬ <псевдоним>.Ссылка ИЗ <владелец> КАК <псевдоним> ГДЕ <условие>)`.
+An expansion error — a session parameter without a value, an outdated
+template — SHALL abort the query with the message, naming the role and
+the parameter to set with `\session`.
+
+#### Scenario: Restricted table for a user
+- **WHEN** `\as Петрова (бухгалтер)` is set and a `РАЗРЕШЕННЫЕ` query
+  reads a catalog a role of the user restricts
+- **THEN** the query compiles with that role's expanded restriction,
+  or reports the session parameter the template needs
+
+#### Scenario: Denied table
+- **WHEN** no role of the current user grants `Чтение` of the table
+- **THEN** the query compiles with the restriction `ЛОЖЬ` and answers no
+  rows
+
+### Requirement: Skip unreadable Config resources
+A Config resource the decoder cannot read — one that is not UTF-8 or not
+the brace serialization, such as the binary `.7` resource of some charts
+of characteristic types — SHALL be skipped with a warning naming it, and
+the metadata SHALL be acquired from the rest.
+
+#### Scenario: Binary predefined resource
+- **WHEN** a `.7` resource starts with bytes that are not UTF-8
+- **THEN** the console warns and the metadata is acquired

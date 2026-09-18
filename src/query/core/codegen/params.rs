@@ -31,6 +31,7 @@ pub(super) fn parameter_kind(value: &ParameterValue) -> ColumnKind {
             .map(parameter_kind)
             .find(|kind| !kind.is_wildcard())
             .unwrap_or(ColumnKind::Null),
+        ParameterValue::Table { .. } => ColumnKind::Null,
     }
 }
 
@@ -69,6 +70,14 @@ pub(super) fn render_scalar_parameter(
                 token.lexeme
             ),
         )),
+        ParameterValue::Table { .. } => Err(QueryDiagnostic::at(
+            QueryDiagnosticKind::Parameter,
+            Some(token),
+            format!(
+                "table parameter {:?} is allowed only as a source",
+                token.lexeme
+            ),
+        )),
     }
 }
 
@@ -82,12 +91,15 @@ pub(super) fn list_elements<'value>(
     };
     if items
         .iter()
-        .any(|item| matches!(item, ParameterValue::List(_)))
+        .any(|item| matches!(item, ParameterValue::List(_) | ParameterValue::Table { .. }))
     {
         return Err(QueryDiagnostic::at(
             QueryDiagnosticKind::Parameter,
             Some(token),
-            format!("list parameter {:?} must not contain lists", token.lexeme),
+            format!(
+                "list parameter {:?} must not contain lists or tables",
+                token.lexeme
+            ),
         ));
     }
     Ok(Some(items))

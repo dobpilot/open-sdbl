@@ -9,7 +9,8 @@
 
 use open_sdbl::metadata::{MetadataKind, MetadataSnapshot, ObjectId};
 use open_sdbl::query::{
-    ParameterDate, ParameterValue, QueryParameter, SessionParameters, find_metadata_object,
+    ColumnKind, ParameterColumn, ParameterDate, ParameterValue, QueryParameter, SessionParameters,
+    find_metadata_object,
 };
 use open_sdbl::{Keyword, Token, TokenKind, tokenize};
 
@@ -259,6 +260,9 @@ pub(crate) fn kind_label(value: &ParameterValue) -> String {
         ParameterValue::Reference { .. } => "Reference".to_owned(),
         ParameterValue::Binary(bytes) => format!("Binary[{}]", bytes.len()),
         ParameterValue::List(items) => format!("List[{}]", items.len()),
+        ParameterValue::Table { columns, rows } => {
+            format!("Table[{}x{}]", rows.len(), columns.len())
+        }
         _ => "Unknown".to_owned(),
     }
 }
@@ -280,6 +284,8 @@ pub(crate) fn parse_parameter_literal(
     };
     let value = if parser.peek_lexeme() == Some("(") {
         parser.parse_list()?
+    } else if parser.next_is_table() {
+        parser.parse_table()?
     } else {
         parser.parse_scalar()?
     };
@@ -326,6 +332,137 @@ impl<'source> LiteralParser<'_, 'source, '_> {
                 token.lexeme
             )))
         }
+    }
+
+    /// `ТАБЛИЦА` / `TABLE` opens a value table literal.
+    fn next_is_table(&self) -> bool {
+        self.peek_lexeme()
+            .is_some_and(|lexeme| lexeme.eq_ignore_ascii_case("TABLE") || lexeme == "ТАБЛИЦА")
+    }
+
+    /// `ТАБЛИЦА(<колонка> КАК <вид>, …)((<значение>, …), …)`: the typed
+    /// columns, then one parenthesized list per row; `ТАБЛИЦА(Код КАК
+    /// СТРОКА)()` is empty. A kind is `ЧИСЛО`, `СТРОКА`, `ДАТА`,
+    /// `БУЛЕВО`, `ЛЮБАЯССЫЛКА`, `Вид.Объект` or `(Вид.Объект, …)`.
+    fn parse_table(&mut self) -> Result<ParameterValue, CliError> {
+        self.offset += 1;
+        self.expect("(")?;
+        let mut columns = Vec::new();
+        loop {
+            let token = self.next()?;
+            // A column may be named by a keyword — `Количество` is one.
+            if !matches!(token.kind, TokenKind::Identifier | TokenKind::Keyword(_)) {
+                return Err(CliError::Data(format!(
+                    "expected a column name in the table literal, found {:?}",
+                    token.lexeme
+                )));
+            }
+            let name = token.lexeme.to_owned();
+            let separator = self.next()?;
+            if !(separator.kind == TokenKind::Keyword(Keyword::As)) {
+                return Err(CliError::Data(format!(
+                    "column {name:?} needs a kind: write `{name} КАК СТРОКА`, `КАК ЧИСЛО`, `КАК ДАТА`, `КАК БУЛЕВО`, `КАК ЛЮБАЯССЫЛКА` or `КАК Справочник.Имя`"
+                )));
+            }
+            let kind = self.parse_column_kind()?;
+            columns.push(ParameterColumn::new(name, kind));
+            match self.next()?.lexeme {
+                "," => continue,
+                ")" => break,
+                other => {
+                    return Err(CliError::Data(format!(
+                        "expected \",\" or \")\" after a column, found {other:?}"
+                    )));
+                }
+            }
+        }
+        self.expect("(")?;
+        let mut rows = Vec::new();
+        if self.peek_lexeme() == Some(")") {
+            self.offset += 1;
+            return Ok(ParameterValue::Table { columns, rows });
+        }
+        loop {
+            let ParameterValue::List(row) = self.parse_list()? else {
+                unreachable!("parse_list returns a list")
+            };
+            if row.len() != columns.len() {
+                return Err(CliError::Data(format!(
+                    "table row {} has {} values for {} columns",
+                    rows.len() + 1,
+                    row.len(),
+                    columns.len()
+                )));
+            }
+            rows.push(row);
+            match self.next()?.lexeme {
+                "," => continue,
+                ")" => break,
+                other => {
+                    return Err(CliError::Data(format!(
+                        "expected \",\" or \")\" after a table row, found {other:?}"
+                    )));
+                }
+            }
+        }
+        Ok(ParameterValue::Table { columns, rows })
+    }
+
+    /// The kind after `КАК` in a table column.
+    fn parse_column_kind(&mut self) -> Result<ColumnKind, CliError> {
+        if self.peek_lexeme() == Some("(") {
+            self.offset += 1;
+            let mut targets = Vec::new();
+            loop {
+                targets.push(self.parse_reference_target()?);
+                match self.next()?.lexeme {
+                    "," => continue,
+                    ")" => break,
+                    other => {
+                        return Err(CliError::Data(format!(
+                            "expected \",\" or \")\" in the kind list, found {other:?}"
+                        )));
+                    }
+                }
+            }
+            return Ok(ColumnKind::Reference {
+                runtime_typed: targets.len() != 1,
+                targets,
+            });
+        }
+        let token = self.next()?;
+        Ok(match token.lexeme.to_uppercase().as_str() {
+            "ЧИСЛО" | "NUMBER" => ColumnKind::Number {
+                precision: None,
+                scale: None,
+            },
+            "СТРОКА" | "STRING" => ColumnKind::String { length: None },
+            "ДАТА" | "DATE" => ColumnKind::DateTime,
+            "БУЛЕВО" | "BOOLEAN" => ColumnKind::Boolean,
+            "ЛЮБАЯССЫЛКА" | "ANYREF" => ColumnKind::Reference {
+                targets: Vec::new(),
+                runtime_typed: true,
+            },
+            _ => {
+                self.offset -= 1;
+                let target = self.parse_reference_target()?;
+                ColumnKind::Reference {
+                    targets: vec![target],
+                    runtime_typed: false,
+                }
+            }
+        })
+    }
+
+    /// `Вид.Объект` as a reference target.
+    fn parse_reference_target(&mut self) -> Result<ObjectId, CliError> {
+        let kind = self.next()?.lexeme;
+        self.expect(".")?;
+        let object = self.next()?.lexeme;
+        let qualified = format!("{kind}.{object}");
+        let metadata_object = find_metadata_object(self.snapshot, &qualified)
+            .map_err(|error| CliError::Data(error.message().to_owned()))?;
+        Ok(ObjectId::from(&metadata_object.guid))
     }
 
     fn parse_list(&mut self) -> Result<ParameterValue, CliError> {

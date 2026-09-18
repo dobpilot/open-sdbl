@@ -198,6 +198,18 @@ impl SqlDialect {
         }
     }
 
+    /// Whether the server takes a windowed running sum
+    /// (`SUM(…) OVER (… ROWS BETWEEN …)`): PostgreSQL and SQL Server 2012
+    /// and newer; SQL Server 2008 has no frame clause.
+    pub(super) const fn running_sums(self) -> bool {
+        match self {
+            Self::Postgres => true,
+            Self::MsSql { dialect_level, .. } => {
+                matches!(dialect_level, MsSqlDialectLevel::Sql2012)
+            }
+        }
+    }
+
     pub(super) const fn is_mssql(self) -> bool {
         matches!(self, Self::MsSql { .. })
     }
@@ -392,6 +404,12 @@ impl SqlDialect {
         let argument = |index: usize| arguments[index].as_str();
         let zero = "0".to_owned();
         match (self, function) {
+            // A row number unique within the statement, in no particular
+            // order: SQL Server wants an ORDER BY in the window, which a
+            // constant subquery satisfies on both servers.
+            (_, ScalarFunction::RecordAutoNumber) => {
+                "ROW_NUMBER() OVER (ORDER BY (SELECT NULL))".to_owned()
+            }
             (_, ScalarFunction::Substring) => match self {
                 Self::Postgres => format!(
                     "substring({} from {} for {})",

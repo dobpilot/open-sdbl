@@ -46,6 +46,9 @@ pub(super) struct TempTableEntry {
     pub(super) columns: Vec<CompiledColumn>,
     /// The transitive closure of the CTEs this definition reads.
     pub(super) dependencies: BTreeSet<u32>,
+    /// The recursive CTEs of `В ИЕРАРХИИ` the definition needs, named per
+    /// table, rendered before the definition itself.
+    pub(super) ctes: Vec<(String, String)>,
     pub(super) visible: bool,
 }
 
@@ -183,12 +186,14 @@ impl TempTablesManager {
     }
 
     /// Registers a `ПОМЕСТИТЬ` definition and returns its CTE id.
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn define(
         &mut self,
         name: &Token<'_>,
         sql: String,
         columns: Vec<CompiledColumn>,
         dependencies: BTreeSet<u32>,
+        ctes: Vec<(String, String)>,
         dialect: SqlDialect,
         fingerprint: SnapshotFingerprint,
     ) -> Result<u32, QueryDiagnostic> {
@@ -204,6 +209,7 @@ impl TempTablesManager {
             sql,
             columns,
             dependencies,
+            ctes,
             dialect,
             fingerprint,
             Some(name),
@@ -211,12 +217,14 @@ impl TempTablesManager {
     }
 
     /// Registers a `ДОБАВИТЬ` definition over an existing table.
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn append(
         &mut self,
         name: &Token<'_>,
         sql: String,
         columns: Vec<CompiledColumn>,
         dependencies: BTreeSet<u32>,
+        ctes: Vec<(String, String)>,
         dialect: SqlDialect,
         fingerprint: SnapshotFingerprint,
     ) -> Result<u32, QueryDiagnostic> {
@@ -236,6 +244,7 @@ impl TempTablesManager {
             sql,
             columns,
             dependencies,
+            ctes,
             dialect,
             fingerprint,
             Some(name),
@@ -273,6 +282,7 @@ impl TempTablesManager {
         sql: String,
         columns: Vec<CompiledColumn>,
         dependencies: BTreeSet<u32>,
+        ctes: Vec<(String, String)>,
         dialect: SqlDialect,
         fingerprint: SnapshotFingerprint,
         token: Option<&Token<'_>>,
@@ -290,12 +300,33 @@ impl TempTablesManager {
         let id = self.next_id + 1;
         self.next_id = id;
         self.binding.get_or_insert((dialect, fingerprint));
+        // The statement numbered its CTEs — `__hier_<n>`, `__param_<n>` —
+        // per statement; in the manager they live beside other tables'
+        // CTEs, so the table id joins the name everywhere the statement
+        // spelled it.
+        let mut sql = sql;
+        let mut renamed = Vec::with_capacity(ctes.len());
+        for (cte, body) in &ctes {
+            let name = format!("{cte}_t{id}");
+            let from = dialect.quote_identifier(cte);
+            let to = dialect.quote_identifier(&name);
+            sql = sql.replace(&from, &to);
+            renamed.push((name, body.clone()));
+        }
+        for (cte, _) in &ctes {
+            let from = dialect.quote_identifier(cte);
+            let to = dialect.quote_identifier(&format!("{cte}_t{id}"));
+            for (_, body) in &mut renamed {
+                *body = body.replace(&from, &to);
+            }
+        }
         self.entries.push(TempTableEntry {
             name,
             id,
             sql,
             columns,
             dependencies,
+            ctes: renamed,
             visible: true,
         });
         Ok(id)

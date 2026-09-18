@@ -85,6 +85,8 @@ pub fn extension_metadata_from_restructure(
             separation: None,
             reference_types: Vec::new(),
             object_reference_type: None,
+            balance: None,
+            chart_of_accounts: None,
         });
         if let Some(target) = &field.reference_target {
             field_reference_targets.push((field.number, target.clone()));

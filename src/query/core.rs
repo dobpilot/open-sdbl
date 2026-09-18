@@ -14,14 +14,14 @@ mod types;
 
 pub use diag::{QueryDiagnostic, QueryDiagnosticKind};
 pub use params::{
-    CompileOptions, InvalidParameterDate, ParameterDate, ParameterValue, QueryParameter,
-    SessionParameters,
+    CompileOptions, InvalidParameterDate, ParameterColumn, ParameterDate, ParameterValue,
+    QueryParameter, SessionParameters,
 };
 pub use resolve::{
     ColumnKind, CompiledColumn, CompiledQuery, PresentationExpression, PresentationPlan,
     PresentationRequest, PresentationTarget, QueryableColumn, QueryableField,
-    QueryableFieldCatalog, constants_table_fields, find_metadata_object, queryable_field_catalog,
-    queryable_fields,
+    QueryableFieldCatalog, constants_table_fields, find_metadata_object, object_query_name,
+    queryable_field_catalog, queryable_fields,
 };
 pub use restrict::{AccessRestriction, RestrictionRequest, RestrictionTarget};
 pub use temp_tables::{TempTable, TempTablesManager};

@@ -88,11 +88,13 @@ fn logical_span(branch: &CompiledBranch, logical: usize) -> &[CompiledColumn] {
     branch.columns.get(start..start + len).unwrap_or_default()
 }
 
-/// The member suffix a column label carries.
+/// The member suffix a column carries — read from the requested name,
+/// because the output label may be cut to the dialect's identifier limit
+/// and lose the suffix.
 fn member_suffix(column: &CompiledColumn) -> &'static str {
     ["_TYPE", "_S", "_N", "_T", "_L"]
         .into_iter()
-        .find(|suffix| column.label.ends_with(suffix))
+        .find(|suffix| column.name.ends_with(suffix))
         .unwrap_or("")
 }
 
@@ -324,15 +326,18 @@ pub(super) fn compile_query_ast_with_outer(
             ));
         }
         if let Some(term) = ast.order.first()
-            && (ast.branches.len() > 1 || ast.branches[0].top.is_none())
+            && ast.branches.iter().any(|branch| branch.top.is_none())
         {
             return Err(QueryDiagnostic::at(
                 QueryDiagnosticKind::UnsupportedFeature,
                 Some(term.token),
-                "ORDER BY inside a nested query requires TOP on a single branch",
+                "ORDER BY inside a nested query requires TOP on every branch",
             ));
         }
     }
+    // Each branch of a nested union limits itself, and the union has no
+    // limit of its own, so its ordering changes nothing: it is dropped.
+    let order_dropped = nested.is_some() && ast.branches.len() > 1;
     if let (Some(into), Some(totals)) = (ast.into.as_ref(), ast.totals.as_ref()) {
         return Err(QueryDiagnostic::at(
             QueryDiagnosticKind::Syntax,
@@ -365,7 +370,11 @@ pub(super) fn compile_query_ast_with_outer(
                 1usize.saturating_add(branch.projection.len()),
                 branch.source.as_ref().map(|source| source.object),
             )?;
-            let order: &[OrderTerm<'_, '_>] = if index == 0 { &ast.order } else { &[] };
+            let order: &[OrderTerm<'_, '_>] = if index == 0 && !order_dropped {
+                &ast.order
+            } else {
+                &[]
+            };
             branches.push(compile_branch(
                 branch,
                 snapshot,
@@ -398,11 +407,30 @@ pub(super) fn compile_query_ast_with_outer(
         if branch.logical_width != first.logical_width
             || branch.columns.len() != first.columns.len()
         {
+            // The same count of fields rendered over different counts of
+            // columns: name the first field whose width differs.
+            let differing = (0..first.logical_width.min(branch.logical_width))
+                .map(|logical| (logical_span(first, logical), logical_span(branch, logical)))
+                .find(|(expected, actual)| expected.len() != actual.len())
+                .and_then(|(expected, actual)| {
+                    let column = expected.first()?;
+                    let label = column
+                        .label
+                        .strip_suffix(member_suffix(column))
+                        .unwrap_or(&column.label);
+                    Some(format!(
+                        "; field {label:?} renders as {} SQL columns in branch {} and {} in branch 1",
+                        actual.len(),
+                        index + 1,
+                        expected.len()
+                    ))
+                })
+                .unwrap_or_default();
             return Err(QueryDiagnostic::at(
                 QueryDiagnosticKind::UnsupportedFeature,
                 Some(ast.unions[index - 1].token),
                 format!(
-                    "UNION branch {} projects {} logical fields and {} SQL columns; expected {} logical fields and {} SQL columns",
+                    "UNION branch {} projects {} logical fields and {} SQL columns; expected {} logical fields and {} SQL columns{differing}",
                     index + 1,
                     branch.logical_width,
                     branch.columns.len(),
@@ -523,7 +551,7 @@ pub(super) fn compile_query_ast_with_outer(
                     .unwrap_or(&column.kind)
                     .clone()
             };
-            CompiledColumn::new(column.label.clone(), kind)
+            CompiledColumn::named(column.name.clone(), column.label.clone(), kind)
         })
         .collect::<Vec<_>>();
 

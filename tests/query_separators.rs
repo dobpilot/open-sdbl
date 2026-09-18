@@ -203,7 +203,7 @@ fn filters_a_plain_source_by_the_session_value_before_the_query_filter() {
     );
     assert_eq!(
         sql,
-        "SELECT \"Т\".\"_idrref\" AS \"ID\" FROM \"_reference53\" AS \"Т\" WHERE \"Т\".\"_fld56\" = 7 AND \"Т\".\"_fld57\" = 7 AND (\"Т\".\"_fld54\" = 'x')"
+        "SELECT \"Т\".\"_idrref\" AS \"Ссылка\" FROM \"_reference53\" AS \"Т\" WHERE \"Т\".\"_fld56\" = 7 AND \"Т\".\"_fld57\" = 7 AND (\"Т\".\"_fld54\" = 'x')"
     );
     let mssql = compile(
         &snapshot,
@@ -215,7 +215,7 @@ fn filters_a_plain_source_by_the_session_value_before_the_query_filter() {
     .sql;
     assert_eq!(
         mssql,
-        "SELECT [Т].[_idrref] AS [ID] FROM [_reference53] AS [Т] WHERE [Т].[_fld56] = 7 AND [Т].[_fld57] = 7"
+        "SELECT [Т].[_idrref] AS [Ссылка] FROM [_reference53] AS [Т] WHERE [Т].[_fld56] = 7 AND [Т].[_fld57] = 7"
     );
 }
 
@@ -252,11 +252,11 @@ fn a_shared_separator_defaults_to_the_empty_value_and_falls_back_to_its_name() {
     let source = "ВЫБРАТЬ Т.Ссылка ИЗ Справочник.Товары КАК Т";
     assert_eq!(
         postgres_sql(&snapshot, source, &SessionParameters::new()),
-        "SELECT \"Т\".\"_idrref\" AS \"ID\" FROM \"_reference53\" AS \"Т\" WHERE \"Т\".\"_fld56\" = 0 AND \"Т\".\"_fld57\" = 0"
+        "SELECT \"Т\".\"_idrref\" AS \"Ссылка\" FROM \"_reference53\" AS \"Т\" WHERE \"Т\".\"_fld56\" = 0 AND \"Т\".\"_fld57\" = 0"
     );
     assert_eq!(
         postgres_sql(&snapshot, source, &area(7)),
-        "SELECT \"Т\".\"_idrref\" AS \"ID\" FROM \"_reference53\" AS \"Т\" WHERE \"Т\".\"_fld56\" = 0 AND \"Т\".\"_fld57\" = 7"
+        "SELECT \"Т\".\"_idrref\" AS \"Ссылка\" FROM \"_reference53\" AS \"Т\" WHERE \"Т\".\"_fld56\" = 0 AND \"Т\".\"_fld57\" = 7"
     );
     assert_eq!(
         postgres_sql(
@@ -267,7 +267,7 @@ fn a_shared_separator_defaults_to_the_empty_value_and_falls_back_to_its_name() {
                 ("ЗначениеРазделителя", number(7)),
             ])
         ),
-        "SELECT \"Т\".\"_idrref\" AS \"ID\" FROM \"_reference53\" AS \"Т\" WHERE \"Т\".\"_fld56\" = 3 AND \"Т\".\"_fld57\" = 7"
+        "SELECT \"Т\".\"_idrref\" AS \"Ссылка\" FROM \"_reference53\" AS \"Т\" WHERE \"Т\".\"_fld56\" = 3 AND \"Т\".\"_fld57\" = 7"
     );
 }
 
@@ -278,7 +278,7 @@ fn the_use_flag_disables_the_predicate_and_query_parameters_never_supply_it() {
     let disabled = session(&[("ИспользованиеРазделителя", ParameterValue::Boolean(false))]);
     assert_eq!(
         postgres_sql(&snapshot, source, &disabled),
-        "SELECT \"Т\".\"_idrref\" AS \"ID\" FROM \"_reference53\" AS \"Т\""
+        "SELECT \"Т\".\"_idrref\" AS \"Ссылка\" FROM \"_reference53\" AS \"Т\""
     );
     let query_value = [QueryParameter::new("ЗначениеРазделителя", number(7))];
     let error = compile(
@@ -301,7 +301,7 @@ fn places_predicates_by_join_shape() {
     );
     assert_eq!(
         left,
-        "SELECT \"Т\".\"_idrref\" AS \"ID\", \"П\".\"_fld54\"::text AS \"Артикул\", \"__left_ref1\".\"_fld54\"::text AS \"А\" FROM \"_reference53\" AS \"Т\" LEFT JOIN \"_reference53\" AS \"П\" ON \"Т\".\"_fld55rref\" = \"П\".\"_idrref\" AND \"П\".\"_fld56\" = 7 AND \"П\".\"_fld57\" = 7 LEFT JOIN \"_reference53\" AS \"__left_ref1\" ON \"Т\".\"_fld55rref\" = \"__left_ref1\".\"_idrref\" AND \"__left_ref1\".\"_fld56\" = 7 AND \"__left_ref1\".\"_fld57\" = 7 WHERE \"Т\".\"_fld56\" = 7 AND \"Т\".\"_fld57\" = 7 AND (\"Т\".\"_fld54\" = 'x')"
+        "SELECT \"Т\".\"_idrref\" AS \"Ссылка\", \"П\".\"_fld54\"::text AS \"Артикул\", \"__left_ref1\".\"_fld54\"::text AS \"А\" FROM \"_reference53\" AS \"Т\" LEFT JOIN \"_reference53\" AS \"П\" ON \"Т\".\"_fld55rref\" = \"П\".\"_idrref\" AND \"П\".\"_fld56\" = 7 AND \"П\".\"_fld57\" = 7 LEFT JOIN \"_reference53\" AS \"__left_ref1\" ON \"Т\".\"_fld55rref\" = \"__left_ref1\".\"_idrref\" AND \"__left_ref1\".\"_fld56\" = 7 AND \"__left_ref1\".\"_fld57\" = 7 WHERE \"Т\".\"_fld56\" = 7 AND \"Т\".\"_fld57\" = 7 AND (\"Т\".\"_fld54\" = 'x')"
     );
 
     let right = postgres_sql(
@@ -311,7 +311,7 @@ fn places_predicates_by_join_shape() {
     );
     assert_eq!(
         right,
-        "SELECT \"Т\".\"_idrref\" AS \"ID\" FROM \"_reference53\" AS \"Т\" RIGHT JOIN \"_reference53\" AS \"П\" ON \"Т\".\"_fld55rref\" = \"П\".\"_idrref\" AND \"Т\".\"_fld56\" = 7 AND \"Т\".\"_fld57\" = 7 WHERE \"П\".\"_fld56\" = 7 AND \"П\".\"_fld57\" = 7"
+        "SELECT \"Т\".\"_idrref\" AS \"Ссылка\" FROM \"_reference53\" AS \"Т\" RIGHT JOIN \"_reference53\" AS \"П\" ON \"Т\".\"_fld55rref\" = \"П\".\"_idrref\" AND \"Т\".\"_fld56\" = 7 AND \"Т\".\"_fld57\" = 7 WHERE \"П\".\"_fld56\" = 7 AND \"П\".\"_fld57\" = 7"
     );
 
     let full = postgres_sql(
@@ -324,7 +324,7 @@ fn places_predicates_by_join_shape() {
     // instead of surviving as an unmatched row.
     assert_eq!(
         full,
-        "SELECT \"Т\".\"_idrref\" AS \"ID\" FROM \"_reference53\" AS \"Т\" FULL JOIN \"_reference53\" AS \"П\" ON \"Т\".\"_fld55rref\" = \"П\".\"_idrref\" AND \"Т\".\"_fld56\" = 7 AND \"Т\".\"_fld57\" = 7 AND \"П\".\"_fld56\" = 7 AND \"П\".\"_fld57\" = 7"
+        "SELECT \"Т\".\"_idrref\" AS \"Ссылка\" FROM \"_reference53\" AS \"Т\" FULL JOIN \"_reference53\" AS \"П\" ON \"Т\".\"_fld55rref\" = \"П\".\"_idrref\" AND \"Т\".\"_fld56\" = 7 AND \"Т\".\"_fld57\" = 7 AND \"П\".\"_fld56\" = 7 AND \"П\".\"_fld57\" = 7"
     );
 }
 
@@ -345,7 +345,7 @@ fn filters_constants_nested_queries_and_restricted_sources() {
             "ВЫБРАТЬ Т.Ссылка ИЗ Справочник.Товары КАК Т ГДЕ Т.Ссылка В (ВЫБРАТЬ П.Поставщик ИЗ Справочник.Товары КАК П)",
             &area(7)
         ),
-        "SELECT \"Т\".\"_idrref\" AS \"ID\" FROM \"_reference53\" AS \"Т\" WHERE \"Т\".\"_fld56\" = 7 AND \"Т\".\"_fld57\" = 7 AND (\"Т\".\"_idrref\" IN (SELECT \"П\".\"_fld55rref\" AS \"Поставщик\" FROM \"_reference53\" AS \"П\" WHERE \"П\".\"_fld56\" = 7 AND \"П\".\"_fld57\" = 7))"
+        "SELECT \"Т\".\"_idrref\" AS \"Ссылка\" FROM \"_reference53\" AS \"Т\" WHERE \"Т\".\"_fld56\" = 7 AND \"Т\".\"_fld57\" = 7 AND (\"Т\".\"_idrref\" IN (SELECT \"П\".\"_fld55rref\" AS \"Поставщик\" FROM \"_reference53\" AS \"П\" WHERE \"П\".\"_fld56\" = 7 AND \"П\".\"_fld57\" = 7))"
     );
 
     let restriction = open_sdbl::query::AccessRestriction::new(

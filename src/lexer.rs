@@ -105,6 +105,10 @@ pub enum Keyword {
     Between,
     /// `ОСТАТКИИОБОРОТЫ` or `BALANCEANDTURNOVERS`.
     BalanceAndTurnovers,
+    /// `ОБОРОТЫДТКТ` or `DRCRTURNOVERS`.
+    DrCrTurnovers,
+    /// `ДВИЖЕНИЯССУБКОНТО` or `RECORDSWITHEXTDIMENSIONS`.
+    RecordsWithExtDimensions,
     /// `ПОДСТРОКА` or `SUBSTRING`.
     Substring,
     /// `ДЛИНАСТРОКИ` or `STRINGLENGTH`.
@@ -157,6 +161,11 @@ pub enum Keyword {
     Undefined,
     /// `ИТОГИ` or `TOTALS`.
     Totals,
+    /// `АВТОУПОРЯДОЧИВАНИЕ` after `УПОРЯДОЧИТЬ ПО`: the platform's
+    /// automatic ordering, accepted and ignored.
+    AutoOrder,
+    /// `АВТОНОМЕРЗАПИСИ()`: a unique row number, `ROW_NUMBER()`.
+    RecordAutoNumber,
     /// `ОБЩИЕ` or `OVERALL`.
     Overall,
     /// `ИЕРАРХИЯ` or `HIERARCHY`.
@@ -276,6 +285,8 @@ impl Keyword {
             Self::Refs => "REFS",
             Self::Between => "BETWEEN",
             Self::BalanceAndTurnovers => "BALANCEANDTURNOVERS",
+            Self::DrCrTurnovers => "DRCRTURNOVERS",
+            Self::RecordsWithExtDimensions => "RECORDSWITHEXTDIMENSIONS",
             Self::Substring => "SUBSTRING",
             Self::StringLength => "STRINGLENGTH",
             Self::TrimAll => "TRIMALL",
@@ -302,6 +313,8 @@ impl Keyword {
             Self::ValueType => "VALUETYPE",
             Self::Undefined => "UNDEFINED",
             Self::Totals => "TOTALS",
+            Self::AutoOrder => "AUTOORDER",
+            Self::RecordAutoNumber => "RECORDAUTONUMBER",
             Self::Overall => "OVERALL",
             Self::Hierarchy => "HIERARCHY",
             Self::Only => "ONLY",
@@ -714,7 +727,7 @@ fn is_identifier_continue(character: char) -> bool {
     character == '_' || character.is_alphanumeric()
 }
 
-const KEYWORDS: [(Keyword, &str, &str); 104] = [
+const KEYWORDS: [(Keyword, &str, &str); 108] = [
     (Keyword::Select, "ВЫБРАТЬ", "SELECT"),
     (Keyword::From, "ИЗ", "FROM"),
     (Keyword::Where, "ГДЕ", "WHERE"),
@@ -767,6 +780,12 @@ const KEYWORDS: [(Keyword, &str, &str); 104] = [
         "ОСТАТКИИОБОРОТЫ",
         "BALANCEANDTURNOVERS",
     ),
+    (Keyword::DrCrTurnovers, "ОБОРОТЫДТКТ", "DRCRTURNOVERS"),
+    (
+        Keyword::RecordsWithExtDimensions,
+        "ДВИЖЕНИЯССУБКОНТО",
+        "RECORDSWITHEXTDIMENSIONS",
+    ),
     (Keyword::Substring, "ПОДСТРОКА", "SUBSTRING"),
     (Keyword::StringLength, "ДЛИНАСТРОКИ", "STRINGLENGTH"),
     (Keyword::TrimAll, "СОКРЛП", "TRIMALL"),
@@ -793,6 +812,12 @@ const KEYWORDS: [(Keyword, &str, &str); 104] = [
     (Keyword::ValueType, "ТИПЗНАЧЕНИЯ", "VALUETYPE"),
     (Keyword::Undefined, "НЕОПРЕДЕЛЕНО", "UNDEFINED"),
     (Keyword::Totals, "ИТОГИ", "TOTALS"),
+    (Keyword::AutoOrder, "АВТОУПОРЯДОЧИВАНИЕ", "AUTOORDER"),
+    (
+        Keyword::RecordAutoNumber,
+        "АВТОНОМЕРЗАПИСИ",
+        "RECORDAUTONUMBER",
+    ),
     (Keyword::Overall, "ОБЩИЕ", "OVERALL"),
     (Keyword::Hierarchy, "ИЕРАРХИЯ", "HIERARCHY"),
     (Keyword::Only, "ТОЛЬКО", "ONLY"),

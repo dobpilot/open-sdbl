@@ -4,6 +4,7 @@ use std::ops::Deref;
 
 use crate::names::{folded_name, names_equal};
 
+use super::config::PredefinedSource;
 use super::db_names::DbNameFieldConflict;
 use super::normalize::{normalize_logical_name, normalize_standard_field_name};
 use super::{
@@ -91,6 +92,9 @@ pub struct MetadataObject {
     pub physical_table: Option<String>,
     /// Owning metadata object for a service table, when resolved.
     pub owner: Option<ObjectId>,
+    /// The chart of accounts an accounting register is bound to, from
+    /// Config; `None` for every other object.
+    pub chart_of_accounts: Option<ObjectId>,
     /// Whether the table is declared by SchemaStorage.
     pub declared: bool,
     /// Whether the table exists in the live PostgreSQL catalog.
@@ -206,6 +210,9 @@ pub struct MetadataField {
     pub name: Option<String>,
     /// Semantic purpose from the enclosing Config collection, when recognized.
     pub purpose: Option<ConfigFieldPurpose>,
+    /// Whether an accounting-register dimension or resource is a balance
+    /// one, from Config; `None` for every other field.
+    pub balance: Option<bool>,
     /// Numeric Fld code.
     pub number: u32,
     /// Canonical physical base name such as _Fld2566.
@@ -554,6 +561,8 @@ pub struct MetadataSnapshot {
     values: Vec<MetadataValue>,
     /// Filter criteria declared by Config, in resource order.
     criteria: Vec<MetadataCriterion>,
+    /// The roles the configuration root lists, attached after resolution.
+    roles: Vec<Guid>,
     /// SchemaStorage indexes compared with the live catalog.
     indexes: Vec<IndexComparison>,
     index: MetadataIndex,
@@ -627,6 +636,19 @@ impl MetadataSnapshot {
                 content: criterion.content,
             })
             .collect();
+    }
+
+    /// Attaches the role identifiers projected from the configuration
+    /// root (`ParsedConfigResource::roles`).
+    pub fn attach_roles(&mut self, roles: Vec<Guid>) {
+        self.roles = roles;
+    }
+
+    /// The roles the configuration declares, in collection order; empty
+    /// until attached.
+    #[must_use]
+    pub fn roles(&self) -> &[Guid] {
+        &self.roles
     }
 
     /// Looks up a filter criterion by its metadata name.
@@ -1047,6 +1069,9 @@ pub fn resolve_metadata_with_predefined_values_and_extensions(
             number_allowed_length: infer_allowed_length(live_table, "_number"),
             physical_table: Some(physical_table),
             owner: None,
+            chart_of_accounts: descriptor
+                .and_then(|value| value.chart_of_accounts.as_ref())
+                .map(ObjectId::from),
         });
     }
 
@@ -1120,6 +1145,7 @@ pub fn resolve_metadata_with_predefined_values_and_extensions(
                 live: live_table.is_some(),
                 code_allowed_length: None,
                 number_allowed_length: None,
+                chart_of_accounts: None,
             })
         })
         .collect::<Vec<_>>();
@@ -1141,6 +1167,7 @@ pub fn resolve_metadata_with_predefined_values_and_extensions(
                 code_allowed_length: None,
                 number_allowed_length: None,
                 owner: None,
+                chart_of_accounts: None,
             });
         }
     }
@@ -1204,6 +1231,9 @@ pub fn resolve_metadata_with_predefined_values_and_extensions(
             purpose: descriptor_by_guid
                 .get(&entry.guid)
                 .and_then(|descriptor| descriptor.field_purpose),
+            balance: descriptor_by_guid
+                .get(&entry.guid)
+                .and_then(|descriptor| descriptor.balance),
             number: entry.number,
             physical_name,
             declared: !owner_tables.is_empty(),
@@ -1275,11 +1305,21 @@ pub fn resolve_metadata_with_predefined_values_and_extensions(
         });
     }
     for predefined in predefined_values {
-        let Some((owner, Some(MetadataKind::Catalog))) =
-            object_ids.get(&predefined.owner_guid).copied()
-        else {
+        // A value belongs to an object of the kind its resource serves:
+        // `.1c` to a catalog, `.9` to a chart of accounts.
+        let Some((owner, Some(kind))) = object_ids.get(&predefined.owner_guid).copied() else {
             continue;
         };
+        let matching = match predefined.source {
+            PredefinedSource::Catalog => kind == MetadataKind::Catalog,
+            PredefinedSource::ChartOfAccounts => kind == MetadataKind::ChartOfAccounts,
+            PredefinedSource::ChartOfCharacteristicTypes => {
+                kind == MetadataKind::ChartOfCharacteristicTypes
+            }
+        };
+        if !matching {
+            continue;
+        }
         values.push(MetadataValue {
             owner,
             guid: predefined.value_guid,
@@ -1316,6 +1356,7 @@ pub fn resolve_metadata_with_predefined_values_and_extensions(
             fields,
             values,
             criteria: Vec::new(),
+            roles: Vec::new(),
             indexes,
             index,
             fingerprint,
@@ -1624,6 +1665,13 @@ fn canonical_field_base(identifier: &str) -> Option<&str> {
     let base = identifier
         .split_once('_')
         .map_or(identifier, |(base, _)| base);
+    // A non-balance field of an accounting register is stored per side:
+    // `Fld414Dt` and `Fld414Ct` both belong to field 414.
+    let base = base
+        .strip_suffix("Dt")
+        .or_else(|| base.strip_suffix("Ct"))
+        .filter(|stripped| stripped.starts_with("Fld"))
+        .unwrap_or(base);
     let number = base.strip_prefix("Fld")?;
     (!number.is_empty() && number.bytes().all(|byte| byte.is_ascii_digit())).then_some(base)
 }

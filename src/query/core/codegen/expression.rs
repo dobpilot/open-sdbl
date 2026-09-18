@@ -42,7 +42,15 @@ pub(super) fn compile_predicate(
             if let Some(sql) = reference_pair_payload(&resolved, context) {
                 return Ok(sql);
             }
-            let column = single_column(resolved.field(), reference.last())?;
+            // A value dereferenced across reference targets is spread over
+            // composite members; in an expression it stands for its value
+            // member, the first one rendered.
+            if !resolved.member_expressions.is_empty()
+                && let Some(expression) = &resolved.expression
+            {
+                return Ok(expression.clone());
+            }
+            let column = scalar_column(&resolved, reference.last())?;
             let sql = context.sql_column(&resolved, column);
             Ok(if column.kind == ColumnKind::Boolean {
                 context.dialect.boolean_predicate(&sql)
@@ -140,6 +148,84 @@ fn is_logical(expression: &Expression<'_, '_>) -> bool {
         }
         _ => false,
     }
+}
+
+/// Compiles a `ВЫБОР` compared with a value of a known kind: an
+/// alternative of another kind — `ИНАЧЕ ЛОЖЬ` beside a reference — never
+/// equals that value on the platform, so it compares as `NULL` here.
+/// Answers `None` for any other operand, which compiles as usual.
+fn compile_case_toward(
+    expression: &Expression<'_, '_>,
+    other: &Expression<'_, '_>,
+    context: &mut CompilationContext<'_, '_>,
+) -> Result<Option<String>, QueryDiagnostic> {
+    let Expression::Case {
+        subject,
+        branches,
+        otherwise,
+        ..
+    } = expression
+    else {
+        return Ok(None);
+    };
+    let Ok(target) = expression_kind(other, context) else {
+        return Ok(None);
+    };
+    // Compared with `NULL` or a parameter without a value, the
+    // alternatives are measured against the first typed one: the
+    // comparison answers NULL whichever kind the value has.
+    let target = if target.is_wildcard() {
+        let mut first = None;
+        for value in branches
+            .iter()
+            .map(|branch| &branch.then)
+            .chain(otherwise.as_deref())
+        {
+            let kind = value_operand_kind(value, context)?;
+            if !kind.is_wildcard() {
+                first = Some(kind);
+                break;
+            }
+        }
+        let Some(first) = first else {
+            return Ok(None);
+        };
+        first
+    } else {
+        target
+    };
+    context.catalog.charge(branches.len(), None)?;
+    let snapshot = context.snapshot;
+    let dialect = context.dialect;
+    compile_case(
+        subject.as_deref(),
+        branches,
+        otherwise.as_deref(),
+        snapshot,
+        dialect,
+        |part| match part {
+            CasePart::Condition {
+                subject: Some(subject),
+                when,
+                token,
+            } => Ok((
+                compile_case_match(subject, when, token, context)?,
+                ColumnKind::Boolean,
+            )),
+            CasePart::Condition { when, .. } => {
+                Ok((compile_predicate(when, context)?, ColumnKind::Boolean))
+            }
+            CasePart::Value(value) => {
+                let (sql, kind) = value_operand(value, context)?;
+                if kind.is_wildcard() || kind.is_compatible_with(&target) {
+                    Ok((sql, kind))
+                } else {
+                    Ok(("NULL".to_owned(), ColumnKind::Null))
+                }
+            }
+        },
+    )
+    .map(|(sql, _)| Some(sql))
 }
 
 /// The comparison spellings, which produce a boolean like the other
@@ -593,7 +679,7 @@ fn compile_scalar_function(
         let sql = match argument {
             Expression::Field(reference) => {
                 let resolved = context.resolve(reference)?;
-                let column = single_column(resolved.field(), reference.last())?;
+                let column = scalar_column(&resolved, reference.last())?;
                 context.dialect.column_projection(
                     &context.sql_column(&resolved, column),
                     &column.kind,
@@ -727,7 +813,7 @@ fn compile_derived_value_type(
     let ColumnKind::Reference {
         runtime_typed: true,
         ..
-    } = single_column(resolved.field(), reference.last())?.kind
+    } = scalar_column(&resolved, reference.last())?.kind
     else {
         return Ok(None);
     };
@@ -740,10 +826,7 @@ fn compile_derived_value_type(
     }
     let dialect = context.dialect;
     let tag = context.sql_column(&tag_path, tag_column);
-    let payload = context.sql_column(
-        &resolved,
-        single_column(resolved.field(), reference.last())?,
-    );
+    let payload = context.sql_column(&resolved, scalar_column(&resolved, reference.last())?);
     let value = format!(
         "CASE WHEN {tag} = {} THEN {} ELSE {} END",
         dialect.binary_literal(&[TypeValue::TAG_REFERENCE]),
@@ -817,12 +900,32 @@ fn compile_refs(
     kind_token: &Token<'_>,
     object_token: &Token<'_>,
 ) -> Result<String, QueryDiagnostic> {
-    let Expression::Field(reference) = value else {
-        return Err(QueryDiagnostic::at(
-            QueryDiagnosticKind::Syntax,
-            Some(token),
-            "REFS argument must be a reference field",
-        ));
+    let reference = match value {
+        Expression::Field(reference) => reference,
+        // `ВЫРАЗИТЬ(Поле КАК Документ.X) ССЫЛКА Документ.X` asks whether
+        // the field holds a reference of that type: the cast keeps such a
+        // value and turns any other into NULL, so the test is the field's.
+        Expression::Cast {
+            argument,
+            target: CastTarget::Reference { kind, object },
+            path: None,
+            ..
+        } if names_equal(kind.lexeme, kind_token.lexeme)
+            && names_equal(object.lexeme, object_token.lexeme)
+            && matches!(argument.as_ref(), Expression::Field(_)) =>
+        {
+            let Expression::Field(reference) = argument.as_ref() else {
+                unreachable!("matched a field argument")
+            };
+            reference
+        }
+        _ => {
+            return Err(QueryDiagnostic::at(
+                QueryDiagnosticKind::Syntax,
+                Some(token),
+                "REFS argument must be a reference field",
+            ));
+        }
     };
     let kind = kind_from_query_name(kind_token.lexeme).ok_or_else(|| {
         QueryDiagnostic::at(
@@ -942,7 +1045,12 @@ pub(super) fn expression_kind(
             if let Some((_, value_member)) = reference_pair(resolved.field()) {
                 return Ok(payload_kind(&value_member.kind));
             }
-            let column = single_column(resolved.field(), reference.last())?;
+            if !resolved.member_expressions.is_empty()
+                && let Some(column) = resolved.field().columns.first()
+            {
+                return Ok(column.kind.clone());
+            }
+            let column = scalar_column(&resolved, reference.last())?;
             Ok(column.kind.clone())
         }
         Expression::Cast {
@@ -1022,10 +1130,10 @@ pub(super) fn expression_kind(
                 Expression::Field(reference) => {
                     let resolved = context.resolve(reference)?;
                     if let Some((_, value_member)) = reference_pair(resolved.field()) {
-                        return Ok(aggregated_field_kind(&payload_kind(&value_member.kind)));
+                        return Ok(payload_kind(&value_member.kind));
                     }
                     let column = countable_column(resolved.field(), reference.last())?;
-                    Ok(aggregated_field_kind(&column.kind))
+                    Ok(column.kind.clone())
                 }
                 other => expression_kind(other, context),
             },
@@ -1084,6 +1192,8 @@ pub(super) fn operand_token<'tokens, 'source>(
         | Expression::DatePart { token, .. }
         | Expression::Refs { token, .. }
         | Expression::MetadataValue { token, .. }
+        | Expression::SystemValue { token, .. }
+        | Expression::Tuple { token, .. }
         | Expression::Uuid { token, .. }
         | Expression::Between { token, .. }
         | Expression::ScalarFunction { token, .. }
@@ -1806,18 +1916,6 @@ where
     render_case(&whens, &mut values, otherwise.is_some(), snapshot, dialect)
 }
 
-/// The kind of an aggregate over a field member: aggregating the `RRRef`
-/// member of a reference alone returns 16 bytes.
-fn aggregated_field_kind(kind: &ColumnKind) -> ColumnKind {
-    match kind {
-        ColumnKind::Reference { targets, .. } => ColumnKind::Reference {
-            targets: targets.clone(),
-            runtime_typed: false,
-        },
-        other => other.clone(),
-    }
-}
-
 /// Derives the output kind of an expression that names no source field.
 pub(super) fn source_free_expression_kind(
     expression: &Expression<'_, '_>,
@@ -1850,6 +1948,13 @@ pub(super) fn source_free_expression_kind(
                 .into_iter()
                 .collect(),
             runtime_typed: false,
+        },
+        Expression::SystemValue { .. } => ColumnKind::Number {
+            precision: None,
+            scale: None,
+        },
+        Expression::Tuple { .. } => ColumnKind::Unknown {
+            data_type: "tuple".to_owned(),
         },
         Expression::Unary { operator, value } => match operator.kind {
             TokenKind::Keyword(Keyword::Not) => ColumnKind::Boolean,
@@ -1980,7 +2085,7 @@ fn compile_logical_or_value(
             if let Some(sql) = reference_pair_payload(&resolved, context) {
                 return Ok(sql);
             }
-            let column = single_column(resolved.field(), reference.last())?;
+            let column = scalar_column(&resolved, reference.last())?;
             Ok(context.sql_column(&resolved, column))
         }
         Expression::Literal(token) => compile_literal(token, context.dialect),
@@ -2062,6 +2167,12 @@ fn compile_logical_or_value(
             context.dialect,
         )),
         Expression::ValueType { token, argument } => compile_value_type(context, token, argument),
+        Expression::SystemValue { code, .. } => Ok(code.to_string()),
+        Expression::Tuple { token, .. } => Err(QueryDiagnostic::at(
+            QueryDiagnosticKind::UnsupportedFeature,
+            Some(token),
+            "a tuple is accepted only as the left side of В (ВЫБРАТЬ …)",
+        )),
         Expression::MetadataValue {
             token,
             kind,
@@ -2673,7 +2784,10 @@ fn composite_operand_of_value(
         ParameterValue::String(_) => TypeValue::String,
         ParameterValue::Date(_) => TypeValue::Date,
         ParameterValue::Null => TypeValue::Null,
-        ParameterValue::Reference { .. } | ParameterValue::Binary(_) | ParameterValue::List(_) => {
+        ParameterValue::Reference { .. }
+        | ParameterValue::Binary(_)
+        | ParameterValue::List(_)
+        | ParameterValue::Table { .. } => {
             return Ok(None);
         }
     };
@@ -3063,7 +3177,7 @@ fn compile_in_hierarchy(
             )
         }
         None => {
-            let column = single_column(resolved.field(), reference.last())?;
+            let column = scalar_column(&resolved, reference.last())?;
             let ColumnKind::Reference {
                 targets,
                 runtime_typed: false,
@@ -3137,6 +3251,9 @@ fn compile_in_query(
         Some(token),
         &outer,
     )?;
+    if let Expression::Tuple { items, .. } = value {
+        return compile_in_tuple_query(token, items, &inner, negated, context);
+    }
     // A subquery whose value is composite projects one column per member,
     // and the platform compares the members side by side, measured on
     // 8.3.27: `(T1._Fld70_TYPE, T1._Fld70_S, …) IN (SELECT …)`. Columns
@@ -3210,10 +3327,212 @@ fn compile_in_query(
             )?;
             (widened, inner.sql)
         }
+        // The subquery projects its string as text, and PostgreSQL has no
+        // operator between text and the mvarchar the outer field is.
+        (ColumnKind::String { .. }, ColumnKind::String { .. }) => {
+            (dialect.scalar_text(&outer_sql), inner.sql)
+        }
         _ => (outer_sql, inner.sql),
     };
     let sql = format!("({outer_sql} IN ({inner_sql}))");
     Ok(if negated { format!("(NOT {sql})") } else { sql })
+}
+
+/// `(А, Б) [НЕ] В (ВЫБРАТЬ X, Y …)`: one projection of the subquery per
+/// tuple item, compared side by side. A composite projection spreads
+/// over several columns (`Поле_TYPE`, `Поле_S`, `Поле_RRRef`, …), and the
+/// item is spread over the same members the way a composite `В (…)`
+/// does. Rendered as `EXISTS` over the subquery with one equality per
+/// column, so both dialects read it the same way.
+fn compile_in_tuple_query(
+    token: &Token<'_>,
+    items: &[Expression<'_, '_>],
+    inner: &CompiledQuery,
+    negated: bool,
+    context: &mut CompilationContext<'_, '_>,
+) -> Result<String, QueryDiagnostic> {
+    let groups = projection_groups(&inner.columns);
+    if groups.len() != items.len() {
+        return Err(QueryDiagnostic::at(
+            QueryDiagnosticKind::UnsupportedFeature,
+            Some(token),
+            format!(
+                "IN subquery must project {} columns to match the tuple, found {}",
+                items.len(),
+                groups.len()
+            ),
+        ));
+    }
+    let dialect = context.dialect;
+    let wrapper = "__in";
+    let mut equalities = Vec::new();
+    for (item, group) in items.iter().zip(&groups) {
+        let column_sql =
+            |column: &CompiledColumn| dialect.qualified_column(Some(wrapper), &column.label);
+        if let [(column, "")] = group.as_slice() {
+            let (outer_sql, outer_kind) = value_operand(item, context)?;
+            if !column.kind.is_compatible_with(&outer_kind) {
+                return Err(QueryDiagnostic::at(
+                    QueryDiagnosticKind::UnsupportedFeature,
+                    Some(token),
+                    format!(
+                        "IN subquery column kind {:?} is not compatible with {:?}",
+                        column.kind, outer_kind
+                    ),
+                ));
+            }
+            let runtime_typed = |kind: &ColumnKind| {
+                matches!(
+                    kind,
+                    ColumnKind::Reference {
+                        runtime_typed: true,
+                        ..
+                    }
+                )
+            };
+            // A reference of several types is its RTRef ‖ RRRef payload on
+            // both sides; a fixed one is widened to it, as `В (ВЫБРАТЬ …)`
+            // widens a single value.
+            let (inner_sql, outer_sql) =
+                match (runtime_typed(&outer_kind), runtime_typed(&column.kind)) {
+                    (true, false) => (
+                        widen_reference(
+                            &column_sql(column),
+                            &column.kind,
+                            Some(token),
+                            context.snapshot,
+                            dialect,
+                        )?
+                        .0,
+                        outer_sql,
+                    ),
+                    (false, true) => (
+                        column_sql(column),
+                        widen_reference(
+                            &outer_sql,
+                            &outer_kind,
+                            operand_token(item),
+                            context.snapshot,
+                            dialect,
+                        )?
+                        .0,
+                    ),
+                    _ => (
+                        column_sql(column),
+                        match (&outer_kind, &column.kind) {
+                            (ColumnKind::String { .. }, ColumnKind::String { .. }) => {
+                                dialect.scalar_text(&outer_sql)
+                            }
+                            _ => outer_sql,
+                        },
+                    ),
+                };
+            equalities.push(format!("{inner_sql} = {outer_sql}"));
+            continue;
+        }
+        // A composite field on the outer side answers with its own
+        // members, the reference of several types included.
+        let members = group.iter().map(|(_, member)| *member).collect::<Vec<_>>();
+        if let Some(rendered) = composite_field_members(item, &members, context)? {
+            for ((column, _), member_sql) in group.iter().zip(rendered) {
+                equalities.push(format!("{} = {member_sql}", column_sql(column)));
+            }
+            continue;
+        }
+        // Otherwise the item is spread over the members the way a
+        // composite `В (…)` spreads its value — its own member carries
+        // it, the discriminator its tag, the others their zero, all of
+        // them `NULL` while the item is.
+        let (outer_sql, outer_kind) = value_operand(item, context)?;
+        let Some((own, tag)) = composite_member_of(&outer_kind) else {
+            return Err(QueryDiagnostic::at(
+                QueryDiagnosticKind::UnsupportedFeature,
+                Some(token),
+                format!("value of kind {outer_kind:?} has no place in a composite result"),
+            ));
+        };
+        if group.iter().any(|(_, member)| *member == "_RTRef")
+            || matches!(
+                outer_kind,
+                ColumnKind::Reference {
+                    runtime_typed: true,
+                    ..
+                }
+            )
+        {
+            return Err(QueryDiagnostic::at(
+                QueryDiagnosticKind::UnsupportedFeature,
+                Some(token),
+                "a tuple membership test does not accept a reference of several types",
+            ));
+        }
+        let guarded = |value: String| format!("CASE WHEN {outer_sql} IS NOT NULL THEN {value} END");
+        for (column, member) in group {
+            let member_sql = match *member {
+                "_TYPE" => guarded(dialect.binary_literal(&[tag.tag()])),
+                "_S" if own == "_S" => dialect.scalar_text(&outer_sql),
+                member if member == own => outer_sql.clone(),
+                // The reference member of a projected field is its 16-byte
+                // identifier, not the widened payload of a result.
+                "" => guarded(dialect.binary_literal(&[0; 16])),
+                other => guarded(composite_member_zero(other, dialect)),
+            };
+            equalities.push(format!("{} = {member_sql}", column_sql(column)));
+        }
+    }
+    let sql = format!(
+        "EXISTS (SELECT 1 FROM ({}) AS {} WHERE {})",
+        inner.sql,
+        dialect.quote_identifier(wrapper),
+        equalities.join(" AND ")
+    );
+    Ok(if negated { format!("(NOT {sql})") } else { sql })
+}
+
+/// Groups the columns of a result by the projection they come from: a
+/// composite projection labels its members `<name>_TYPE`, `<name>_S`, …,
+/// with the reference member as `<name>_RRRef`; every other column is a
+/// projection of its own. Each column is paired with its member name in
+/// the spelling [`spread_over_members`] takes (`""` for the reference).
+#[allow(clippy::type_complexity)]
+fn projection_groups(columns: &[CompiledColumn]) -> Vec<Vec<(&CompiledColumn, &'static str)>> {
+    const SUFFIXES: [(&str, &str); 9] = [
+        ("_TYPE", "_TYPE"),
+        ("_RTRef", "_RTRef"),
+        ("_RRRef", ""),
+        ("_S", "_S"),
+        ("_N", "_N"),
+        ("_T", "_T"),
+        ("_L", "_L"),
+        ("_U", "_U"),
+        ("_B", "_B"),
+    ];
+    // A member column, by the projection it labels and its member name;
+    // `None` for a plain column.
+    let member_of = |label: &str| -> Option<(String, &'static str)> {
+        SUFFIXES.iter().find_map(|(suffix, member)| {
+            label
+                .strip_suffix(suffix)
+                .filter(|base| !base.is_empty())
+                .map(|base| (base.to_owned(), *member))
+        })
+    };
+    let mut groups: Vec<(Option<String>, Vec<(&CompiledColumn, &'static str)>)> = Vec::new();
+    for column in columns {
+        match member_of(&column.label) {
+            Some((base, member)) => match groups.last_mut() {
+                Some((Some(open), group)) if *open == base => group.push((column, member)),
+                _ => groups.push((Some(base), vec![(column, member)])),
+            },
+            // The reference payload of a projected composite field carries
+            // the bare name, after the `_TYPE` member.
+            None => match groups.last_mut() {
+                Some((Some(open), group)) if *open == column.label => group.push((column, "")),
+                _ => groups.push((None, vec![(column, "")])),
+            },
+        }
+    }
+    groups.into_iter().map(|(_, group)| group).collect()
 }
 
 /// The member suffixes of a result that is one composite value: every
@@ -3336,6 +3655,16 @@ fn composite_field_members(
                 (None, Some(value_member)) => context.sql_column(&resolved, value_member),
                 _ => return Ok(None),
             }
+        } else if *member == "_RTRef" {
+            let Some(column) = resolved
+                .field()
+                .columns
+                .iter()
+                .find(|column| column.is_reference_type_member())
+            else {
+                return Ok(None);
+            };
+            context.sql_column(&resolved, column)
         } else {
             let column =
                 resolved.field().columns.iter().find(|column| {
@@ -3417,6 +3746,28 @@ fn reference_member_equality(
             constant.id_sql
         )));
     }
+    // A value dereferenced across reference targets carries its reference
+    // member as the `RTRef ‖ RRRef` payload of each target, so a typed
+    // constant is widened to its payload; a constant of unknown type — a
+    // parameter bound to `NULL` — compares as it is.
+    if !resolved.member_expressions.is_empty()
+        && let Some(column) = resolved
+            .field()
+            .columns
+            .iter()
+            .find(|column| matches!(column.kind, ColumnKind::Reference { .. }))
+    {
+        let value = match &constant.type_sql {
+            Some(type_sql) => context
+                .dialect
+                .reference_payload(type_sql, &constant.id_sql),
+            None => constant.id_sql.clone(),
+        };
+        return Ok(Some(format!(
+            "({} = {value})",
+            context.sql_column(resolved, column)
+        )));
+    }
     let [column] = resolved.field().columns.as_slice() else {
         return Ok(None);
     };
@@ -3445,9 +3796,12 @@ fn compile_expression_operand(
     other: &Expression<'_, '_>,
     context: &mut CompilationContext<'_, '_>,
 ) -> Result<String, QueryDiagnostic> {
+    if let Some(sql) = compile_case_toward(expression, other, context)? {
+        return Ok(sql);
+    }
     if let (Expression::Literal(token), Expression::Field(reference)) = (expression, other) {
         let resolved = context.resolve(reference)?;
-        let column = single_column(resolved.field(), reference.last())?;
+        let column = scalar_column(&resolved, reference.last())?;
         return context.dialect.literal_for_type(token, &column.data_type);
     }
     let sql = compile_expression(expression, context)?;
@@ -3462,7 +3816,7 @@ fn compile_expression_operand(
         )
     {
         let resolved = context.resolve(reference)?;
-        let column = single_column(resolved.field(), reference.last())?;
+        let column = scalar_column(&resolved, reference.last())?;
         let own = match expression {
             Expression::Field(own) => {
                 let resolved = context.resolve(own)?;
@@ -3494,7 +3848,7 @@ fn compile_date_operand(
     let name = function_name(token);
     if let Expression::Field(reference) = expression {
         let resolved = context.resolve(reference)?;
-        let column = single_column(resolved.field(), reference.last())?;
+        let column = scalar_column(&resolved, reference.last())?;
         if column.kind != ColumnKind::DateTime && !is_date_sql_type(&column.data_type) {
             return Err(QueryDiagnostic::at(
                 QueryDiagnosticKind::Syntax,
@@ -3598,16 +3952,13 @@ pub(super) fn compile_aggregate(
                 if let Some(sql) = reference_pair_payload(&resolved, context)
                     && let Some((_, value_member)) = reference_pair(resolved.field())
                 {
-                    return Ok((
-                        sql,
-                        aggregated_field_kind(&payload_kind(&value_member.kind)),
-                    ));
+                    return Ok((sql, payload_kind(&value_member.kind)));
                 }
+                // A member aggregated alone keeps its kind: the `RRRef`
+                // member of a reference stays a fixed reference of 16
+                // bytes, a payload column stays runtime-typed.
                 let column = countable_column(resolved.field(), reference.last())?;
-                Ok((
-                    context.sql_column(&resolved, column),
-                    aggregated_field_kind(&column.kind),
-                ))
+                Ok((context.sql_column(&resolved, column), column.kind.clone()))
             }),
             other => compile_expression(other, context)
                 .and_then(|sql| Ok((sql, expression_kind(other, context)?))),
@@ -3729,6 +4080,22 @@ pub(super) fn matching_fields<'field>(
                 .any(|alias| names_equal(alias, name.lexeme))
         })
         .collect()
+}
+
+/// The one column an expression reads from a field: a value dereferenced
+/// across reference targets is spread over composite members and stands
+/// for its first member, the value itself; any other compound field is
+/// refused.
+fn scalar_column<'field>(
+    resolved: &'field ResolvedPath,
+    token: &Token<'_>,
+) -> Result<&'field QueryableColumn, QueryDiagnostic> {
+    if !resolved.member_expressions.is_empty()
+        && let Some(column) = resolved.field().columns.first()
+    {
+        return Ok(column);
+    }
+    single_column(resolved.field(), token)
 }
 
 pub(super) fn single_column<'field>(

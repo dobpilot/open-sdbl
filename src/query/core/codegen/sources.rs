@@ -76,7 +76,8 @@ pub(super) fn compile_restriction_predicate(
                 .into_iter()
                 .filter(|token| token.kind != TokenKind::Comment)
                 .collect::<Vec<_>>();
-            let expression = Parser::new(&tokens, text).parse_condition()?;
+            let (start, source_alias) = restriction_form(&tokens)?;
+            let expression = Parser::new(&tokens[start..], text).parse_condition()?;
             let mut context = CompilationContext {
                 snapshot,
                 catalog,
@@ -86,13 +87,14 @@ pub(super) fn compile_restriction_predicate(
                     relation: String::new(),
                     sql_alias: alias.to_owned(),
                     object_name: object_name.to_owned(),
-                    source_alias: None,
+                    source_alias,
                     identity_is_base: restriction.identity_is_base,
                     reference_joins: Vec::new(),
                     separator_predicates: Vec::new(),
                     constants: None,
                     aggregate: None,
                     used_fields: RefCell::new(BTreeSet::new()),
+                    current_table: true,
                 }],
                 dialect,
                 aggregates_allowed: false,
@@ -113,6 +115,66 @@ pub(super) fn compile_restriction_predicate(
             })
         })
         .map_err(|error: QueryDiagnostic| error.into_restriction(&restriction.label))
+}
+
+/// Reads the platform's full form of a restriction text — an optional
+/// `ТекущаяТаблица`, an optional alias after `КАК`, an optional `ГДЕ` —
+/// and answers where the condition starts and the alias declared. A join
+/// written before `ГДЕ` is refused: the restriction wraps one table.
+fn restriction_form(tokens: &[Token<'_>]) -> Result<(usize, Option<String>), QueryDiagnostic> {
+    let mut start = 0;
+    let mut alias = None;
+    let is_current_table = |token: &Token<'_>| {
+        token.kind == TokenKind::Identifier
+            && names_equal(token.lexeme, crate::access::CURRENT_TABLE)
+    };
+    if tokens.first().is_some_and(is_current_table) {
+        start = 1;
+        if tokens
+            .get(start)
+            .is_some_and(|token| token.kind == TokenKind::Keyword(Keyword::As))
+        {
+            let name = tokens.get(start + 1).ok_or_else(|| {
+                QueryDiagnostic::at(
+                    QueryDiagnosticKind::Syntax,
+                    tokens.get(start),
+                    "expected an alias after КАК in the restriction",
+                )
+            })?;
+            if name.kind != TokenKind::Identifier {
+                return Err(QueryDiagnostic::at(
+                    QueryDiagnosticKind::Syntax,
+                    Some(name),
+                    "expected an alias after КАК in the restriction",
+                ));
+            }
+            alias = Some(name.lexeme.to_owned());
+            start += 2;
+        }
+        match tokens.get(start) {
+            Some(token) if token.kind == TokenKind::Keyword(Keyword::Where) => start += 1,
+            Some(token) => {
+                return Err(QueryDiagnostic::at(
+                    QueryDiagnosticKind::UnsupportedFeature,
+                    Some(token),
+                    "a restriction joining other tables is not supported; write the condition after ГДЕ",
+                ));
+            }
+            None => {
+                return Err(QueryDiagnostic::at(
+                    QueryDiagnosticKind::Syntax,
+                    tokens.get(start - 1),
+                    "restriction condition is empty",
+                ));
+            }
+        }
+    } else if tokens
+        .first()
+        .is_some_and(|token| token.kind == TokenKind::Keyword(Keyword::Where))
+    {
+        start = 1;
+    }
+    Ok((start, alias))
 }
 
 /// Wraps a live relation in a derived table that keeps only the rows the
@@ -280,7 +342,7 @@ pub(super) fn compile_source_free_branch(
         };
         let label = labels.allocate(&requested_label);
         projections.push(format!("{sql} AS {}", dialect.quote_identifier(&label)));
-        columns.push(CompiledColumn::new(label, kind));
+        columns.push(CompiledColumn::named(requested_label, label, kind));
     }
     let mut sql = dialect.select_prefix(ast.distinct, ast.top);
     sql.push_str(&projections.join(", "));
@@ -460,6 +522,12 @@ pub(super) fn compile_source_free_expression(
             object,
             value,
         } => compile_metadata_value(token, kind, object, value, snapshot, dialect),
+        Expression::SystemValue { code, .. } => Ok(code.to_string()),
+        Expression::Tuple { token, .. } => Err(QueryDiagnostic::at(
+            QueryDiagnosticKind::UnsupportedFeature,
+            Some(token),
+            "a tuple is accepted only as the left side of В (ВЫБРАТЬ …)",
+        )),
         Expression::Uuid { token, .. } => Err(QueryDiagnostic::at(
             QueryDiagnosticKind::UnsupportedFeature,
             Some(token),
@@ -996,11 +1064,20 @@ pub(super) fn compile_metadata_value(
             })?;
         return Ok(dialect.binary_literal(&[0; 16]));
     }
-    if !matches!(kind, MetadataKind::Catalog | MetadataKind::Enumeration) {
+    // A chart of accounts keeps its predefined accounts the way a catalog
+    // does: by `_PredefinedID` in its own table. The other charts keep
+    // theirs in resources not decoded yet.
+    if !matches!(
+        kind,
+        MetadataKind::Catalog
+            | MetadataKind::Enumeration
+            | MetadataKind::ChartOfAccounts
+            | MetadataKind::ChartOfCharacteristicTypes
+    ) {
         return Err(QueryDiagnostic::at(
             QueryDiagnosticKind::UnsupportedFeature,
             Some(kind_token),
-            "VALUE currently supports only catalogs and enumerations",
+            "VALUE supports catalogs, enumerations, charts of accounts and charts of characteristic types only",
         ));
     }
     let object_id = snapshot
@@ -1113,86 +1190,100 @@ pub(super) fn projection_is_aggregated(projection: &Projection<'_, '_>) -> bool 
 pub(super) fn references_a_field(expression: &Expression<'_, '_>) -> bool {
     let mut pending = vec![expression];
     while let Some(expression) = pending.pop() {
-        match expression {
-            Expression::Field(_) => return true,
-            Expression::Aggregate {
-                argument: AggregateArgument::Expression(argument),
-                ..
-            } => pending.push(argument),
-            Expression::Aggregate { .. }
-            | Expression::Literal(_)
-            | Expression::Parameter(_)
-            | Expression::DateTime { .. }
-            | Expression::MetadataValue { .. }
-            | Expression::TypeLiteral { .. }
-            | Expression::Uuid { .. } => {}
-            Expression::ScalarFunction { arguments, .. } => pending.extend(arguments),
-            Expression::Between {
-                value, low, high, ..
-            } => {
-                pending.push(value);
-                pending.push(low);
-                pending.push(high);
-            }
-            Expression::BeginOfPeriod { value, .. }
-            | Expression::EndOfPeriod { value, .. }
-            | Expression::DatePart { value, .. }
-            | Expression::Refs { value, .. }
-            | Expression::ValueType {
-                argument: value, ..
-            }
-            | Expression::Unary { value, .. }
-            | Expression::IsNull { value, .. }
-            | Expression::Cast {
-                argument: value, ..
-            } => pending.push(value),
-            Expression::DateAdd { value, count, .. } => {
-                pending.push(value);
-                pending.push(count);
-            }
-            Expression::DateDiff { from, to, .. } => {
-                pending.push(from);
-                pending.push(to);
-            }
-            Expression::Binary { left, right, .. } => {
-                pending.push(left);
-                pending.push(right);
-            }
-            Expression::InList { value, items, .. } => {
-                pending.push(value);
-                pending.extend(items.iter());
-            }
-            Expression::InQuery { value, .. } => pending.push(value),
-            Expression::Case {
-                branches,
-                otherwise,
-                ..
-            } => {
-                pending.extend(otherwise.as_deref());
-                for branch in branches {
-                    pending.push(&branch.when);
-                    pending.push(&branch.then);
-                }
-            }
-            Expression::IsNullFunction {
-                value, fallback, ..
-            } => {
-                pending.push(value);
-                pending.push(fallback);
-            }
-            Expression::Like {
-                value,
-                pattern,
-                escape,
-                ..
-            } => {
-                pending.push(value);
-                pending.push(pattern);
-                pending.extend(escape.as_deref());
-            }
+        if matches!(expression, Expression::Field(_)) {
+            return true;
         }
+        pending.extend(expression_children(expression));
     }
     false
+}
+
+/// The direct operands of an expression, in no particular order.
+pub(super) fn expression_children<'e, 'a, 'b>(
+    expression: &'e Expression<'a, 'b>,
+) -> Vec<&'e Expression<'a, 'b>> {
+    let mut pending: Vec<&'e Expression<'a, 'b>> = Vec::new();
+    match expression {
+        Expression::Field(_) => {}
+        Expression::Aggregate {
+            argument: AggregateArgument::Expression(argument),
+            ..
+        } => pending.push(argument),
+        Expression::Aggregate { .. }
+        | Expression::Literal(_)
+        | Expression::Parameter(_)
+        | Expression::DateTime { .. }
+        | Expression::MetadataValue { .. }
+        | Expression::SystemValue { .. }
+        | Expression::TypeLiteral { .. }
+        | Expression::Uuid { .. } => {}
+        Expression::Tuple { items, .. } => pending.extend(items),
+        Expression::ScalarFunction { arguments, .. } => pending.extend(arguments),
+        Expression::Between {
+            value, low, high, ..
+        } => {
+            pending.push(value);
+            pending.push(low);
+            pending.push(high);
+        }
+        Expression::BeginOfPeriod { value, .. }
+        | Expression::EndOfPeriod { value, .. }
+        | Expression::DatePart { value, .. }
+        | Expression::Refs { value, .. }
+        | Expression::ValueType {
+            argument: value, ..
+        }
+        | Expression::Unary { value, .. }
+        | Expression::IsNull { value, .. }
+        | Expression::Cast {
+            argument: value, ..
+        } => pending.push(value),
+        Expression::DateAdd { value, count, .. } => {
+            pending.push(value);
+            pending.push(count);
+        }
+        Expression::DateDiff { from, to, .. } => {
+            pending.push(from);
+            pending.push(to);
+        }
+        Expression::Binary { left, right, .. } => {
+            pending.push(left);
+            pending.push(right);
+        }
+        Expression::InList { value, items, .. } => {
+            pending.push(value);
+            pending.extend(items.iter());
+        }
+        Expression::InQuery { value, .. } => pending.push(value),
+        Expression::Case {
+            branches,
+            otherwise,
+            ..
+        } => {
+            pending.extend(otherwise.as_deref());
+            for branch in branches {
+                pending.push(&branch.when);
+                pending.push(&branch.then);
+            }
+        }
+        Expression::IsNullFunction {
+            value, fallback, ..
+        } => {
+            pending.push(value);
+            pending.push(fallback);
+        }
+        Expression::Like {
+            value,
+            pattern,
+            escape,
+            ..
+        } => {
+            pending.push(value);
+            pending.push(pattern);
+            pending.extend(escape.as_deref());
+        }
+    }
+    pending
 }
 
 pub(super) fn contains_aggregate(expression: &Expression<'_, '_>) -> bool {
@@ -1205,8 +1296,10 @@ pub(super) fn contains_aggregate(expression: &Expression<'_, '_>) -> bool {
             | Expression::Parameter(_)
             | Expression::DateTime { .. }
             | Expression::MetadataValue { .. }
+            | Expression::SystemValue { .. }
             | Expression::TypeLiteral { .. }
             | Expression::Uuid { .. } => {}
+            Expression::Tuple { items, .. } => pending.extend(items),
             Expression::ScalarFunction { arguments, .. } => pending.extend(arguments),
             Expression::Between {
                 value, low, high, ..
@@ -1795,6 +1888,7 @@ pub(super) fn compile_source_relation(
                 constants: None,
                 aggregate: None,
                 used_fields: RefCell::new(BTreeSet::new()),
+                current_table: false,
             }],
             dialect,
             aggregates_allowed: false,

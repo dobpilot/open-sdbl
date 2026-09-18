@@ -3,10 +3,10 @@
 use crate::query::core::ast::{
     AccumulationAst, AccumulationKind, AggregateArgument, AggregateKind, BatchAst, CaseBranch,
     CastTarget, ControlPoint, DatePart, Expression, FieldReference, GroupKey, HierarchyTotals,
-    IndexAst, IntoAst, JoinAst, JoinKind, OrderKeyAst, OrderTerm, PeriodKind, PeriodsAst,
-    PresentationArgument, PresentationOperation, PrimitiveType, Projection, ProjectionItem,
-    QueryAst, ScalarFunction, SelectAst, SliceAst, SliceKind, SourceAst, StatementAst, TotalsAst,
-    TotalsField, TypeName, UnionLink, parse_datetime_value,
+    IndexAst, IndexField, IntoAst, JoinAst, JoinKind, OrderKeyAst, OrderTerm, PeriodKind,
+    PeriodsAst, PresentationArgument, PresentationOperation, PrimitiveType, Projection,
+    ProjectionItem, QueryAst, ScalarFunction, SelectAst, SliceAst, SliceKind, SourceAst,
+    StatementAst, TotalsAst, TotalsField, TypeName, UnionLink, parse_datetime_value,
 };
 use crate::query::core::diag::SourcePosition;
 use crate::query::core::names::names_equal;
@@ -27,6 +27,42 @@ fn is_comparison(operator: &str) -> bool {
     matches!(operator, "=" | "<>" | "<" | ">" | "<=" | ">=")
 }
 
+/// The values of a system enumeration `ЗНАЧЕНИЕ` accepts, with the number
+/// the platform stores for each: the record kind of an accumulation
+/// register (`_RecordKind`), the side of an accounting record
+/// (`_Correspond`), and the kind of an account (`_Kind`, measured on a
+/// chart of accounts against its predefined accounts).
+/// Whether a source kind word names an accounting register, whose virtual
+/// tables take more arguments than an accumulation register's.
+fn kind_of_source_is_accounting(kind: &str) -> bool {
+    ["РегистрБухгалтерии", "AccountingRegister", "AccRg"]
+        .iter()
+        .any(|name| names_equal(name, kind))
+}
+
+fn system_enumeration(name: &str) -> Option<&'static [(&'static [&'static str], u8)]> {
+    const ACCUMULATION: &[(&[&str], u8)] =
+        &[(&["Приход", "Receipt"], 0), (&["Расход", "Expense"], 1)];
+    const ACCOUNTING: &[(&[&str], u8)] = &[(&["Дебет", "Debit"], 0), (&["Кредит", "Credit"], 1)];
+    const ACCOUNT: &[(&[&str], u8)] = &[
+        (&["Активный", "Active"], 0),
+        (&["Пассивный", "Passive"], 1),
+        (&["АктивноПассивный", "ActivePassive"], 2),
+    ];
+    if names_equal(name, "ВидДвиженияНакопления") || names_equal(name, "AccumulationRecordType")
+    {
+        Some(ACCUMULATION)
+    } else if names_equal(name, "ВидДвиженияБухгалтерии")
+        || names_equal(name, "AccountingRecordType")
+    {
+        Some(ACCOUNTING)
+    } else if names_equal(name, "ВидСчета") || names_equal(name, "AccountType") {
+        Some(ACCOUNT)
+    } else {
+        None
+    }
+}
+
 fn is_contextual_identifier(kind: TokenKind) -> bool {
     kind == TokenKind::Identifier
         || matches!(
@@ -40,6 +76,8 @@ fn is_contextual_identifier(kind: TokenKind) -> bool {
                     | Keyword::Refs
                     | Keyword::Between
                     | Keyword::BalanceAndTurnovers
+                    | Keyword::DrCrTurnovers
+                    | Keyword::RecordsWithExtDimensions
                     | Keyword::Substring
                     | Keyword::StringLength
                     | Keyword::TrimAll
@@ -426,18 +464,17 @@ impl<'tokens, 'source> Parser<'tokens, 'source> {
         Ok(Some(IndexAst { token, sets }))
     }
 
-    fn parse_index_fields(&mut self) -> Result<Vec<&'tokens Token<'source>>, QueryDiagnostic> {
+    /// An index field names a selection-list label; the platform also
+    /// accepts it qualified by the source alias (`ИНДЕКСИРОВАТЬ ПО
+    /// Т.Поле`), which names the label of the last segment.
+    fn parse_index_fields(&mut self) -> Result<Vec<IndexField<'tokens, 'source>>, QueryDiagnostic> {
         let mut fields = Vec::new();
         loop {
-            let field = self.expect_identifier("expected index field name")?;
-            if self.next_lexeme_is(".") {
-                return Err(QueryDiagnostic::at(
-                    QueryDiagnosticKind::Syntax,
-                    Some(field),
-                    "index fields name selection-list labels, not paths",
-                ));
+            let mut segments = vec![self.expect_identifier("expected index field name")?];
+            while self.consume_lexeme(".") {
+                segments.push(self.expect_identifier("expected index field name")?);
             }
-            fields.push(field);
+            fields.push(IndexField { segments });
             if !self.consume_lexeme(",") {
                 break;
             }
@@ -544,13 +581,6 @@ impl<'tokens, 'source> Parser<'tokens, 'source> {
                 "TOP row count must be an integer",
             )
         })?;
-        if value == 0 {
-            return Err(QueryDiagnostic::at(
-                QueryDiagnosticKind::Syntax,
-                Some(token),
-                "TOP row count must be greater than zero",
-            ));
-        }
         Ok(value)
     }
 
@@ -594,7 +624,7 @@ impl<'tokens, 'source> Parser<'tokens, 'source> {
                 self.parse_projection()?
             };
             let alias = if self.consume_keyword(Keyword::As) {
-                Some(self.expect_identifier("expected projection alias after AS")?)
+                Some(self.expect_alias("expected projection alias after AS")?)
             } else {
                 // `КАК` is optional in front of an alias, in a projection
                 // as much as after a source.
@@ -912,7 +942,7 @@ impl<'tokens, 'source> Parser<'tokens, 'source> {
             let opening = self.peek().expect("checked opening parenthesis");
             let nested = self.parse_nested_query(opening)?;
             let alias = if self.consume_keyword(Keyword::As) {
-                self.expect_identifier("expected source alias after AS")?
+                self.expect_alias("expected source alias after AS")?
             } else if let Some(alias) = self.consume_implicit_alias() {
                 alias
             } else {
@@ -931,6 +961,7 @@ impl<'tokens, 'source> Parser<'tokens, 'source> {
                 alias: Some(alias),
                 nested: Some(Box::new(nested)),
                 temporary: false,
+                parameter: false,
                 constants: false,
                 criterion: None,
             });
@@ -938,7 +969,7 @@ impl<'tokens, 'source> Parser<'tokens, 'source> {
         if self.next_is_constants_source() {
             let name = self.next().expect("checked identifier");
             let alias = if self.consume_keyword(Keyword::As) {
-                Some(self.expect_identifier("expected source alias after AS")?)
+                Some(self.expect_alias("expected source alias after AS")?)
             } else {
                 self.consume_implicit_alias()
             };
@@ -951,6 +982,7 @@ impl<'tokens, 'source> Parser<'tokens, 'source> {
                 alias,
                 nested: None,
                 temporary: false,
+                parameter: false,
                 constants: true,
                 criterion: None,
             });
@@ -958,7 +990,7 @@ impl<'tokens, 'source> Parser<'tokens, 'source> {
         if self.next_is_temporary_source() {
             let name = self.next().expect("checked identifier");
             let alias = if self.consume_keyword(Keyword::As) {
-                Some(self.expect_identifier("expected source alias after AS")?)
+                Some(self.expect_alias("expected source alias after AS")?)
             } else {
                 self.consume_implicit_alias()
             };
@@ -971,6 +1003,32 @@ impl<'tokens, 'source> Parser<'tokens, 'source> {
                 alias,
                 nested: None,
                 temporary: true,
+                parameter: false,
+                constants: false,
+                criterion: None,
+            });
+        }
+        if self
+            .peek()
+            .is_some_and(|token| token.kind == TokenKind::Parameter)
+        {
+            // `ИЗ &Таблица` reads a value table the application passes.
+            let name = self.next().expect("checked parameter");
+            let alias = if self.consume_keyword(Keyword::As) {
+                Some(self.expect_alias("expected source alias after AS")?)
+            } else {
+                self.consume_implicit_alias()
+            };
+            return Ok(SourceAst {
+                kind: name,
+                object: name,
+                table_part: None,
+                slice: None,
+                accumulation: None,
+                alias,
+                nested: None,
+                temporary: false,
+                parameter: true,
                 constants: false,
                 criterion: None,
             });
@@ -985,7 +1043,7 @@ impl<'tokens, 'source> Parser<'tokens, 'source> {
             let value = self.parse_or()?;
             self.expect_lexeme(")")?;
             let alias = if self.consume_keyword(Keyword::As) {
-                Some(self.expect_identifier("expected source alias after AS")?)
+                Some(self.expect_alias("expected source alias after AS")?)
             } else {
                 self.consume_implicit_alias()
             };
@@ -998,6 +1056,7 @@ impl<'tokens, 'source> Parser<'tokens, 'source> {
                 alias,
                 nested: None,
                 temporary: false,
+                parameter: false,
                 constants: false,
                 criterion: Some(value),
             });
@@ -1009,34 +1068,18 @@ impl<'tokens, 'source> Parser<'tokens, 'source> {
                 (None, Some(self.parse_slice(token, SliceKind::Last)?), None)
             } else if let Some(token) = self.consume_keyword_token(Keyword::SliceFirst) {
                 (None, Some(self.parse_slice(token, SliceKind::First)?), None)
-            } else if let Some(token) = self.consume_keyword_token(Keyword::Balance) {
+            } else if let Some((token, virtual_kind)) = self.consume_virtual_table_keyword() {
+                let accounting = kind_of_source_is_accounting(kind.lexeme);
                 (
                     None,
                     None,
                     Some(AccumulationAst {
                         token,
-                        kind: AccumulationKind::Balance,
-                        arguments: self.parse_virtual_arguments(2, "Balance")?,
-                    }),
-                )
-            } else if let Some(token) = self.consume_keyword_token(Keyword::BalanceAndTurnovers) {
-                (
-                    None,
-                    None,
-                    Some(AccumulationAst {
-                        token,
-                        kind: AccumulationKind::BalanceAndTurnovers,
-                        arguments: self.parse_virtual_arguments(5, "BalanceAndTurnovers")?,
-                    }),
-                )
-            } else if let Some(token) = self.consume_keyword_token(Keyword::Turnovers) {
-                (
-                    None,
-                    None,
-                    Some(AccumulationAst {
-                        token,
-                        kind: AccumulationKind::Turnovers,
-                        arguments: self.parse_virtual_arguments(4, "Turnovers")?,
+                        kind: virtual_kind,
+                        arguments: self.parse_virtual_arguments(
+                            virtual_kind.argument_count(accounting),
+                            virtual_kind.name(),
+                        )?,
                     }),
                 )
             } else {
@@ -1050,7 +1093,7 @@ impl<'tokens, 'source> Parser<'tokens, 'source> {
             (None, None, None)
         };
         let alias = if self.consume_keyword(Keyword::As) {
-            Some(self.expect_identifier("expected source alias after AS")?)
+            Some(self.expect_alias("expected source alias after AS")?)
         } else {
             self.consume_implicit_alias()
         };
@@ -1058,6 +1101,7 @@ impl<'tokens, 'source> Parser<'tokens, 'source> {
             kind,
             object,
             table_part,
+            parameter: false,
             nested: None,
             temporary: false,
             constants: false,
@@ -1066,6 +1110,31 @@ impl<'tokens, 'source> Parser<'tokens, 'source> {
             alias,
             criterion: None,
         })
+    }
+
+    /// The keyword of an aggregating virtual table, when the next token
+    /// is one.
+    fn consume_virtual_table_keyword(
+        &mut self,
+    ) -> Option<(&'tokens Token<'source>, AccumulationKind)> {
+        for (keyword, kind) in [
+            (Keyword::Balance, AccumulationKind::Balance),
+            (
+                Keyword::BalanceAndTurnovers,
+                AccumulationKind::BalanceAndTurnovers,
+            ),
+            (Keyword::Turnovers, AccumulationKind::Turnovers),
+            (Keyword::DrCrTurnovers, AccumulationKind::DrCrTurnovers),
+            (
+                Keyword::RecordsWithExtDimensions,
+                AccumulationKind::RecordsWithExtDimensions,
+            ),
+        ] {
+            if let Some(token) = self.consume_keyword_token(keyword) {
+                return Some((token, kind));
+            }
+        }
+        None
     }
 
     fn parse_slice(
@@ -1154,6 +1223,10 @@ impl<'tokens, 'source> Parser<'tokens, 'source> {
                 }
             }
         }
+        // `АВТОУПОРЯДОЧИВАНИЕ` asks the platform to order the result by
+        // the presentations of its references; the compiler orders by
+        // the keys written and takes the word for nothing more.
+        self.consume_keyword(Keyword::AutoOrder);
         Ok(order)
     }
 
@@ -1490,6 +1563,19 @@ impl<'tokens, 'source> Parser<'tokens, 'source> {
             self.depth += 1;
             let result = (|| {
                 let expression = self.parse_or()?;
+                if self.peek().is_some_and(|token| token.lexeme == ",") {
+                    // `(А, Б) В (ВЫБРАТЬ …)`: a tuple, accepted only as
+                    // the left side of a membership test.
+                    let mut items = vec![expression];
+                    while self.consume_lexeme(",") {
+                        items.push(self.parse_or()?);
+                    }
+                    self.expect_lexeme(")")?;
+                    return Ok(Expression::Tuple {
+                        token: opening,
+                        items,
+                    });
+                }
                 self.expect_lexeme(")")?;
                 Ok(expression)
             })();
@@ -1565,6 +1651,7 @@ impl<'tokens, 'source> Parser<'tokens, 'source> {
     fn consume_scalar_function(&mut self) -> Option<(&'tokens Token<'source>, ScalarFunction)> {
         let token = self.peek()?;
         let function = match token.kind {
+            TokenKind::Keyword(Keyword::RecordAutoNumber) => ScalarFunction::RecordAutoNumber,
             TokenKind::Keyword(Keyword::Substring) => ScalarFunction::Substring,
             TokenKind::Keyword(Keyword::StringLength) => ScalarFunction::StringLength,
             TokenKind::Keyword(Keyword::TrimAll) => ScalarFunction::TrimAll,
@@ -1604,10 +1691,13 @@ impl<'tokens, 'source> Parser<'tokens, 'source> {
     ) -> Result<Expression<'tokens, 'source>, QueryDiagnostic> {
         self.expect_lexeme("(")?;
         let mut arguments = Vec::new();
-        loop {
-            arguments.push(self.parse_or()?);
-            if !self.consume_lexeme(",") {
-                break;
+        // `АВТОНОМЕРЗАПИСИ()` takes nothing; the others at least one.
+        if !self.peek().is_some_and(|token| token.lexeme == ")") {
+            loop {
+                arguments.push(self.parse_or()?);
+                if !self.consume_lexeme(",") {
+                    break;
+                }
             }
         }
         self.expect_lexeme(")")?;
@@ -2083,6 +2173,27 @@ impl<'tokens, 'source> Parser<'tokens, 'source> {
         self.expect_lexeme("(")?;
         let kind = self.expect_metadata_name("VALUE expects a metadata kind")?;
         self.expect_lexeme(".")?;
+        if let Some(values) = system_enumeration(kind.lexeme) {
+            let value = self.expect_metadata_name("VALUE expects a system enumeration value")?;
+            let code = values
+                .iter()
+                .find(|(names, _)| names.iter().any(|name| names_equal(name, value.lexeme)))
+                .map(|(_, code)| *code)
+                .ok_or_else(|| {
+                    QueryDiagnostic::at(
+                        QueryDiagnosticKind::Syntax,
+                        Some(value),
+                        format!("{} has no value {:?}", kind.lexeme, value.lexeme),
+                    )
+                })?;
+            self.expect_lexeme(")")?;
+            return Ok(Expression::SystemValue {
+                token,
+                enumeration: kind,
+                value,
+                code,
+            });
+        }
         let object = self.expect_metadata_name("VALUE expects a metadata object")?;
         self.expect_lexeme(".")?;
         let value = self.expect_metadata_name("VALUE expects a predefined value")?;
@@ -2307,6 +2418,49 @@ impl<'tokens, 'source> Parser<'tokens, 'source> {
             .peek()
             .ok_or_else(|| self.diagnostic(QueryDiagnosticKind::Syntax, None, message))?;
         if !is_contextual_identifier(token.kind) {
+            return Err(QueryDiagnostic::at(
+                QueryDiagnosticKind::Syntax,
+                Some(token),
+                message,
+            ));
+        }
+        Ok(self.next().expect("peeked token"))
+    }
+
+    /// Takes the alias after `КАК`: an identifier, or a keyword that does
+    /// not open the next clause — the platform accepts `КАК Конец` once
+    /// `КАК` marks the word as a name.
+    fn expect_alias(
+        &mut self,
+        message: &'static str,
+    ) -> Result<&'tokens Token<'source>, QueryDiagnostic> {
+        let token = self
+            .peek()
+            .ok_or_else(|| self.diagnostic(QueryDiagnosticKind::Syntax, None, message))?;
+        let opens_a_clause = matches!(
+            token.kind,
+            TokenKind::Keyword(
+                Keyword::Select
+                    | Keyword::From
+                    | Keyword::Where
+                    | Keyword::Group
+                    | Keyword::Having
+                    | Keyword::Order
+                    | Keyword::Union
+                    | Keyword::Into
+                    | Keyword::Join
+                    | Keyword::Left
+                    | Keyword::Right
+                    | Keyword::Full
+                    | Keyword::Inner
+                    | Keyword::Outer
+                    | Keyword::On
+                    | Keyword::Totals
+                    | Keyword::Index
+                    | Keyword::AutoOrder
+            )
+        );
+        if opens_a_clause || !matches!(token.kind, TokenKind::Identifier | TokenKind::Keyword(_)) {
             return Err(QueryDiagnostic::at(
                 QueryDiagnosticKind::Syntax,
                 Some(token),

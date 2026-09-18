@@ -8,9 +8,10 @@ pub(crate) use hex::hex;
 
 use open_sdbl::metadata::{
     ColumnType, ConfigDescriptor, ConfigFieldPurpose, ConfigPredefinedValue, Guid, LiveColumn,
-    LiveIndex, LiveTable, SchemaColumn, SchemaStorage, SchemaTable, parse_config_criterion,
-    parse_config_descriptors, parse_config_predefined_values, parse_db_names, parse_schema_storage,
-    resolve_metadata, resolve_metadata_with_criteria, resolve_metadata_with_predefined_values,
+    LiveIndex, LiveTable, PredefinedSource, SchemaColumn, SchemaStorage, SchemaTable,
+    parse_config_criterion, parse_config_descriptors, parse_config_predefined_values,
+    parse_db_names, parse_schema_storage, resolve_metadata, resolve_metadata_with_criteria,
+    resolve_metadata_with_predefined_values,
 };
 
 pub(crate) fn snapshot() -> open_sdbl::metadata::MetadataSnapshot {
@@ -281,11 +282,13 @@ pub(crate) fn catalog_value_snapshot() -> open_sdbl::metadata::MetadataSnapshot 
                 owner_guid: owner.clone(),
                 value_guid: guid("2e22ad88-32b5-4456-a3da-e56fa2f94623"),
                 name: "Утвержден".to_owned(),
+                source: PredefinedSource::Catalog,
             },
             ConfigPredefinedValue {
                 owner_guid: owner,
                 value_guid: guid("f6fa6a92-32a3-4378-a161-ed47a2787c5a"),
                 name: "ДополнительныеУсловияПоДоговору_Проверен".to_owned(),
+                source: PredefinedSource::Catalog,
             },
         ],
         base.schema().clone(),
@@ -311,6 +314,8 @@ pub(crate) fn descriptor(resource: &Guid, object: &Guid, name: &str) -> ConfigDe
         separation: None,
         reference_types: Vec::new(),
         object_reference_type: None,
+        balance: None,
+        chart_of_accounts: None,
     }
 }
 
@@ -575,6 +580,8 @@ pub(crate) fn accumulation_register_snapshot() -> open_sdbl::metadata::MetadataS
         separation: None,
         reference_types: Vec::new(),
         object_reference_type: None,
+        balance: None,
+        chart_of_accounts: None,
     });
 
     let mut schema_storage = base.schema().clone();

@@ -5,8 +5,8 @@ use support::{
 };
 
 use open_sdbl::metadata::{
-    AttributeId, ConfigPredefinedValue, LookupError, MetadataKind, ObjectId, StandardFieldId,
-    resolve_metadata_with_predefined_values,
+    AttributeId, ConfigPredefinedValue, LookupError, MetadataKind, ObjectId, PredefinedSource,
+    StandardFieldId, resolve_metadata_with_predefined_values,
 };
 
 #[test]
@@ -69,11 +69,13 @@ fn exercises_every_lookup_error_variant() {
                 owner_guid: owner_guid.clone(),
                 value_guid: guid("11111111-1111-4111-8111-111111111111"),
                 name: "DuplicateValue".to_owned(),
+                source: PredefinedSource::Catalog,
             },
             ConfigPredefinedValue {
                 owner_guid,
                 value_guid: guid("22222222-2222-4222-8222-222222222222"),
                 name: "DuplicateValue".to_owned(),
+                source: PredefinedSource::Catalog,
             },
         ],
         base.schema().clone(),

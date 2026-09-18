@@ -55,7 +55,7 @@ fn descends_from_the_seeds_of_a_nested_query() {
     // down the parent column of the target catalog.
     assert_contains(
         &compiled.sql,
-        "SELECT \"__seeds\".\"ID\" AS \"__node\" FROM (SELECT \"Г\".\"_idrref\" AS \"ID\" FROM \"_reference53\" AS \"Г\" WHERE (\"Г\".\"_code\" = 'A')) AS \"__seeds\" UNION ALL SELECT \"__catalog\".\"_idrref\" FROM \"_reference53\" AS \"__catalog\" JOIN \"__hier_1\" ON \"__catalog\".\"_parentidrref\" = \"__hier_1\".\"__node\"",
+        "SELECT \"__seeds\".\"Ссылка\" AS \"__node\" FROM (SELECT \"Г\".\"_idrref\" AS \"Ссылка\" FROM \"_reference53\" AS \"Г\" WHERE (\"Г\".\"_code\" = 'A')) AS \"__seeds\" UNION ALL SELECT \"__catalog\".\"_idrref\" FROM \"_reference53\" AS \"__catalog\" JOIN \"__hier_1\" ON \"__catalog\".\"_parentidrref\" = \"__hier_1\".\"__node\"",
     );
     assert_contains(
         &compiled.sql,
@@ -164,19 +164,39 @@ fn reports_unsupported_operands() {
     }
 
     // A temporary-table body becomes a CTE, and SQL Server forbids a
-    // nested WITH there.
+    // nested WITH there: the hierarchy CTE moves beside the table's own,
+    // named by the table, and leads the WITH list of every reader.
+    let batch = format!(
+        "ВЫБРАТЬ Код КАК Код ПОМЕСТИТЬ ВТ ИЗ {CATALOG} ГДЕ Ссылка В ИЕРАРХИИ (0x{});
+         ВЫБРАТЬ Код ИЗ ВТ;",
+        "11".repeat(16)
+    );
+    let options = open_sdbl::query::CompileOptions::new();
     let mut manager = TempTablesManager::new();
-    let error = QueryCompiler::new(&snapshot, PostgresBackend)
-        .compile_batch(
-            &format!(
-                "ВЫБРАТЬ Код ПОМЕСТИТЬ ВТ ИЗ {CATALOG} ГДЕ Ссылка В ИЕРАРХИИ (0x{});
-                 ВЫБРАТЬ Код ИЗ ВТ;",
-                "11".repeat(16)
-            ),
-            &open_sdbl::query::CompileOptions::new(),
-            &mut manager,
-        )
-        .unwrap_err();
-    assert_eq!(error.kind(), QueryDiagnosticKind::UnsupportedFeature);
-    assert!(error.message().contains("temporary table"), "{error}");
+    let postgres_batch = QueryCompiler::new(&snapshot, PostgresBackend)
+        .compile_batch(&batch, &options, &mut manager)
+        .unwrap()
+        .unwrap()
+        .sql;
+    for needle in [
+        "WITH RECURSIVE \"__hier_1_t1\" AS (",
+        ", \"vt1\" AS (SELECT",
+        "FROM \"__hier_1_t1\" WHERE",
+    ] {
+        assert_contains(&postgres_batch, needle);
+    }
+    assert!(!postgres_batch.contains("\"__hier_1\""), "{postgres_batch}");
+    let mut manager = TempTablesManager::new();
+    let mssql_batch = QueryCompiler::new(&snapshot, MsSqlBackend::new(2000).unwrap())
+        .compile_batch(&batch, &options, &mut manager)
+        .unwrap()
+        .unwrap()
+        .sql;
+    for needle in [
+        "WITH [__hier_1_t1] AS (",
+        ", [vt1] AS (SELECT",
+        "JOIN [__hier_1_t1] ON",
+    ] {
+        assert_contains(&mssql_batch, needle);
+    }
 }

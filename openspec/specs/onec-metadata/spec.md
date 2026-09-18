@@ -666,18 +666,29 @@ object.
 
 ### Requirement: Acquire predefined-value metadata
 
-The application adapters SHALL load assembled bare-GUID Config resources and
-assembled `<guid>.1c` resources. The core SHALL decode only verified `.1c`
-predefined-value rows and associate every value with the catalog GUID encoded
-in its file name. Other Config suffixes SHALL remain excluded.
+The application adapters SHALL load assembled bare-GUID Config resources,
+assembled `<guid>.1c` resources and assembled `<guid>.9` resources. The
+core SHALL decode only verified predefined-value rows — `{2, <index>,
+<column count>, {"#", <type>, {1, <guid>}}, …}` with the name in the
+first string column — and associate every value with the GUID encoded in
+its file name and with the resource kind it came from. Resolution SHALL
+keep `.9` values for charts of accounts only and `.1c` values for the
+other kinds only. Other Config suffixes SHALL remain excluded.
 
 #### Scenario: Catalog predefined values
 - **WHEN** `<catalog-guid>.1c` contains verified predefined rows
 - **THEN** each exact symbolic name and stable GUID is associated with that
   catalog without reading catalog business rows
 
+#### Scenario: Predefined accounts
+- **WHEN** `<chart-guid>.9` contains the rows measured on the UNF chart
+  `Управленческий`
+- **THEN** each account's symbolic name and GUID is associated with the
+  chart, and a `.9` resource of an object that is not a chart of
+  accounts yields no value
+
 #### Scenario: Unrelated suffix resource
-- **WHEN** a Config file has a suffix other than `.1c`
+- **WHEN** a Config file has a suffix other than `.1c` or `.9`
 - **THEN** predefined-value decoding returns no values and does not interpret
   the payload as metadata
 
@@ -800,3 +811,125 @@ mixing such a category with named objects SHALL resolve to the union.
   category is dereferenced
 - **THEN** every business process of the configuration is joined under its
   own type guard
+
+### Requirement: Preserve accounting-register field purpose
+The decoder SHALL recognize the accounting-register dimension, resource
+and attribute collections of a Config descriptor by their collection
+GUIDs (measured on 8.3.27) and SHALL expose the purpose on the resolved
+field together with the balance flag of a dimension or resource, read
+from the field's collection entry. It SHALL NOT infer the purpose or the
+flag from physical column names. A physical `Fld<N>Dt`/`Fld<N>Ct` column
+SHALL be attributed to field `N`.
+
+#### Scenario: Balance and non-balance resources
+- **WHEN** a register declares the balance resource `Сумма` and the
+  non-balance resource `СуммаВал`
+- **THEN** both resolve as accounting-register resources, the first with
+  the balance flag set and the second without it
+
+#### Scenario: Unknown collection
+- **WHEN** a field descriptor sits in a collection the decoder does not
+  recognize
+- **THEN** its purpose stays unknown rather than guessed
+
+### Requirement: Expose the chart of accounts of a register
+The decoder SHALL read the chart of accounts an accounting register is
+bound to from the register's class list (the first identifier after
+the register's header, measured on 8.3.27) and SHALL expose it on the
+resolved object.
+
+#### Scenario: Register bound to a chart
+- **WHEN** the UNF register `Управленческий` is resolved
+- **THEN** its object carries the identity of `ПланСчетов.Управленческий`
+
+### Requirement: Decode predefined items of charts of characteristic types
+The application adapters SHALL also load `<guid>.7` resources, and the
+core SHALL decode their verified predefined rows as it decodes `.1c`
+and `.9` rows, keeping the values for charts of characteristic types
+only (measured on the demo Бухгалтерия предприятия base: the `.7`
+suffix of other classes carries other content).
+
+#### Scenario: Kinds of extra dimensions
+- **WHEN** `<chart-guid>.7` of `ВидыСубконтоХозрасчетные` is decoded
+- **THEN** `Контрагенты` and the other kinds are associated with the
+  chart by name and GUID
+
+### Requirement: Resolve the extra-dimension values table
+The `AccRgED` DBNames entry of an accounting register SHALL resolve to a
+service object owned by the register, with its physical table and
+declared columns.
+
+#### Scenario: Owned by the register
+- **WHEN** the demo register `Хозрасчетный` is resolved
+- **THEN** an `AccountingExtraDimensions` object owned by it names
+  `_AccRgED<N>`
+
+### Requirement: Predefined accounts with subaccounts
+A row of a predefined-item resource whose element count exceeds the
+column count plus the header and trailer — an account with subaccounts
+in a `.9` resource — SHALL yield its predefined value like a leaf row,
+and the rows nested in its trailer SHALL be read as well.
+
+#### Scenario: Account 50 with subaccounts
+- **WHEN** the `.9` resource holds `{2,124,13,{"#",T,{1,G}},{"S","Касса"},…,1,{1,6,{2,125,13,…}}}`
+- **THEN** `Касса` and the nested accounts resolve as predefined values
+
+### Requirement: Extra-dimension kind table field names
+The standard columns of a chart's extra-dimension kinds table SHALL be
+addressable as `ВидСубконто` (`DimKind`) and `ТолькоОбороты`
+(`TurnoverOnly`) beside `НомерСтроки`.
+
+#### Scenario: Kinds of an account
+- **WHEN** `ВЫБРАТЬ ВС.ВидСубконто, ВС.ТолькоОбороты ИЗ ПланСчетов.Хозрасчетный.ВидыСубконто КАК ВС` is compiled
+- **THEN** the columns `_dimkindrref` and `_turnoveronly` are projected
+
+### Requirement: Project the roles collection while parsing
+A bare-GUID Config resource SHALL report, in `ParsedConfigResource.roles`,
+the role identifiers listed by the roles collection
+`09736b02-9cac-4e3f-b4f7-d3e9576ab948` it carries, and an empty list
+otherwise; a resource that is not a bare GUID SHALL report none.
+
+#### Scenario: Configuration root
+- **WHEN** the root resource carries `{09736b02-…, 2, <guid1>, <guid2>}`
+- **THEN** the parsed resource lists exactly those two identifiers
+
+### Requirement: Acquire the rights resources of named roles
+The library SHALL provide, for both providers and both storage layouts,
+a SELECT statement reading the `<guid>.0` Config resources of a given
+list of role identifiers only — `(file name, part, data)` rows ordered by
+file name and part — because a base stores tens of thousands of `.0`
+resources of other objects. The identifiers are typed `Guid`s, so the
+statement text carries no untrusted input.
+
+#### Scenario: Two roles on PostgreSQL
+- **WHEN** the statement is built for two identifiers on the modern layout
+- **THEN** it reads `config` with `rtrim(filename::text) IN ('<g1>.0', '<g2>.0')`
+  ordered by file name and part
+
+### Requirement: Acquire the information-base users
+The library SHALL provide, for both providers, a SELECT statement reading
+`v8users` — name, description, operating-system login, the show-in-list,
+standard-authentication and administrative flags, and `Data` — ordered by
+name, with the flags in a form both providers answer alike.
+
+#### Scenario: PostgreSQL
+- **WHEN** the users statement is read on PostgreSQL
+- **THEN** it selects from `v8users` ordered by `name`
+
+### Requirement: The snapshot carries the roles of the configuration
+`MetadataSnapshot` SHALL accept the role identifiers projected from the
+configuration root through `attach_roles` and answer them through
+`roles`; `RoleCatalog::from_snapshot` SHALL name them from the snapshot's
+descriptors. `object_query_name` SHALL spell a metadata object as a
+query names it — `Справочник.Номенклатура`, `Документ.Заказ.Товары` for a
+tabular section — or answer nothing for a kind a query cannot name.
+
+#### Scenario: Roles attached
+- **WHEN** two role identifiers are attached to a snapshot whose
+  descriptors name them
+- **THEN** the catalog built from the snapshot lists both by name
+
+#### Scenario: Query name of a tabular section
+- **WHEN** the object of a tabular section `Товары` of `Документ.Заказ` is
+  named
+- **THEN** the name is `Документ.Заказ.Товары`

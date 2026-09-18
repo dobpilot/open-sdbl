@@ -190,6 +190,10 @@ pub(super) struct SourceScope {
     pub(super) aggregate: Option<AggregateSource>,
     /// Indexes into `fields` the statement resolved, in any role.
     pub(super) used_fields: RefCell<BTreeSet<usize>>,
+    /// Whether the scope is the restricted table of an access restriction,
+    /// which the restriction language names `ТекущаяТаблица` beside any
+    /// alias it declares.
+    pub(super) current_table: bool,
 }
 
 impl SourceScope {
@@ -199,6 +203,9 @@ impl SourceScope {
     /// declared alias hides it there too, which is what keeps a name used
     /// twice in one statement unambiguous.
     fn is_qualifier(&self, name: &str) -> bool {
+        if self.current_table && names_equal(name, crate::access::CURRENT_TABLE) {
+            return true;
+        }
         match self.source_alias.as_deref() {
             Some(alias) => names_equal(alias, name),
             None => names_equal(&self.object_name, name),
@@ -240,6 +247,7 @@ pub(super) struct OuterScope {
     object_name: String,
     source_alias: Option<String>,
     identity_is_base: bool,
+    current_table: bool,
 }
 
 impl OuterScope {
@@ -259,6 +267,7 @@ impl OuterScope {
             constants: None,
             aggregate: None,
             used_fields: RefCell::new(BTreeSet::new()),
+            current_table: self.current_table,
         }
     }
 }
@@ -388,6 +397,7 @@ impl CompilationContext<'_, '_> {
                 object_name: source.object_name.clone(),
                 source_alias: source.source_alias.clone(),
                 identity_is_base: source.identity_is_base,
+                current_table: source.current_table,
             })
             .collect()
     }
@@ -509,7 +519,10 @@ impl CompilationContext<'_, '_> {
         ))
     }
 
-    fn qualifier_scope(&self, qualifier: &Token<'_>) -> Result<Option<ScopeId>, QueryDiagnostic> {
+    pub(super) fn qualifier_scope(
+        &self,
+        qualifier: &Token<'_>,
+    ) -> Result<Option<ScopeId>, QueryDiagnostic> {
         let matches = self
             .sources
             .iter()
@@ -517,9 +530,16 @@ impl CompilationContext<'_, '_> {
             .filter(|(_, source)| source.is_qualifier(qualifier.lexeme))
             .map(|(index, _)| ScopeId(index))
             .collect::<Vec<_>>();
-        match matches.as_slice() {
-            [] => Ok(None),
-            [scope] => Ok(Some(*scope)),
+        // A source of the statement itself hides an enclosing one of the
+        // same name, the way the platform scopes a correlated subquery.
+        let local = matches
+            .iter()
+            .filter(|scope| scope.0 < self.local_sources)
+            .copied()
+            .collect::<Vec<_>>();
+        match (matches.as_slice(), local.as_slice()) {
+            ([], _) => Ok(None),
+            ([scope], _) | (_, [scope]) => Ok(Some(*scope)),
             _ => Err(QueryDiagnostic::at(
                 QueryDiagnosticKind::AmbiguousObject,
                 Some(qualifier),
@@ -1211,10 +1231,7 @@ impl CompilationContext<'_, '_> {
             fields,
             field_index,
             sql_alias: alias,
-            path_label: Some(format!(
-                "{}.{}",
-                reference_token.lexeme, target_token.lexeme
-            )),
+            path_label: Some(format!("{}{}", reference_token.lexeme, target_token.lexeme)),
             expression,
             member_expressions: Vec::new(),
         })
@@ -1247,12 +1264,10 @@ impl CompilationContext<'_, '_> {
         let resolved = self.resolve_dereference(scope, first, second)?;
         let mut resolved = self.continue_path(scope, resolved, second, rest)?;
         if resolved.path_label.is_none() {
-            resolved.path_label = Some(
-                hops.iter()
-                    .map(|token| token.lexeme)
-                    .collect::<Vec<_>>()
-                    .join("."),
-            );
+            // The platform names an unaliased dereference by the path
+            // segments run together: `Организация.Наименование` becomes
+            // `ОрганизацияНаименование`.
+            resolved.path_label = Some(hops.iter().map(|token| token.lexeme).collect::<String>());
         }
         Ok(resolved)
     }
@@ -1515,8 +1530,7 @@ impl CompilationContext<'_, '_> {
                 std::iter::once(reference_token.lexeme)
                     .chain(std::iter::once(target_token.lexeme))
                     .chain(rest.iter().map(|token| token.lexeme))
-                    .collect::<Vec<_>>()
-                    .join("."),
+                    .collect::<String>(),
             ),
             expression: Some(expression),
             member_expressions: Vec::new(),
@@ -1612,8 +1626,7 @@ impl CompilationContext<'_, '_> {
                 std::iter::once(reference_token.lexeme)
                     .chain(std::iter::once(target_token.lexeme))
                     .chain(rest.iter().map(|token| token.lexeme))
-                    .collect::<Vec<_>>()
-                    .join("."),
+                    .collect::<String>(),
             ),
             expression: Some(expression),
             member_expressions,

@@ -62,6 +62,10 @@ pub enum MetadataKind {
     CalculationKindDependency,
     /// Chart-of-accounts extra-dimension inline table (`ExtDim`).
     ExtraDimension,
+    /// Extra-dimension values of an accounting register (`AccRgED`): one
+    /// row per record, side and level, the `Субконто` table of the query
+    /// language.
+    AccountingExtraDimensions,
     /// Platform table available to metadata discovery but without SDBL syntax.
     ResolveOnlyService,
 }
@@ -88,6 +92,7 @@ impl MetadataKind {
             "Task" => Some(Self::Task),
             "Seq" => Some(Self::Sequence),
             "ExtDim" => Some(Self::ExtraDimension),
+            "AccRgED" => Some(Self::AccountingExtraDimensions),
             "CRgRecalc" => Some(Self::Recalculation),
             "BaseCK" | "LeadingCK" | "DisplacedCK" => Some(Self::CalculationKindDependency),
             alias if alias.ends_with("ChngR") => Some(Self::ChangeRegistration),
@@ -129,6 +134,7 @@ impl MetadataKind {
             Self::Recalculation => "CRgRecalc",
             Self::CalculationKindDependency => "BaseCK",
             Self::ExtraDimension => "ExtDim",
+            Self::AccountingExtraDimensions => "AccRgED",
             Self::ResolveOnlyService => "Service",
         }
     }
@@ -158,6 +164,7 @@ impl MetadataKind {
             | Self::ResolveOnlyService => "_",
             Self::Recalculation => "_CRgRecalc",
             Self::ExtraDimension => "_ExtDim",
+            Self::AccountingExtraDimensions => "_AccRgED",
         }
     }
 
@@ -185,6 +192,7 @@ impl MetadataKind {
             Self::Recalculation => "Recalculation",
             Self::CalculationKindDependency => "CalculationKindDependency",
             Self::ExtraDimension => "ExtraDimension",
+            Self::AccountingExtraDimensions => "AccountingExtraDimensions",
             Self::ResolveOnlyService => "ResolveOnlyService",
         }
     }
@@ -198,6 +206,7 @@ impl MetadataKind {
                 | Self::Recalculation
                 | Self::CalculationKindDependency
                 | Self::ExtraDimension
+                | Self::AccountingExtraDimensions
                 | Self::ResolveOnlyService
         )
     }

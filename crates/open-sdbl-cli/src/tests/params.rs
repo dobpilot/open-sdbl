@@ -8,6 +8,7 @@ use open_sdbl::metadata::{
     ConfigDescriptor, Guid, LiveColumn, LiveTable, MetadataSnapshot, SchemaStorage, parse_db_names,
     resolve_metadata,
 };
+use open_sdbl::query::{ColumnKind, ParameterColumn};
 use open_sdbl::query::{ParameterDate, ParameterValue, QueryParameter};
 use std::str::FromStr;
 
@@ -30,6 +31,8 @@ pub(crate) fn enumeration_snapshot() -> MetadataSnapshot {
         separation: None,
         reference_types: Vec::new(),
         object_reference_type: None,
+        balance: None,
+        chart_of_accounts: None,
     };
     let status = descriptor(value, "Статус", true);
     let object = descriptor(owner.clone(), "бит_ВидыСтатусовОбъектов", false);
@@ -108,6 +111,62 @@ fn parses_every_literal_form() {
         ])
     );
     assert_eq!(parse("()"), ParameterValue::List(Vec::new()));
+}
+
+#[test]
+fn parses_table_literals() {
+    let snapshot = enumeration_snapshot();
+    let parse = |text: &str| parse_parameter_literal(text, &snapshot).unwrap();
+    let table = parse("ТАБЛИЦА(Код КАК СТРОКА, Количество КАК ЧИСЛО)((\"A\", 1), (\"B\", 2))");
+    assert_eq!(
+        table,
+        ParameterValue::Table {
+            columns: vec![
+                ParameterColumn::new("Код", ColumnKind::String { length: None }),
+                ParameterColumn::new(
+                    "Количество",
+                    ColumnKind::Number {
+                        precision: None,
+                        scale: None
+                    }
+                ),
+            ],
+            rows: vec![
+                vec![
+                    ParameterValue::String("A".to_owned()),
+                    ParameterValue::Number {
+                        unscaled: 1,
+                        scale: 0
+                    }
+                ],
+                vec![
+                    ParameterValue::String("B".to_owned()),
+                    ParameterValue::Number {
+                        unscaled: 2,
+                        scale: 0
+                    }
+                ],
+            ],
+        }
+    );
+    assert_eq!(
+        parse("TABLE(Ссылка КАК ЛЮБАЯССЫЛКА, Дата КАК ДАТА)()"),
+        ParameterValue::Table {
+            columns: vec![
+                ParameterColumn::new(
+                    "Ссылка",
+                    ColumnKind::Reference {
+                        targets: Vec::new(),
+                        runtime_typed: true
+                    }
+                ),
+                ParameterColumn::new("Дата", ColumnKind::DateTime),
+            ],
+            rows: Vec::new(),
+        }
+    );
+    let untyped = parse_parameter_literal("ТАБЛИЦА(Код)()", &snapshot).unwrap_err();
+    assert!(untyped.to_string().contains("needs a kind"), "{untyped}");
 }
 
 #[test]

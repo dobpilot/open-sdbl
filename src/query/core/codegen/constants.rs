@@ -99,6 +99,7 @@ pub(super) fn constants_source_scope(
         constants: Some(ConstantsSource { entries }),
         aggregate: None,
         used_fields: RefCell::new(BTreeSet::new()),
+        current_table: false,
     })
 }
 

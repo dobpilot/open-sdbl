@@ -28,7 +28,7 @@ fn sums_over_the_dimensions_the_statement_never_reads() {
     );
     assert_contains(
         &resource_only.sql,
-        "FROM (SELECT SUM(\"__aggregate_used\".\"_fld55\") AS \"_fld55\" FROM (SELECT",
+        "FROM (SELECT SUM(\"__aggregate_used\".\"_fld55\") AS \"_fld55\",",
     );
     assert!(
         !resource_only.sql.contains("GROUP BY \"__aggregate_used\""),
@@ -193,38 +193,32 @@ fn compiles_the_balance_and_turnovers_table() {
         "date_trunc('month', \"__aggregate_base\".\"_period\") AS \"_period\"",
     );
 
-    for (source, message) in [
-        (
-            "ВЫБРАТЬ О.КоличествоНачальныйОстаток КАК Нач
+    // A balance with a calendar periodicity runs over the month buckets.
+    let monthly_balance = QueryCompiler::new(&snapshot, PostgresBackend)
+        .compile(
+            "ВЫБРАТЬ О.Период КАК Период, О.КоличествоНачальныйОстаток КАК Нач
              ИЗ РегистрНакопления.Остатки.ОстаткиИОбороты(, , Месяц, ) КАК О;",
-            "answers no balance column",
-        ),
-        (
-            "ВЫБРАТЬ О.КоличествоОборот КАК Обор
-             ИЗ РегистрНакопления.Остатки.ОстаткиИОбороты(, , Месяц, Регистратор, ) КАК О;",
-            "completion method",
-        ),
-        (
-            "ВЫБРАТЬ О.КоличествоОборот КАК Обор
-             ИЗ РегистрНакопления.Остатки.ОстаткиИОбороты(, , , ДвиженияИГраницыПериода, ) КАК О;",
-            "needs a periodicity",
-        ),
-        (
-            "ВЫБРАТЬ О.КоличествоОборот КАК Обор
-             ИЗ РегистрНакопления.Остатки.ОстаткиИОбороты(, , Регистратор, ) КАК О;",
-            "calendar periodicity",
-        ),
-    ] {
-        let error = QueryCompiler::new(&snapshot, PostgresBackend)
-            .compile(source)
-            .unwrap_err();
-        assert_eq!(
-            error.kind(),
-            open_sdbl::query::QueryDiagnosticKind::UnsupportedFeature,
-            "{source}: {error}"
-        );
-        assert!(error.message().contains(message), "{source}: {error}");
-    }
+        )
+        .unwrap();
+    assert_contains(
+        &monthly_balance.sql,
+        "ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING), 0) AS \"_fld55OpeningBalance\"",
+    );
+
+    let source = "ВЫБРАТЬ О.КоличествоОборот КАК Обор
+         ИЗ РегистрНакопления.Остатки.ОстаткиИОбороты(, , Месяц, Регистратор, ) КАК О;";
+    let error = QueryCompiler::new(&snapshot, PostgresBackend)
+        .compile(source)
+        .unwrap_err();
+    assert_eq!(
+        error.kind(),
+        open_sdbl::query::QueryDiagnosticKind::UnsupportedFeature,
+        "{source}: {error}"
+    );
+    assert!(
+        error.message().contains("completion method"),
+        "{source}: {error}"
+    );
 }
 
 #[test]
@@ -342,5 +336,229 @@ fn reads_a_reference_pair_as_a_value() {
     assert_contains(
         &aggregated.sql,
         "MAX((\"Р\".\"_recordertref\" || \"Р\".\"_recorderrref\"))",
+    );
+    // The aggregate of a payload is a payload: runtime-typed, so that
+    // `ЕСТЬNULL(МАКСИМУМ(…), НЕОПРЕДЕЛЕНО)` needs no widening.
+    assert_eq!(
+        aggregated.columns[0].kind,
+        open_sdbl::query::ColumnKind::Reference {
+            targets: Vec::new(),
+            runtime_typed: true,
+        }
+    );
+    let coalesced = compile(
+        "ВЫБРАТЬ ЕСТЬNULL(МАКСИМУМ(Р.Регистратор), НЕОПРЕДЕЛЕНО) КАК Макс
+         ИЗ РегистрНакопления.КоличествоПредметовВПапках КАК Р;",
+    );
+    assert_contains(
+        &coalesced.sql,
+        "COALESCE(MAX((\"Р\".\"_recordertref\" || \"Р\".\"_recorderrref\")), NULL)",
+    );
+}
+
+#[test]
+fn turnovers_of_a_balance_register_answer_receipts_and_expenses() {
+    let snapshot = accumulation_register_snapshot();
+    let compiled = postgres(
+        &snapshot,
+        "ВЫБРАТЬ О.Номенклатура КАК Н, О.КоличествоПриход КАК П, О.КоличествоРасход КАК Р
+         ИЗ РегистрНакопления.Остатки.Обороты КАК О;",
+    );
+    assert_contains(
+        &compiled.sql,
+        "SUM(CASE WHEN \"__aggregate_base\".\"_recordkind\" = 0 THEN \"__aggregate_base\".\"_fld55\" ELSE 0 END) AS \"_fld55Receipt\"",
+    );
+    assert_contains(
+        &compiled.sql,
+        "SUM(CASE WHEN \"__aggregate_base\".\"_recordkind\" = 1 THEN \"__aggregate_base\".\"_fld55\" ELSE 0 END) AS \"_fld55Expense\"",
+    );
+    // The two columns are resources: they are summed away with the
+    // dimensions the statement never reads.
+    let pruned = postgres(
+        &snapshot,
+        "ВЫБРАТЬ О.КоличествоПриход КАК П ИЗ РегистрНакопления.Остатки.Обороты КАК О;",
+    );
+    assert_contains(
+        &pruned.sql,
+        "SUM(\"__aggregate_used\".\"_fld55Receipt\") AS \"_fld55Receipt\"",
+    );
+    let english = postgres(
+        &snapshot,
+        "SELECT O.КоличествоReceipt AS P FROM AccumulationRegister.Остатки.Turnovers AS O;",
+    );
+    assert_contains(&english.sql, "\"_fld55Receipt\"");
+}
+
+#[test]
+fn the_period_periodicity_does_not_split() {
+    let snapshot = accumulation_register_snapshot();
+    let plain = postgres(
+        &snapshot,
+        "ВЫБРАТЬ О.Номенклатура КАК Н, О.КоличествоОборот КАК Кол
+         ИЗ РегистрНакопления.Остатки.Обороты(, , , ) КАК О;",
+    );
+    for periodicity in ["Период", "Period"] {
+        let split = postgres(
+            &snapshot,
+            &format!(
+                "ВЫБРАТЬ О.Номенклатура КАК Н, О.КоличествоОборот КАК Кол
+                 ИЗ РегистрНакопления.Остатки.Обороты(, , {periodicity}, ) КАК О;"
+            ),
+        );
+        assert_eq!(split.sql, plain.sql, "{periodicity}");
+    }
+}
+
+#[test]
+fn auto_splits_by_the_fields_the_statement_reads() {
+    let snapshot = accumulation_register_snapshot();
+    // Reading a calendar level and the recorder keeps both groupings.
+    let split = postgres(
+        &snapshot,
+        "ВЫБРАТЬ О.ПериодМесяц КАК М, О.Регистратор КАК Р, О.КоличествоОборот КАК Кол
+         ИЗ РегистрНакопления.Остатки.Обороты(, , Авто, ) КАК О;",
+    );
+    assert_contains(&split.sql, "AS \"_PeriodMonth\"");
+    assert_contains(&split.sql, "\"__aggregate_used\".\"_PeriodMonth\"");
+    assert_contains(&split.sql, "\"__aggregate_used\".\"_recorderrref\"");
+    assert!(
+        !split.sql.contains("\"__aggregate_used\".\"_PeriodYear\""),
+        "{}",
+        split.sql
+    );
+    // Reading none of them answers the whole interval by dimension.
+    let whole = postgres(
+        &snapshot,
+        "ВЫБРАТЬ О.Номенклатура КАК Н, О.КоличествоОборот КАК Кол
+         ИЗ РегистрНакопления.Остатки.Обороты(, , Auto, ) КАК О;",
+    );
+    assert_contains(&whole.sql, "GROUP BY \"__aggregate_used\".\"_fld54\")");
+    assert!(
+        !whole.sql.contains("\"__aggregate_used\".\"_Period"),
+        "{}",
+        whole.sql
+    );
+}
+
+#[test]
+fn auto_balances_run_over_the_grain_the_statement_reads() {
+    let snapshot = accumulation_register_snapshot();
+    let whole = postgres(
+        &snapshot,
+        "ВЫБРАТЬ О.Номенклатура КАК Н, О.КоличествоКонечныйОстаток КАК Кол
+         ИЗ РегистрНакопления.Остатки.ОстаткиИОбороты(, , Авто, ДвиженияИГраницыПериода, ) КАК О;",
+    );
+    assert_contains(&whole.sql, "\"_fld55ClosingBalance\"");
+    assert!(!whole.sql.contains(" OVER ("), "{}", whole.sql);
+    // Reading the recorder with a balance takes the record grain: the
+    // balances are running sums over the buckets, the movements before
+    // the interval forming the first bucket, dropped after the window.
+    let by_recorder = postgres(
+        &snapshot,
+        "ВЫБРАТЬ О.Регистратор КАК Р, О.КоличествоНачальныйОстаток КАК НО, О.КоличествоКонечныйОстаток КАК КО
+         ИЗ РегистрНакопления.Остатки.ОстаткиИОбороты(ДАТАВРЕМЯ(2024, 2, 1), ДАТАВРЕМЯ(2024, 3, 1), Авто, , ) КАК О;",
+    );
+    assert_contains(
+        &by_recorder.sql,
+        "COALESCE(SUM(SUM(CASE WHEN \"__aggregate_base\".\"_recordkind\" = 0 THEN \"__aggregate_base\".\"_fld55\" ELSE -\"__aggregate_base\".\"_fld55\" END)) OVER (PARTITION BY \"__aggregate_base\".\"_fld54\" ORDER BY CASE WHEN",
+    );
+    assert_contains(
+        &by_recorder.sql,
+        "ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING), 0) AS \"_fld55OpeningBalance\"",
+    );
+    assert_contains(
+        &by_recorder.sql,
+        "ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS \"_fld55ClosingBalance\"",
+    );
+    assert_contains(
+        &by_recorder.sql,
+        "AS \"__periods\" WHERE \"__periods\".\"__inside\" = 1)",
+    );
+    assert_contains(&by_recorder.sql, "\"__aggregate_used\".\"_recorderrref\"");
+    // A calendar level takes that level's buckets.
+    let monthly = postgres(
+        &snapshot,
+        "ВЫБРАТЬ О.ПериодМесяц КАК М, О.КоличествоКонечныйОстаток КАК КО
+         ИЗ РегистрНакопления.Остатки.ОстаткиИОбороты(, , Авто, , ) КАК О;",
+    );
+    assert_contains(
+        &monthly.sql,
+        "date_trunc('month', \"__aggregate_base\".\"_period\") AS \"_period\"",
+    );
+    assert_contains(&monthly.sql, "AS \"_PeriodMonth\"");
+    assert!(!monthly.sql.contains("_PeriodDay"), "{}", monthly.sql);
+    // Turnovers alone keep the relation without windows.
+    let turnover = postgres(
+        &snapshot,
+        "ВЫБРАТЬ О.ПериодДень КАК Д, О.КоличествоОборот КАК Кол
+         ИЗ РегистрНакопления.Остатки.ОстаткиИОбороты(, , Авто, , ) КАК О;",
+    );
+    assert!(!turnover.sql.contains(" OVER ("), "{}", turnover.sql);
+    assert_contains(&turnover.sql, "\"__aggregate_used\".\"_PeriodDay\"");
+}
+
+#[test]
+fn periodic_balances_are_refused_on_sql_server_2008() {
+    let snapshot = accumulation_register_snapshot();
+    let source = "ВЫБРАТЬ О.Период КАК П, О.КоличествоКонечныйОстаток КАК КО
+         ИЗ РегистрНакопления.Остатки.ОстаткиИОбороты(, , МЕСЯЦ, , ) КАК О;";
+    let modern = QueryCompiler::new(&snapshot, MsSqlBackend::new(2000).unwrap())
+        .compile(source)
+        .unwrap();
+    assert_contains(
+        &modern.sql,
+        "ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW",
+    );
+    let legacy = MsSqlBackend::new(2000)
+        .unwrap()
+        .with_dialect_level(open_sdbl::query::MsSqlDialectLevel::Sql2008);
+    let error = QueryCompiler::new(&snapshot, legacy)
+        .compile(source)
+        .unwrap_err();
+    assert!(
+        error.message().contains("no balance column"),
+        "{}",
+        error.message()
+    );
+}
+
+#[test]
+fn completion_method_without_a_periodicity_is_accepted() {
+    let snapshot = accumulation_register_snapshot();
+    let whole = postgres(
+        &snapshot,
+        "ВЫБРАТЬ О.КоличествоОборот КАК Обор
+         ИЗ РегистрНакопления.Остатки.ОстаткиИОбороты(, , , ДвиженияИГраницыПериода, ) КАК О;",
+    );
+    assert!(!whole.sql.contains("OVER ("), "{}", whole.sql);
+}
+
+#[test]
+fn balance_and_turnovers_split_by_recorder_and_record() {
+    let snapshot = accumulation_register_snapshot();
+    let by_recorder = postgres(
+        &snapshot,
+        "ВЫБРАТЬ О.Период КАК П, О.Регистратор КАК Р, О.КоличествоНачальныйОстаток КАК Нач, О.КоличествоОборот КАК Об
+         ИЗ РегистрНакопления.Остатки.ОстаткиИОбороты(ДАТАВРЕМЯ(2024, 2, 1), ДАТАВРЕМЯ(2024, 5, 1), Регистратор, ) КАК О;",
+    );
+    // The bucket is the record period and the recorder; the movements
+    // before the interval form the first bucket, dropped after the window.
+    assert_contains(
+        &by_recorder.sql,
+        "THEN NULL ELSE \"__aggregate_base\".\"_recorderrref\" END AS \"_recorderrref\"",
+    );
+    assert_contains(
+        &by_recorder.sql,
+        ") OVER (PARTITION BY \"__aggregate_base\".\"_fld54\" ORDER BY",
+    );
+    assert!(!by_recorder.sql.contains("_lineno"), "{}", by_recorder.sql);
+    let by_record = postgres(
+        &snapshot,
+        "ВЫБРАТЬ О.Регистратор КАК Р, О.НомерСтроки КАК Н, О.КоличествоКонечныйОстаток КАК Кон
+         ИЗ РегистрНакопления.Остатки.ОстаткиИОбороты(ДАТАВРЕМЯ(2024, 2, 1), ДАТАВРЕМЯ(2024, 5, 1), Запись, ) КАК О;",
+    );
+    assert_contains(
+        &by_record.sql,
+        "\"__aggregate_base\".\"_lineno\" END AS \"_lineno\"",
     );
 }

@@ -272,7 +272,9 @@ SHALL be compatible with every kind, and parameters such as length or
 precision SHALL NOT participate in the comparison. Reference columns whose
 branches differ in target or width SHALL be widened to one runtime-typed
 payload column whose targets are the union of the branch targets, so every
-branch emits the same byte width.
+branch emits the same byte width. When branches project the same count of
+fields over different counts of SQL columns, the diagnostic SHALL name the
+first field whose width differs.
 
 #### Scenario: Reference joined with string
 - **WHEN** the first branch projects a reference and the second projects a
@@ -290,6 +292,11 @@ branch emits the same byte width.
 - **THEN** the catalog branch is rendered as `RTRef ‖ RRRef` with the
   catalog's type number and the merged column kind is a runtime-typed
   reference containing the catalog among its targets
+
+#### Scenario: Width mismatch names the field
+- **WHEN** a branch renders a field over fewer SQL columns than the first
+  branch does
+- **THEN** the diagnostic names that field and both widths
 
 ### Requirement: Render SQL for the selected MSSQL dialect level
 The MSSQL backend value SHALL carry a dialect level (`Sql2008` or `Sql2012`,
@@ -789,8 +796,10 @@ reaches no live field SHALL be refused.
 ### Requirement: Correlated subquery of a predicate
 A subquery written in a predicate SHALL resolve the qualifiers of the
 enclosing statement's sources and render them as the outer alias, so that
-it filters by the row being tested. An unqualified name SHALL keep
-resolving against the subquery's own sources only, and a derived source
+it filters by the row being tested. A qualifier naming both a source of
+the subquery and one of the enclosing statement SHALL resolve to the
+subquery's own source, which hides the outer one. An unqualified name
+SHALL keep resolving against the subquery's own sources only, and a derived source
 SHALL keep refusing an outer qualifier, because SQL evaluates it before
 the outer row exists.
 
@@ -802,6 +811,11 @@ the outer row exists.
 #### Scenario: Derived source stays uncorrelated
 - **WHEN** an outer qualifier is used inside `ИЗ (ВЫБРАТЬ …) КАК Д`
 - **THEN** the compiler reports an unknown field
+
+#### Scenario: Inner source hides the outer one
+- **WHEN** `ИЗ Справочник.X КАК Т ГДЕ Т.Код В (ВЫБРАТЬ Т.Код ИЗ Справочник.Y КАК Т ГДЕ Т.Дата > &Д)`
+  is compiled
+- **THEN** every `Т` inside the subquery is the subquery's own source
 
 ### Requirement: Order of an enumeration value
 `Порядок` / `Order` SHALL name the `EnumOrder` column, which the platform
@@ -830,7 +844,12 @@ column per type present among the alternatives, and the reference payload
 when a branch carries a reference. Each branch SHALL write its value into
 its own member and the zero of the type into the others. Each member
 SHALL carry the output label of the projection with the suffix a projected
-composite field uses.
+composite field uses. Compared with a value, such a `ВЫБОР` SHALL render
+an alternative of another kind than the value as `NULL`, so that the
+comparison never holds for it, as the platform answers; compared with
+`NULL` or a parameter without a value, the alternatives SHALL be
+measured against the first typed one. `<>` against such an alternative
+answers `NULL` rather than the platform's true.
 
 #### Scenario: String and reference alternatives
 - **WHEN** `ВЫБОР КОГДА … ТОГДА "дорого" ИНАЧЕ Т.Клиент КОНЕЦ КАК Смесь`
@@ -841,6 +860,12 @@ composite field uses.
 #### Scenario: Alternatives of two primitive types
 - **WHEN** the alternatives are a number and a string
 - **THEN** only the number, string and discriminator members are projected
+
+#### Scenario: Reference and boolean alternatives compared
+- **WHEN** `ГДЕ ВЫБОР КОГДА Д.Проведен ТОГДА Д.Организация ИНАЧЕ ЛОЖЬ КОНЕЦ = &Организация`
+  is compiled
+- **THEN** the `CASE` keeps the reference alternative and renders `ЛОЖЬ`
+  as `NULL`, compared with the parameter
 
 ### Requirement: An alias hides the object name
 A source that declares an alias SHALL be addressed by that alias alone.
@@ -977,7 +1002,9 @@ SHALL keep reporting the field as unknown, as the platform does.
 A projection SHALL accept an alias written without `КАК`, naming the
 output column exactly as the `КАК` form names it, and one word only. A
 word that opens the next clause SHALL never be read as such an alias,
-neither in a projection nor after a source. A wildcard projection SHALL
+neither in a projection nor after a source. After `КАК`, any other word
+SHALL be accepted as the alias, a keyword included — `КАК Конец`,
+`КАК Порядок` — as the platform accepts it. A wildcard projection SHALL
 keep refusing an alias in either form.
 
 #### Scenario: A projection alias without `КАК`
@@ -988,6 +1015,14 @@ keep refusing an alias in either form.
 - **WHEN** `ВЫБРАТЬ 1 КАК Ч ИЗ Справочник.X КАК Т ИТОГИ СУММА(Ч) ПО ОБЩИЕ`
   is compiled
 - **THEN** `ИТОГИ` opens the totals clause instead of naming the source
+
+#### Scenario: A keyword after `КАК`
+- **WHEN** `ВЫБРАТЬ Т.Дата КАК Конец ИЗ Документ.X КАК Т` is compiled
+- **THEN** the column is named `Конец`
+
+#### Scenario: A clause keyword after `КАК`
+- **WHEN** `ВЫБРАТЬ Т.Дата КАК ИЗ Документ.X КАК Т` is compiled
+- **THEN** the missing alias is diagnosed
 
 #### Scenario: A wildcard keeps refusing an alias
 - **WHEN** `ВЫБРАТЬ * Имя ИЗ Справочник.X КАК Т` is compiled
@@ -1048,7 +1083,10 @@ in a predicate position it SHALL stay a plain predicate.
 A field stored as an `RTRef`/`RRRef` pair — a register recorder, a
 document journal reference — SHALL be accepted wherever a value is
 expected and SHALL render as its `RTRef ‖ RRRef` payload, carrying the
-runtime-typed reference kind. `ТИПЗНАЧЕНИЯ` of such a field SHALL answer
+runtime-typed reference kind. An aggregate over such a field SHALL be
+taken over the payload and SHALL carry the same runtime-typed kind, so
+the aggregated column needs no widening; an aggregate over one member
+keeps that member's kind. `ТИПЗНАЧЕНИЯ` of such a field SHALL answer
 the reference tag beside the table number of the row.
 
 #### Scenario: The type of a recorder
@@ -1060,7 +1098,13 @@ the reference tag beside the table number of the row.
 #### Scenario: An aggregate over a recorder
 - **WHEN** `ВЫБРАТЬ МАКСИМУМ(Р.Регистратор) ИЗ РегистрНакопления.X КАК Р`
   is compiled
-- **THEN** the aggregate is taken over the payload of the pair
+- **THEN** the aggregate is taken over the payload of the pair and the
+  column kind is the runtime-typed reference
+
+#### Scenario: The aggregate coalesced
+- **WHEN** `ВЫБРАТЬ ЕСТЬNULL(МАКСИМУМ(Р.Регистратор), НЕОПРЕДЕЛЕНО) ИЗ РегистрНакопления.X КАК Р`
+  is compiled
+- **THEN** the `COALESCE` wraps the aggregate as it is
 
 ### Requirement: A reference path continuing past a composite hop
 A reference path SHALL continue past a hop whose field may point at
@@ -1137,13 +1181,21 @@ reporting the mismatch.
 ### Requirement: Ordering a distinct statement
 A statement with `РАЗЛИЧНЫЕ` SHALL order by its projected columns,
 addressing them by position, because such a statement keeps only the
-values it projects. An ordering field the projection does not carry SHALL
+values it projects. A projected reference field SHALL be addressed by
+the column the projection renders for it, whatever physical members the
+reference has. An ordering field the projection does not carry SHALL
 be refused with a diagnostic naming the reason.
 
 #### Scenario: Ordering by a projection alias
 - **WHEN** `ВЫБРАТЬ РАЗЛИЧНЫЕ Т.Наименование КАК Имя ИЗ Справочник.X КАК Т
   УПОРЯДОЧИТЬ ПО Имя` is compiled
 - **THEN** the ordering addresses the projected column by its position
+
+#### Scenario: Ordering by a projected reference of several types
+- **WHEN** `ВЫБРАТЬ РАЗЛИЧНЫЕ Р.Регистратор КАК Ссылка ИЗ РегистрНакопления.X КАК Р
+  УПОРЯДОЧИТЬ ПО Р.Регистратор` is compiled
+- **THEN** the ordering addresses the rendered reference column by its
+  position
 
 #### Scenario: Ordering by a field outside the projection
 - **WHEN** a distinct statement orders by a field it does not project
@@ -1251,3 +1303,24 @@ then by line number.
 - **WHEN** a consumer plans the query itself
 - **THEN** the link tells it which columns join the two results without
   reading the SQL text
+
+### Requirement: Restriction condition in the platform's full form
+A restriction condition SHALL be accepted in the platform's full form:
+an optional leading `ТекущаяТаблица`, an optional alias after `КАК`, an
+optional `ГДЕ`, then the condition. `ТекущаяТаблица` and the alias SHALL
+qualify the fields of the restricted table, in a nested query of the
+condition as well, while an unqualified field keeps resolving against
+it. A join written between `ТекущаяТаблица` and `ГДЕ` SHALL be refused
+with a `Restriction` diagnostic saying joins are not supported.
+
+#### Scenario: Correlated key check
+- **WHEN** the restriction is `ТекущаяТаблица ГДЕ ИСТИНА В (ВЫБРАТЬ ПЕРВЫЕ 1 ИСТИНА ИЗ Справочник.Y КАК К ГДЕ К.Объект = ТекущаяТаблица.Ссылка)`
+- **THEN** the nested query compares with the restricted source's column
+
+#### Scenario: Alias
+- **WHEN** the restriction is `ТекущаяТаблица КАК Т ГДЕ Т.Организация = &Орг`
+- **THEN** it compiles as `Организация = &Орг` would
+
+#### Scenario: Join
+- **WHEN** the restriction is `ТекущаяТаблица ЛЕВОЕ СОЕДИНЕНИЕ Справочник.Y КАК К ПО … ГДЕ …`
+- **THEN** compilation fails with a `Restriction` diagnostic

@@ -63,6 +63,29 @@ fn compares_the_type_member_of_a_composite_field() {
 }
 
 #[test]
+fn tests_a_field_cast_to_the_named_target() {
+    let snapshot = universal_dereferenced_presentation_snapshot();
+    // The cast keeps a reference of its type and turns any other into
+    // NULL, so the test is the field's own.
+    let query = format!(
+        "ВЫБРАТЬ Ссылка ИЗ {DOCUMENT} ГДЕ ВЫРАЗИТЬ(ДоговорКонтрагента КАК {CATALOG}) ССЫЛКА {CATALOG};"
+    );
+    let compiled = postgres(&snapshot, &query);
+    assert_contains(
+        &compiled.sql,
+        "WHERE (\"__src\".\"_fld59_rtref\" = decode('0000003e', 'hex'))",
+    );
+
+    // A cast to another target is not the field's test.
+    let query = format!(
+        "ВЫБРАТЬ Ссылка ИЗ {DOCUMENT} ГДЕ ВЫРАЗИТЬ(ДоговорКонтрагента КАК {CATALOG}) ССЫЛКА Справочник.Контрагенты;"
+    );
+    let error = compile(&snapshot, PostgresBackend, &query).unwrap_err();
+    assert_eq!(error.kind(), QueryDiagnosticKind::Syntax);
+    assert!(error.message().contains("must be a reference field"));
+}
+
+#[test]
 fn tests_the_payload_prefix_of_a_derived_column() {
     let snapshot = universal_dereferenced_presentation_snapshot();
     let compiled = postgres(
@@ -97,7 +120,7 @@ fn fixed_target_fields_are_always_of_their_type() {
         &snapshot,
         &format!("ВЫБРАТЬ Ссылка ИЗ {DOCUMENT} ГДЕ Ссылка ССЫЛКА {DOCUMENT};"),
     );
-    assert_eq!(own.columns[0].label, "ID");
+    assert_eq!(own.columns[0].label, "Ссылка");
     assert_contains(&own.sql, "WHERE TRUE");
 }
 
