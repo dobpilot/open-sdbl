@@ -100,6 +100,7 @@ fn parses_access_commands() {
             right: Some("Изменение")
         })
     );
+    assert_eq!(parse_access_command("\\rls"), Some(AccessCommand::RlsList));
     assert_eq!(parse_access_command("\\as"), Some(AccessCommand::As(None)));
     assert_eq!(
         parse_access_command("\\as clear"),
@@ -208,4 +209,55 @@ fn describes_a_role_without_metadata_by_identifier() {
     assert!(text.contains("-"), "{text}");
     let unknown = describe_role(role, &rights, &snapshot, Some("Справочник.Нет"));
     assert!(unknown.is_err());
+}
+
+#[test]
+fn lists_the_restrictions_of_the_rights_read() {
+    let snapshot = crate::params::tests::enumeration_snapshot();
+    let mut store = AccessStore::new(&snapshot);
+    // Nothing read yet: the listing names the commands that read rights.
+    let empty = list_restrictions(&store, &snapshot);
+    assert!(empty.ends_with("read them\n"), "{empty}");
+    assert!(empty.contains("no rights read yet"), "{empty}");
+
+    // A role of the УНФ demo that restricts nothing.
+    let unrestricting = Guid::from_str(ROLE_GUIDS[0]).unwrap();
+    store.insert_rights(
+        unrestricting.clone(),
+        parse_role_rights(&fixture(&format!("unf_{unrestricting}.0.deflate"))).unwrap(),
+    );
+    let listing = list_restrictions(&store, &snapshot);
+    assert!(
+        listing.starts_with("role\tobject\tright\ttexts\n"),
+        "{listing}"
+    );
+    assert!(
+        listing.ends_with("# 0 restrictions in 0 of 1 roles read\n"),
+        "{listing}"
+    );
+
+    // A role of БП 3.0 that restricts reading of one catalog; the УНФ
+    // catalog does not name it, so it stands by its identifier.
+    let restricting = "feadebe9-a90e-48b0-a89f-e1f5d4e23041";
+    store.insert_rights(
+        Guid::from_str(restricting).unwrap(),
+        parse_role_rights(&fixture(&format!("buh_{restricting}.0.deflate"))).unwrap(),
+    );
+    let listing = list_restrictions(&store, &snapshot);
+    assert!(
+        listing.contains(&format!(
+            "{restricting}\td04d020d-c006-49a9-a8fe-788954f09f8d\tЧтение\t1\n"
+        )),
+        "{listing}"
+    );
+    let lines = listing.lines().count() - 2;
+    assert!(
+        listing.ends_with(&format!("# {lines} restrictions in 1 of 2 roles read\n")),
+        "{listing}"
+    );
+    // Reading and changing the same object are two lines.
+    assert!(
+        listing.contains("e5fe2cdc-ea80-4667-a204-f7e4dff144e2\tИзменение\t1\n"),
+        "{listing}"
+    );
 }

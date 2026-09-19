@@ -6,7 +6,8 @@
 //! read-only query path as any statement, and kept until `\refresh`. With
 //! a current user (`\as`), every restriction target of a `РАЗРЕШЕННЫЕ`
 //! batch that `\restrict` does not cover takes the access of the user's
-//! roles for `Чтение`.
+//! roles for `Чтение`, and the console prompt names the user. `\rls`
+//! without an object lists the restrictions of the rights already read.
 
 use std::collections::HashMap;
 use std::io::Write;
@@ -32,7 +33,6 @@ mod tests;
 const USERS_USAGE: &str = "usage: \\users";
 const USER_USAGE: &str = "usage: \\user <имя пользователя>";
 const ROLE_USAGE: &str = "usage: \\role <имя роли> [<Вид>.<Объект>]";
-const RLS_USAGE: &str = "usage: \\rls <Вид>.<Объект> [<право>]";
 
 /// The users, the rights of roles and the current user of the console.
 pub(crate) struct AccessStore {
@@ -118,6 +118,7 @@ pub(crate) enum AccessCommand<'line> {
         object: &'line str,
         right: Option<&'line str>,
     },
+    RlsList,
     As(Option<&'line str>),
     AsClear,
     Usage(&'static str),
@@ -156,7 +157,7 @@ pub(crate) fn parse_access_command(line: &str) -> Option<AccessCommand<'_>> {
         }
         "\\rls" => {
             if rest.is_empty() {
-                return Some(AccessCommand::Usage(RLS_USAGE));
+                return Some(AccessCommand::RlsList);
             }
             let (object, right) = match rest.split_once(char::is_whitespace) {
                 Some((object, right)) => (object, Some(right.trim())),
@@ -222,6 +223,7 @@ pub(crate) async fn apply_access_command(
             ensure_rights(store, session, &roles).await?;
             rls_report(store, snapshot, object, right, session_parameters)?
         }
+        AccessCommand::RlsList => list_restrictions(store, snapshot),
         AccessCommand::As(None) => match store.current_user() {
             Some(user) => format!("Current user: {}\n", user.name),
             None => "No current user.\n".to_owned(),
@@ -606,6 +608,70 @@ pub(crate) fn describe_role(
         rights.templates.len()
     ));
     Ok(text)
+}
+
+/// The `\rls` listing: every restriction the rights already read carry,
+/// of the current user's roles when one is set. Reads nothing.
+pub(crate) fn list_restrictions(store: &AccessStore, snapshot: &MetadataSnapshot) -> String {
+    let mut text = match store.current_user() {
+        Some(user) => format!("user: {}\n", user.name),
+        None => String::new(),
+    };
+    let mut roles = match store.current_user() {
+        Some(user) => user
+            .data
+            .roles
+            .iter()
+            .filter_map(|guid| store.rights.get_key_value(guid))
+            .collect::<Vec<_>>(),
+        None => store.rights.iter().collect(),
+    };
+    let total = roles.len();
+    let name_of = |guid: &Guid| {
+        store
+            .catalog()
+            .by_guid(guid)
+            .map_or_else(|| guid.as_str().to_owned(), |role| role.name.clone())
+    };
+    roles.sort_by_key(|(guid, _)| name_of(guid));
+    text.push_str("role\tobject\tright\ttexts\n");
+    let mut count = 0;
+    let mut restricting = 0;
+    for (guid, rights) in roles {
+        let role = name_of(guid);
+        let mut lines = Vec::new();
+        for entry in &rights.objects {
+            let object = match entry.members.last() {
+                Some(member) => object_name(snapshot, &member.id),
+                None => object_name(snapshot, &entry.object),
+            };
+            for right in &entry.rights {
+                if right.restrictions.is_empty() {
+                    continue;
+                }
+                lines.push(format!(
+                    "{role}\t{object}\t{}\t{}\n",
+                    right.right.russian_name(),
+                    right.restrictions.len()
+                ));
+            }
+        }
+        if lines.is_empty() {
+            continue;
+        }
+        restricting += 1;
+        count += lines.len();
+        lines.sort();
+        text.extend(lines);
+    }
+    if total == 0 {
+        text.push_str("# no rights read yet; \\role, \\rls <Вид>.<Объект> and \\as read them\n");
+    } else {
+        text.push_str(&format!(
+            "# {count} restrictions in {restricting} of {total} roles read\n"
+        ));
+    }
+    text
 }
 
 /// The `\rls` report: the raw restriction of every role that grants the

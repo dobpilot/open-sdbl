@@ -20,3 +20,17 @@ fn formats_sql_generation_duration_compactly() {
         "PostgreSQL execution: 42 µs"
     );
 }
+
+#[test]
+fn the_prompt_names_the_current_user() {
+    assert_eq!(console_prompt(None, true), "open-sdbl=> ");
+    assert_eq!(console_prompt(None, false), "       ...> ");
+    let user = "Абдулов (директор)";
+    assert_eq!(console_prompt(Some(user), true), format!("{user}=> "));
+    let continuation = console_prompt(Some(user), false);
+    assert!(continuation.ends_with("...> "), "{continuation:?}");
+    assert_eq!(
+        continuation.chars().count(),
+        console_prompt(Some(user), true).chars().count()
+    );
+}

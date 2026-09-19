@@ -62,11 +62,13 @@ pub(super) const CONSOLE_HELP: &str = "Commands:
   \\role <name> [<Вид>.<Объект>]
                       show what a role grants, or its rights and
                       restriction texts on one object
-  \\rls <Вид>.<Объект> [<right>]
+  \\rls [<Вид>.<Объект> [<right>]]
                       show the restriction texts and the expanded access
-                      of the current user (or every role) to the object
+                      of the current user (or every role) to the object;
+                      alone, list the restrictions of the rights read
   \\as <user> | clear  run ВЫБРАТЬ РАЗРЕШЕННЫЕ as that user: the roles'
-                      restrictions apply where \\restrict sets none
+                      restrictions apply where \\restrict sets none, and
+                      the prompt names the user
   \\help               show this help
   \\q                  quit
 
@@ -280,6 +282,17 @@ fn timing_line(phase: &str, duration: Duration) -> String {
     format!("{phase}: {}", format_duration(duration))
 }
 
+/// The console prompt: the current user names it while `\as` holds one,
+/// and the continuation prompt keeps the width of the first.
+fn console_prompt(user: Option<&str>, first_line: bool) -> String {
+    let name = user.unwrap_or("open-sdbl");
+    if first_line {
+        format!("{name}=> ")
+    } else {
+        format!("{:>width$} ", "...>", width = name.chars().count() + 2)
+    }
+}
+
 pub(super) async fn run(
     session: &mut DatabaseSession,
     mut snapshot: MetadataSnapshot,
@@ -319,12 +332,11 @@ pub(super) async fn run(
 
         line.clear();
         let bytes = if let Some(editor) = editor.as_mut() {
-            let prompt = if statement.is_empty() {
-                "open-sdbl=> "
-            } else {
-                "       ...> "
-            };
-            match tokio::task::block_in_place(|| editor.readline(prompt)) {
+            let prompt = console_prompt(
+                access.current_user().map(|user| user.name.as_str()),
+                statement.is_empty(),
+            );
+            match tokio::task::block_in_place(|| editor.readline(&prompt)) {
                 Ok(value) => {
                     line.extend_from_slice(value.as_bytes());
                     line.push(b'\n');
