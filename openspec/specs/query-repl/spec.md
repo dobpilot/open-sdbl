@@ -3686,9 +3686,12 @@ SHALL say which command reads rights when none are read yet.
 `\role <имя>` without an object SHALL also list the restriction templates
 of the role by signature — the name with its parameter names — and
 `\template <роль> [<имя>]` SHALL show those templates with the size of
-each body, or, with a template name, the body of that one template as the
-role records it. A template name the role does not carry SHALL be
-reported without changing the console state.
+each body and whether it parses, or, with a template name, the body of
+that one template as the role records it, preceded by what the body is
+made of: the number of conditions, the calls by template name, and the
+parameters the body reads. A template name the role does not carry SHALL
+be reported without changing the console state, and a body that does not
+parse SHALL be reported with the position of the error.
 
 Every command of this requirement SHALL be offered by name completion.
 Users and
@@ -3726,7 +3729,8 @@ object or right SHALL be reported without changing the console state.
 
 #### Scenario: Body of one template
 - **WHEN** the user enters `\template ЧтениеЭлектронныхДокументов ДляРегистра`
-- **THEN** the console prints the signature and the body of that template
+- **THEN** the console prints the signature, what the body is made of,
+  and the body of that template
 
 ### Requirement: Run allowed queries as a user
 `\as <пользователь>` SHALL make that user current and `\as clear` SHALL

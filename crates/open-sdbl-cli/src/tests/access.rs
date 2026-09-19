@@ -305,6 +305,8 @@ fn shows_the_restriction_templates_of_a_role() {
         "{listing}"
     );
     assert!(listing.contains("ПоЗначениям()\t"), "{listing}");
+    // Every template of the role parses.
+    assert_eq!(listing.matches("\tok\n").count(), 4, "{listing}");
     assert!(listing.ends_with("# 4 templates\n"), "{listing}");
 
     let body = describe_templates(&role, &rights, Some("длярегистра")).unwrap();
@@ -313,6 +315,10 @@ fn shows_the_restriction_templates_of_a_role() {
         "{body}"
     );
     assert!(body.contains("#Регистр"), "{body}");
+    // The outline stands before the body.
+    assert!(body.contains("\nbranches: "), "{body}");
+    assert!(body.contains("\ncalls: "), "{body}");
+    assert!(body.contains("Регистр"), "{body}");
 
     let unknown = describe_templates(&role, &rights, Some("Нет")).unwrap_err();
     assert!(

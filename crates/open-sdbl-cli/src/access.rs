@@ -12,7 +12,7 @@
 use std::collections::{HashMap, HashSet};
 use std::io::Write;
 
-use open_sdbl::access::{Access, RestrictionScope, read_access};
+use open_sdbl::access::{Access, RestrictionScope, TemplateNode, parse_template, read_access};
 use open_sdbl::metadata::{
     Guid, InfoBaseUser, MetadataSnapshot, MsSqlMetadataQueries, ObjectId, PostgresMetadataQueries,
     RestrictionTemplate, Right, RoleCatalog, RoleEntry, RoleRights, StorageLayout, UserRow,
@@ -666,8 +666,12 @@ pub(crate) fn describe_templates(
     let Some(name) = name else {
         let mut text = format!("role: {}\n", role.name);
         for template in &rights.templates {
+            let parsed = match parse_template(&template.body, &rights.templates) {
+                Ok(_) => "ok".to_owned(),
+                Err(error) => error.to_string(),
+            };
             text.push_str(&format!(
-                "{}\t{} bytes\n",
+                "{}\t{} bytes\t{parsed}\n",
                 signature(template),
                 template.body.len()
             ));
@@ -679,10 +683,67 @@ pub(crate) fn describe_templates(
         CliError::Data(format!("role {:?} carries no template {name:?}", role.name))
     })?;
     let mut text = format!("role: {}\ntemplate: {}\n", role.name, signature(template));
+    match parse_template(&template.body, &rights.templates) {
+        Ok(nodes) => text.push_str(&outline(&nodes)),
+        Err(error) => text.push_str(&format!("does not parse: {error}\n")),
+    }
     for line in template.body.lines() {
         text.push_str(&format!("  {}\n", line.trim_end()));
     }
     Ok(text)
+}
+
+/// What a parsed body is made of: the branches, the calls by template
+/// name and the names the body reads.
+fn outline(nodes: &[TemplateNode]) -> String {
+    let mut branches = 0;
+    let mut calls: Vec<(String, usize)> = Vec::new();
+    let mut names: Vec<String> = Vec::new();
+    let mut numbered = 0;
+    let mut stack = nodes.iter().collect::<Vec<_>>();
+    while let Some(node) = stack.pop() {
+        match node {
+            TemplateNode::Text { .. } => {}
+            TemplateNode::Condition {
+                branches: taken,
+                otherwise,
+                ..
+            } => {
+                branches += taken.len();
+                stack.extend(taken.iter().flat_map(|branch| &branch.body));
+                stack.extend(otherwise);
+            }
+            TemplateNode::Call { name, .. } => {
+                match calls.iter_mut().find(|(called, _)| called == name) {
+                    Some((_, count)) => *count += 1,
+                    None => calls.push((name.clone(), 1)),
+                }
+            }
+            TemplateNode::Parameter { .. } => numbered += 1,
+            TemplateNode::Name { name, .. } if !names.iter().any(|known| known == name) => {
+                names.push(name.clone());
+            }
+            _ => {}
+        }
+    }
+    calls.sort();
+    names.sort();
+    let calls = calls
+        .iter()
+        .map(|(name, count)| format!("{name}: {count}"))
+        .collect::<Vec<_>>();
+    let list = |values: Vec<String>| {
+        if values.is_empty() {
+            "none".to_owned()
+        } else {
+            values.join(", ")
+        }
+    };
+    format!(
+        "branches: {branches}\ncalls: {}\nnumbered parameters: {numbered}\nnames: {}\n",
+        list(calls),
+        list(names)
+    )
 }
 
 /// The `\rls` listing: every restriction the rights already read carry,

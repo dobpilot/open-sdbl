@@ -66,6 +66,14 @@ pub enum RestrictionError {
     UnknownTemplate(String),
     /// The directives or their expressions are malformed.
     Syntax(String),
+    /// The text is malformed at a byte offset, which [`parse_template`]
+    /// reports beside the message.
+    SyntaxAt {
+        /// What is wrong.
+        message: String,
+        /// The byte offset in the parsed text.
+        offset: usize,
+    },
     /// The text uses a form the compiler does not support, such as a join
     /// before `ГДЕ`.
     Unsupported(String),
@@ -82,6 +90,9 @@ impl fmt::Display for RestrictionError {
                 write!(formatter, "restriction template \"{name}\" is not defined")
             }
             Self::Syntax(message) => write!(formatter, "restriction syntax: {message}"),
+            Self::SyntaxAt { message, offset } => {
+                write!(formatter, "restriction syntax at byte {offset}: {message}")
+            }
             Self::Unsupported(message) => write!(formatter, "restriction: {message}"),
         }
     }
@@ -115,6 +126,326 @@ pub fn expand_restriction(
     parse_form(text.trim())
 }
 
+/// One node of a restriction text or of a template body.
+///
+/// The offset of every node is a byte offset in the text handed to
+/// [`parse_template`], with the comments blanked out.
+#[non_exhaustive]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum TemplateNode {
+    /// Text kept as it is.
+    Text {
+        /// The byte offset of the text.
+        at: usize,
+        /// The text.
+        text: String,
+    },
+    /// `#Если <выражение> #Тогда … #КонецЕсли`, with its branches in
+    /// order and the body of `#Иначе`, empty without one.
+    Condition {
+        /// The byte offset of `#Если`.
+        at: usize,
+        /// `#Если` and every `#ИначеЕсли`, in order.
+        branches: Vec<TemplateBranch>,
+        /// The body of `#Иначе`.
+        otherwise: Vec<TemplateNode>,
+    },
+    /// A call `#Имя(аргументы)` of a template the role carries.
+    Call {
+        /// The byte offset of the `#`.
+        at: usize,
+        /// The template name, as the text spells it.
+        name: String,
+        /// The arguments, unquoted as the expansion reads them.
+        arguments: Vec<String>,
+    },
+    /// `#Параметр(N)`, the parameter of the signature by its number.
+    Parameter {
+        /// The byte offset of the `#`.
+        at: usize,
+        /// The number as the text writes it, from one.
+        number: usize,
+    },
+    /// Any other `#Имя`: a named parameter of the signature,
+    /// `#ИмяТекущейТаблицы`, `#ИмяТекущегоПраваДоступа`.
+    Name {
+        /// The byte offset of the `#`.
+        at: usize,
+        /// The name, without the `#`.
+        name: String,
+    },
+}
+
+impl TemplateNode {
+    /// The byte offset of the node in the parsed text.
+    #[must_use]
+    pub fn offset(&self) -> usize {
+        match self {
+            Self::Text { at, .. }
+            | Self::Condition { at, .. }
+            | Self::Call { at, .. }
+            | Self::Parameter { at, .. }
+            | Self::Name { at, .. } => *at,
+        }
+    }
+}
+
+/// One branch of a [`TemplateNode::Condition`].
+#[non_exhaustive]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TemplateBranch {
+    /// The byte offset of `#Если` or `#ИначеЕсли`.
+    pub at: usize,
+    /// The expression between the directive and `#Тогда`.
+    pub condition: String,
+    /// The body kept when the expression holds.
+    pub body: Vec<TemplateNode>,
+}
+
+/// Parses a restriction text, or the body of one template, into its
+/// nodes.
+///
+/// `templates` are the templates of the role: a `#Имя(…)` is read as a
+/// call only when the role carries a template of that name, as the
+/// expansion reads it. Comments are dropped, and every node carries its
+/// byte offset in the text.
+///
+/// # Errors
+///
+/// Returns [`RestrictionError::SyntaxAt`] when the directives do not
+/// balance, and [`RestrictionError::Syntax`] when a call is unbalanced.
+pub fn parse_template(
+    text: &str,
+    templates: &[RestrictionTemplate],
+) -> Result<Vec<TemplateNode>, RestrictionError> {
+    let blanked = blank_comments(text);
+    let pieces = split_directives(&blanked);
+    let mut nodes = Vec::new();
+    let mut cursor = 0;
+    parse_nodes(&pieces, &mut cursor, &blanked, templates, &mut nodes)?;
+    if let Some(piece) = pieces.get(cursor) {
+        return Err(RestrictionError::SyntaxAt {
+            message: "a closing directive without #Если".to_owned(),
+            offset: piece.at(),
+        });
+    }
+    Ok(nodes)
+}
+
+/// Parses pieces until a directive closing the enclosing block, which is
+/// left for the caller.
+fn parse_nodes(
+    pieces: &[Piece<'_>],
+    cursor: &mut usize,
+    text: &str,
+    templates: &[RestrictionTemplate],
+    out: &mut Vec<TemplateNode>,
+) -> Result<(), RestrictionError> {
+    while let Some(piece) = pieces.get(*cursor) {
+        match piece {
+            Piece::Text { at, text: piece } => {
+                scan_references(*at, piece, templates, out)?;
+                *cursor += 1;
+            }
+            Piece::Directive {
+                at,
+                directive: Directive::If,
+            } => {
+                let at = *at;
+                *cursor += 1;
+                let node = parse_condition(pieces, cursor, text, templates, at)?;
+                out.push(node);
+            }
+            Piece::Directive { .. } => return Ok(()),
+        }
+    }
+    Ok(())
+}
+
+/// Parses an `#Если` block whose `#Если` has been consumed.
+fn parse_condition(
+    pieces: &[Piece<'_>],
+    cursor: &mut usize,
+    text: &str,
+    templates: &[RestrictionTemplate],
+    at: usize,
+) -> Result<TemplateNode, RestrictionError> {
+    let end = text.len();
+    let missing = |message: &str, offset: usize| RestrictionError::SyntaxAt {
+        message: message.to_owned(),
+        offset,
+    };
+    let mut branches = Vec::new();
+    let mut otherwise = Vec::new();
+    let mut branch_at = at;
+    loop {
+        let condition = match pieces.get(*cursor) {
+            Some(Piece::Text { text, .. }) => {
+                *cursor += 1;
+                (*text).to_owned()
+            }
+            other => {
+                return Err(missing(
+                    "#Если without a condition",
+                    other.map_or(end, Piece::at),
+                ));
+            }
+        };
+        if !is_directive(pieces.get(*cursor), Directive::Then) {
+            return Err(missing(
+                "#Если without #Тогда",
+                pieces.get(*cursor).map_or(end, Piece::at),
+            ));
+        }
+        *cursor += 1;
+        let mut body = Vec::new();
+        parse_nodes(pieces, cursor, text, templates, &mut body)?;
+        branches.push(TemplateBranch {
+            at: branch_at,
+            condition: condition.trim().to_owned(),
+            body,
+        });
+        match pieces.get(*cursor) {
+            Some(Piece::Directive {
+                at,
+                directive: Directive::ElsIf,
+            }) => {
+                branch_at = *at;
+                *cursor += 1;
+            }
+            Some(Piece::Directive {
+                directive: Directive::Else,
+                ..
+            }) => {
+                *cursor += 1;
+                parse_nodes(pieces, cursor, text, templates, &mut otherwise)?;
+                if !is_directive(pieces.get(*cursor), Directive::EndIf) {
+                    return Err(missing(
+                        "#Иначе without #КонецЕсли",
+                        pieces.get(*cursor).map_or(end, Piece::at),
+                    ));
+                }
+                *cursor += 1;
+                break;
+            }
+            Some(Piece::Directive {
+                directive: Directive::EndIf,
+                ..
+            }) => {
+                *cursor += 1;
+                break;
+            }
+            other => {
+                return Err(missing(
+                    "#Если without #КонецЕсли",
+                    other.map_or(end, Piece::at),
+                ));
+            }
+        }
+    }
+    Ok(TemplateNode::Condition {
+        at,
+        branches,
+        otherwise,
+    })
+}
+
+/// Splits one text piece into its calls, parameters, names and the text
+/// between them.
+fn scan_references(
+    base: usize,
+    text: &str,
+    templates: &[RestrictionTemplate],
+    out: &mut Vec<TemplateNode>,
+) -> Result<(), RestrictionError> {
+    let mut copied = 0;
+    let mut from = 0;
+    let keep = |out: &mut Vec<TemplateNode>, copied: usize, upto: usize| {
+        if upto > copied {
+            out.push(TemplateNode::Text {
+                at: base + copied,
+                text: text[copied..upto].to_owned(),
+            });
+        }
+    };
+    while let Some(reference) = next_reference(text, from) {
+        let after_name = reference.after_name().max(reference.at + 1);
+        if reference.name.is_empty() {
+            from = after_name;
+            continue;
+        }
+        let call = reference.is_call(text);
+        let node = if call && names_equal(reference.name, "Параметр") {
+            let (arguments, end) = reference
+                .arguments(text)
+                .ok_or_else(|| RestrictionError::Syntax("unbalanced #Параметр(…)".to_owned()))?;
+            let number = arguments
+                .first()
+                .and_then(|argument| argument.trim().parse::<usize>().ok())
+                .unwrap_or(0);
+            from = end;
+            TemplateNode::Parameter {
+                at: base + reference.at,
+                number,
+            }
+        } else if call
+            && templates
+                .iter()
+                .any(|template| names_equal(&template.name, reference.name))
+        {
+            let (arguments, end) = reference.arguments(text).ok_or_else(|| {
+                RestrictionError::Syntax(format!("unbalanced call of #{}", reference.name))
+            })?;
+            from = end;
+            TemplateNode::Call {
+                at: base + reference.at,
+                name: reference.name.to_owned(),
+                arguments,
+            }
+        } else {
+            from = after_name;
+            TemplateNode::Name {
+                at: base + reference.at,
+                name: reference.name.to_owned(),
+            }
+        };
+        keep(out, copied, reference.at);
+        out.push(node);
+        copied = from;
+    }
+    keep(out, copied, text.len());
+    Ok(())
+}
+
+/// Replaces the `//` comments outside string literals by as many bytes of
+/// blanks, so the byte offsets of the text are those of the original.
+fn blank_comments(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut in_string = false;
+    let mut characters = text.chars().peekable();
+    while let Some(character) = characters.next() {
+        if character == '"' {
+            in_string = !in_string;
+            out.push(character);
+        } else if character == '/' && !in_string && characters.peek() == Some(&'/') {
+            out.push_str("  ");
+            characters.next();
+            for skipped in characters.by_ref() {
+                if skipped == '\n' {
+                    out.push('\n');
+                    break;
+                }
+                for _ in 0..skipped.len_utf8() {
+                    out.push(' ');
+                }
+            }
+        } else {
+            out.push(character);
+        }
+    }
+    out
+}
+
 /// Drops `//` comments outside string literals.
 fn strip_comments(text: &str) -> String {
     let mut out = String::with_capacity(text.len());
@@ -146,33 +477,28 @@ fn expand_templates(
     depth: usize,
 ) -> Result<String, RestrictionError> {
     let mut out = String::with_capacity(text.len());
-    let mut rest = text;
-    while let Some(hash) = rest.find('#') {
-        out.push_str(&rest[..hash]);
-        let after = &rest[hash + 1..];
-        let name_length = after
-            .char_indices()
-            .find(|(_, character)| !character.is_alphanumeric() && *character != '_')
-            .map_or(after.len(), |(index, _)| index);
-        let name = &after[..name_length];
-        let following = &after[name_length..];
+    let mut copied = 0;
+    let mut from = 0;
+    while let Some(reference) = next_reference(text, from) {
+        let after_name = reference.after_name();
         let template = templates
             .iter()
-            .find(|template| names_equal(&template.name, name));
-        let Some(template) = template.filter(|_| following.trim_start().starts_with('(')) else {
-            out.push('#');
-            out.push_str(name);
-            rest = following;
+            .find(|template| names_equal(&template.name, reference.name))
+            .filter(|_| reference.is_call(text));
+        let Some(template) = template else {
+            from = after_name.max(reference.at + 1);
             continue;
         };
         if depth >= TEMPLATE_DEPTH {
             return Err(RestrictionError::Syntax(format!(
-                "template calls nest deeper than {TEMPLATE_DEPTH} (#{name})"
+                "template calls nest deeper than {TEMPLATE_DEPTH} (#{})",
+                reference.name
             )));
         }
-        let open = following.find('(').expect("checked the parenthesis");
-        let (arguments, consumed) = call_arguments(&following[open..])
-            .ok_or_else(|| RestrictionError::Syntax(format!("unbalanced call of #{name}")))?;
+        let (arguments, end) = reference.arguments(text).ok_or_else(|| {
+            RestrictionError::Syntax(format!("unbalanced call of #{}", reference.name))
+        })?;
+        out.push_str(&text[copied..reference.at]);
         // A body carries its own comments, dropped before its parameters
         // and nested calls are read.
         let body = substitute_parameters(template, &arguments);
@@ -181,10 +507,53 @@ fn expand_templates(
             templates,
             depth + 1,
         )?);
-        rest = &following[open + consumed..];
+        copied = end;
+        from = end;
     }
-    out.push_str(rest);
+    out.push_str(&text[copied..]);
     Ok(out)
+}
+
+/// A `#Имя` written in a text, as both the expansion and the parser read
+/// one: the offset of the `#` and the name that follows it.
+#[derive(Debug, Clone, Copy)]
+struct Reference<'text> {
+    at: usize,
+    name: &'text str,
+}
+
+impl Reference<'_> {
+    /// The offset just past the name.
+    fn after_name(&self) -> usize {
+        self.at + 1 + self.name.len()
+    }
+
+    /// Whether the name is written as a call, `#Имя(…)`.
+    fn is_call(&self, text: &str) -> bool {
+        text[self.after_name()..].trim_start().starts_with('(')
+    }
+
+    /// The arguments of the call and the offset just past it.
+    fn arguments(&self, text: &str) -> Option<(Vec<String>, usize)> {
+        let following = &text[self.after_name()..];
+        let open = self.after_name() + following.find('(')?;
+        let (arguments, consumed) = call_arguments(&text[open..])?;
+        Some((arguments, open + consumed))
+    }
+}
+
+/// The next `#Имя` at or after `from`.
+fn next_reference(text: &str, from: usize) -> Option<Reference<'_>> {
+    let at = text[from..].find('#')? + from;
+    let after = &text[at + 1..];
+    let name_length = after
+        .char_indices()
+        .find(|(_, character)| !character.is_alphanumeric() && *character != '_')
+        .map_or(after.len(), |(index, _)| index);
+    Some(Reference {
+        at,
+        name: &after[..name_length],
+    })
 }
 
 /// The arguments of a call whose text starts at `(`, unquoted, with the
@@ -351,11 +720,20 @@ impl Directive {
     }
 }
 
-/// One piece of a text split at its directives.
+/// One piece of a text split at its directives, with the byte offset at
+/// which the piece starts.
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum Piece<'text> {
-    Text(&'text str),
-    Directive(Directive),
+    Text { at: usize, text: &'text str },
+    Directive { at: usize, directive: Directive },
+}
+
+impl Piece<'_> {
+    fn at(&self) -> usize {
+        match self {
+            Self::Text { at, .. } | Self::Directive { at, .. } => *at,
+        }
+    }
 }
 
 fn split_directives(text: &str) -> Vec<Piece<'_>> {
@@ -373,9 +751,15 @@ fn split_directives(text: &str) -> Vec<Piece<'_>> {
             Some(directive) => {
                 let absolute = base.len() - rest.len() + hash;
                 if absolute > text_start {
-                    pieces.push(Piece::Text(&base[text_start..absolute]));
+                    pieces.push(Piece::Text {
+                        at: text_start,
+                        text: &base[text_start..absolute],
+                    });
                 }
-                pieces.push(Piece::Directive(directive));
+                pieces.push(Piece::Directive {
+                    at: absolute,
+                    directive,
+                });
                 rest = &after[name_length..];
                 text_start = base.len() - rest.len();
             }
@@ -383,7 +767,10 @@ fn split_directives(text: &str) -> Vec<Piece<'_>> {
         }
     }
     if text_start < base.len() {
-        pieces.push(Piece::Text(&base[text_start..]));
+        pieces.push(Piece::Text {
+            at: text_start,
+            text: &base[text_start..],
+        });
     }
     pieces
 }
@@ -405,6 +792,11 @@ fn evaluate_directives(
     Ok(out)
 }
 
+/// Whether the piece is that directive.
+fn is_directive(piece: Option<&Piece<'_>>, wanted: Directive) -> bool {
+    matches!(piece, Some(Piece::Directive { directive, .. }) if *directive == wanted)
+}
+
 /// Processes pieces until a directive closing the enclosing block, which
 /// is left for the caller; `emit` says whether the text is kept.
 fn process_pieces(
@@ -416,17 +808,20 @@ fn process_pieces(
 ) -> Result<(), RestrictionError> {
     while let Some(piece) = pieces.get(*cursor) {
         match piece {
-            Piece::Text(text) => {
+            Piece::Text { text, .. } => {
                 if emit {
                     out.push_str(text);
                 }
                 *cursor += 1;
             }
-            Piece::Directive(Directive::If) => {
+            Piece::Directive {
+                directive: Directive::If,
+                ..
+            } => {
                 *cursor += 1;
                 process_if(pieces, cursor, scope, emit, out)?;
             }
-            Piece::Directive(_) => return Ok(()),
+            Piece::Directive { .. } => return Ok(()),
         }
     }
     Ok(())
@@ -444,7 +839,7 @@ fn process_if(
     loop {
         // The condition, then `#Тогда`.
         let condition = match pieces.get(*cursor) {
-            Some(Piece::Text(text)) => {
+            Some(Piece::Text { text, .. }) => {
                 *cursor += 1;
                 *text
             }
@@ -454,7 +849,7 @@ fn process_if(
                 ));
             }
         };
-        if pieces.get(*cursor) != Some(&Piece::Directive(Directive::Then)) {
+        if !is_directive(pieces.get(*cursor), Directive::Then) {
             return Err(RestrictionError::Syntax("#Если without #Тогда".to_owned()));
         }
         *cursor += 1;
@@ -462,13 +857,19 @@ fn process_if(
         process_pieces(pieces, cursor, scope, holds, out)?;
         taken |= holds;
         match pieces.get(*cursor) {
-            Some(Piece::Directive(Directive::ElsIf)) => {
+            Some(Piece::Directive {
+                directive: Directive::ElsIf,
+                ..
+            }) => {
                 *cursor += 1;
             }
-            Some(Piece::Directive(Directive::Else)) => {
+            Some(Piece::Directive {
+                directive: Directive::Else,
+                ..
+            }) => {
                 *cursor += 1;
                 process_pieces(pieces, cursor, scope, emit && !taken, out)?;
-                if pieces.get(*cursor) != Some(&Piece::Directive(Directive::EndIf)) {
+                if !is_directive(pieces.get(*cursor), Directive::EndIf) {
                     return Err(RestrictionError::Syntax(
                         "#Иначе without #КонецЕсли".to_owned(),
                     ));
@@ -476,7 +877,10 @@ fn process_if(
                 *cursor += 1;
                 return Ok(());
             }
-            Some(Piece::Directive(Directive::EndIf)) => {
+            Some(Piece::Directive {
+                directive: Directive::EndIf,
+                ..
+            }) => {
                 *cursor += 1;
                 return Ok(());
             }

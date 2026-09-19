@@ -280,3 +280,98 @@ fn substitutes_a_name_whatever_its_case() {
         format!("{TABLE} = #ИмяТекущегоПраваДоступаИТ")
     );
 }
+
+#[test]
+fn parses_a_restriction_into_its_nodes() {
+    use open_sdbl::access::{TemplateNode, parse_template};
+
+    let role = reading_role();
+    let nodes = parse_template(&read_condition(&role), &role.templates).unwrap();
+    // The condition is one `#Если` block over the whole text.
+    let [
+        TemplateNode::Condition {
+            at,
+            branches,
+            otherwise,
+        },
+    ] = nodes.as_slice()
+    else {
+        panic!("{nodes:?}");
+    };
+    assert_eq!(*at, 0);
+    assert_eq!(branches.len(), 1);
+    assert_eq!(
+        branches[0].condition,
+        "&ОграничениеДоступаНаУровнеЗаписейУниверсально"
+    );
+    assert_eq!(branches[0].at, 0);
+    assert!(!otherwise.is_empty(), "{otherwise:?}");
+    // Every branch calls the templates of the role.
+    let calls = branches
+        .iter()
+        .flat_map(|branch| &branch.body)
+        .chain(otherwise)
+        .filter_map(|node| match node {
+            TemplateNode::Call {
+                name, arguments, ..
+            } => Some((name.clone(), arguments.clone())),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    assert!(
+        calls.iter().any(|(name, _)| name == "ДляОбъекта"),
+        "{calls:?}"
+    );
+
+    // A body reads its parameters by name and by number.
+    let register = role.template("ДляРегистра").unwrap();
+    let nodes = parse_template(&register.body, &role.templates).unwrap();
+    let mut names = Vec::new();
+    let mut numbered = Vec::new();
+    let mut stack = nodes.iter().collect::<Vec<_>>();
+    while let Some(node) = stack.pop() {
+        match node {
+            TemplateNode::Name { name, .. } => names.push(name.clone()),
+            TemplateNode::Parameter { number, .. } => numbered.push(*number),
+            TemplateNode::Condition {
+                branches,
+                otherwise,
+                ..
+            } => {
+                stack.extend(branches.iter().flat_map(|branch| &branch.body));
+                stack.extend(otherwise);
+            }
+            _ => {}
+        }
+    }
+    assert!(names.iter().any(|name| name == "Регистр"), "{names:?}");
+    assert!(numbered.iter().all(|number| *number > 0));
+}
+
+#[test]
+fn reports_where_a_text_stops_making_sense() {
+    use open_sdbl::access::{RestrictionError, parse_template};
+
+    let role = reading_role();
+    let error = parse_template("#Если &П #Тогда ИСТИНА", &role.templates).unwrap_err();
+    match error {
+        RestrictionError::SyntaxAt { message, offset } => {
+            assert!(message.contains("#КонецЕсли"), "{message}");
+            assert_eq!(offset, "#Если &П #Тогда ИСТИНА".len());
+        }
+        other => panic!("{other:?}"),
+    }
+    assert!(
+        parse_template("#КонецЕсли", &role.templates)
+            .unwrap_err()
+            .to_string()
+            .contains("at byte 0")
+    );
+    // A comment is dropped without moving the offsets after it.
+    let nodes = parse_template("// комментарий\n#ИмяТекущейТаблицы", &role.templates).unwrap();
+    assert_eq!(
+        nodes.last().unwrap().offset(),
+        "// комментарий\n".len(),
+        "{nodes:?}"
+    );
+}
