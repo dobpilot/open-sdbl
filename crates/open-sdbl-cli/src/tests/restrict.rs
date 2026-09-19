@@ -82,7 +82,7 @@ fn stores_lists_and_filters_restrictions_by_request() {
     .unwrap();
     assert_eq!(
         store.listing(),
-        "перечисление.бит_ВидыСтатусовОбъектов         Порядок > 1\nПеречисление.бит_ВидыСтатусовОбъектов.Строки  Сумма > 0\n"
+        "  перечисление.бит_ВидыСтатусовОбъектов         Порядок > 1\n  Перечисление.бит_ВидыСтатусовОбъектов.Строки  Сумма > 0\n"
     );
 
     let unknown = apply_restriction_command(
@@ -114,4 +114,56 @@ fn stores_lists_and_filters_restrictions_by_request() {
     );
     assert_eq!(store.listing(), "No restrictions set.\n");
     assert!(apply_restriction_command(&mut store, RestrictionCommand::Usage, &snapshot).is_err());
+}
+
+#[test]
+fn derived_restrictions_yield_to_typed_ones_and_are_forgotten() {
+    let snapshot = enumeration_snapshot();
+    let object = ObjectId::from(
+        &find_metadata_object(&snapshot, "Перечисление.бит_ВидыСтатусовОбъектов")
+            .unwrap()
+            .guid,
+    );
+    let mut store = RestrictionStore::new();
+    let derived = vec![(
+        "Перечисление.бит_ВидыСтатусовОбъектов".to_owned(),
+        object,
+        "ИСТИНА".to_owned(),
+    )];
+    assert_eq!(store.derive(derived.clone()), 1);
+    let listing = store.listing();
+    assert!(
+        listing.starts_with("* Перечисление.бит_ВидыСтатусовОбъектов  ИСТИНА\n"),
+        "{listing}"
+    );
+    assert!(
+        listing.ends_with("# * derived from the roles of the current user\n"),
+        "{listing}"
+    );
+
+    // Deriving again replaces the derived restrictions, not the typed ones.
+    apply_restriction_command(
+        &mut store,
+        RestrictionCommand::Set {
+            name: "Перечисление.бит_ВидыСтатусовОбъектов",
+            condition: "Порядок > 0",
+        },
+        &snapshot,
+    )
+    .unwrap();
+    assert_eq!(store.derive(derived), 0);
+    assert_eq!(
+        store.listing(),
+        "  Перечисление.бит_ВидыСтатусовОбъектов  Порядок > 0\n"
+    );
+
+    // A derived restriction is forgotten; the typed one stays.
+    let mut store = RestrictionStore::new();
+    store.derive(vec![(
+        "Перечисление.бит_ВидыСтатусовОбъектов".to_owned(),
+        object,
+        "ИСТИНА".to_owned(),
+    )]);
+    store.forget_derived();
+    assert_eq!(store.listing(), "No restrictions set.\n");
 }

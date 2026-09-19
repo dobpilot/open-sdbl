@@ -250,3 +250,33 @@ fn a_freely_granting_role_lifts_the_restriction() {
         Access::Denied
     );
 }
+
+#[test]
+fn substitutes_a_name_whatever_its_case() {
+    let role = reading_role();
+    let session = universal(",ДляОбъекта9,");
+    let scope = RestrictionScope {
+        table_name: TABLE,
+        right: &Right::Read,
+        session: &session,
+    };
+    let spelled = expand_restriction(
+        "ТекущаяТаблица ГДЕ #ИмяТекущейТаблицы = #ИмяТекущегоПраваДоступа",
+        &role.templates,
+        &scope,
+    )
+    .unwrap();
+    assert_eq!(spelled.condition, format!("{TABLE} = Чтение"));
+    // The same text in another case expands the same way, and a name the
+    // substitution only prefixes keeps its own text.
+    let lowered = expand_restriction(
+        "ТекущаяТаблица ГДЕ #имятекущейтаблицы = #ИмяТекущегоПраваДоступаИТ",
+        &role.templates,
+        &scope,
+    )
+    .unwrap();
+    assert_eq!(
+        lowered.condition,
+        format!("{TABLE} = #ИмяТекущегоПраваДоступаИТ")
+    );
+}

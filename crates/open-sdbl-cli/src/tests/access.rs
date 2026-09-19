@@ -261,3 +261,34 @@ fn lists_the_restrictions_of_the_rights_read() {
         "{listing}"
     );
 }
+
+#[test]
+fn collapses_a_condition_to_one_line_outside_its_strings() {
+    assert_eq!(one_line("  Поле\n  =\t1  "), "Поле = 1");
+    assert_eq!(
+        one_line("СтрСодержит(П, \",  А  Б ,\") И Х"),
+        "СтрСодержит(П, \",  А  Б ,\") И Х"
+    );
+    assert_eq!(one_line(""), "");
+}
+
+#[test]
+fn derives_nothing_without_a_current_user() {
+    let snapshot = crate::params::tests::enumeration_snapshot();
+    let mut store = AccessStore::new(&snapshot);
+    let guid = Guid::from_str("feadebe9-a90e-48b0-a89f-e1f5d4e23041").unwrap();
+    store.insert_rights(
+        guid,
+        parse_role_rights(&fixture(
+            "buh_feadebe9-a90e-48b0-a89f-e1f5d4e23041.0.deflate",
+        ))
+        .unwrap(),
+    );
+    let session = SessionParameters::new();
+    let (derived, failures) = role_restrictions(&store, &snapshot, &session);
+    assert!(derived.is_empty() && failures.is_empty());
+
+    let mut restrictions = crate::restrict::RestrictionStore::new();
+    let report = derive_restrictions(&store, &snapshot, &session, &mut restrictions);
+    assert_eq!(report, "0 restrictions derived into \\restrict.\n");
+}

@@ -4,6 +4,9 @@
 //! condition text; before every query the console passes only the
 //! restrictions whose target the prepared batch requested, so a stored
 //! restriction for a table the query does not read is never an error.
+//! A restriction is either typed by the operator or derived by `\as` from
+//! the roles of the current user: a typed one always wins, and the derived
+//! ones are forgotten when the current user changes.
 
 use open_sdbl::metadata::{MetadataSnapshot, ObjectId};
 use open_sdbl::query::{AccessRestriction, RestrictionRequest, find_metadata_object};
@@ -11,6 +14,15 @@ use open_sdbl::query::{AccessRestriction, RestrictionRequest, find_metadata_obje
 use crate::error::CliError;
 
 const RESTRICT_USAGE: &str = "usage: \\restrict [<Вид>.<Объект>[.<ТабличнаяЧасть>] <condition> | clear]  (\\restrict alone lists the restrictions)";
+
+/// Where a stored restriction comes from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum RestrictionOrigin {
+    /// Typed with `\restrict`.
+    Typed,
+    /// Expanded by `\as` from the roles of the current user.
+    Derived,
+}
 
 /// One restriction kept for the console session.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -20,6 +32,7 @@ struct StoredRestriction {
     object: ObjectId,
     table_part: Option<String>,
     condition: String,
+    origin: RestrictionOrigin,
 }
 
 /// The session restriction store, in insertion order.
@@ -46,6 +59,42 @@ impl RestrictionStore {
 
     fn clear(&mut self) {
         self.items.clear();
+    }
+
+    /// Whether a restriction the operator typed covers the object.
+    fn typed_covers(&self, object: ObjectId) -> bool {
+        self.items.iter().any(|item| {
+            item.origin == RestrictionOrigin::Typed
+                && item.object == object
+                && item.table_part.is_none()
+        })
+    }
+
+    /// Replaces the derived restrictions with these, keeping every
+    /// restriction the operator typed. Returns how many were stored.
+    pub(crate) fn derive(&mut self, derived: Vec<(String, ObjectId, String)>) -> usize {
+        self.forget_derived();
+        let mut stored = 0;
+        for (name, object, condition) in derived {
+            if self.typed_covers(object) {
+                continue;
+            }
+            stored += 1;
+            self.items.push(StoredRestriction {
+                name,
+                object,
+                table_part: None,
+                condition,
+                origin: RestrictionOrigin::Derived,
+            });
+        }
+        stored
+    }
+
+    /// Forgets the restrictions `\as` derived.
+    pub(crate) fn forget_derived(&mut self) {
+        self.items
+            .retain(|item| item.origin == RestrictionOrigin::Typed);
     }
 
     /// The restrictions of the targets a prepared batch requested.
@@ -80,7 +129,19 @@ impl RestrictionStore {
             .unwrap_or(0);
         self.items
             .iter()
-            .map(|item| format!("{:<width$}  {}\n", item.name, item.condition))
+            .map(|item| {
+                let mark = match item.origin {
+                    RestrictionOrigin::Typed => ' ',
+                    RestrictionOrigin::Derived => '*',
+                };
+                format!("{mark} {:<width$}  {}\n", item.name, item.condition)
+            })
+            .chain(
+                self.items
+                    .iter()
+                    .any(|item| item.origin == RestrictionOrigin::Derived)
+                    .then(|| "# * derived from the roles of the current user\n".to_owned()),
+            )
             .collect()
     }
 }
@@ -156,6 +217,7 @@ pub(crate) fn apply_restriction_command(
                 object: ObjectId::from(&object.guid),
                 table_part,
                 condition: condition.to_owned(),
+                origin: RestrictionOrigin::Typed,
             });
             Ok(format!("Restriction of {name} set.\n"))
         }

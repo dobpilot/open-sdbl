@@ -14,10 +14,14 @@ use rustyline::error::ReadlineError;
 use rustyline::history::DefaultHistory;
 use tokio::io::BufReader;
 
-use crate::access::{AccessStore, apply_access_command, parse_access_command, user_restrictions};
+use crate::access::{
+    AccessStore, apply_access_command, derive_restrictions, parse_access_command, user_restrictions,
+};
 use crate::error::CliError;
 use crate::output::escape_field;
-use crate::params::{ParameterStore, apply_parameter_command, parse_parameter_command};
+use crate::params::{
+    ParameterCommand, ParameterStore, apply_parameter_command, parse_parameter_command,
+};
 use crate::restrict::{RestrictionStore, apply_restriction_command, parse_restriction_command};
 use crate::session::{DatabaseDialect, DatabaseSession};
 
@@ -54,7 +58,8 @@ pub(super) const CONSOLE_HELP: &str = "Commands:
                       every query and access restriction
   \\restrict [<Вид>.<Объект>[.<ТабЧасть>] <condition> | clear]
                       store, list, or clear access restrictions applied to
-                      ВЫБРАТЬ РАЗРЕШЕННЫЕ (SDBL condition over the table)
+                      ВЫБРАТЬ РАЗРЕШЕННЫЕ (SDBL condition over the table);
+                      * marks the ones \\as derived from the roles
   \\tables             list temporary tables placed in this session
   \\users              list the users of the base (v8users)
   \\user <name>        show one user with the names of its roles
@@ -66,9 +71,10 @@ pub(super) const CONSOLE_HELP: &str = "Commands:
                       show the restriction texts and the expanded access
                       of the current user (or every role) to the object;
                       alone, list the restrictions of the rights read
-  \\as <user> | clear  run ВЫБРАТЬ РАЗРЕШЕННЫЕ as that user: the roles'
-                      restrictions apply where \\restrict sets none, and
-                      the prompt names the user
+  \\as <user> | clear  run ВЫБРАТЬ РАЗРЕШЕННЫЕ as that user: its roles'
+                      restrictions on Чтение are expanded into \\restrict,
+                      the rest apply where \\restrict sets none, and the
+                      prompt names the user
   \\help               show this help
   \\q                  quit
 
@@ -389,6 +395,10 @@ pub(super) async fn run(
         if statement.is_empty() && line.trim_start().starts_with('\\') {
             add_history(&mut editor, line.trim());
             if let Some(command) = parse_parameter_command(line.trim()) {
+                let changes_session = matches!(
+                    command,
+                    ParameterCommand::Session { .. } | ParameterCommand::SessionClear
+                );
                 match apply_parameter_command(
                     &mut parameters,
                     &mut session_parameters,
@@ -399,6 +409,19 @@ pub(super) async fn run(
                         output
                             .write_all(text.as_bytes())
                             .map_err(CliError::standard_output)?;
+                        // The derived restrictions were expanded against
+                        // the values that just changed.
+                        if changes_session && access.current_user().is_some() {
+                            let report = derive_restrictions(
+                                &access,
+                                &snapshot,
+                                &session_parameters.session_parameters(),
+                                &mut restrictions,
+                            );
+                            output
+                                .write_all(report.as_bytes())
+                                .map_err(CliError::standard_output)?;
+                        }
                         if let Some(helper) = editor.as_mut().and_then(Editor::helper_mut) {
                             helper
                                 .set_parameters(parameter_names(&parameters, &session_parameters));
@@ -425,6 +448,7 @@ pub(super) async fn run(
                     session,
                     &snapshot,
                     &session_values,
+                    &mut restrictions,
                     output,
                 )
                 .await
@@ -447,6 +471,7 @@ pub(super) async fn run(
                 Ok(MetaOutcome::Refreshed) => {
                     presentation_cache.clear();
                     access.reset(&snapshot);
+                    restrictions.forget_derived();
                     // Definitions hold SQL generated against the old
                     // snapshot, so they cannot survive a reload.
                     if !temporary_tables.is_empty() {

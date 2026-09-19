@@ -9,7 +9,7 @@
 //! roles for `Чтение`, and the console prompt names the user. `\rls`
 //! without an object lists the restrictions of the rights already read.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::io::Write;
 
 use open_sdbl::access::{Access, RestrictionScope, read_access};
@@ -24,6 +24,7 @@ use open_sdbl::query::{
 
 use crate::cells::{Cell, QueryRows};
 use crate::error::CliError;
+use crate::restrict::RestrictionStore;
 use crate::session::{DatabaseDialect, DatabaseSession};
 
 #[cfg(test)]
@@ -184,6 +185,7 @@ pub(crate) async fn apply_access_command(
     session: &mut DatabaseSession,
     snapshot: &MetadataSnapshot,
     session_parameters: &SessionParameters,
+    restrictions: &mut RestrictionStore,
     output: &mut impl Write,
 ) -> Result<(), CliError> {
     let text = match command {
@@ -230,6 +232,7 @@ pub(crate) async fn apply_access_command(
         },
         AccessCommand::AsClear => {
             store.current = None;
+            restrictions.forget_derived();
             "Current user cleared.\n".to_owned()
         }
         AccessCommand::As(Some(name)) => {
@@ -241,11 +244,18 @@ pub(crate) async fn apply_access_command(
             ensure_rights(store, session, &user.data.roles).await?;
             let roles = user.role_names(store.catalog());
             store.current = Some(user);
-            format!(
+            let mut text = format!(
                 "Current user: {name} ({} roles): {}\n",
                 roles.len(),
                 roles.join(", ")
-            )
+            );
+            text.push_str(&derive_restrictions(
+                store,
+                snapshot,
+                session_parameters,
+                restrictions,
+            ));
+            text
         }
     };
     output
@@ -753,6 +763,147 @@ pub(crate) fn rls_report(
         )),
     }
     Ok(text)
+}
+
+/// Expands the restrictions of the current user into the restriction
+/// store and reports what was stored and what could not be expanded.
+pub(crate) fn derive_restrictions(
+    store: &AccessStore,
+    snapshot: &MetadataSnapshot,
+    session_parameters: &SessionParameters,
+    restrictions: &mut RestrictionStore,
+) -> String {
+    let (derived, failures) = role_restrictions(store, snapshot, session_parameters);
+    let stored = restrictions.derive(derived);
+    let mut text = format!("{stored} restrictions derived into \\restrict.\n");
+    for (message, count) in failures {
+        text.push_str(&format!("  {count} objects not expanded: {message}\n"));
+    }
+    text
+}
+
+/// Collapses the runs of whitespace of a condition outside its string
+/// literals, so a restriction expanded from a template body stands on one
+/// line in the store and in the listing.
+fn one_line(condition: &str) -> String {
+    let mut text = String::with_capacity(condition.len());
+    let mut in_string = false;
+    let mut space = false;
+    for character in condition.chars() {
+        if character == '"' {
+            in_string = !in_string;
+        }
+        if !in_string && character.is_whitespace() {
+            space = !text.is_empty();
+            continue;
+        }
+        if space {
+            text.push(' ');
+            space = false;
+        }
+        text.push(character);
+    }
+    text
+}
+
+/// The restrictions of the current user, expanded for storing: one entry
+/// per object any of the user's roles restricts on `Чтение` and that the
+/// roles together leave restricted, and the distinct expansion errors
+/// with the number of objects each covers.
+pub(crate) type DerivedRestrictions = (Vec<(String, ObjectId, String)>, Vec<(String, usize)>);
+
+/// Expands every `Чтение` restriction of the current user's roles.
+pub(crate) fn role_restrictions(
+    store: &AccessStore,
+    snapshot: &MetadataSnapshot,
+    session_parameters: &SessionParameters,
+) -> DerivedRestrictions {
+    let Some(user) = store.current_user() else {
+        return (Vec::new(), Vec::new());
+    };
+    let roles = store.rights_of(&user.data.roles);
+    // Looking an object up in a role is a scan of everything the role
+    // lists, and a configuration has thousands of objects in hundreds of
+    // roles: index what each role lists once, and consult on an object
+    // only the roles that list it.
+    let listed = roles
+        .iter()
+        .map(|rights| {
+            rights
+                .objects
+                .iter()
+                .filter(|entry| entry.members.is_empty())
+                .map(|entry| entry.object.as_str())
+                .collect::<HashSet<&str>>()
+        })
+        .collect::<Vec<_>>();
+    // Every object a role of the user restricts reading of, once.
+    let mut objects = Vec::new();
+    for rights in &roles {
+        for entry in &rights.objects {
+            if !entry.members.is_empty() {
+                continue;
+            }
+            let restricted = entry
+                .right(&Right::Read)
+                .is_some_and(|right| !right.restrictions.is_empty());
+            if restricted && !objects.contains(&entry.object) {
+                objects.push(entry.object.clone());
+            }
+        }
+    }
+    let mut derived = Vec::new();
+    let mut failures: Vec<(String, usize)> = Vec::new();
+    for guid in objects {
+        // A role that does not list the object grants it by its default:
+        // one such role granting leaves the object unrestricted, and the
+        // others refuse it and say nothing about the restriction.
+        let free = roles
+            .iter()
+            .zip(&listed)
+            .any(|(rights, listed)| rights.set_for_new_objects && !listed.contains(guid.as_str()));
+        if free {
+            continue;
+        }
+        let granting = roles
+            .iter()
+            .zip(&listed)
+            .filter(|(_, listed)| listed.contains(guid.as_str()))
+            .map(|(rights, _)| *rights)
+            .collect::<Vec<_>>();
+        if granting.is_empty() {
+            continue;
+        }
+        let id = ObjectId::from(&guid);
+        let Some(object) = snapshot.object_by_id(id) else {
+            continue;
+        };
+        let Some(table_name) = object_query_name(snapshot, object) else {
+            continue;
+        };
+        let scope = RestrictionScope {
+            table_name: &table_name,
+            right: &Right::Read,
+            session: session_parameters,
+        };
+        let condition = match read_access(&granting, &guid, &Right::Read, &scope)
+            .and_then(|access| access.condition())
+        {
+            Ok(Some(condition)) => condition,
+            Ok(None) => continue,
+            Err(error) => {
+                let message = error.to_string();
+                match failures.iter_mut().find(|(text, _)| text == &message) {
+                    Some((_, count)) => *count += 1,
+                    None => failures.push((message, 1)),
+                }
+                continue;
+            }
+        };
+        derived.push((table_name, id, one_line(&condition)));
+    }
+    derived.sort_by(|left, right| left.0.cmp(&right.0));
+    (derived, failures)
 }
 
 /// The restrictions of the current user for the targets of a batch that

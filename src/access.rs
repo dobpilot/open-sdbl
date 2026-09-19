@@ -158,7 +158,7 @@ fn expand_templates(
         let following = &after[name_length..];
         let template = templates
             .iter()
-            .find(|template| template.name.to_lowercase() == name.to_lowercase());
+            .find(|template| names_equal(&template.name, name));
         let Some(template) = template.filter(|_| following.trim_start().starts_with('(')) else {
             out.push('#');
             out.push_str(name);
@@ -237,57 +237,94 @@ fn substitute_parameters(template: &RestrictionTemplate, arguments: &[String]) -
     for (index, name) in named {
         body = replace_ignoring_case(&body, &format!("#{name}"), argument(index));
     }
+    const PARAMETER: &str = "#Параметр(";
+    let folded = Folded::new(&body);
+    let folded_needle = PARAMETER.to_lowercase();
     let mut out = String::with_capacity(body.len());
-    let mut rest = body.as_str();
-    while let Some(at) = find_ignoring_case(rest, "#Параметр(") {
-        out.push_str(&rest[..at]);
-        let after = &rest[at + "#Параметр(".len()..];
+    let mut copied = 0;
+    let mut from = 0;
+    while let Some(at) = folded.find(from, PARAMETER, &folded_needle) {
+        out.push_str(&body[copied..at]);
+        let after = &body[at + PARAMETER.len()..];
         match after.find(')') {
             Some(close) => {
                 let number = after[..close].trim().parse::<usize>().unwrap_or(0);
                 out.push_str(argument(number.saturating_sub(1)));
-                rest = &after[close + 1..];
+                copied = at + PARAMETER.len() + close + 1;
+                from = copied;
             }
             None => {
-                out.push_str(&rest[at..]);
-                rest = "";
+                out.push_str(&body[at..]);
+                copied = body.len();
+                break;
             }
         }
     }
-    out.push_str(rest);
+    out.push_str(&body[copied..]);
     out
 }
 
-fn find_ignoring_case(haystack: &str, needle: &str) -> Option<usize> {
-    let lower_haystack = haystack.to_lowercase();
-    let lower_needle = needle.to_lowercase();
-    // Lower-casing keeps the byte offsets of Cyrillic and ASCII text.
-    lower_haystack
-        .find(&lower_needle)
-        .filter(|_| lower_haystack.len() == haystack.len())
-        .or_else(|| haystack.find(needle))
+/// A text prepared for case-insensitive search.
+///
+/// Lower-casing keeps the byte offsets of Cyrillic and ASCII text, so the
+/// lower-cased copy is made once for a whole search instead of once for
+/// every occurrence — a template body is expanded thousands of times.
+/// When lower-casing does move the offsets the search falls back to the
+/// text itself, case-sensitively.
+struct Folded<'text> {
+    text: &'text str,
+    folded: Option<String>,
+}
+
+impl<'text> Folded<'text> {
+    fn new(text: &'text str) -> Self {
+        let folded = text.to_lowercase();
+        let folded = (folded.len() == text.len()).then_some(folded);
+        Self { text, folded }
+    }
+
+    /// The first occurrence of `needle` at or after `from`, where
+    /// `folded_needle` is the lower-cased needle.
+    fn find(&self, from: usize, needle: &str, folded_needle: &str) -> Option<usize> {
+        match &self.folded {
+            Some(folded) => folded[from..].find(folded_needle),
+            None => self.text[from..].find(needle),
+        }
+        .map(|at| from + at)
+    }
+}
+
+/// Whether two names are the same ignoring case, without allocating.
+fn names_equal(left: &str, right: &str) -> bool {
+    left.chars()
+        .flat_map(char::to_lowercase)
+        .eq(right.chars().flat_map(char::to_lowercase))
 }
 
 fn replace_ignoring_case(text: &str, needle: &str, replacement: &str) -> String {
+    let folded = Folded::new(text);
+    let folded_needle = needle.to_lowercase();
     let mut out = String::with_capacity(text.len());
-    let mut rest = text;
-    while let Some(at) = find_ignoring_case(rest, needle) {
+    let mut copied = 0;
+    let mut from = 0;
+    while let Some(at) = folded.find(from, needle, &folded_needle) {
         // The name must end where the parameter ends: `#Поле` is not a
         // prefix of `#ПолеОбъекта`.
         let end = at + needle.len();
-        let boundary = rest[end..]
+        let boundary = text[end..]
             .chars()
             .next()
             .is_none_or(|next| !next.is_alphanumeric() && next != '_');
-        out.push_str(&rest[..at]);
+        out.push_str(&text[copied..at]);
         if boundary {
             out.push_str(replacement);
         } else {
-            out.push_str(&rest[at..end]);
+            out.push_str(&text[at..end]);
         }
-        rest = &rest[end..];
+        copied = end;
+        from = end;
     }
-    out.push_str(rest);
+    out.push_str(&text[copied..]);
     out
 }
 
