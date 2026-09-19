@@ -120,12 +120,26 @@ fn parses_access_commands() {
 #[test]
 fn decodes_users_from_rows_and_lists_them() {
     let users = users_from_rows(&user_rows()).unwrap();
+    assert!(users.iter().all(|user| user.email.is_empty()));
+    // The eighth column carries the e-mail on a current platform.
+    let mut with_email = user_rows();
+    for row in &mut with_email {
+        row.push(Cell::Text("user@example.org".to_owned()));
+    }
+    let with_email = users_from_rows(&with_email).unwrap();
+    assert!(
+        with_email
+            .iter()
+            .all(|user| user.email == "user@example.org")
+    );
+    assert!(list_users(&with_email, &catalog()).contains("\tuser@example.org\tyes\t"));
+    assert!(describe_user(&with_email[0], &catalog()).contains("email: user@example.org\n"));
     assert_eq!(users.len(), 4);
     let catalog = catalog();
     let listing = list_users(&users, &catalog);
-    assert!(listing.starts_with("name\tdescription\tos login\tshow\tauth\tadmin\troles\n"));
+    assert!(listing.starts_with("name\tdescription\tos login\temail\tshow\tauth\tadmin\troles\n"));
     assert!(
-        listing.contains("Абдулов (директор)\tАбдулов Юрий Владимирович\t\tyes\tyes\tyes\t3\n"),
+        listing.contains("Абдулов (директор)\tАбдулов Юрий Владимирович\t\t\tyes\tyes\tyes\t3\n"),
         "{listing}"
     );
     assert!(listing.ends_with("# 4 users\n"));

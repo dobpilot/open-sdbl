@@ -72,7 +72,8 @@ byte-order mark in front — into `UserData`: the user identifier, the
 name, the full name and the role identifiers of the `{N, <guid>…}`
 block. The password hashes the record carries SHALL NOT be exposed.
 `InfoBaseUser` SHALL combine the row of `v8users` — name, description,
-operating-system login, the show-in-list, standard-authentication and
+operating-system login, e-mail (empty on a platform whose table has no
+such column), the show-in-list, standard-authentication and
 administrative flags — with the decoded data, and SHALL name the roles
 through a `RoleCatalog`.
 
@@ -90,6 +91,11 @@ through a `RoleCatalog`.
 #### Scenario: A malformed blob
 - **WHEN** the blob is shorter than its key length
 - **THEN** decoding fails with a `MetadataError`
+
+#### Scenario: E-mail of a user
+- **WHEN** the row of a user carries `Email`
+- **THEN** `InfoBaseUser::email` is that text, and `\users` and `\user`
+  print it
 
 ### Requirement: Expand a restriction text
 The library SHALL expand a restriction text of a role into a condition:

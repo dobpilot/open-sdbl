@@ -33,6 +33,7 @@ fn users() -> Vec<InfoBaseUser> {
                     name: columns[0],
                     description: columns[1],
                     os_name: columns[2],
+                    email: "",
                     show_in_list: flag(4),
                     standard_authentication: flag(5),
                     administrative: flag(6),
@@ -75,6 +76,7 @@ fn decodes_the_demo_users_with_their_roles() {
     assert_eq!(director.description, "Абдулов Юрий Владимирович");
     assert_eq!(director.data.name, "Абдулов (директор)");
     assert_eq!(director.data.full_name, "Абдулов Юрий Владимирович");
+    assert_eq!(director.email, "");
     assert!(director.show_in_list && director.standard_authentication && director.administrative);
     assert_eq!(director.data.roles.len(), 3);
     let mut names = director.role_names(&catalog);
@@ -111,5 +113,17 @@ fn refuses_a_malformed_blob() {
 fn provides_the_users_statements() {
     assert!(PostgresMetadataQueries::USERS.starts_with("SELECT name::text, descr::text"));
     assert!(PostgresMetadataQueries::USERS.ends_with("FROM v8users ORDER BY name"));
+    assert!(
+        PostgresMetadataQueries::USERS_WITH_EMAIL
+            .contains(", data, COALESCE(email::text, '') FROM v8users")
+    );
+    assert!(PostgresMetadataQueries::USERS_EMAIL_PROBE.contains("a.attname = 'email'"));
+    assert!(
+        MsSqlMetadataQueries::USERS_WITH_EMAIL
+            .contains("[Data], ISNULL([Email], N'') FROM [dbo].[v8users]")
+    );
+    assert!(
+        MsSqlMetadataQueries::USERS_EMAIL_PROBE.contains("COL_LENGTH(N'dbo.v8users', N'Email')")
+    );
     assert!(MsSqlMetadataQueries::USERS.contains("FROM [dbo].[v8users] ORDER BY [Name]"));
 }

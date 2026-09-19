@@ -212,6 +212,14 @@ impl PostgresMetadataQueries {
     /// and administrative flags as integers, then `Data`, ordered by name.
     pub const USERS: &'static str = "SELECT name::text, descr::text, COALESCE(osname::text, ''), show::int, COALESCE(eauth, false)::int, COALESCE(admrole, false)::int, data FROM v8users ORDER BY name";
 
+    /// Whether `v8users` has the `email` column of current platforms: `1`
+    /// or `0`.
+    pub const USERS_EMAIL_PROBE: &'static str = "SELECT CASE WHEN EXISTS (SELECT 1 FROM pg_attribute a JOIN pg_class c ON c.oid = a.attrelid JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = 'public' AND c.relname = 'v8users' AND a.attname = 'email' AND NOT a.attisdropped) THEN 1 ELSE 0 END";
+
+    /// [`Self::USERS`] with the e-mail after `Data`, for a base whose
+    /// table has the column.
+    pub const USERS_WITH_EMAIL: &'static str = "SELECT name::text, descr::text, COALESCE(osname::text, ''), show::int, COALESCE(eauth, false)::int, COALESCE(admrole, false)::int, data, COALESCE(email::text, '') FROM v8users ORDER BY name";
+
     /// The statement reading the rights resources `<guid>.0` of the given
     /// roles only, as `(file name, part, data)` rows ordered by file name
     /// and part. The identifiers are typed, so the text carries no
@@ -375,6 +383,15 @@ impl MsSqlMetadataQueries {
     /// operating-system login, and the show-in-list, standard-authentication
     /// and administrative flags as integers, then `Data`, ordered by name.
     pub const USERS: &'static str = "SELECT [Name], [Descr], ISNULL([OSName], N''), CONVERT(int, [Show]), CONVERT(int, ISNULL([EAuth], 0x00)), CONVERT(int, ISNULL([AdmRole], 0x00)), [Data] FROM [dbo].[v8users] ORDER BY [Name]";
+
+    /// Whether `v8users` has the `Email` column of current platforms: `1`
+    /// or `0`.
+    pub const USERS_EMAIL_PROBE: &'static str =
+        "SELECT CASE WHEN COL_LENGTH(N'dbo.v8users', N'Email') IS NULL THEN 0 ELSE 1 END";
+
+    /// [`Self::USERS`] with the e-mail after `Data`, for a base whose
+    /// table has the column.
+    pub const USERS_WITH_EMAIL: &'static str = "SELECT [Name], [Descr], ISNULL([OSName], N''), CONVERT(int, [Show]), CONVERT(int, ISNULL([EAuth], 0x00)), CONVERT(int, ISNULL([AdmRole], 0x00)), [Data], ISNULL([Email], N'') FROM [dbo].[v8users] ORDER BY [Name]";
 
     /// The statement reading the rights resources `<guid>.0` of the given
     /// roles only, as `(file name, part, data)` rows ordered by file name

@@ -38,6 +38,9 @@ pub struct InfoBaseUser {
     pub description: String,
     /// The operating-system login (`OSName`), empty without one.
     pub os_name: String,
+    /// The e-mail (`Email`), empty without one or on a platform whose
+    /// table has no such column.
+    pub email: String,
     /// Whether the user is shown in the login list (`Show`).
     pub show_in_list: bool,
     /// Whether standard 1C authentication is on (`EAuth`).
@@ -59,6 +62,7 @@ impl InfoBaseUser {
             name: row.name.to_owned(),
             description: row.description.to_owned(),
             os_name: row.os_name.to_owned(),
+            email: row.email.to_owned(),
             show_in_list: row.show_in_list,
             standard_authentication: row.standard_authentication,
             administrative: row.administrative,
@@ -91,6 +95,8 @@ pub struct UserRow<'row> {
     pub description: &'row str,
     /// `OSName`, empty when NULL.
     pub os_name: &'row str,
+    /// `Email`, empty when NULL or absent from the table.
+    pub email: &'row str,
     /// `Show`.
     pub show_in_list: bool,
     /// `EAuth`, false when NULL.

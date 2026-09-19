@@ -295,11 +295,34 @@ pub(crate) async fn ensure_rights(
 }
 
 async fn read_users(session: &mut DatabaseSession) -> Result<Vec<InfoBaseUser>, CliError> {
-    let statement = match session.dialect() {
-        DatabaseDialect::Postgres => PostgresMetadataQueries::USERS,
-        DatabaseDialect::MsSql { .. } => MsSqlMetadataQueries::USERS,
+    let (probe, with_email, without_email) = match session.dialect() {
+        DatabaseDialect::Postgres => (
+            PostgresMetadataQueries::USERS_EMAIL_PROBE,
+            PostgresMetadataQueries::USERS_WITH_EMAIL,
+            PostgresMetadataQueries::USERS,
+        ),
+        DatabaseDialect::MsSql { .. } => (
+            MsSqlMetadataQueries::USERS_EMAIL_PROBE,
+            MsSqlMetadataQueries::USERS_WITH_EMAIL,
+            MsSqlMetadataQueries::USERS,
+        ),
     };
-    let rows = session.query(statement, 7).await?;
+    // An older platform has no e-mail column: the table is read without it.
+    let has_email = session
+        .query(probe, 1)
+        .await?
+        .first()
+        .and_then(|row| row.first())
+        .is_some_and(|cell| match cell {
+            Cell::Number(value) => value.trim() != "0",
+            Cell::Bool(value) => *value,
+            _ => false,
+        });
+    let rows = if has_email {
+        session.query(with_email, 8).await?
+    } else {
+        session.query(without_email, 7).await?
+    };
     users_from_rows(&rows)
 }
 
@@ -332,6 +355,8 @@ pub(crate) fn users_from_rows(rows: &QueryRows) -> Result<Vec<InfoBaseUser>, Cli
                     name: text(0)?,
                     description: text(1)?,
                     os_name: text(2)?,
+                    // The eighth column, when the table has it.
+                    email: if row.len() > 7 { text(7)? } else { "" },
                     show_in_list: flag(3),
                     standard_authentication: flag(4),
                     administrative: flag(5),
@@ -404,7 +429,7 @@ fn flag(value: bool) -> &'static str {
 
 /// The `\users` listing.
 pub(crate) fn list_users(users: &[InfoBaseUser], catalog: &RoleCatalog) -> String {
-    let mut text = String::from("name\tdescription\tos login\tshow\tauth\tadmin\troles\n");
+    let mut text = String::from("name\tdescription\tos login\temail\tshow\tauth\tadmin\troles\n");
     for user in users {
         let named = user
             .data
@@ -413,10 +438,11 @@ pub(crate) fn list_users(users: &[InfoBaseUser], catalog: &RoleCatalog) -> Strin
             .filter(|role| catalog.by_guid(role).is_some())
             .count();
         text.push_str(&format!(
-            "{}\t{}\t{}\t{}\t{}\t{}\t{}{}\n",
+            "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}{}\n",
             user.name,
             user.description,
             user.os_name,
+            user.email,
             flag(user.show_in_list),
             flag(user.standard_authentication),
             flag(user.administrative),
@@ -435,11 +461,12 @@ pub(crate) fn list_users(users: &[InfoBaseUser], catalog: &RoleCatalog) -> Strin
 /// The `\user` description.
 pub(crate) fn describe_user(user: &InfoBaseUser, catalog: &RoleCatalog) -> String {
     let mut text = format!(
-        "name: {}\ndescription: {}\nfull name: {}\nos login: {}\nid: {}\nshow in list: {}\nstandard authentication: {}\nadministrative: {}\nroles ({}):\n",
+        "name: {}\ndescription: {}\nfull name: {}\nos login: {}\nemail: {}\nid: {}\nshow in list: {}\nstandard authentication: {}\nadministrative: {}\nroles ({}):\n",
         user.name,
         user.description,
         user.data.full_name,
         user.os_name,
+        user.email,
         user.data.id,
         flag(user.show_in_list),
         flag(user.standard_authentication),
