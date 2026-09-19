@@ -3681,7 +3681,17 @@ each role and the expanded access: `не ограничено`, `запреще�
 condition. `\rls` without an object SHALL list the restrictions of the
 rights already read — the role, the object and the right of each, and
 for a current user only the roles of that user — reading nothing, and
-SHALL say which command reads rights when none are read yet. Users and
+SHALL say which command reads rights when none are read yet.
+
+`\role <имя>` without an object SHALL also list the restriction templates
+of the role by signature — the name with its parameter names — and
+`\template <роль> [<имя>]` SHALL show those templates with the size of
+each body, or, with a template name, the body of that one template as the
+role records it. A template name the role does not carry SHALL be
+reported without changing the console state.
+
+Every command of this requirement SHALL be offered by name completion.
+Users and
 rights SHALL be read on the first command that needs them through the
 read-only query path and forgotten on `\refresh`; an unknown user, role,
 object or right SHALL be reported without changing the console state.
@@ -3707,6 +3717,16 @@ object or right SHALL be reported without changing the console state.
 - **WHEN** the user enters `\rls` before any rights are read
 - **THEN** the console prints no restriction and names the commands that
   read rights
+
+#### Scenario: Templates of a role
+- **WHEN** the user enters `\role ЧтениеЭлектронныхДокументов`
+- **THEN** the listing ends with the signatures
+  `ДляОбъекта(ПолеОбъекта)`, `ДляРегистра(Регистр, Поле1, …)`,
+  `ПоЗначениям()` and `ПоЗначениямРасширенный()`
+
+#### Scenario: Body of one template
+- **WHEN** the user enters `\template ЧтениеЭлектронныхДокументов ДляРегистра`
+- **THEN** the console prints the signature and the body of that template
 
 ### Requirement: Run allowed queries as a user
 `\as <пользователь>` SHALL make that user current and `\as clear` SHALL

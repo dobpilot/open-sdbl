@@ -1,5 +1,5 @@
 //! Users, roles and their restrictions in the console: `\users`, `\user`,
-//! `\roles`, `\role`, `\rls` and `\as`.
+//! `\roles`, `\role`, `\template`, `\rls` and `\as`.
 //!
 //! The roles come with the metadata snapshot; the users and the rights of
 //! roles are read on the first command that needs them, through the same
@@ -15,7 +15,8 @@ use std::io::Write;
 use open_sdbl::access::{Access, RestrictionScope, read_access};
 use open_sdbl::metadata::{
     Guid, InfoBaseUser, MetadataSnapshot, MsSqlMetadataQueries, ObjectId, PostgresMetadataQueries,
-    Right, RoleCatalog, RoleEntry, RoleRights, StorageLayout, UserRow, parse_role_rights,
+    RestrictionTemplate, Right, RoleCatalog, RoleEntry, RoleRights, StorageLayout, UserRow,
+    parse_role_rights,
 };
 use open_sdbl::query::{
     AccessRestriction, RestrictionRequest, SessionParameters, find_metadata_object,
@@ -34,6 +35,7 @@ mod tests;
 const USERS_USAGE: &str = "usage: \\users";
 const USER_USAGE: &str = "usage: \\user <имя пользователя>";
 const ROLE_USAGE: &str = "usage: \\role <имя роли> [<Вид>.<Объект>]";
+const TEMPLATE_USAGE: &str = "usage: \\template <имя роли> [<имя шаблона>]";
 
 /// The users, the rights of roles and the current user of the console.
 pub(crate) struct AccessStore {
@@ -115,6 +117,10 @@ pub(crate) enum AccessCommand<'line> {
         name: &'line str,
         object: Option<&'line str>,
     },
+    Template {
+        role: &'line str,
+        name: Option<&'line str>,
+    },
     Rls {
         object: &'line str,
         right: Option<&'line str>,
@@ -155,6 +161,18 @@ pub(crate) fn parse_access_command(line: &str) -> Option<AccessCommand<'_>> {
                 _ => (rest, None),
             };
             Some(AccessCommand::Role { name, object })
+        }
+        "\\template" => {
+            if rest.is_empty() {
+                return Some(AccessCommand::Usage(TEMPLATE_USAGE));
+            }
+            // The template name, when given, is the last word: a role
+            // name may hold spaces, a template name may not.
+            let (role, name) = match rest.rsplit_once(char::is_whitespace) {
+                Some((role, name)) => (role.trim(), Some(name)),
+                None => (rest, None),
+            };
+            Some(AccessCommand::Template { role, name })
         }
         "\\rls" => {
             if rest.is_empty() {
@@ -202,6 +220,16 @@ pub(crate) async fn apply_access_command(
             describe_user(user, store.catalog())
         }
         AccessCommand::Roles(filter) => list_roles(store.catalog(), filter),
+        AccessCommand::Template { role, name } => {
+            let role = store
+                .catalog()
+                .by_name(role)
+                .cloned()
+                .ok_or_else(|| CliError::Data(format!("role {role:?} is not declared")))?;
+            ensure_rights(store, session, std::slice::from_ref(&role.guid)).await?;
+            let rights = store.rights_of(std::slice::from_ref(&role.guid));
+            describe_templates(&role, rights[0], name)?
+        }
         AccessCommand::Role { name, object } => {
             let role = store
                 .catalog()
@@ -617,6 +645,43 @@ pub(crate) fn describe_role(
         "# {count} objects; * marks a right with a restriction; {} templates\n",
         rights.templates.len()
     ));
+    for template in &rights.templates {
+        text.push_str(&format!("  {}\n", signature(template)));
+    }
+    Ok(text)
+}
+
+/// The signature of a template, `ДляРегистра(Регистр, Поле1)`.
+fn signature(template: &RestrictionTemplate) -> String {
+    format!("{}({})", template.name, template.parameters.join(", "))
+}
+
+/// The `\template` report: the templates of a role with the size of each
+/// body, or the body of the one named.
+pub(crate) fn describe_templates(
+    role: &RoleEntry,
+    rights: &RoleRights,
+    name: Option<&str>,
+) -> Result<String, CliError> {
+    let Some(name) = name else {
+        let mut text = format!("role: {}\n", role.name);
+        for template in &rights.templates {
+            text.push_str(&format!(
+                "{}\t{} bytes\n",
+                signature(template),
+                template.body.len()
+            ));
+        }
+        text.push_str(&format!("# {} templates\n", rights.templates.len()));
+        return Ok(text);
+    };
+    let template = rights.template(name).ok_or_else(|| {
+        CliError::Data(format!("role {:?} carries no template {name:?}", role.name))
+    })?;
+    let mut text = format!("role: {}\ntemplate: {}\n", role.name, signature(template));
+    for line in template.body.lines() {
+        text.push_str(&format!("  {}\n", line.trim_end()));
+    }
     Ok(text)
 }
 

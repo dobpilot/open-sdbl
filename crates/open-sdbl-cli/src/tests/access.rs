@@ -292,3 +292,39 @@ fn derives_nothing_without_a_current_user() {
     let report = derive_restrictions(&store, &snapshot, &session, &mut restrictions);
     assert_eq!(report, "0 restrictions derived into \\restrict.\n");
 }
+
+#[test]
+fn shows_the_restriction_templates_of_a_role() {
+    let guid = Guid::from_str("feadebe9-a90e-48b0-a89f-e1f5d4e23041").unwrap();
+    let rights = parse_role_rights(&fixture(&format!("buh_{guid}.0.deflate"))).unwrap();
+    let catalog = catalog();
+    let role = catalog.roles()[0].clone();
+    let listing = describe_templates(&role, &rights, None).unwrap();
+    assert!(
+        listing.contains("ДляРегистра(Регистр, Поле1, Поле2, Поле3, Поле4, Поле5)\t"),
+        "{listing}"
+    );
+    assert!(listing.contains("ПоЗначениям()\t"), "{listing}");
+    assert!(listing.ends_with("# 4 templates\n"), "{listing}");
+
+    let body = describe_templates(&role, &rights, Some("длярегистра")).unwrap();
+    assert!(
+        body.contains("template: ДляРегистра(Регистр, Поле1"),
+        "{body}"
+    );
+    assert!(body.contains("#Регистр"), "{body}");
+
+    let unknown = describe_templates(&role, &rights, Some("Нет")).unwrap_err();
+    assert!(
+        unknown.to_string().contains("carries no template"),
+        "{unknown}"
+    );
+
+    // The signatures close the role description.
+    let snapshot = crate::params::tests::enumeration_snapshot();
+    let described = describe_role(&role, &rights, &snapshot, None).unwrap();
+    assert!(
+        described.contains("\n  ДляОбъекта(ПолеОбъекта)\n"),
+        "{described}"
+    );
+}

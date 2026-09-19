@@ -67,6 +67,9 @@ pub(super) const CONSOLE_HELP: &str = "Commands:
   \\role <name> [<Вид>.<Объект>]
                       show what a role grants, or its rights and
                       restriction texts on one object
+  \\template <role> [<name>]
+                      show the restriction templates of a role, or the
+                      body of one of them
   \\rls [<Вид>.<Объект> [<right>]]
                       show the restriction texts and the expanded access
                       of the current user (or every role) to the object;
