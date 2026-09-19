@@ -19,12 +19,14 @@ use open_sdbl::metadata::{
     parse_role_rights,
 };
 use open_sdbl::query::{
-    AccessRestriction, RestrictionRequest, SessionParameters, find_metadata_object,
+    AccessRestriction, ParameterValue, RestrictionRequest, SessionParameters, find_metadata_object,
     object_query_name,
 };
 
+use crate::access_cache::read_template_parameters;
 use crate::cells::{Cell, QueryRows};
 use crate::error::CliError;
+use crate::params::ParameterStore;
 use crate::restrict::RestrictionStore;
 use crate::session::{DatabaseDialect, DatabaseSession};
 
@@ -202,10 +204,11 @@ pub(crate) async fn apply_access_command(
     command: AccessCommand<'_>,
     session: &mut DatabaseSession,
     snapshot: &MetadataSnapshot,
-    session_parameters: &SessionParameters,
+    parameters: &mut ParameterStore,
     restrictions: &mut RestrictionStore,
     output: &mut impl Write,
 ) -> Result<(), CliError> {
+    let session_parameters = &parameters.session_parameters();
     let text = match command {
         AccessCommand::Usage(usage) => return Err(CliError::Data(usage.to_owned())),
         AccessCommand::Users => {
@@ -277,10 +280,40 @@ pub(crate) async fn apply_access_command(
                 roles.len(),
                 roles.join(", ")
             );
+            // The templates read what the base itself carries; what the
+            // operator typed stays.
+            let read = read_template_parameters(session, snapshot, session_parameters).await?;
+            let mut stored = Vec::new();
+            for (name, value) in read {
+                if parameters.set_if_absent(&name, ParameterValue::String(value)) {
+                    stored.push(name);
+                }
+            }
+            // A user of the base is not an external one: the templates
+            // compare the parameter with an empty reference.
+            if let Ok(object) = find_metadata_object(snapshot, "Справочник.ВнешниеПользователи")
+                && parameters.set_if_absent(
+                    "ТекущийВнешнийПользователь",
+                    ParameterValue::Reference {
+                        object: ObjectId::from(&object.guid),
+                        id: [0; 16],
+                    },
+                )
+            {
+                stored.push("ТекущийВнешнийПользователь".to_owned());
+            }
+            if !stored.is_empty() {
+                stored.sort();
+                text.push_str(&format!(
+                    "{} session parameters read from ПараметрыОграниченияДоступа: {}\n",
+                    stored.len(),
+                    stored.join(", ")
+                ));
+            }
             text.push_str(&derive_restrictions(
                 store,
                 snapshot,
-                session_parameters,
+                &parameters.session_parameters(),
                 restrictions,
             ));
             text

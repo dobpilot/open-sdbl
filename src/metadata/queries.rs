@@ -1,3 +1,4 @@
+use super::value_storage::StoredValueRef;
 use super::{Guid, MetadataError, MetadataErrorKind};
 
 /// The quoted `<guid>.0` names of an `IN` list; a list that would be
@@ -220,6 +221,17 @@ impl PostgresMetadataQueries {
     /// table has the column.
     pub const USERS_WITH_EMAIL: &'static str = "SELECT name::text, descr::text, COALESCE(osname::text, ''), show::int, COALESCE(eauth, false)::int, COALESCE(admrole, false)::int, data, COALESCE(email::text, '') FROM v8users ORDER BY name";
 
+    /// The statement reading the parts of one stored value from
+    /// `binarydata`, in the order of their offsets. The key is written as
+    /// hexadecimal, so the text carries no untrusted input.
+    #[must_use]
+    pub fn stored_value(key: &StoredValueRef) -> String {
+        format!(
+            "SELECT f_data FROM binarydata WHERE f_key = decode('{}', 'hex') ORDER BY f_off",
+            key.key_hex()
+        )
+    }
+
     /// The statement reading the rights resources `<guid>.0` of the given
     /// roles only, as `(file name, part, data)` rows ordered by file name
     /// and part. The identifiers are typed, so the text carries no
@@ -392,6 +404,17 @@ impl MsSqlMetadataQueries {
     /// [`Self::USERS`] with the e-mail after `Data`, for a base whose
     /// table has the column.
     pub const USERS_WITH_EMAIL: &'static str = "SELECT [Name], [Descr], ISNULL([OSName], N''), CONVERT(int, [Show]), CONVERT(int, ISNULL([EAuth], 0x00)), CONVERT(int, ISNULL([AdmRole], 0x00)), [Data], ISNULL([Email], N'') FROM [dbo].[v8users] ORDER BY [Name]";
+
+    /// The statement reading the parts of one stored value from
+    /// `BinaryData`, in the order of their offsets. The key is written as
+    /// hexadecimal, so the text carries no untrusted input.
+    #[must_use]
+    pub fn stored_value(key: &StoredValueRef) -> String {
+        format!(
+            "SELECT [f_data] FROM [dbo].[BinaryData] WHERE [f_key] = 0x{} ORDER BY [f_off]",
+            key.key_hex().to_uppercase()
+        )
+    }
 
     /// The statement reading the rights resources `<guid>.0` of the given
     /// roles only, as `(file name, part, data)` rows ordered by file name

@@ -3739,11 +3739,19 @@ current, the console prompt SHALL name it instead of `open-sdbl`, and
 the continuation prompt SHALL keep its width; `\as clear` and `\refresh`
 SHALL restore `open-sdbl=>`.
 
-`\as <пользователь>` SHALL expand, against the session parameters, the
-`Чтение` restrictions every object the user's roles restrict carries, and
-SHALL store each expanded condition in the restriction store as a derived
-restriction of that object, on one line, leaving the targets a typed
-restriction already covers untouched. It SHALL report how many
+`\as <пользователь>` SHALL read the session parameters the base carries
+for its restriction templates — the values the information register
+`ПараметрыОграниченияДоступа` stores, and the empty reference of
+`Справочник.ВнешниеПользователи` for the current external user, both when
+the configuration has them — SHALL store only the ones no `\session`
+already holds, so what the operator typed always wins, and SHALL name
+those it stored. A configuration without that register SHALL be no error.
+
+`\as <пользователь>` SHALL then expand, against the session parameters,
+the `Чтение` restrictions every object the user's roles restrict carries,
+and SHALL store each expanded condition in the restriction store as a
+derived restriction of that object, on one line, leaving the targets a
+typed restriction already covers untouched. It SHALL report how many
 restrictions it derived and, for the objects whose expansion failed, each
 distinct message with the number of objects it applies to, without
 failing the command. `\as clear` and `\refresh` SHALL forget the derived
@@ -3790,6 +3798,16 @@ the parameter to set with `\session`.
 - **THEN** `\as` reports that message with the number of objects it
   applies to, stores the restrictions it could expand, and stays the
   current user
+
+#### Scenario: Parameters read from the base
+- **WHEN** `\as` accepts a user on the УНФ demo base
+- **THEN** it names the parameters it read from
+  `ПараметрыОграниченияДоступа` and derives the restrictions with them
+
+#### Scenario: A typed parameter is kept
+- **WHEN** `\session ВерсииШаблоновОграниченияДоступа …` was entered
+  before `\as`
+- **THEN** that value stays and `\as` does not name it among those read
 
 ### Requirement: Skip unreadable Config resources
 A Config resource the decoder cannot read — one that is not UTF-8 or not

@@ -444,13 +444,12 @@ pub(super) async fn run(
                 continue;
             }
             if let Some(command) = parse_access_command(line.trim()) {
-                let session_values = session_parameters.session_parameters();
                 if let Err(error) = apply_access_command(
                     &mut access,
                     command,
                     session,
                     &snapshot,
-                    &session_values,
+                    &mut session_parameters,
                     &mut restrictions,
                     output,
                 )

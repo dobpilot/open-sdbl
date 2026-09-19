@@ -55,6 +55,21 @@ impl ParameterStore {
         }
     }
 
+    /// Stores a parameter the base carries, unless one of that name is
+    /// stored already: what the operator typed wins. Answers whether it
+    /// was stored.
+    pub(crate) fn set_if_absent(&mut self, name: &str, value: ParameterValue) -> bool {
+        if self.items.iter().any(|item| names_equal(&item.name, name)) {
+            return false;
+        }
+        let literal = match &value {
+            ParameterValue::String(text) => format!("\"{}\"", text.replace('"', "\"\"")),
+            other => kind_label(other),
+        };
+        self.set(name, &literal, value);
+        true
+    }
+
     fn unset(&mut self, name: &str) -> bool {
         let before = self.items.len();
         self.items.retain(|item| !names_equal(&item.name, name));

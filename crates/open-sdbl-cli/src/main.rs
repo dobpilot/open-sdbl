@@ -8,6 +8,7 @@ use std::io::{self, BufWriter, Write};
 use std::process::ExitCode;
 
 mod access;
+mod access_cache;
 mod app;
 mod args;
 mod auth;

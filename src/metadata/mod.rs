@@ -20,6 +20,7 @@ mod roles;
 mod schema;
 mod users;
 mod value;
+mod value_storage;
 
 pub use config::{
     ConfigCriterion, ConfigDescriptor, ConfigFieldPurpose, ConfigPredefinedValue,
@@ -60,6 +61,9 @@ pub use schema::{
 };
 pub use users::{InfoBaseUser, UserData, UserRow, decode_user_data};
 pub use value::{Value, parse_serialized};
+pub use value_storage::{
+    StoredValueRef, decode_stored_value, entry_string, parse_stored_value_ref, stored_map_entries,
+};
 
 use std::fmt;
 
