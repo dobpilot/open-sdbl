@@ -6,7 +6,6 @@ rust-version = "1.85"
 description = "Database layer for open-sdbl: sessions, metadata acquisition and access rights"
 license = "MIT"
 repository = "https://github.com/dobpilot/open-sdbl"
-publish = false
 
 [lib]
 name = "open_sdbl_db"
@@ -14,7 +13,7 @@ path = "src/lib.rs"
 
 [dependencies]
 futures-util = "0.3.34"
-open-sdbl = { path = "../.." }
+open-sdbl = { path = "../..", version = "0.7.0" }
 rustls = { version = "0.23.37", default-features = false, features = ["ring", "std", "tls12"] }
 rustls-native-certs = "0.8.2"
 tiberius = { version = "0.12.3", default-features = false, features = ["native-tls", "tds73"] }
