@@ -42,7 +42,14 @@ fn reads_the_reference_a_column_holds() {
     let reference = parse_stored_value_ref(&reference_bytes()).unwrap();
     assert_eq!(reference.key_hex(), "9b192a4234e0384986c5caee6a45b9dd");
     assert_eq!(reference.length, 88_228);
-    // Anything else is no reference.
+    // Anything else is no reference: SQL Server keeps the value of the
+    // column in the column itself, and it is decoded as it stands.
+    let inline = content(MAP);
+    assert!(parse_stored_value_ref(&inline).is_none());
+    assert!(
+        !stored_map_entries(&decode_stored_value(&inline, DEFAULT_OUTPUT_LIMIT).unwrap())
+            .is_empty()
+    );
     assert!(parse_stored_value_ref(&[]).is_none());
     assert!(parse_stored_value_ref(b"STORHDR").is_none());
     assert!(parse_stored_value_ref(&[0; 64]).is_none());

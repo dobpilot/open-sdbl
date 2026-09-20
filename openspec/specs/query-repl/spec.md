@@ -3773,7 +3773,11 @@ of `Справочник.ВнешниеПользователи` for the current
 when the configuration has it — SHALL store only the ones no `\session`
 already holds, so what the operator typed always wins, and SHALL name
 those it stored. A configuration without those tables, and a user without
-a row in the catalog, SHALL be no error.
+a row in the catalog, SHALL be no error. A register the configuration
+carries whose values could not be read — the reading of it needs a
+session parameter the operator has not set, such as the value of a data
+separator — SHALL be reported with the reason, so that what the read
+needs can be set and `\as` run again.
 
 `\as <пользователь>` SHALL then expand, against the session parameters,
 the `Чтение` restrictions every object the user's roles restrict carries,
@@ -3848,6 +3852,12 @@ the parameter to set with `\session`.
   the extension `_ДемоРасширение`
 - **THEN** the console names that role and takes the rights its
   `<guid>.0` resource carries in the extension store
+
+#### Scenario: The register could not be read
+- **WHEN** `\as` reads a base whose `ПараметрыОграниченияДоступа` is
+  separated and no value of the separator is set
+- **THEN** the console says the register was not read and why, and the
+  restrictions it could expand are still derived
 
 ### Requirement: Skip unreadable Config resources
 A Config resource the decoder cannot read — one that is not UTF-8 or not

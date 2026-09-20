@@ -314,8 +314,11 @@ pub(crate) async fn apply_access_command(
             // The templates read what the base itself carries; what the
             // operator typed stays.
             let read = read_template_parameters(session, snapshot, session_parameters).await?;
+            if let Some(reason) = &read.unread {
+                text.push_str(&format!("ПараметрыОграниченияДоступа not read: {reason}\n"));
+            }
             let mut stored = Vec::new();
-            for (name, value) in read {
+            for (name, value) in read.values {
                 if parameters.set_if_absent(&name, ParameterValue::String(value)) {
                     stored.push(name);
                 }

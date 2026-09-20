@@ -15,8 +15,9 @@ use open_sdbl::metadata::{
     stored_map_entries,
 };
 use open_sdbl::query::{
-    CompileOptions, ParameterValue, PostgresBackend, QueryCompiler, QueryParameter,
-    SessionParameters, TempTablesManager, find_metadata_object,
+    CompileOptions, MsSqlBackend, ParameterValue, PostgresBackend, Prepared, QueryCompiler,
+    QueryDiagnostic, QueryDiagnosticKind, QueryParameter, SessionParameters, TempTablesManager,
+    find_metadata_object,
 };
 
 use crate::cells::Cell;
@@ -48,45 +49,84 @@ const PARAMETERS: [(&str, &str); 5] = [
     ),
 ];
 
-/// Reads the values the templates of the base read, as
-/// `(имя параметра, значение)` pairs.
+/// The values the templates of the base read, or why they were not read.
+pub(crate) struct TemplateParameters {
+    /// The parameters read, as `(имя, значение)` pairs.
+    pub(crate) values: Vec<(String, String)>,
+    /// Why the register the configuration carries could not be read;
+    /// `None` when it was read, or when the configuration has none.
+    pub(crate) unread: Option<String>,
+}
+
+impl TemplateParameters {
+    fn none() -> Self {
+        Self {
+            values: Vec::new(),
+            unread: None,
+        }
+    }
+
+    fn unread(reason: String) -> Self {
+        Self {
+            values: Vec::new(),
+            unread: Some(reason),
+        }
+    }
+}
+
+/// Reads the values the templates of the base read.
 ///
-/// Answers an empty list when the base carries no such register — a
-/// configuration without the library — and an error only when the
-/// register is there and cannot be read.
+/// Answers nothing when the base carries no such register — a
+/// configuration without the library — the reason when the register is
+/// there and the reading of it needs what the session lacks, and an
+/// error only when the base answers one.
 pub(crate) async fn read_template_parameters(
     session: &mut DatabaseSession,
     snapshot: &MetadataSnapshot,
     session_parameters: &SessionParameters,
-) -> Result<Vec<(String, String)>, CliError> {
-    let Some(sql) = compile_cache_query(session, snapshot, session_parameters) else {
-        return Ok(Vec::new());
+) -> Result<TemplateParameters, CliError> {
+    let sql = match compile_cache_query(session, snapshot, session_parameters) {
+        CacheQuery::Sql(sql) => sql,
+        CacheQuery::Absent => return Ok(TemplateParameters::none()),
+        CacheQuery::Unread(reason) => return Ok(TemplateParameters::unread(reason)),
     };
     let rows = session.query(&sql, 1).await?;
     let Some(cell) = rows.first().and_then(|row| row.first()) else {
-        return Ok(Vec::new());
+        return Ok(TemplateParameters::unread(
+            "the register carries no row".to_owned(),
+        ));
     };
     let bytes = cell_bytes(cell);
-    let Some(reference) = parse_stored_value_ref(&bytes) else {
-        return Ok(Vec::new());
-    };
-    let statement = match session.dialect() {
-        DatabaseDialect::Postgres => PostgresMetadataQueries::stored_value(&reference),
-        DatabaseDialect::MsSql { .. } => MsSqlMetadataQueries::stored_value(&reference),
-    };
-    let parts = session.query(&statement, 1).await?;
-    let mut content = Vec::new();
-    for row in &parts {
-        if let Some(cell) = row.first() {
-            content.extend_from_slice(&cell_bytes(cell));
+    // The column carries the value itself, or the reference to the parts
+    // the platform stores apart.
+    let content = match parse_stored_value_ref(&bytes) {
+        None => bytes,
+        Some(reference) => {
+            let statement = match session.dialect() {
+                DatabaseDialect::Postgres => PostgresMetadataQueries::stored_value(&reference),
+                DatabaseDialect::MsSql { .. } => MsSqlMetadataQueries::stored_value(&reference),
+            };
+            let parts = session.query(&statement, 1).await?;
+            let mut content = Vec::new();
+            for row in &parts {
+                if let Some(cell) = row.first() {
+                    content.extend_from_slice(&cell_bytes(cell));
+                }
+            }
+            content
         }
-    }
+    };
     if content.is_empty() {
-        return Ok(Vec::new());
+        return Ok(TemplateParameters::unread(
+            "the stored value has no content".to_owned(),
+        ));
     }
     let value = decode_stored_value(&content, DEFAULT_OUTPUT_LIMIT)
         .map_err(|error| CliError::Data(format!("ПараметрыОграниченияДоступа: {error}")))?;
-    Ok(template_parameters(&value))
+    Ok(TemplateParameters {
+        values: template_parameters(&value),
+        unread: None,
+    })
 }
 
 /// The session parameters the decoded cache carries.
@@ -161,15 +201,67 @@ fn cell_bytes(cell: &Cell) -> Vec<u8> {
     }
 }
 
-/// Compiles the reading of the cache; `None` when the configuration has
-/// no such register, or the statement needs what the session lacks.
+/// What compiling the reading of the cache answered.
+enum CacheQuery {
+    /// The statement to run.
+    Sql(String),
+    /// The configuration carries no such register.
+    Absent,
+    /// The register is there, and the statement needs what the session
+    /// lacks.
+    Unread(String),
+}
+
+/// Compiles the reading of the cache.
 fn compile_cache_query(
     session: &DatabaseSession,
     snapshot: &MetadataSnapshot,
     session_parameters: &SessionParameters,
-) -> Option<String> {
+) -> CacheQuery {
     let options = CompileOptions::new().session(session_parameters);
-    compile(session, snapshot, CACHE_QUERY, &options)
+    let prepared = match session.dialect() {
+        DatabaseDialect::Postgres => QueryCompiler::new(snapshot, PostgresBackend)
+            .prepare(CACHE_QUERY)
+            .map(PreparedCache::Postgres),
+        DatabaseDialect::MsSql { backend } => QueryCompiler::new(snapshot, backend)
+            .prepare(CACHE_QUERY)
+            .map(PreparedCache::MsSql),
+    };
+    let prepared = match prepared {
+        Ok(prepared) => prepared,
+        // A configuration without the library has no such register.
+        Err(error) if error.kind() == QueryDiagnosticKind::UnknownObject => {
+            return CacheQuery::Absent;
+        }
+        Err(error) => return CacheQuery::Unread(error.to_string()),
+    };
+    let mut temporary = TempTablesManager::new();
+    match prepared.compile(snapshot, &options, &mut temporary) {
+        Ok(Some(compiled)) => CacheQuery::Sql(compiled),
+        Ok(None) => CacheQuery::Absent,
+        Err(error) => CacheQuery::Unread(error.to_string()),
+    }
+}
+
+/// The reading of the cache prepared for the dialect of the session.
+enum PreparedCache {
+    Postgres(Prepared<PostgresBackend>),
+    MsSql(Prepared<MsSqlBackend>),
+}
+
+impl PreparedCache {
+    fn compile(
+        self,
+        snapshot: &MetadataSnapshot,
+        options: &CompileOptions<'_>,
+        temporary: &mut TempTablesManager,
+    ) -> Result<Option<String>, QueryDiagnostic> {
+        let compiled = match self {
+            Self::Postgres(query) => query.compile_batch(snapshot, options, temporary),
+            Self::MsSql(query) => query.compile_batch(snapshot, options, temporary),
+        }?;
+        Ok(compiled.map(|compiled| compiled.sql))
+    }
 }
 
 /// Compiles one statement of this module; `None` when the configuration
