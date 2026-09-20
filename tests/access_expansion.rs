@@ -266,7 +266,8 @@ fn substitutes_a_name_whatever_its_case() {
         &scope,
     )
     .unwrap();
-    assert_eq!(spelled.condition, format!("{TABLE} = Чтение"));
+    // The manual: the name stands as a string value, in quotes.
+    assert_eq!(spelled.condition, format!("\"{TABLE}\" = Чтение"));
     // The same text in another case expands the same way, and a name the
     // substitution only prefixes keeps its own text.
     let lowered = expand_restriction(
@@ -277,7 +278,7 @@ fn substitutes_a_name_whatever_its_case() {
     .unwrap();
     assert_eq!(
         lowered.condition,
-        format!("{TABLE} = #ИмяТекущегоПраваДоступаИТ")
+        format!("\"{TABLE}\" = #ИмяТекущегоПраваДоступаИТ")
     );
 }
 
@@ -450,7 +451,9 @@ fn the_table_stands_for_the_directive_naming_it() {
         &scope,
     )
     .unwrap();
-    assert_eq!(expanded.condition, format!("{TABLE} = {TABLE}"));
+    // `#ТекущаяТаблица` stands for the name, `#ИмяТекущейТаблицы` for it
+    // as a string value.
+    assert_eq!(expanded.condition, format!("{TABLE} = \"{TABLE}\""));
     // A directive expression reads it as the name too.
     let expanded = expand_restriction(
         "#Если #ТекущаяТаблица = #ИмяТекущейТаблицы #Тогда ТекущаяТаблица ГДЕ ИСТИНА #Иначе ТекущаяТаблица ГДЕ ЛОЖЬ #КонецЕсли",

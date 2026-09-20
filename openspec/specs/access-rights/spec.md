@@ -99,16 +99,22 @@ through a `RoleCatalog`.
 
 ### Requirement: Expand a restriction text
 The library SHALL expand a restriction text of a role into a condition:
-a template call `#Имя(аргументы)` SHALL be replaced by the body of the
-role's template of that name with `#Параметр(N)` and the named
-parameters of its signature replaced by the arguments, recursively up to
-a bounded depth; `#ИмяТекущейТаблицы` and `#ТекущаяТаблица` SHALL stand
-for the name of the restricted table and `#ИмяТекущегоПраваДоступа` for
-the Russian name of
-the right; `#Если <выражение> #Тогда`, `#ИначеЕсли`, `#Иначе` and
+a template call `#Имя("аргумент", …)` SHALL be replaced by the body of
+the role's template of that name, with every argument unquoted — two
+double quotes standing for one inside it — and with `#Параметр(N)` and
+the named parameters of the signature replaced by the argument of that
+position, recursively up to a bounded depth.
+
+`#ТекущаяТаблица` SHALL stand for the name of the restricted table and
+`#ИмяТекущейТаблицы` for that name as a string value, in quotes;
+`#ИмяТекущегоПраваДоступа` SHALL stand for the Russian name of the
+right; `##` SHALL stand for one `#` and SHALL be read as text wherever a
+directive, a call or a parameter is looked for.
+
+`#Если <выражение> #Тогда`, `#ИначеЕсли`, `#Иначе` and
 `#КонецЕсли` SHALL keep the branch whose expression holds, where an
 expression combines `&Параметр` session values, string literals, the
-three names above, `Истина`/`Ложь`, `+`, `=`, `<>`, `Не`, `И`, `Или`,
+names above, `Истина`/`Ложь`, `+`, `=`, `<>`, `Не`, `И`, `Или`,
 parentheses and `СтрСодержит`; comments `//` SHALL be dropped. A
 session parameter the expression names without a value SHALL be an
 error naming the parameter. A result that is a labelled message —
@@ -152,6 +158,20 @@ found.
 #### Scenario: A source that is another table
 - **WHEN** the description reads `ИЗ Справочник.Другой КАК Т`
 - **THEN** expansion fails naming that table
+
+#### Scenario: A parameter by number
+- **WHEN** the body `Итого = #Параметр(1)` is called as `#Шаблон("10")`
+- **THEN** the text is `Итого = 10`
+
+#### Scenario: An argument carrying quotes
+- **WHEN** the body `ВидДокумента = #ВидДокумента` of `Шаблон1(ВидДокумента)`
+  is called with the argument `"""Накладная"""`
+- **THEN** the text is `ВидДокумента = "Накладная"`
+
+#### Scenario: The escaped number sign
+- **WHEN** a body reads `#Параметр(1) ## #Параметр(2)`
+- **THEN** one `#` stands between the arguments, and `##Если` is text,
+  not a directive
 
 ### Requirement: Combine the access of a user's roles
 `read_access` SHALL answer, for a set of roles, one object and one

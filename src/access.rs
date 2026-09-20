@@ -369,6 +369,10 @@ fn scan_references(
         }
     };
     while let Some(reference) = next_reference(text, from) {
+        if reference.is_escape(text) {
+            from = reference.at + 2;
+            continue;
+        }
         let after_name = reference.after_name().max(reference.at + 1);
         if reference.name.is_empty() {
             from = after_name;
@@ -480,6 +484,10 @@ fn expand_templates(
     let mut copied = 0;
     let mut from = 0;
     while let Some(reference) = next_reference(text, from) {
+        if reference.is_escape(text) {
+            from = reference.at + 2;
+            continue;
+        }
         let after_name = reference.after_name();
         let template = templates
             .iter()
@@ -523,6 +531,11 @@ struct Reference<'text> {
 }
 
 impl Reference<'_> {
+    /// Whether the `#` is the escape `##`, which stands for one `#`.
+    fn is_escape(&self, text: &str) -> bool {
+        text[self.at + 1..].starts_with('#')
+    }
+
     /// The offset just past the name.
     fn after_name(&self) -> usize {
         self.at + 1 + self.name.len()
@@ -743,6 +756,11 @@ fn split_directives(text: &str) -> Vec<Piece<'_>> {
     let base = text;
     while let Some(hash) = rest.find('#') {
         let after = &rest[hash + 1..];
+        // `##` stands for one `#`: neither of them opens a directive.
+        if let Some(escaped) = after.strip_prefix('#') {
+            rest = escaped;
+            continue;
+        }
         let name_length = after
             .char_indices()
             .find(|(_, character)| !character.is_alphanumeric())
@@ -1240,8 +1258,11 @@ fn evaluate_expression(text: &str, scope: &RestrictionScope<'_>) -> Result<bool,
 
 /// Replaces the current names in the text kept.
 fn substitute_names(text: &str, scope: &RestrictionScope<'_>) -> String {
-    let text = replace_ignoring_case(text, "#ИмяТекущейТаблицы", scope.table_name);
-    let text = replace_ignoring_case(&text, "#CurrentTableName", scope.table_name);
+    // The name of the table stands as a string value where the text reads
+    // it by name, and bare where it reads it as a source.
+    let quoted = format!("\"{}\"", scope.table_name);
+    let text = replace_ignoring_case(text, "#ИмяТекущейТаблицы", &quoted);
+    let text = replace_ignoring_case(&text, "#CurrentTableName", &quoted);
     // The name of the table stands for itself where the text reads it as
     // a source, not as a string.
     let text = replace_ignoring_case(&text, &format!("#{CURRENT_TABLE}"), scope.table_name);
@@ -1251,11 +1272,13 @@ fn substitute_names(text: &str, scope: &RestrictionScope<'_>) -> String {
         "#ИмяТекущегоПраваДоступа",
         &scope.right.russian_name(),
     );
-    replace_ignoring_case(
+    let text = replace_ignoring_case(
         &text,
         "#CurrentAccessRightName",
         &scope.right.russian_name(),
-    )
+    );
+    // Last of all, so that no `#` it leaves is read as a directive.
+    text.replace("##", "#")
 }
 
 /// Reads the platform's form of the expanded text. `table` is the name

@@ -751,6 +751,23 @@ pub struct RestrictionTemplate {
     pub body: String,
 }
 
+impl RestrictionTemplate {
+    /// A template of a name, the parameter names of its signature and its
+    /// body, for expanding a text against templates of one's own.
+    #[must_use]
+    pub fn new(
+        name: impl Into<String>,
+        parameters: impl IntoIterator<Item = impl Into<String>>,
+        body: impl Into<String>,
+    ) -> Self {
+        Self {
+            name: name.into(),
+            parameters: parameters.into_iter().map(Into::into).collect(),
+            body: body.into(),
+        }
+    }
+}
+
 /// Decodes a role's rights resource.
 ///
 /// # Errors
