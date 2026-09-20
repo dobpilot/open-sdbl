@@ -221,3 +221,39 @@ fn a_template_naming_the_table_compiles_into_the_query() {
         "{sql}"
     );
 }
+
+#[test]
+fn a_template_may_be_called_without_the_parenthesis() {
+    // A role of «1С:Документооборот» restricts a catalog with a bare
+    // `#ЧтениеШаблоновПроцессов`: a template taking no argument, called
+    // without the parenthesis.
+    let templates = vec![
+        template("БезАргументов", &[], "ТекущаяТаблица ГДЕ Code = \"HQ\""),
+        template("САргументом", &["Поле"], "#Поле = #Параметр(1)"),
+    ];
+    let session = session(&[]);
+    let scope = RestrictionScope {
+        table_name: TABLE,
+        right: &Right::Read,
+        session: &session,
+    };
+    let expanded = expand_restriction("#БезАргументов", &templates, &scope).unwrap();
+    assert_eq!(expanded.condition, "Code = \"HQ\"");
+    assert!(!expanded.condition.contains('#'));
+
+    // The text around the call is kept.
+    let expanded = expand_restriction("ГДЕ (#БезАргументов) И ИСТИНА", &templates, &scope).unwrap();
+    assert_eq!(
+        expanded.condition,
+        "(ТекущаяТаблица ГДЕ Code = \"HQ\") И ИСТИНА"
+    );
+
+    // A template that reads arguments and is called without them reads
+    // them as empty.
+    let expanded = expand_restriction("ГДЕ #САргументом", &templates, &scope).unwrap();
+    assert_eq!(expanded.condition, "=");
+
+    // A name no template carries is left alone, as before.
+    let expanded = expand_restriction("ГДЕ Поле = #Неизвестное", &templates, &scope).unwrap();
+    assert_eq!(expanded.condition, "Поле = #Неизвестное");
+}

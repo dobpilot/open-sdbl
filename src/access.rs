@@ -392,14 +392,17 @@ fn scan_references(
                 at: base + reference.at,
                 number,
             }
-        } else if call
-            && templates
-                .iter()
-                .any(|template| names_equal(&template.name, reference.name))
+        } else if templates
+            .iter()
+            .any(|template| names_equal(&template.name, reference.name))
         {
-            let (arguments, end) = reference.arguments(text).ok_or_else(|| {
-                RestrictionError::Syntax(format!("unbalanced call of #{}", reference.name))
-            })?;
+            let (arguments, end) = if call {
+                reference.arguments(text).ok_or_else(|| {
+                    RestrictionError::Syntax(format!("unbalanced call of #{}", reference.name))
+                })?
+            } else {
+                (Vec::new(), after_name)
+            };
             from = end;
             TemplateNode::Call {
                 at: base + reference.at,
@@ -491,8 +494,7 @@ fn expand_templates(
         let after_name = reference.after_name();
         let template = templates
             .iter()
-            .find(|template| names_equal(&template.name, reference.name))
-            .filter(|_| reference.is_call(text));
+            .find(|template| names_equal(&template.name, reference.name));
         let Some(template) = template else {
             from = after_name.max(reference.at + 1);
             continue;
@@ -503,9 +505,15 @@ fn expand_templates(
                 reference.name
             )));
         }
-        let (arguments, end) = reference.arguments(text).ok_or_else(|| {
-            RestrictionError::Syntax(format!("unbalanced call of #{}", reference.name))
-        })?;
+        // A template taking no argument may be called without the
+        // parenthesis.
+        let (arguments, end) = if reference.is_call(text) {
+            reference.arguments(text).ok_or_else(|| {
+                RestrictionError::Syntax(format!("unbalanced call of #{}", reference.name))
+            })?
+        } else {
+            (Vec::new(), after_name)
+        };
         out.push_str(&text[copied..reference.at]);
         // A body carries its own comments, dropped before its parameters
         // and nested calls are read.

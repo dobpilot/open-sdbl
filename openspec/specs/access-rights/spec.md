@@ -103,7 +103,9 @@ a template call `#Имя("аргумент", …)` SHALL be replaced by the body
 the role's template of that name, with every argument unquoted — two
 double quotes standing for one inside it — and with `#Параметр(N)` and
 the named parameters of the signature replaced by the argument of that
-position, recursively up to a bounded depth.
+position, recursively up to a bounded depth. A `#Имя` naming a template
+SHALL be a call whether or not a parenthesis follows it; without one it
+passes no argument.
 
 `#ТекущаяТаблица` SHALL stand for the name of the restricted table and
 `#ИмяТекущейТаблицы` for that name as a string value, in quotes;
@@ -172,6 +174,12 @@ found.
 - **WHEN** a body reads `#Параметр(1) ## #Параметр(2)`
 - **THEN** one `#` stands between the arguments, and `##Если` is text,
   not a directive
+
+#### Scenario: A call without the parenthesis
+- **WHEN** the restriction of a role reads `#ЧтениеШаблоновПроцессов`
+  and the role carries a template of that name
+- **THEN** the body of that template stands in its place, and no `#`
+  survives the expansion
 
 ### Requirement: Combine the access of a user's roles
 `read_access` SHALL answer, for a set of roles, one object and one
