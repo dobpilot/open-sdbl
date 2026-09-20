@@ -1,5 +1,9 @@
+//! Drawing the progress of a metadata read on the terminal.
+
 use std::io::{self, IsTerminal, Write};
 use std::time::{Duration, Instant};
+
+use open_sdbl_db::MetadataProgress as ProgressReporter;
 
 const PROGRESS_REDRAW_INTERVAL: Duration = Duration::from_millis(50);
 const PROGRESS_BAR_WIDTH: usize = 24;
@@ -31,55 +35,6 @@ impl MetadataProgress {
         }
     }
 
-    #[cfg(test)]
-    pub(crate) fn disabled() -> Self {
-        let mut progress = Self::new();
-        progress.enabled = false;
-        progress
-    }
-
-    pub(crate) fn phase(&mut self, phase: &'static str) {
-        self.phase = phase;
-        self.draw(true);
-    }
-
-    pub(crate) fn config_totals(&mut self, resources: u64, bytes: u64) {
-        self.total_resources = resources;
-        self.total_bytes = bytes;
-        self.phase("Config");
-    }
-
-    pub(crate) fn advance_config(&mut self, resources: usize, bytes: usize) {
-        self.completed_resources = self.completed_resources.saturating_add(resources as u64);
-        self.completed_bytes = self.completed_bytes.saturating_add(bytes as u64);
-        self.draw(false);
-    }
-
-    pub(crate) fn finish(mut self) {
-        if !self.enabled {
-            return;
-        }
-        self.phase = "complete";
-        self.completed_resources = self.total_resources;
-        self.completed_bytes = self.total_bytes;
-        let line = render_metadata_progress(
-            self.phase,
-            self.completed_resources,
-            self.total_resources,
-            self.completed_bytes,
-            self.total_bytes,
-            PROGRESS_BAR_WIDTH,
-        );
-        let mut stderr = io::stderr().lock();
-        let _ = writeln!(
-            stderr,
-            "\r\x1b[2K{line} in {}",
-            format_elapsed(self.started.elapsed())
-        );
-        let _ = stderr.flush();
-        self.active = false;
-    }
-
     fn draw(&mut self, force: bool) {
         if !self.enabled {
             return;
@@ -105,6 +60,52 @@ impl MetadataProgress {
         let mut stderr = io::stderr().lock();
         let _ = write!(stderr, "\r\x1b[2K{line}");
         let _ = stderr.flush();
+    }
+}
+
+impl ProgressReporter for MetadataProgress {
+    fn phase(&mut self, phase: &'static str) {
+        self.phase = phase;
+        self.draw(true);
+    }
+
+    fn config_totals(&mut self, resources: u64, bytes: u64) {
+        self.total_resources = resources;
+        self.total_bytes = bytes;
+        self.phase("Config");
+    }
+
+    fn advance_config(&mut self, resources: usize, bytes: usize) {
+        self.completed_resources = self.completed_resources.saturating_add(resources as u64);
+        self.completed_bytes = self.completed_bytes.saturating_add(bytes as u64);
+        self.draw(false);
+    }
+
+    /// Draws the final line and stops: the value stays alive, so `Drop`
+    /// must no longer erase anything.
+    fn finish(&mut self) {
+        if !self.enabled {
+            return;
+        }
+        self.phase = "complete";
+        self.completed_resources = self.total_resources;
+        self.completed_bytes = self.total_bytes;
+        let line = render_metadata_progress(
+            self.phase,
+            self.completed_resources,
+            self.total_resources,
+            self.completed_bytes,
+            self.total_bytes,
+            PROGRESS_BAR_WIDTH,
+        );
+        let mut stderr = io::stderr().lock();
+        let _ = writeln!(
+            stderr,
+            "\r\x1b[2K{line} in {}",
+            format_elapsed(self.started.elapsed())
+        );
+        let _ = stderr.flush();
+        self.active = false;
     }
 }
 

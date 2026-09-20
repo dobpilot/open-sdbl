@@ -37,10 +37,11 @@ openspec archive <change-name>             # after completion; merges into specs
 
 ## Architecture
 
-Two-crate split with a hard boundary:
+Three-crate split with a hard boundary:
 
 - **Root crate `open-sdbl`** (`src/`) — zero production dependencies, `#![forbid(unsafe_code)]`, `#![warn(missing_docs)]`, and **no I/O of any kind** (no process, filesystem, env, terminal, network). It only decodes caller-provided bytes and generates SQL text. Keep it that way; runtime/database dependencies belong only to application crates.
-- **`crates/open-sdbl-cli`** (binary `open-sdbl`) — all I/O: tokio, tokio-postgres, tiberius (MSSQL), rustyline REPL, TLS, SOCKS5, secrets handling (passwords come only from env vars, moved into zeroized memory at startup). Reads only: PG uses a `READ COMMITTED READ ONLY` transaction; MSSQL asks for read-only application intent, wraps each read in a transaction and rolls it back, poisoning the session when that rollback fails. It sends no verification statement of its own — role membership, isolation level and transaction state are the operator's business, and the compiler generates SELECT statements only.
+- **`crates/open-sdbl-db`** (library `open_sdbl_db`) — database and network I/O: tokio, tokio-postgres, tiberius (MSSQL), TLS, SOCKS5, metadata acquisition, access rights and restriction expansion, result cells. Reads only: PG uses a `READ COMMITTED READ ONLY` transaction; MSSQL asks for read-only application intent, wraps each read in a transaction and rolls it back, poisoning the session when that rollback fails. It sends no verification statement of its own — role membership, isolation level and transaction state are the operator's business, and the compiler generates SELECT statements only. It writes nothing to a terminal, parses no command line, and reads no environment variable or password file: the caller supplies the connection description, the `Credentials`, the `Limits`, and a `MetadataProgress` reporter.
+- **`crates/open-sdbl-cli`** (binary `open-sdbl`) — process, terminal and filesystem I/O: argument parsing, rustyline REPL, output formatting, progress drawing, and secrets handling (passwords come only from env vars and `~/.pgpass`, moved into zeroized memory at startup).
 
 ### Core library flow
 

@@ -8,26 +8,18 @@ use std::io::{self, BufWriter, Write};
 use std::process::ExitCode;
 
 mod access;
-mod access_cache;
 mod app;
 mod args;
 mod auth;
-mod cells;
-mod db;
 mod error;
-mod extensions;
-mod limits;
-mod net;
 mod output;
 mod params;
-mod pipeline;
 mod progress;
 mod repl;
-mod restrict;
-mod session;
 
-use auth::pgpass::Credentials;
+use auth::pgpass::take_credentials_from_environment;
 use error::CliError;
+use open_sdbl_db::Credentials;
 use output::write_top_level_error;
 
 /// The hex decoder the library tests use, shared so that a fixture written
@@ -36,8 +28,13 @@ use output::write_top_level_error;
 #[path = "../../../tests/support/hex.rs"]
 mod hex_test_support;
 
+/// The metadata snapshot the parameter tests resolve.
+#[cfg(test)]
+#[path = "../../../tests/support/enumeration_snapshot.rs"]
+mod enumeration_snapshot_support;
+
 fn main() -> ExitCode {
-    let credentials = Credentials::take_from_environment();
+    let credentials = take_credentials_from_environment();
     let runtime = match tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()

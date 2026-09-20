@@ -5,10 +5,12 @@ use std::io::Write;
 
 use open_sdbl::metadata::MetadataSnapshot;
 use open_sdbl::query::TempTablesManager;
+use open_sdbl_db::DatabaseSession;
 
 use crate::error::CliError;
+use crate::output::print_resolution_report;
 use crate::params::ParameterStore;
-use crate::session::DatabaseSession;
+use crate::progress::MetadataProgress;
 
 use super::*;
 
@@ -46,7 +48,9 @@ pub(super) async fn execute_meta_command(
             Ok(MetaOutcome::Continue)
         }
         "\\refresh" => {
-            *snapshot = session.metadata().await?;
+            let (refreshed, report) = session.metadata(&mut MetadataProgress::new()).await?;
+            print_resolution_report(&report);
+            *snapshot = refreshed;
             writeln!(output, "Metadata refreshed.").map_err(CliError::standard_output)?;
             Ok(MetaOutcome::Refreshed)
         }

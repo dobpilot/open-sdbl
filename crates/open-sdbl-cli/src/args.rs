@@ -2,9 +2,12 @@ use std::env;
 use std::io::Write;
 
 use open_sdbl::query::MsSqlDialectLevel;
+use open_sdbl_db::{
+    ConnectionOptions, DatabaseConnection, MsSqlConnection, PostgresConnection, PostgresSslMode,
+    parse_socks5_proxy,
+};
 
 use crate::error::CliError;
-use crate::net::socks5::{Socks5Proxy, parse_socks5_proxy};
 
 pub(crate) const HELP: &str = "open-sdbl — tooling for the 1C query language\n\n\
 Usage:\n  open-sdbl lex [FILE|-]\n  open-sdbl metadata postgres --host HOST --database DB --user USER [OPTIONS]\n  open-sdbl console postgres --host HOST --database DB --user USER [OPTIONS]\n  open-sdbl metadata mssql --host HOST --database DB --user USER [OPTIONS]\n  open-sdbl console mssql --host HOST --database DB --user USER [OPTIONS]\n  open-sdbl --help\n\n\
@@ -15,53 +18,6 @@ Authentication:\n  PostgreSQL: PGPASSWORD, PGPASSFILE, or $HOME/.pgpass\n  MSSQL
 Read-only behavior:\n  PostgreSQL queries run in verified READ ONLY, READ COMMITTED transactions\n  MSSQL reads run inside a transaction that is rolled back; a read-only login is recommended\n";
 
 pub(crate) const INSECURE_MSSQL_CERTIFICATE_WARNING: &str = "warning: --trust-server-certificate disables MSSQL certificate and hostname verification; prefer --trust-ca-file";
-
-#[derive(Debug)]
-pub(crate) enum DatabaseConnection {
-    Postgres(PostgresConnection),
-    MsSql(MsSqlConnection),
-}
-
-#[derive(Clone, Debug)]
-pub(crate) struct ConnectionOptions {
-    pub(crate) host: String,
-    pub(crate) port: u16,
-    pub(crate) database: String,
-    pub(crate) user: String,
-    pub(crate) socks5_proxy: Option<Socks5Proxy>,
-}
-
-#[derive(Clone, Debug)]
-pub(crate) struct PostgresConnection {
-    pub(crate) options: ConnectionOptions,
-    pub(crate) sslmode: PostgresSslMode,
-    pub(crate) trust_ca_file: Option<String>,
-}
-
-impl std::ops::Deref for PostgresConnection {
-    type Target = ConnectionOptions;
-
-    fn deref(&self) -> &Self::Target {
-        &self.options
-    }
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) enum PostgresSslMode {
-    Disable,
-    Require,
-    VerifyCa,
-    VerifyFull,
-}
-
-#[derive(Clone, Debug)]
-pub(crate) struct MsSqlConnection {
-    pub(crate) options: ConnectionOptions,
-    pub(crate) trust_server_certificate: bool,
-    pub(crate) trust_ca_file: Option<String>,
-    /// Explicit dialect level; `None` means detect it from the server.
-    pub(crate) dialect_level: Option<MsSqlDialectLevel>,
-}
 
 pub(crate) fn parse_connection(
     arguments: &mut impl Iterator<Item = String>,

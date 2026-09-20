@@ -8,11 +8,9 @@ use open_sdbl::query::{
     CompiledQuery, PostgresBackend, PresentationExpression, PresentationPlan, PresentationRequest,
     QueryCompiler,
 };
+use open_sdbl_db::{Cell, DatabaseDialect, DatabaseSession, DbError, QueryRows};
 
-use crate::cells::Cell;
-use crate::cells::QueryRows;
 use crate::error::CliError;
-use crate::session::{DatabaseDialect, DatabaseSession};
 
 use super::*;
 
@@ -22,9 +20,9 @@ mod tests;
 
 pub(super) fn ensure_session_remains_usable(dead: bool) -> Result<(), CliError> {
     if dead {
-        Err(CliError::Database(
+        Err(CliError::Db(DbError::Database(
             "database session is no longer usable; reconnect required".to_owned(),
-        ))
+        )))
     } else {
         Ok(())
     }

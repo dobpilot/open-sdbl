@@ -12,7 +12,9 @@
 Ядро `open-sdbl` не выполняет I/O и не имеет production-зависимостей. Оно
 декодирует переданные приложением `DBNames`, `Config` и `SchemaStorage`, строит
 снимок метаданных и генерирует SQL в выбранном диалекте. Подключения к СУБД,
-транзакции, интерактивный терминал и кеш находятся в отдельном приложении
+транзакции, чтение метаданных и прав доступа вынесены в библиотеку
+`open-sdbl-db`, которой может пользоваться любое приложение; интерактивный
+терминал, разбор командной строки и работа с паролями остались в приложении
 `open-sdbl-cli`.
 
 Поддерживаются обе раскладки служебных таблиц платформы. В базах 8.2 и ранних
@@ -194,7 +196,7 @@ SQL Server 2008/2008 R2 получают уровень `2008` (без функ�
 
 ```console
 OPEN_SDBL_MSSQL_TEST_USER=open_sdbl_reader MSSQL_PASSWORD='secret' \
-  cargo test -p open-sdbl-cli reads_metadata_from_the_mssql_demo_database \
+  cargo test -p open-sdbl-db reads_metadata_from_the_mssql_demo_database \
   -- --ignored
 ```
 
@@ -324,9 +326,9 @@ fn build_metadata(
 постройте `StorageLayout::from_flags`, затем берите выражения через
 `db_names(&layout)`, `config(&layout)`, `extension_resources(&layout)`; ядро
 намеренно не знает о сети, паролях и async runtime. Полные варианты загрузки через
-`tokio-postgres` и Tiberius есть в `open-sdbl-cli`: по модулю на провайдера —
-[`db/postgres`](crates/open-sdbl-cli/src/db/postgres) и
-[`db/mssql`](crates/open-sdbl-cli/src/db/mssql), где ведение сессии, чтение
+`tokio-postgres` и Tiberius есть в `open-sdbl-db`: по модулю на провайдера —
+[`db/postgres`](crates/open-sdbl-db/src/db/postgres) и
+[`db/mssql`](crates/open-sdbl-db/src/db/mssql), где ведение сессии, чтение
 метаданных и декодирование значений разнесены по отдельным файлам.
 
 `resolve_metadata*` возвращает `ResolvedMetadata`: поле `snapshot` используется

@@ -9,21 +9,22 @@ use std::time::{Duration, Instant};
 
 use open_sdbl::metadata::MetadataSnapshot;
 use open_sdbl::query::{PostgresBackend, QueryCompiler, TempTablesManager};
+use open_sdbl_db::restrict::{apply_restriction_command, parse_restriction_command};
+use open_sdbl_db::{
+    AccessStore, DatabaseDialect, DatabaseSession, RestrictionStore, derive_restrictions,
+    user_restrictions,
+};
 use rustyline::Editor;
 use rustyline::error::ReadlineError;
 use rustyline::history::DefaultHistory;
 use tokio::io::BufReader;
 
-use crate::access::{
-    AccessStore, apply_access_command, derive_restrictions, parse_access_command, user_restrictions,
-};
+use crate::access::{apply_access_command, parse_access_command};
 use crate::error::CliError;
 use crate::output::escape_field;
 use crate::params::{
     ParameterCommand, ParameterStore, apply_parameter_command, parse_parameter_command,
 };
-use crate::restrict::{RestrictionStore, apply_restriction_command, parse_restriction_command};
-use crate::session::{DatabaseDialect, DatabaseSession};
 
 mod completion;
 mod describe;

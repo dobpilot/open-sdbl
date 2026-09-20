@@ -7,13 +7,14 @@ use std::env;
 use std::io::Write;
 
 use open_sdbl::tokenize;
+use open_sdbl_db::{Credentials, DatabaseSession, Limits};
 
 use crate::args::{HELP, parse_connection};
-use crate::auth::pgpass::Credentials;
+use crate::auth::pgpass::resolve_credentials;
 use crate::error::CliError;
-use crate::output::{escape_field, lex, print_snapshot, read_lex_source};
+use crate::output::{escape_field, lex, print_resolution_report, print_snapshot, read_lex_source};
+use crate::progress::MetadataProgress;
 use crate::repl;
-use crate::session::DatabaseSession;
 
 #[cfg(test)]
 #[path = "tests/app.rs"]
@@ -77,10 +78,13 @@ pub(crate) async fn metadata(
         return Ok(());
     };
 
-    let mut session = DatabaseSession::connect(&connection, credentials).await?;
-    let result = session.metadata().await;
+    let credentials = resolve_credentials(&connection, credentials)?;
+    let mut session =
+        DatabaseSession::connect(&connection, &credentials, Limits::default()).await?;
+    let result = session.metadata(&mut MetadataProgress::new()).await;
     let close_result = session.close().await;
-    let snapshot = result?;
+    let (snapshot, report) = result?;
+    print_resolution_report(&report);
     print_snapshot(output, &snapshot).map_err(CliError::standard_output)?;
     if let Err(error) = close_result {
         eprintln!(
@@ -99,13 +103,16 @@ pub(crate) async fn console(
     let Some(connection) = parse_connection(&mut arguments, "console", output)? else {
         return Ok(());
     };
-    let mut session = DatabaseSession::connect(&connection, credentials).await?;
+    let credentials = resolve_credentials(&connection, credentials)?;
+    let mut session =
+        DatabaseSession::connect(&connection, &credentials, Limits::default()).await?;
     let result = async {
-        let snapshot = session.metadata().await?;
+        let (snapshot, report) = session.metadata(&mut MetadataProgress::new()).await?;
+        print_resolution_report(&report);
         repl::run(&mut session, snapshot, output).await
     }
     .await;
     let close_result = session.close().await;
     result?;
-    close_result
+    close_result.map_err(CliError::from)
 }

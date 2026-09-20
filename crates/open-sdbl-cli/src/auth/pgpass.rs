@@ -3,65 +3,60 @@ use std::fs::{self, OpenOptions};
 use std::io::{self, Read};
 use std::path::{Path, PathBuf};
 
+use open_sdbl_db::{Credentials, DatabaseConnection, EnvironmentSecret, PostgresConnection};
 use zeroize::Zeroizing;
 
-use crate::args::PostgresConnection;
 use crate::error::CliError;
 
-#[derive(Clone)]
-pub(crate) enum EnvironmentSecret {
-    Missing,
-    InvalidUnicode,
-    Present(Zeroizing<String>),
-}
-
-impl EnvironmentSecret {
-    fn take(name: &'static str) -> Self {
-        let value = env::var_os(name);
-        // SAFETY: this is called before the Tokio runtime and any application
-        // worker threads are created. No other thread can concurrently access
-        // the process environment at this point in this binary.
-        unsafe { env::remove_var(name) };
-        match value {
-            None => Self::Missing,
-            Some(value) => value
-                .into_string()
-                .map(Zeroizing::new)
-                .map_or(Self::InvalidUnicode, Self::Present),
-        }
-    }
-
-    pub(crate) fn optional(&self, name: &str) -> Result<Option<Zeroizing<String>>, CliError> {
-        match self {
-            Self::Missing => Ok(None),
-            Self::InvalidUnicode => Err(CliError::Data(format!("{name} is not valid UTF-8"))),
-            Self::Present(value) => Ok(Some(value.clone())),
-        }
-    }
-
-    pub(crate) fn required(&self, name: &str) -> Result<Zeroizing<String>, CliError> {
-        self.optional(name)?.ok_or_else(|| {
-            CliError::Data(format!(
-                "{name} is required for the selected authentication method"
-            ))
-        })
+/// Takes a secret out of the environment, removing the variable so a child
+/// process cannot read it.
+fn take_secret(name: &'static str) -> EnvironmentSecret {
+    let value = env::var_os(name);
+    // SAFETY: this is called before the Tokio runtime and any application
+    // worker threads are created. No other thread can concurrently access
+    // the process environment at this point in this binary.
+    unsafe { env::remove_var(name) };
+    match value {
+        None => EnvironmentSecret::Missing,
+        Some(value) => value.into_string().map(Zeroizing::new).map_or(
+            EnvironmentSecret::InvalidUnicode,
+            EnvironmentSecret::Present,
+        ),
     }
 }
 
-pub(crate) struct Credentials {
-    pub(crate) postgres: EnvironmentSecret,
-    pub(crate) mssql: EnvironmentSecret,
-    pub(crate) socks5: EnvironmentSecret,
+/// Reads the three password variables and consumes them.
+pub(crate) fn take_credentials_from_environment() -> Credentials {
+    Credentials {
+        postgres: take_secret("PGPASSWORD"),
+        mssql: take_secret("MSSQL_PASSWORD"),
+        socks5: take_secret("SOCKS5_PASSWORD"),
+    }
 }
 
-impl Credentials {
-    pub(crate) fn take_from_environment() -> Self {
-        Self {
-            postgres: EnvironmentSecret::take("PGPASSWORD"),
-            mssql: EnvironmentSecret::take("MSSQL_PASSWORD"),
-            socks5: EnvironmentSecret::take("SOCKS5_PASSWORD"),
+/// Answers the credentials to open this connection with.
+///
+/// `PGPASSWORD` wins; without it a PostgreSQL connection falls back to
+/// `PGPASSFILE` or `~/.pgpass`, which is this application's policy, not
+/// the database layer's.
+pub(crate) fn resolve_credentials(
+    connection: &DatabaseConnection,
+    credentials: &Credentials,
+) -> Result<Credentials, CliError> {
+    let postgres = match connection {
+        DatabaseConnection::Postgres(connection) => {
+            match postgres_password(connection, &credentials.postgres)? {
+                Some(password) => EnvironmentSecret::Present(password),
+                None => EnvironmentSecret::Missing,
+            }
         }
-    }
+        DatabaseConnection::MsSql(_) => credentials.postgres.clone(),
+    };
+    Ok(Credentials {
+        postgres,
+        mssql: credentials.mssql.clone(),
+        socks5: credentials.socks5.clone(),
+    })
 }
 
 pub(crate) fn postgres_password(

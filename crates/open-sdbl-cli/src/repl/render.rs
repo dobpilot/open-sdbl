@@ -6,10 +6,9 @@ use std::io::{self, IsTerminal, Write};
 
 use open_sdbl::metadata::MetadataSnapshot;
 use open_sdbl::query::{ColumnKind, CompiledColumn, CompiledQuery, TypeValue};
+use open_sdbl_db::{Cell, QueryRows};
 use unicode_width::UnicodeWidthStr;
 
-use crate::cells::Cell;
-use crate::cells::QueryRows;
 use crate::error::CliError;
 use crate::output::{MAX_CELL_WIDTH, MAX_PRINTED_ROWS, bounded_field, escape_field};
 

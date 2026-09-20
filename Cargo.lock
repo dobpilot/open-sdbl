@@ -691,18 +691,28 @@ version = "0.6.0"
 name = "open-sdbl-cli"
 version = "0.6.0"
 dependencies = [
- "futures-util",
  "libc",
+ "open-sdbl",
+ "open-sdbl-db",
+ "rustyline",
+ "tokio",
+ "unicode-width",
+ "zeroize",
+]
+
+[[package]]
+name = "open-sdbl-db"
+version = "0.6.0"
+dependencies = [
+ "futures-util",
  "open-sdbl",
  "rustls",
  "rustls-native-certs",
- "rustyline",
  "tiberius",
  "tokio",
  "tokio-postgres",
  "tokio-postgres-rustls",
  "tokio-util",
- "unicode-width",
  "webpki-roots",
  "zeroize",
 ]

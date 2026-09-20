@@ -4,7 +4,7 @@ use super::parse_password_line;
 use super::read_password_file;
 #[cfg(unix)]
 use super::reject_password_file_owner;
-use crate::args::{ConnectionOptions, PostgresConnection, PostgresSslMode};
+use open_sdbl_db::{ConnectionOptions, PostgresConnection, PostgresSslMode};
 
 #[test]
 fn parses_escaped_password_records() {
