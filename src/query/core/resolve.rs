@@ -6,8 +6,9 @@ use std::sync::Arc;
 
 use crate::Token;
 use crate::metadata::{
-    FieldId, LiveColumn, LiveTable, MetadataKind, MetadataObject, MetadataSnapshot, ObjectId,
-    SchemaColumn, SchemaTable, normalize_standard_field_name, recase_postgres_identifier,
+    AttributeId, FieldId, LiveColumn, LiveTable, MetadataKind, MetadataObject, MetadataSnapshot,
+    ObjectId, SchemaColumn, SchemaTable, StandardFieldId, normalize_standard_field_name,
+    recase_postgres_identifier,
 };
 use crate::query::core::ast::SourceAst;
 use crate::query::core::names::{folded_name, names_equal};
@@ -16,6 +17,7 @@ use crate::query::core::restrict::{
     AccessDecision, AccessRestriction, RestrictionMode, RestrictionTarget,
 };
 use crate::query::core::temp_tables::{TempTableSource, TempTablesManager};
+use crate::query::core::usage::{FieldUsage, FieldUse};
 use crate::query::core::{QueryDiagnostic, QueryDiagnosticKind};
 
 /// Structured value type of one physical or compiled output column.
@@ -198,6 +200,10 @@ pub struct QueryableField {
     pub reference_target: Option<String>,
     /// Every canonical SchemaStorage target table for a pure reference field.
     pub reference_targets: Vec<String>,
+    /// The metadata field this was projected from, when metadata declares
+    /// one. A field the compiler synthesizes — a virtual-table period, an
+    /// aggregated resource — has none.
+    pub field: Option<FieldId>,
 }
 
 /// Queryable logical fields indexed by stable metadata object identity.
@@ -544,12 +550,48 @@ pub(super) fn indexed_custom_field_name(
     physical_table: &str,
     schema_name: &str,
 ) -> Option<String> {
+    indexed_custom_field(names, physical_table, schema_name)?.0
+}
+
+/// The name and the metadata identity of the custom field a `Fld<N>`
+/// column belongs to.
+fn indexed_custom_field(
+    names: &CustomFieldNameIndex,
+    physical_table: &str,
+    schema_name: &str,
+) -> Option<(Option<String>, AttributeId)> {
     let number = schema_name.strip_prefix("Fld")?.parse::<u32>().ok()?;
     names
         .get(&(folded_name(physical_table), number))
         .or_else(|| names.get(&(String::new(), number)))
         .cloned()
-        .flatten()
+}
+
+/// The metadata identity of the custom field a `Fld<N>` column belongs
+/// to, found by scanning the snapshot.
+fn scanned_custom_field_id(
+    snapshot: &MetadataSnapshot,
+    physical_table: &str,
+    schema_name: &str,
+) -> Option<AttributeId> {
+    let number = schema_name.strip_prefix("Fld")?.parse::<u32>().ok()?;
+    snapshot
+        .fields()
+        .iter()
+        .find(|field| {
+            field.number == number
+                && field
+                    .owner_tables
+                    .iter()
+                    .any(|owner| names_equal(owner, physical_table))
+        })
+        .or_else(|| {
+            snapshot
+                .fields()
+                .iter()
+                .find(|field| field.number == number && field.extension_origin.is_some())
+        })
+        .map(|field| AttributeId::from(&field.guid))
 }
 
 pub(super) fn is_extension_table_name(canonical: &str, candidate: &str) -> bool {
@@ -721,6 +763,9 @@ pub(super) struct CompilationCatalog<'snapshot> {
     used_restrictions: RefCell<BTreeSet<usize>>,
     /// Positions in `decisions` that matched a target.
     used_decisions: RefCell<BTreeSet<usize>>,
+    /// The fields the statement reads, with the role it reads them in,
+    /// in the order they were first seen.
+    field_usage: RefCell<Vec<FieldUse>>,
     /// Set while a restriction's text compiles: query parameters are then
     /// hidden so the text sees session parameters only.
     restriction_mode: Cell<bool>,
@@ -809,6 +854,7 @@ impl<'snapshot> CompilationCatalog<'snapshot> {
             restriction_targets: RefCell::new(BTreeSet::new()),
             used_restrictions: RefCell::new(BTreeSet::new()),
             used_decisions: RefCell::new(BTreeSet::new()),
+            field_usage: RefCell::new(Vec::new()),
             restriction_mode: Cell::new(false),
             separators: resolve_statement_separators(snapshot, parameters),
             hierarchy_ctes: RefCell::new(Vec::new()),
@@ -973,6 +1019,40 @@ impl<'snapshot> CompilationCatalog<'snapshot> {
     /// Positions of the supplied decisions that matched a target.
     pub(super) fn used_decisions(&self) -> BTreeSet<usize> {
         self.used_decisions.borrow().clone()
+    }
+
+    /// Records that the statement reads `field` of `object` in `usage`.
+    ///
+    /// A read inside a restriction's own text belongs to the host, not to
+    /// the query, so it is not reported.
+    pub(super) fn note_field_use(
+        &self,
+        object: ObjectId,
+        table_part: Option<String>,
+        field: Option<FieldId>,
+        usage: FieldUsage,
+    ) {
+        if self.restriction_mode.get() {
+            return;
+        }
+        let Some(field) = field else {
+            return;
+        };
+        let entry = FieldUse {
+            object,
+            table_part,
+            field,
+            usage,
+        };
+        let mut uses = self.field_usage.borrow_mut();
+        if !uses.contains(&entry) {
+            uses.push(entry);
+        }
+    }
+
+    /// The fields the statement read, with their roles.
+    pub(super) fn field_usage(&self) -> Vec<FieldUse> {
+        self.field_usage.borrow().clone()
     }
 
     /// Resolves a temporary-table source and records it, with everything it
@@ -1140,10 +1220,44 @@ pub struct CompiledColumn {
     pub label: String,
     /// Structured value type of the column.
     pub kind: ColumnKind,
+    /// Where the column came from, when it is the projection of a field.
+    ///
+    /// An expression, an aggregate, or a literal has none — that is a
+    /// legitimate answer, not a failure. The origin is unaffected by what
+    /// the label becomes: an alias in the text, a truncation to the
+    /// provider's identifier limit, and a suffix added for uniqueness all
+    /// leave it as it is.
+    pub origin: Option<ColumnOrigin>,
     /// The name the text gave the projection, by which a nested query or
     /// temporary table exposes the column; `label` may be truncated to the
     /// provider's limit or suffixed for uniqueness.
     pub(crate) name: String,
+}
+
+/// The metadata one result column was projected from.
+///
+/// ```
+/// # fn example(compiled: &open_sdbl::query::CompiledQuery) {
+/// for column in &compiled.columns {
+///     if let Some(origin) = &column.origin {
+///         let _ = (origin.object, &origin.table_part, origin.field);
+///     }
+/// }
+/// # }
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct ColumnOrigin {
+    /// The metadata object the column was read from; the owner of the
+    /// section when the source is a tabular section.
+    pub object: ObjectId,
+    /// The tabular-section name, when the source is a section.
+    pub table_part: Option<String>,
+    /// The field the column projects.
+    pub field: FieldId,
+    /// Whether the field spreads over more than one result column, so
+    /// that hiding the field means hiding every one of them.
+    pub composite_member: bool,
 }
 
 impl CompiledColumn {
@@ -1152,11 +1266,23 @@ impl CompiledColumn {
             name: label.clone(),
             label,
             kind,
+            origin: None,
         }
     }
 
     pub(crate) fn named(name: String, label: String, kind: ColumnKind) -> Self {
-        Self { name, label, kind }
+        Self {
+            name,
+            label,
+            kind,
+            origin: None,
+        }
+    }
+
+    /// The same column, told where it came from.
+    pub(crate) fn with_origin(mut self, origin: Option<ColumnOrigin>) -> Self {
+        self.origin = origin;
+        self
     }
 }
 
@@ -2009,6 +2135,9 @@ pub(super) fn normalize_table_part_standard_fields(
         };
         let old_name = std::mem::replace(&mut field.name, standard.to_owned());
         let old_schema = std::mem::replace(&mut field.schema_name, standard.to_owned());
+        // The section's owner reference and line number are the standard
+        // fields they were renamed to, whatever they are stored as.
+        field.field = StandardFieldId::from_name(standard).map(FieldId::Standard);
         let mut aliases = standard_field_aliases(standard)
             .iter()
             .map(|alias| (*alias).to_owned())
@@ -2076,7 +2205,7 @@ pub fn queryable_field_catalog(snapshot: &MetadataSnapshot) -> QueryableFieldCat
     catalog
 }
 
-pub(super) type CustomFieldNameIndex = HashMap<(String, u32), Option<String>>;
+pub(super) type CustomFieldNameIndex = HashMap<(String, u32), (Option<String>, AttributeId)>;
 
 enum CustomFieldNames<'snapshot> {
     Scan(&'snapshot MetadataSnapshot),
@@ -2089,7 +2218,7 @@ fn index_custom_field_names(snapshot: &MetadataSnapshot) -> CustomFieldNameIndex
         for owner in &field.owner_tables {
             names
                 .entry((folded_name(owner), field.number))
-                .or_insert_with(|| field.name.clone());
+                .or_insert_with(|| (field.name.clone(), AttributeId::from(&field.guid)));
         }
         // Extension attributes are addressed by their globally unique field
         // number: the physical `…x1` column that carries them belongs to the
@@ -2097,7 +2226,7 @@ fn index_custom_field_names(snapshot: &MetadataSnapshot) -> CustomFieldNameIndex
         if field.extension_origin.is_some() {
             names
                 .entry((String::new(), field.number))
-                .or_insert_with(|| field.name.clone());
+                .or_insert_with(|| (field.name.clone(), AttributeId::from(&field.guid)));
         }
     }
     names
@@ -2217,6 +2346,19 @@ fn project_queryable_fields(
                     }
                 })
                 .collect();
+            // The identity comes from the field that was projected, not
+            // from a later lookup by name: a name two fields answer to
+            // must not attach the wrong origin to a column.
+            let field = match custom_names {
+                CustomFieldNames::Scan(snapshot) => {
+                    scanned_custom_field_id(snapshot, physical_table, &schema_name)
+                }
+                CustomFieldNames::Indexed(names) => {
+                    indexed_custom_field(names, physical_table, &schema_name).map(|(_, id)| id)
+                }
+            }
+            .map(FieldId::Metadata)
+            .or_else(|| StandardFieldId::from_name(&schema_name).map(FieldId::Standard));
             QueryableField {
                 name,
                 schema_name: query_schema_name,
@@ -2224,6 +2366,7 @@ fn project_queryable_fields(
                 columns,
                 reference_target,
                 reference_targets,
+                field,
             }
         })
         .collect()

@@ -37,6 +37,7 @@ use crate::query::core::resolve::{
     ColumnKind, CompilationCatalog, CompiledColumn, QueryableColumn, QueryableField,
     resolve_source_metadata, restriction_label,
 };
+use crate::query::core::usage::FieldUsage;
 use crate::query::core::{QueryDiagnostic, QueryDiagnosticKind};
 use crate::{Keyword, Token, TokenKind};
 use std::cell::RefCell;
@@ -114,6 +115,7 @@ pub(super) fn compile_branch(
     // so it leaves the list of projections before they compile and comes
     // back as a nested result once the main statement is rendered.
     let sections = take_projected_sections(ast, &context)?;
+    context.usage.set(FieldUsage::Projection);
     let mut selected = compile_branch_projections(
         ast,
         source,
@@ -127,14 +129,17 @@ pub(super) fn compile_branch(
     } else {
         push_owner_key(&sections, &mut selected, &context)?
     };
+    context.usage.set(FieldUsage::Grouping);
     let mut group_by = compile_group_keys(ast, &selected, &mut context)?;
     context.aggregates_allowed = grouped;
+    context.usage.set(FieldUsage::Having);
     let having = ast
         .having
         .as_ref()
         .map(|having| compile_predicate(having, &mut context))
         .transpose()?;
     context.aggregates_allowed = false;
+    context.usage.set(FieldUsage::Expression);
 
     let RenderedProjections {
         columns,
@@ -149,6 +154,7 @@ pub(super) fn compile_branch(
         return Err(empty_projection_diagnostic(source, joins.first()));
     }
 
+    context.usage.set(FieldUsage::JoinCondition);
     let conditions = joins
         .iter()
         .enumerate()
@@ -163,12 +169,14 @@ pub(super) fn compile_branch(
             None => Ok(JoinCondition { sql: String::new() }),
         })
         .collect::<Result<Vec<_>, _>>()?;
+    context.usage.set(FieldUsage::Filter);
     let filter = ast
         .filter
         .as_ref()
         .map(|filter| compile_predicate(filter, &mut context))
         .transpose()?;
     let mut derived_grouping = Vec::new();
+    context.usage.set(FieldUsage::Ordering);
     let mut order = compile_order_terms(
         order_terms,
         ast,
@@ -364,6 +372,7 @@ fn compile_branch_context<'snapshot, 'catalog>(
         let local_sources = sources.len();
         let mut context = CompilationContext {
             section_aliases: std::cell::Cell::new(0),
+            usage: std::cell::Cell::new(FieldUsage::Expression),
             snapshot,
             catalog,
             sources,
@@ -396,6 +405,7 @@ fn compile_branch_context<'snapshot, 'catalog>(
         dereference_in_join: false,
         source_elements: vec![0],
         section_aliases: std::cell::Cell::new(0),
+        usage: std::cell::Cell::new(FieldUsage::Expression),
         local_sources: 1,
     };
     attach_outer_scopes(&mut context, outer);
@@ -427,6 +437,7 @@ fn derived_source_scope(
     let fields = derived_fields(&compiled.columns, snapshot, dialect);
     Ok(SourceScope {
         object: derived_owner(),
+        table_part: None,
         fields: fields.into(),
         relation: format!("({})", compiled.sql),
         sql_alias: alias.clone(),
@@ -559,6 +570,7 @@ fn parameter_source_scope(
     let fields = derived_fields(&columns, snapshot, dialect);
     Ok(SourceScope {
         object: derived_owner(),
+        table_part: None,
         fields: fields.into(),
         relation,
         sql_alias: alias.clone(),
@@ -757,6 +769,7 @@ fn temporary_source_scope(
     let fields = derived_fields(&table.columns, snapshot, dialect);
     Ok(SourceScope {
         object: derived_owner(),
+        table_part: None,
         fields: fields.into(),
         relation: dialect.quote_identifier(&cte_name(table.id)),
         sql_alias: alias.clone(),
@@ -881,6 +894,7 @@ fn criterion_source_scope(
     );
     Ok(SourceScope {
         object: derived_owner(),
+        table_part: None,
         fields: vec![field].into(),
         relation: format!("({})", branches.join(" UNION ALL ")),
         sql_alias: alias.clone(),
@@ -997,6 +1011,7 @@ fn derived_field(
         }],
         reference_target,
         reference_targets,
+        field: None,
     }
 }
 
@@ -1072,11 +1087,22 @@ fn compile_branch_projections(
     };
     if join.is_none() && wildcard {
         let scope = context.source(ScopeId(0));
-        return Ok(scope
+        let resolved = scope
             .fields
             .iter()
             .enumerate()
             .map(|field| ResolvedPath::from_source(ScopeId(0), scope, field))
+            .collect::<Vec<_>>();
+        for path in &resolved {
+            context.catalog.note_field_use(
+                path.owner,
+                scope.table_part.clone(),
+                path.field().field,
+                FieldUsage::Projection,
+            );
+        }
+        return Ok(resolved
+            .into_iter()
             .map(SelectedProjection::Field)
             .collect());
     }
@@ -1271,8 +1297,12 @@ fn compile_selected_projections(
         if is_section_projection(context, &projection.expression) {
             continue;
         }
+        if !matches!(projection.expression, Projection::Field(_)) {
+            context.usage.set(FieldUsage::Expression);
+        }
         match &projection.expression {
             Projection::Field(reference) => {
+                context.usage.set(FieldUsage::Projection);
                 let mut resolved = context.resolve(reference)?;
                 if let Some(alias) = projection.alias {
                     resolved.path_label = Some(alias.lexeme.to_owned());
@@ -1411,7 +1441,10 @@ fn render_selected_projections(
         }
         match selected {
             SelectedProjection::Field(resolved) => {
-                for member in projected_members(resolved.field()) {
+                let members = projected_members(resolved.field());
+                let composite_member = members.len() > 1;
+                let origin = resolved.origin(&context.sources[resolved.scope.0], composite_member);
+                for member in members {
                     context.catalog.charge(1, None)?;
                     let (expression, requested_label, kind) = match member {
                         ProjectedMember::Single(column) => (
@@ -1459,11 +1492,10 @@ fn render_selected_projections(
                         "{expression} AS {}",
                         context.dialect.quote_identifier(&output_label)
                     ));
-                    columns.push(CompiledColumn::named(
-                        requested_label.clone(),
-                        output_label,
-                        kind,
-                    ));
+                    columns.push(
+                        CompiledColumn::named(requested_label.clone(), output_label, kind)
+                            .with_origin(origin.clone()),
+                    );
                 }
             }
             SelectedProjection::Generated {
@@ -2363,6 +2395,7 @@ fn resolve_join_source(
     )?;
     Ok(SourceScope {
         object: ObjectId::from(&resolved.object.guid),
+        table_part: resolved.table_part.clone(),
         fields: compiled_source.fields,
         relation: compiled_source.sql,
         aggregate: compiled_source.aggregate,

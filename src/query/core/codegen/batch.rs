@@ -114,6 +114,11 @@ fn compile_statement(
     presentations
         .used_decisions
         .extend(catalog.used_decisions());
+    for used in catalog.field_usage() {
+        if !presentations.field_usage.contains(&used) {
+            presentations.field_usage.push(used);
+        }
+    }
     if let Some(index) = &query.index {
         check_index_fields(index, query, &compiled.columns)?;
     }

@@ -11,11 +11,12 @@ use std::sync::Arc;
 use super::context::{CompilationContext, ScopeId};
 use super::expression::resolve_named_field;
 use crate::Token;
-use crate::metadata::MetadataKind;
+use crate::metadata::{MetadataKind, ObjectId};
 use crate::query::core::dialect::SqlDialect;
 use crate::query::core::names::names_equal;
 use crate::query::core::resolve::{
-    ColumnKind, CompiledColumn, NestedResult, QueryableField, normalize_table_part_standard_fields,
+    ColumnKind, ColumnOrigin, CompiledColumn, NestedResult, QueryableField,
+    normalize_table_part_standard_fields,
 };
 use crate::query::core::{QueryDiagnostic, QueryDiagnosticKind};
 
@@ -33,6 +34,11 @@ pub(super) struct PendingSection {
     pub(super) table: String,
     /// Physical column of the section holding the owner reference.
     pub(super) owner_column: String,
+    /// The object owning the section, and the section name as the
+    /// metadata spells it, which the columns of the nested result report
+    /// as their origin.
+    owner_object: ObjectId,
+    section_name: String,
     /// Fields the nested statement selects, in order.
     fields: Vec<QueryableField>,
     /// Every field of the section, including the storage columns a
@@ -269,6 +275,8 @@ pub(super) fn resolve_section(
         owner_scope: scope,
         table: live.name.clone(),
         owner_column,
+        owner_object: source.object,
+        section_name: descriptor.name.clone(),
         fields: selected,
         all_fields: fields,
     })
@@ -338,10 +346,15 @@ impl PendingSection {
                     dialect.quote_identifier(&column.physical_name),
                     dialect.quote_identifier(&column.output_label)
                 ));
-                columns.push(CompiledColumn::new(
-                    column.output_label.clone(),
-                    column.kind.clone(),
-                ));
+                columns.push(
+                    CompiledColumn::new(column.output_label.clone(), column.kind.clone())
+                        .with_origin(field.field.map(|identity| ColumnOrigin {
+                            object: self.owner_object,
+                            table_part: Some(self.section_name.clone()),
+                            field: identity,
+                            composite_member: field.columns.len() > 1,
+                        })),
+                );
             }
         }
         let key_label = "__owner";

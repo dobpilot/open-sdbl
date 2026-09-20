@@ -9,12 +9,12 @@ mod support;
 
 use support::*;
 
-use open_sdbl::metadata::{MetadataSnapshot, ObjectId};
+use open_sdbl::metadata::{FieldId, MetadataSnapshot, ObjectId, StandardFieldId};
 use open_sdbl::query::{
     AccessDecision, AccessRestriction, Backend, CompileOptions, CompiledQuery, MsSqlBackend,
-    ParameterValue, PostgresBackend, PrepareOptions, Prepared, QueryCompiler, QueryDiagnostic,
-    QueryDiagnosticKind, QueryParameter, RestrictionMode, RestrictionTarget, SessionParameters,
-    TempTablesManager, find_metadata_object,
+    ParameterValue, PostgresBackend, PrepareOptions, Prepared, PresentationExpression,
+    PresentationPlan, QueryCompiler, QueryDiagnostic, QueryDiagnosticKind, QueryParameter,
+    RestrictionMode, RestrictionTarget, SessionParameters, TempTablesManager, find_metadata_object,
 };
 
 fn object_id(snapshot: &MetadataSnapshot, name: &str) -> ObjectId {
@@ -843,5 +843,90 @@ fn the_reads_of_a_condition_stay_outside_the_request() {
         prepared.0.restriction_request().targets.len(),
         1,
         "the condition's own read is not a target"
+    );
+}
+
+#[test]
+fn a_presentation_lookup_reads_its_target_through_the_decision() {
+    let snapshot = snapshot();
+    let probe = object_id(&snapshot, "Справочник.OpenSdblMetadataProbe");
+    let plan = PresentationPlan {
+        object: probe,
+        fields: vec![FieldId::Standard(StandardFieldId::Code)],
+        expression: PresentationExpression::Field(FieldId::Standard(StandardFieldId::Code)),
+    };
+    let references = [[0x11; 16]];
+
+    // Unfiltered: the entry point that takes no decisions is unchanged.
+    let plain = QueryCompiler::new(&snapshot, PostgresBackend)
+        .compile_presentation_lookup(&plan, &references)
+        .unwrap();
+    assert_eq!(wrappers(&plain.sql), 0, "{}", plain.sql);
+
+    // Filtered: the prepared query carries the mode and the decisions.
+    let prepared = QueryCompiler::new(&snapshot, PostgresBackend)
+        .prepare_with_options(
+            "ВЫБРАТЬ Code ИЗ Справочник.OpenSdblMetadataProbe",
+            &PrepareOptions::new().restricted(),
+        )
+        .unwrap();
+    let decisions = [AccessDecision::restricted(AccessRestriction::new(
+        probe,
+        "Code <> \"\"",
+    ))];
+    let filtered = prepared
+        .compile_presentation_lookup(
+            &snapshot,
+            &plan,
+            &references,
+            &CompileOptions::new().decisions(&decisions),
+        )
+        .unwrap();
+    assert_eq!(wrappers(&filtered.sql), 1, "{}", filtered.sql);
+    assert!(filtered.sql.contains("<> ''"), "{}", filtered.sql);
+
+    // Denied: the reference matches no row, so nothing is presented.
+    let denied = [AccessDecision::denied(RestrictionTarget {
+        object: probe,
+        table_part: None,
+    })];
+    let denied = prepared
+        .compile_presentation_lookup(
+            &snapshot,
+            &plan,
+            &references,
+            &CompileOptions::new().decisions(&denied),
+        )
+        .unwrap();
+    assert!(denied.sql.contains("WHERE FALSE"), "{}", denied.sql);
+
+    // No decision at all, in the restricted mode, is an error.
+    let error = prepared
+        .compile_presentation_lookup(&snapshot, &plan, &references, &CompileOptions::new())
+        .unwrap_err();
+    assert_eq!(error.kind(), QueryDiagnosticKind::Restriction);
+    assert!(
+        error.to_string().contains("OpenSdblMetadataProbe"),
+        "{error}"
+    );
+}
+
+#[test]
+fn a_deferred_presentation_compiles_in_the_restricted_mode() {
+    // The lookup that resolves it is filtered in its own right, so the
+    // mode no longer has to refuse producing work for it.
+    let snapshot = universal_dereferenced_presentation_snapshot();
+    let source = "ВЫБРАТЬ ПРЕДСТАВЛЕНИЕССЫЛКИ(Д.ДоговорКонтрагента) КАК П
+         ИЗ Документ.бит_ДополнительныеУсловияПоДоговору КАК Д";
+    let prepared = prepare(&snapshot, PostgresBackend, source)
+        .unwrap_or_else(|error| panic!("a deferred presentation must compile: {error}"));
+    let decisions = allow_all(&prepared);
+    let compiled = prepared
+        .compile_with(&snapshot, &CompileOptions::new().decisions(&decisions))
+        .unwrap();
+    assert!(
+        !compiled.deferred_presentations.is_empty(),
+        "the presentation is deferred to the application: {}",
+        compiled.sql
     );
 }

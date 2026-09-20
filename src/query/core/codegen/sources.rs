@@ -33,6 +33,7 @@ use crate::query::core::resolve::{
     kind_from_query_name, resolve_source_metadata,
 };
 use crate::query::core::types::TypeValue;
+use crate::query::core::usage::FieldUsage;
 use crate::query::core::{QueryDiagnostic, QueryDiagnosticKind};
 use crate::{Keyword, Token, TokenKind, tokenize};
 
@@ -83,6 +84,7 @@ pub(super) fn compile_restriction_predicate(
                 catalog,
                 sources: vec![SourceScope {
                     object: ObjectId::from(&object.guid),
+                    table_part: None,
                     fields: fields.to_vec().into(),
                     relation: String::new(),
                     sql_alias: alias.to_owned(),
@@ -102,6 +104,7 @@ pub(super) fn compile_restriction_predicate(
                 dereference_in_join: false,
                 source_elements: vec![0],
                 section_aliases: std::cell::Cell::new(0),
+                usage: std::cell::Cell::new(FieldUsage::Expression),
                 local_sources: 1,
             };
             // The joined sources are visible to every condition of the
@@ -200,6 +203,7 @@ fn restriction_join_scope(
     )?;
     Ok(SourceScope {
         object: ObjectId::from(&resolved.object.guid),
+        table_part: None,
         fields: resolved.fields,
         relation: relation.sql,
         sql_alias,
@@ -1951,6 +1955,7 @@ pub(super) fn compile_source_relation(
             catalog,
             sources: vec![SourceScope {
                 object: ObjectId::from(&object.guid),
+                table_part: None,
                 fields: fields.to_vec().into(),
                 relation: String::new(),
                 sql_alias: "__slice_base".to_owned(),
@@ -1970,6 +1975,7 @@ pub(super) fn compile_source_relation(
             dereference_in_join: false,
             source_elements: vec![0],
             section_aliases: std::cell::Cell::new(0),
+            usage: std::cell::Cell::new(FieldUsage::Expression),
             local_sources: 1,
         };
         let sql = compile_predicate(condition, &mut condition_context)?;

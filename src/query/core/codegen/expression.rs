@@ -24,6 +24,7 @@ use crate::query::core::resolve::{
     kind_from_query_name,
 };
 use crate::query::core::types::TypeValue;
+use crate::query::core::usage::FieldUsage;
 use crate::query::core::{QueryDiagnostic, QueryDiagnosticKind};
 use crate::{Keyword, Token, TokenKind};
 use std::collections::BTreeSet;
@@ -3949,6 +3950,9 @@ pub(super) fn compile_aggregate(
     };
     // The argument of an aggregate cannot contain another aggregate.
     let outer_allowed = std::mem::replace(&mut context.aggregates_allowed, false);
+    // Whatever clause holds the aggregate, the fields inside it are read
+    // as its argument, which is the distinction a caller needs.
+    let outer_usage = context.usage.replace(FieldUsage::Aggregate);
     let compiled = match argument {
         AggregateArgument::All => Ok(("*".to_owned(), number.clone())),
         AggregateArgument::Expression(expression) => match expression.as_ref() {
@@ -3971,6 +3975,7 @@ pub(super) fn compile_aggregate(
         },
     };
     context.aggregates_allowed = outer_allowed;
+    context.usage.set(outer_usage);
     let (argument, argument_kind) = compiled?;
     let output_kind = match kind {
         AggregateKind::Count | AggregateKind::Sum | AggregateKind::Avg => number,

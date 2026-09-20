@@ -89,6 +89,7 @@ pub(super) fn constants_source_scope(
         .map_or_else(|| default_alias.to_owned(), |token| token.lexeme.to_owned());
     Ok(SourceScope {
         object: ObjectId::from_bytes([0; 16]),
+        table_part: None,
         fields: fields.into(),
         relation: String::new(),
         sql_alias: alias,

@@ -11,6 +11,7 @@ mod resolve;
 mod restrict;
 mod temp_tables;
 mod types;
+mod usage;
 
 pub use diag::{QueryDiagnostic, QueryDiagnosticKind};
 pub use params::{
@@ -18,8 +19,8 @@ pub use params::{
     QueryParameter, SessionParameters,
 };
 pub use resolve::{
-    ColumnKind, CompiledColumn, CompiledQuery, PresentationExpression, PresentationPlan,
-    PresentationRequest, PresentationTarget, QueryableColumn, QueryableField,
+    ColumnKind, ColumnOrigin, CompiledColumn, CompiledQuery, PresentationExpression,
+    PresentationPlan, PresentationRequest, PresentationTarget, QueryableColumn, QueryableField,
     QueryableFieldCatalog, constants_table_fields, find_metadata_object, object_query_name,
     queryable_field_catalog, queryable_fields,
 };
@@ -28,6 +29,7 @@ pub use restrict::{
 };
 pub use temp_tables::{TempTable, TempTablesManager};
 pub use types::TypeValue;
+pub use usage::{FieldUsage, FieldUsageRequest, FieldUse};
 
 pub(super) use codegen::{
     compile_batch, compile_presentation_lookup, compile_query, prepare_query_with,

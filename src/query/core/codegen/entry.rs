@@ -3,7 +3,10 @@ use std::collections::BTreeSet;
 use super::batch::compile_batch_ast;
 use super::expression::single_column_at;
 use super::orchestrate::PresentationCompilation;
-use super::sources::compile_live_relation;
+use super::sources::{
+    SourceRestriction, compile_live_relation, compile_restriction_predicate,
+    wrap_restricted_relation,
+};
 use super::virtual_tables::compile_presentation_plan;
 use crate::metadata::MetadataSnapshot;
 use crate::query::core::dialect::SqlDialect;
@@ -12,12 +15,13 @@ use crate::query::core::params::{CompileOptions, Parameters, QueryParameter, par
 use crate::query::core::parser::Parser;
 use crate::query::core::resolve::{
     ColumnKind, CompilationCatalog, CompiledColumn, CompiledQuery, PresentationPlan,
-    PresentationRequest, PresentationTarget, restriction_label,
+    PresentationRequest, PresentationTarget, RestrictionState, restriction_label,
 };
 use crate::query::core::restrict::{
     AccessDecision, AccessRestriction, RestrictionMode, RestrictionRequest, RestrictionTarget,
 };
 use crate::query::core::temp_tables::TempTablesManager;
+use crate::query::core::usage::FieldUsageRequest;
 use crate::query::core::{QueryDiagnostic, QueryDiagnosticKind};
 use crate::{TokenKind, tokenize};
 
@@ -25,6 +29,7 @@ use crate::{TokenKind, tokenize};
 pub(crate) struct PreparedRequests {
     pub(crate) presentations: PresentationRequest,
     pub(crate) restrictions: RestrictionRequest,
+    pub(crate) field_usage: FieldUsageRequest,
 }
 
 /// Collects presentation and restriction targets with the caller's
@@ -57,6 +62,9 @@ pub(crate) fn prepare_query_with(
         restrictions: RestrictionRequest {
             targets: presentations.restriction_targets.into_iter().collect(),
         },
+        field_usage: FieldUsageRequest {
+            fields: presentations.field_usage,
+        },
     })
 }
 
@@ -65,8 +73,19 @@ pub(crate) fn compile_presentation_lookup(
     plan: &PresentationPlan,
     references: &[[u8; 16]],
     dialect: SqlDialect,
+    options: &CompileOptions<'_>,
+    mode: RestrictionMode,
 ) -> Result<CompiledQuery, QueryDiagnostic> {
-    let catalog = CompilationCatalog::new(snapshot, Parameters::unbound());
+    let mut catalog = CompilationCatalog::new(snapshot, options.bound_parameters());
+    // The lookup reads one table, and the question about it is the one a
+    // statement asks about its own sources, so it is armed the same way.
+    catalog.set_restrictions(RestrictionState {
+        restrictions: options.access_restrictions(),
+        decisions: options.access_decisions(),
+        mode,
+        keyword: false,
+        collecting: false,
+    });
     let references = references.iter().copied().collect::<BTreeSet<_>>();
     if references.is_empty() {
         return Err(QueryDiagnostic::unpositioned(
@@ -112,16 +131,63 @@ pub(crate) fn compile_presentation_lookup(
     let qualified_id = dialect.qualified_column(Some(alias), &id_column.physical_name);
     let expression =
         compile_presentation_plan(snapshot, &catalog, plan.object, alias, plan, None, dialect)?;
-    let relation = compile_live_relation(
-        snapshot,
-        &catalog,
-        target_table,
-        &fields,
-        alias,
-        None,
-        dialect,
-    )?
-    .sql;
+    let target = RestrictionTarget {
+        object: plan.object,
+        table_part: None,
+    };
+    let decision = catalog.decide(target.clone(), None, || {
+        restriction_label(snapshot, &target)
+    })?;
+    let relation = match decision.condition() {
+        // A reference the decision excludes matches no row, so the
+        // application presents nothing for it — the same answer a deleted
+        // object already gives.
+        Some(condition) => {
+            let restricted = compile_live_relation(
+                snapshot,
+                &catalog,
+                target_table,
+                &fields,
+                "__restricted",
+                None,
+                dialect,
+            )?;
+            let restriction = SourceRestriction {
+                condition,
+                label: restriction_label(snapshot, &target),
+                identity_is_base: true,
+            };
+            let predicate = compile_restriction_predicate(
+                &restriction,
+                snapshot,
+                &catalog,
+                object,
+                &restriction.label,
+                &fields,
+                "__restricted",
+                dialect,
+            )?;
+            wrap_restricted_relation(
+                &restricted.sql,
+                &fields,
+                &predicate,
+                &restricted.separators,
+                dialect,
+            )
+        }
+        None => {
+            compile_live_relation(
+                snapshot,
+                &catalog,
+                target_table,
+                &fields,
+                alias,
+                None,
+                dialect,
+            )?
+            .sql
+        }
+    };
     let values = references
         .iter()
         .map(|reference| dialect.binary_literal(reference))

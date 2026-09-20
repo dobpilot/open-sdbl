@@ -12,6 +12,7 @@ use crate::query::core::resolve::{
 use crate::query::core::restrict::{
     AccessDecision, AccessRestriction, RestrictionMode, RestrictionTarget,
 };
+use crate::query::core::usage::FieldUse;
 use crate::query::core::{QueryDiagnostic, QueryDiagnosticKind, SqlDialect};
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -183,6 +184,9 @@ pub(super) struct PresentationCompilation<'plans> {
     pub(super) used_restrictions: BTreeSet<usize>,
     /// Positions in `decisions` that some statement applied.
     pub(super) used_decisions: BTreeSet<usize>,
+    /// The fields the batch reads, with their roles, in the order they
+    /// were first seen.
+    pub(super) field_usage: Vec<FieldUse>,
     /// Whether statements with `ИТОГИ` append the `__level` column.
     pub(super) totals_level: bool,
 }
@@ -206,6 +210,7 @@ impl<'plans> PresentationCompilation<'plans> {
             restriction_targets: BTreeSet::new(),
             used_restrictions: BTreeSet::new(),
             used_decisions: BTreeSet::new(),
+            field_usage: Vec::new(),
             totals_level: false,
         }
     }
@@ -245,6 +250,7 @@ impl<'plans> PresentationCompilation<'plans> {
             restriction_targets: BTreeSet::new(),
             used_restrictions: BTreeSet::new(),
             used_decisions: BTreeSet::new(),
+            field_usage: Vec::new(),
             totals_level: false,
         }
     }

@@ -21,13 +21,13 @@ mod postgres;
 use crate::metadata::{MetadataSnapshot, SnapshotFingerprint};
 
 pub use core::{
-    AccessDecision, AccessRestriction, ColumnKind, CompileOptions, CompiledColumn, CompiledQuery,
-    InvalidParameterDate, ParameterColumn, ParameterDate, ParameterValue, PresentationExpression,
-    PresentationPlan, PresentationRequest, PresentationTarget, QueryDiagnostic,
-    QueryDiagnosticKind, QueryParameter, QueryableColumn, QueryableField, QueryableFieldCatalog,
-    RestrictionMode, RestrictionRequest, RestrictionTarget, SessionParameters, TempTable,
-    TempTablesManager, TypeValue, constants_table_fields, find_metadata_object, object_query_name,
-    queryable_field_catalog, queryable_fields,
+    AccessDecision, AccessRestriction, ColumnKind, ColumnOrigin, CompileOptions, CompiledColumn,
+    CompiledQuery, FieldUsage, FieldUsageRequest, FieldUse, InvalidParameterDate, ParameterColumn,
+    ParameterDate, ParameterValue, PresentationExpression, PresentationPlan, PresentationRequest,
+    PresentationTarget, QueryDiagnostic, QueryDiagnosticKind, QueryParameter, QueryableColumn,
+    QueryableField, QueryableFieldCatalog, RestrictionMode, RestrictionRequest, RestrictionTarget,
+    SessionParameters, TempTable, TempTablesManager, TypeValue, constants_table_fields,
+    find_metadata_object, object_query_name, queryable_field_catalog, queryable_fields,
 };
 pub use mssql::{InvalidMsSqlYearOffset, MsSqlBackend, MsSqlDialectLevel};
 pub use postgres::PostgresBackend;
@@ -165,6 +165,7 @@ impl<B: Backend> QueryCompiler<'_, B> {
             backend: self.backend,
             request: requests.presentations,
             restrictions: requests.restrictions,
+            field_usage: requests.field_usage,
             mode: options.restriction_mode_in_effect(),
             snapshot_fingerprint: self.snapshot.fingerprint(),
         })
@@ -203,6 +204,13 @@ impl<B: Backend> QueryCompiler<'_, B> {
 
     /// Compiles a safe batch lookup for deferred reference presentations.
     ///
+    /// The target table is read **unfiltered**: this entry point takes no
+    /// access decisions. An application under
+    /// [`RestrictionMode::Restricted`] resolves its deferred
+    /// presentations with [`Prepared::compile_presentation_lookup`],
+    /// which carries the mode and the decisions of the query the
+    /// references came from.
+    ///
     /// # Errors
     ///
     /// Returns a diagnostic when the plan, target, or reference batch is
@@ -212,7 +220,14 @@ impl<B: Backend> QueryCompiler<'_, B> {
         plan: &PresentationPlan,
         references: &[[u8; 16]],
     ) -> Result<CompiledQuery, QueryDiagnostic> {
-        core::compile_presentation_lookup(self.snapshot, plan, references, self.backend.dialect())
+        core::compile_presentation_lookup(
+            self.snapshot,
+            plan,
+            references,
+            self.backend.dialect(),
+            &CompileOptions::new(),
+            RestrictionMode::Statement,
+        )
     }
 }
 
@@ -289,6 +304,7 @@ pub struct Prepared<B: Backend> {
     backend: B,
     request: PresentationRequest,
     restrictions: RestrictionRequest,
+    field_usage: FieldUsageRequest,
     /// Fixed at preparation; no compile-time value can lower it.
     mode: RestrictionMode,
     snapshot_fingerprint: SnapshotFingerprint,
@@ -309,6 +325,18 @@ impl<B: Backend> Prepared<B> {
     #[must_use]
     pub fn restriction_request(&self) -> &RestrictionRequest {
         &self.restrictions
+    }
+
+    /// Which fields the batch reads, and in what role.
+    ///
+    /// Hiding a value in the result hides nothing on its own: a statement
+    /// filtering on an attribute learns it from which rows come back, and
+    /// ordering, grouping and aggregating leak it the same way. This says
+    /// where each field is read, so an application can refuse the roles it
+    /// must refuse.
+    #[must_use]
+    pub const fn field_usage(&self) -> &FieldUsageRequest {
+        &self.field_usage
     }
 
     /// The mode the query was prepared in. Compilation applies this
@@ -353,6 +381,40 @@ impl<B: Backend> Prepared<B> {
             snapshot,
             options,
             self.backend.dialect(),
+            self.mode,
+        )
+    }
+
+    /// Compiles the lookup that resolves this query's deferred reference
+    /// presentations, under this query's restriction mode.
+    ///
+    /// The references come from rows the query already allowed; the
+    /// decision this lookup needs is about the *target* of those
+    /// references. A target the decision excludes matches no row, so the
+    /// application presents nothing for it — the answer a deleted object
+    /// already gives — rather than seeing a value it may not read.
+    ///
+    /// # Errors
+    ///
+    /// Returns a diagnostic for an invalid plan or reference batch, for a
+    /// snapshot other than the one the query was prepared against, and,
+    /// in [`RestrictionMode::Restricted`], for a target with no decision.
+    pub fn compile_presentation_lookup(
+        &self,
+        snapshot: &MetadataSnapshot,
+        plan: &PresentationPlan,
+        references: &[[u8; 16]],
+        options: &CompileOptions<'_>,
+    ) -> Result<CompiledQuery, QueryDiagnostic> {
+        if snapshot.fingerprint() != self.snapshot_fingerprint {
+            return Err(QueryDiagnostic::snapshot_mismatch());
+        }
+        core::compile_presentation_lookup(
+            snapshot,
+            plan,
+            references,
+            self.backend.dialect(),
+            options,
             self.mode,
         )
     }

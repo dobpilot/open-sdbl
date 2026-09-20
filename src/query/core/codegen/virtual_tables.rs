@@ -25,6 +25,7 @@ use crate::query::core::resolve::{
     CompilationCatalog, PresentationExpression, PresentationPlan, QueryableColumn, QueryableField,
     logical_column_name,
 };
+use crate::query::core::usage::FieldUsage;
 use crate::query::core::{QueryDiagnostic, QueryDiagnosticKind};
 use crate::{Token, TokenKind};
 
@@ -1499,6 +1500,7 @@ pub(super) fn compile_accumulation_condition(
         catalog,
         sources: vec![SourceScope {
             object: ObjectId::from(&object.guid),
+            table_part: None,
             fields: dimension_fields.to_vec().into(),
             relation: String::new(),
             sql_alias: alias.to_owned(),
@@ -1518,6 +1520,7 @@ pub(super) fn compile_accumulation_condition(
         dereference_in_join: false,
         source_elements: vec![0],
         section_aliases: std::cell::Cell::new(0),
+        usage: std::cell::Cell::new(FieldUsage::Expression),
         local_sources: 1,
     };
     // The names the mirror reads through other columns (as the join

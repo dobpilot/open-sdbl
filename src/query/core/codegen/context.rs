@@ -18,18 +18,21 @@ use super::sources::{
 use super::virtual_tables::AggregateSource;
 use super::virtual_tables::compile_presentation_plan;
 use crate::Token;
-use crate::metadata::{LiveTable, MetadataKind, MetadataObject, MetadataSnapshot, ObjectId};
+use crate::metadata::{
+    FieldId, LiveTable, MetadataKind, MetadataObject, MetadataSnapshot, ObjectId,
+};
 use crate::query::core::ast::{
     Expression, FieldReference, PresentationArgument, PresentationOperation,
 };
 use crate::query::core::dialect::{SqlDialect, compile_literal};
 use crate::query::core::names::names_equal;
 use crate::query::core::resolve::{
-    ColumnKind, CompilationCatalog, CompiledColumn, QueryableColumn, QueryableField,
+    ColumnKind, ColumnOrigin, CompilationCatalog, CompiledColumn, QueryableColumn, QueryableField,
     is_standard_field_name, kind_from_query_name, restriction_label,
 };
 use crate::query::core::restrict::RestrictionTarget;
 use crate::query::core::types::TypeValue;
+use crate::query::core::usage::FieldUsage;
 use crate::query::core::{QueryDiagnostic, QueryDiagnosticKind};
 
 pub(super) struct CompiledBranch {
@@ -174,6 +177,9 @@ impl JoinPlan {
 
 pub(super) struct SourceScope {
     pub(super) object: ObjectId,
+    /// The tabular-section name when the source is a section of `object`,
+    /// which is what a column's origin and a restriction target both name.
+    pub(super) table_part: Option<String>,
     pub(super) fields: Arc<[QueryableField]>,
     pub(super) relation: String,
     pub(super) sql_alias: String,
@@ -237,6 +243,23 @@ pub(super) struct CompilationContext<'snapshot, 'catalog> {
     pub(super) local_sources: usize,
     /// Aliases handed out to the `EXISTS` of a tabular-section predicate.
     pub(super) section_aliases: std::cell::Cell<usize>,
+    /// The role the clause being compiled reads its fields in, reported
+    /// by the field-usage request.
+    pub(super) usage: std::cell::Cell<FieldUsage>,
+}
+
+impl CompilationContext<'_, '_> {
+    /// Records a field the statement just resolved.
+    fn note_field_use(&self, scope: ScopeId, owner: ObjectId, field: Option<FieldId>) {
+        let source = &self.sources[scope.0];
+        // A path that left the source ended on a whole object, so the
+        // section of the source is not the section of the target.
+        let table_part = (owner == source.object)
+            .then(|| source.table_part.clone())
+            .flatten();
+        self.catalog
+            .note_field_use(owner, table_part, field, self.usage.get());
+    }
 }
 
 /// One source of an enclosing statement, carried into a correlated
@@ -258,6 +281,7 @@ impl OuterScope {
     fn into_scope(self) -> SourceScope {
         SourceScope {
             object: self.object,
+            table_part: None,
             fields: self.fields,
             relation: String::new(),
             sql_alias: self.sql_alias,
@@ -323,6 +347,30 @@ impl ResolvedPath {
 
     pub(super) fn field(&self) -> &QueryableField {
         &self.fields[self.field_index]
+    }
+
+    /// Where a column projected from this path came from.
+    ///
+    /// The owner is the object the path ended on, so a dereference names
+    /// the target rather than the source that pointed at it. A field the
+    /// compiler synthesized, or one the metadata does not declare, has no
+    /// origin.
+    pub(super) fn origin(
+        &self,
+        source: &SourceScope,
+        composite_member: bool,
+    ) -> Option<ColumnOrigin> {
+        // A path that left the source ended on a whole object: the
+        // section the source reads is not the section of the target.
+        let table_part = (self.owner == source.object)
+            .then(|| source.table_part.clone())
+            .flatten();
+        Some(ColumnOrigin {
+            object: self.owner,
+            table_part,
+            field: self.field().field?,
+            composite_member,
+        })
     }
 
     /// The same resolution pointing at another field of the same source.
@@ -686,6 +734,7 @@ impl CompilationContext<'_, '_> {
             }
         };
         source.used_fields.borrow_mut().insert(field_index);
+        self.note_field_use(scope, source.object, source.fields[field_index].field);
         Ok(ResolvedPath {
             scope,
             owner: source.object,
@@ -757,6 +806,7 @@ impl CompilationContext<'_, '_> {
             }],
             reference_target: None,
             reference_targets: Vec::new(),
+            field: None,
         };
         Some((field, self.dialect.boolean_value(&predicate)))
     }
@@ -818,6 +868,7 @@ impl CompilationContext<'_, '_> {
             }],
             reference_target: None,
             reference_targets: Vec::new(),
+            field: None,
         };
         Some((field, expression))
     }
@@ -875,6 +926,7 @@ impl CompilationContext<'_, '_> {
             }],
             reference_target: None,
             reference_targets: Vec::new(),
+            field: None,
         };
         Some((field, expression))
     }
@@ -919,6 +971,7 @@ impl CompilationContext<'_, '_> {
             // the targets out keeps both refusals here.
             reference_target: None,
             reference_targets: Vec::new(),
+            field: None,
         })
     }
 
@@ -1176,6 +1229,9 @@ impl CompilationContext<'_, '_> {
         let single_target = {
             let (field_index, reference_field) =
                 resolve_named_field(&self.source(scope).fields, reference_token)?;
+            // The hop itself is a read: the join compares the reference
+            // value, so an application refusing that field must see it.
+            self.note_field_use(scope, self.source(scope).object, reference_field.field);
             self.source(scope)
                 .used_fields
                 .borrow_mut()
@@ -1313,6 +1369,12 @@ impl CompilationContext<'_, '_> {
             Some((field, expression)) => (Arc::from(vec![field]), 0, Some(expression)),
             None => (target_fields, target_field_index, None),
         };
+        self.catalog.note_field_use(
+            target_object_id,
+            None,
+            fields[field_index].field,
+            self.usage.get(),
+        );
         Ok(ResolvedPath {
             scope,
             owner: target_object_id,
@@ -1443,6 +1505,12 @@ impl CompilationContext<'_, '_> {
         if self.compiling_join_condition {
             self.dereference_in_join = true;
         }
+        self.catalog.note_field_use(
+            target_object_id,
+            None,
+            target_fields[target_field_index].field,
+            self.usage.get(),
+        );
         Ok(ResolvedPath {
             scope,
             owner: target_object_id,
@@ -1602,6 +1670,7 @@ impl CompilationContext<'_, '_> {
             }],
             reference_target: None,
             reference_targets: Vec::new(),
+            field: None,
         };
         if self.compiling_join_condition {
             self.dereference_in_join = true;
@@ -1694,6 +1763,7 @@ impl CompilationContext<'_, '_> {
             columns,
             reference_target: None,
             reference_targets: Vec::new(),
+            field: None,
         };
         if self.compiling_join_condition {
             self.dereference_in_join = true;
@@ -2500,12 +2570,9 @@ pub(super) fn compile_presentation(
     }
 
     if targets == ReferencePresentationTargets::Deferred {
-        // The presentation is resolved by a second lookup the caller runs
-        // with `compile_presentation_lookup`, which this compilation does
-        // not filter; a restricted compilation refuses to defer.
-        context
-            .catalog
-            .refuse_unfiltered_read(Some(reference.last()), "a deferred reference presentation")?;
+        // The lookup that resolves this is filtered in its own right —
+        // `Prepared::compile_presentation_lookup` carries the mode and
+        // the decisions — so deferring reads nothing past them.
         let payload = compile_deferred_reference_presentation(
             &source_alias,
             resolved.field(),
