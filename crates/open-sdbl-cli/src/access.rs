@@ -44,6 +44,9 @@ pub(crate) struct AccessStore {
     catalog: RoleCatalog,
     users: Option<Vec<InfoBaseUser>>,
     rights: HashMap<Guid, RoleRights>,
+    /// Roles whose rights resource the base does not carry: asked for
+    /// once, then skipped.
+    unreadable: Vec<Guid>,
     current: Option<InfoBaseUser>,
 }
 
@@ -54,6 +57,7 @@ impl AccessStore {
             catalog: RoleCatalog::from_snapshot(snapshot),
             users: None,
             rights: HashMap::new(),
+            unreadable: Vec::new(),
             current: None,
         }
     }
@@ -83,13 +87,22 @@ impl AccessStore {
         self.rights.insert(role, rights);
     }
 
-    /// The roles among `roles` whose rights are not read yet.
+    /// The roles among `roles` whose rights are not read yet and may
+    /// still be there.
     pub(crate) fn missing_rights(&self, roles: &[Guid]) -> Vec<Guid> {
         roles
             .iter()
-            .filter(|role| !self.rights.contains_key(*role))
+            .filter(|role| !self.rights.contains_key(*role) && !self.unreadable.contains(*role))
             .cloned()
             .collect()
+    }
+
+    /// The name of a role, or its identifier when the configuration does
+    /// not declare it.
+    fn role_name(&self, role: &Guid) -> String {
+        self.catalog
+            .by_guid(role)
+            .map_or_else(|| role.as_str().to_owned(), |role| role.name.clone())
     }
 
     fn user(&self, name: &str) -> Option<&InfoBaseUser> {
@@ -231,7 +244,8 @@ pub(crate) async fn apply_access_command(
                 .ok_or_else(|| CliError::Data(format!("role {role:?} is not declared")))?;
             ensure_rights(store, session, std::slice::from_ref(&role.guid)).await?;
             let rights = store.rights_of(std::slice::from_ref(&role.guid));
-            describe_templates(&role, rights[0], name)?
+            let rights = rights.first().ok_or_else(|| missing_rights(&role.name))?;
+            describe_templates(&role, rights, name)?
         }
         AccessCommand::Role { name, object } => {
             let role = store
@@ -241,7 +255,8 @@ pub(crate) async fn apply_access_command(
                 .ok_or_else(|| CliError::Data(format!("role {name:?} is not declared")))?;
             ensure_rights(store, session, std::slice::from_ref(&role.guid)).await?;
             let rights = store.rights_of(std::slice::from_ref(&role.guid));
-            describe_role(&role, rights[0], snapshot, object)?
+            let rights = rights.first().ok_or_else(|| missing_rights(&role.name))?;
+            describe_role(&role, rights, snapshot, object)?
         }
         AccessCommand::Rls { object, right } => {
             let roles = match store.current_user() {
@@ -272,7 +287,7 @@ pub(crate) async fn apply_access_command(
                 .user(name)
                 .cloned()
                 .ok_or_else(|| CliError::Data(format!("user {name:?} is not in v8users")))?;
-            ensure_rights(store, session, &user.data.roles).await?;
+            let unreadable = ensure_rights(store, session, &user.data.roles).await?;
             let roles = user.role_names(store.catalog());
             let user_id = user.data.id.clone();
             store.current = Some(user);
@@ -281,6 +296,17 @@ pub(crate) async fn apply_access_command(
                 roles.len(),
                 roles.join(", ")
             );
+            if !unreadable.is_empty() {
+                let names = unreadable
+                    .iter()
+                    .map(|role| store.role_name(role))
+                    .collect::<Vec<_>>();
+                text.push_str(&format!(
+                    "{} roles grant nothing: the base carries no rights resource of {} (a role of an extension, or one the configuration dropped)\n",
+                    names.len(),
+                    names.join(", ")
+                ));
+            }
             // The templates read what the base itself carries; what the
             // operator typed stays.
             let read = read_template_parameters(session, snapshot, session_parameters).await?;
@@ -345,15 +371,23 @@ async fn ensure_users(
     Ok(())
 }
 
-/// Reads the rights of the roles the store lacks.
+/// The error of a role the base carries no rights resource of.
+fn missing_rights(name: &str) -> CliError {
+    CliError::Data(format!(
+        "the rights resource of role {name:?} is not in Config: a role of an extension, or one the configuration dropped"
+    ))
+}
+
+/// Reads the rights of the roles the store lacks and answers the roles
+/// whose rights resource the base does not carry.
 pub(crate) async fn ensure_rights(
     store: &mut AccessStore,
     session: &mut DatabaseSession,
     roles: &[Guid],
-) -> Result<(), CliError> {
+) -> Result<Vec<Guid>, CliError> {
     let missing = store.missing_rights(roles);
     if missing.is_empty() {
-        return Ok(());
+        return Ok(Vec::new());
     }
     let layout = session.layout().ok_or_else(|| {
         CliError::Data("the storage layout is unknown; run \\refresh first".to_owned())
@@ -361,19 +395,12 @@ pub(crate) async fn ensure_rights(
     for (role, rights) in read_role_rights(session, layout, &missing).await? {
         store.insert_rights(role, rights);
     }
+    // A role the configuration no longer declares — one deleted since, or
+    // one of an extension, whose rights live in ConfigCas — carries no
+    // resource: it is remembered, and grants nothing.
     let unread = store.missing_rights(roles);
-    if let Some(role) = unread.first() {
-        let name = store
-            .catalog()
-            .by_guid(role)
-            .map_or_else(|| role.as_str().to_owned(), |role| role.name.clone());
-        return Err(CliError::Data(format!(
-            "the rights resource of role {name:?} is not in Config ({} of {} missing)",
-            unread.len(),
-            roles.len()
-        )));
-    }
-    Ok(())
+    store.unreadable.extend(unread.iter().cloned());
+    Ok(unread)
 }
 
 async fn read_users(session: &mut DatabaseSession) -> Result<Vec<InfoBaseUser>, CliError> {

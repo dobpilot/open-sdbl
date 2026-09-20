@@ -3693,6 +3693,13 @@ parameters the body reads. A template name the role does not carry SHALL
 be reported without changing the console state, and a body that does not
 parse SHALL be reported with the position of the error.
 
+A role whose rights resource `Config` does not carry — a role deleted
+from the configuration, or one of an extension — SHALL be remembered as
+unreadable and asked for once; it SHALL grant nothing, and a command
+reading the roles of a user SHALL report how many such roles it holds and
+name them without failing. A command naming one role SHALL report that
+its rights are not in `Config`.
+
 Every command of this requirement SHALL be offered by name completion.
 Users and
 rights SHALL be read on the first command that needs them through the
@@ -3731,6 +3738,17 @@ object or right SHALL be reported without changing the console state.
 - **WHEN** the user enters `\template ЧтениеЭлектронныхДокументов ДляРегистра`
 - **THEN** the console prints the signature, what the body is made of,
   and the body of that template
+
+#### Scenario: A role the configuration no longer carries
+- **WHEN** `\as` accepts a user holding a role whose `<guid>.0` resource
+  is absent from `Config`
+- **THEN** the console names that role among those without rights and
+  derives the restrictions of the others
+
+#### Scenario: That role asked for by name
+- **WHEN** `\role` or `\template` names such a role
+- **THEN** the console reports that its rights are not in `Config` and
+  changes nothing
 
 ### Requirement: Run allowed queries as a user
 `\as <пользователь>` SHALL make that user current and `\as clear` SHALL

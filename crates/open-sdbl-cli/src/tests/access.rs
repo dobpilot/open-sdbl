@@ -334,3 +334,23 @@ fn shows_the_restriction_templates_of_a_role() {
         "{described}"
     );
 }
+
+#[test]
+fn a_role_the_base_carries_no_rights_of_is_asked_for_once() {
+    let snapshot = crate::params::tests::enumeration_snapshot();
+    let mut store = AccessStore::new(&snapshot);
+    let guid = Guid::from_str("262144f7-02b6-4906-89fd-297cc72fe383").unwrap();
+    let roles = std::slice::from_ref(&guid);
+    assert_eq!(store.missing_rights(roles), vec![guid.clone()]);
+    // Once the base answers nothing for it, it is not asked for again.
+    store.unreadable.push(guid.clone());
+    assert!(store.missing_rights(roles).is_empty());
+    assert!(store.rights_of(roles).is_empty());
+    // The configuration does not declare it, so it stands by identifier.
+    assert_eq!(store.role_name(&guid), guid.as_str());
+    assert!(
+        missing_rights("ЧтениеЭД")
+            .to_string()
+            .contains("is not in Config")
+    );
+}
