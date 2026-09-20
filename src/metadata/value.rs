@@ -67,6 +67,20 @@ pub fn parse_serialized(input: &[u8]) -> Result<Value, MetadataError> {
     Parser::new(text).parse()
 }
 
+/// Parses a resource that carries several records one after another,
+/// separated by commas, as the root of a configuration extension does.
+///
+/// # Errors
+///
+/// Returns [`MetadataError`] when the bytes are not UTF-8 or a record is
+/// malformed.
+pub fn parse_serialized_sequence(input: &[u8]) -> Result<Vec<Value>, MetadataError> {
+    let input = input.strip_prefix(&[0xef, 0xbb, 0xbf]).unwrap_or(input);
+    let text = std::str::from_utf8(input)
+        .map_err(|error| MetadataError::utf8(error.valid_up_to(), "metadata is not valid UTF-8"))?;
+    Parser::new(text).parse_sequence()
+}
+
 struct Parser<'input> {
     input: &'input str,
     offset: usize,
@@ -75,6 +89,28 @@ struct Parser<'input> {
 impl<'input> Parser<'input> {
     const fn new(input: &'input str) -> Self {
         Self { input, offset: 0 }
+    }
+
+    fn parse_sequence(mut self) -> Result<Vec<Value>, MetadataError> {
+        let mut values = Vec::new();
+        loop {
+            self.skip_whitespace();
+            if self.offset == self.input.len() {
+                break;
+            }
+            values.push(self.value(0)?);
+            self.skip_whitespace();
+            if self.input[self.offset..].starts_with(',') {
+                self.offset += 1;
+            }
+        }
+        if values.is_empty() {
+            return Err(MetadataError::serialization(
+                self.offset,
+                "empty metadata serialization",
+            ));
+        }
+        Ok(values)
     }
 
     fn parse(mut self) -> Result<Value, MetadataError> {

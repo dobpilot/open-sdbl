@@ -3,7 +3,7 @@ use std::str::FromStr;
 use super::config::ConfigDescriptor;
 use super::db_names::{DbNameEntry, DbNames};
 use super::schema::SchemaStorage;
-use super::value::{Value, parse_serialized};
+use super::value::{Value, parse_serialized, parse_serialized_sequence};
 use super::{ExtensionMetadata, Guid, MetadataError, MetadataErrorKind, inflate_raw_deflate};
 
 /// The decoded extension restructure: recognized fields plus malformed
@@ -236,4 +236,117 @@ mod tests {
         assert_eq!(restructure.anomalies.len(), 1);
         assert!(restructure.anomalies[0].contains("Fld9001"));
     }
+}
+
+/// The key of a resource in the content-addressed store of the
+/// configuration extensions: the twenty bytes the store names its rows
+/// by, in lower-case hexadecimal.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct ContentKey([u8; 20]);
+
+impl ContentKey {
+    /// The key as the store spells the name of its row.
+    #[must_use]
+    pub fn as_hex(&self) -> String {
+        self.0.iter().map(|byte| format!("{byte:02x}")).collect()
+    }
+
+    /// The bytes of the key.
+    #[must_use]
+    pub const fn as_bytes(&self) -> &[u8; 20] {
+        &self.0
+    }
+}
+
+/// The marker `ExtensionZippedInfo` writes before the key of the root.
+const EXTENSION_INFO_MARKER: usize = 4;
+
+/// The key of the root resource of an extension, which
+/// `_ExtensionsInfo.ExtensionZippedInfo` carries after a four-byte
+/// marker.
+///
+/// Answers `None` when the record is shorter than the marker and the key.
+#[must_use]
+pub fn extension_root_key(info: &[u8]) -> Option<ContentKey> {
+    let key = info.get(EXTENSION_INFO_MARKER..EXTENSION_INFO_MARKER + 20)?;
+    Some(ContentKey(key.try_into().ok()?))
+}
+
+/// One resource of an extension, as its root lists it.
+#[non_exhaustive]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ExtensionResource {
+    /// The name the resource has, as `Config` would name it: `<guid>`,
+    /// `<guid>.0`, `<guid>.2`.
+    pub name: String,
+    /// The key of its content in the store.
+    pub key: ContentKey,
+}
+
+/// Reads the resources an extension's root resource lists: pairs of a
+/// name and the base64 of the key of its content.
+///
+/// # Errors
+///
+/// Returns [`MetadataError`] when the root is not the serialization, or
+/// lists a pair the key of which is not twenty base64-encoded bytes.
+pub fn parse_extension_index(root: &[u8]) -> Result<Vec<ExtensionResource>, MetadataError> {
+    let records = parse_serialized_sequence(root)?;
+    // The index is the record whose count is followed by name/key pairs.
+    for record in &records {
+        let Some(items) = record.as_list() else {
+            continue;
+        };
+        let Some(count) = items.first().and_then(Value::as_u32) else {
+            continue;
+        };
+        if items.len() != count as usize * 2 + 1 {
+            continue;
+        }
+        let mut resources = Vec::with_capacity(count as usize);
+        for pair in items[1..].chunks_exact(2) {
+            let (Some(name), Some(key)) = (pair[0].as_string(), pair[1].as_scalar()) else {
+                resources.clear();
+                break;
+            };
+            let Some(key) = decode_content_key(key) else {
+                return Err(MetadataError::new(
+                    MetadataErrorKind::Serialization,
+                    format!("extension index: {key:?} is not the key of a resource"),
+                ));
+            };
+            resources.push(ExtensionResource {
+                name: name.to_owned(),
+                key,
+            });
+        }
+        if !resources.is_empty() {
+            return Ok(resources);
+        }
+    }
+    Err(MetadataError::new(
+        MetadataErrorKind::Serialization,
+        "extension root lists no resources".to_owned(),
+    ))
+}
+
+/// Reads the base64 of a twenty-byte key.
+fn decode_content_key(text: &str) -> Option<ContentKey> {
+    const ALPHABET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    if text.len() != 28 || !text.ends_with('=') {
+        return None;
+    }
+    let mut bytes = Vec::with_capacity(20);
+    let mut accumulator = 0_u32;
+    let mut bits = 0_u32;
+    for character in text.trim_end_matches('=').bytes() {
+        let value = ALPHABET.iter().position(|letter| *letter == character)?;
+        accumulator = (accumulator << 6) | value as u32;
+        bits += 6;
+        if bits >= 8 {
+            bits -= 8;
+            bytes.push((accumulator >> bits) as u8);
+        }
+    }
+    Some(ContentKey(bytes.try_into().ok()?))
 }

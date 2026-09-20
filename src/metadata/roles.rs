@@ -1116,6 +1116,18 @@ impl RoleCatalog {
             .find(|role| role.name.to_lowercase() == name.to_lowercase())
     }
 
+    /// Adds the roles of another source — the extensions of the
+    /// configuration — naming them from their descriptors and keeping the
+    /// roles already listed.
+    pub fn extend(&mut self, roles: &[Guid], descriptors: &[ConfigDescriptor]) {
+        let added = Self::from_descriptors(roles, descriptors);
+        for role in added.roles {
+            if !self.roles.iter().any(|known| known.guid == role.guid) {
+                self.roles.push(role);
+            }
+        }
+    }
+
     /// The role of an identifier.
     #[must_use]
     pub fn by_guid(&self, guid: &Guid) -> Option<&RoleEntry> {

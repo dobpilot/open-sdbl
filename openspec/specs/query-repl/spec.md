@@ -3757,6 +3757,13 @@ current, the console prompt SHALL name it instead of `open-sdbl`, and
 the continuation prompt SHALL keep its width; `\as clear` and `\refresh`
 SHALL restore `open-sdbl=>`.
 
+The rights of a role the configuration does not carry SHALL be looked for
+in the configuration extensions: the console SHALL read their resource
+index once, take the rights resource `<guid>.0` of the role from the
+store, and name the role by its descriptor there. Only a role neither the
+configuration nor an extension carries SHALL be reported as granting
+nothing.
+
 `\as <пользователь>` SHALL read the session parameters the base carries
 for its restriction templates — the values the information register
 `ПараметрыОграниченияДоступа` stores, the element of
@@ -3835,6 +3842,12 @@ the parameter to set with `\session`.
   `Справочник.Пользователи` carries that information-base user
 - **THEN** `ТекущийПользователь` holds the reference of that element and
   a restriction comparing a row with it compiles
+
+#### Scenario: A role of an extension
+- **WHEN** `\as` accepts a user holding `_ДемоБазовыеПрава`, a role of
+  the extension `_ДемоРасширение`
+- **THEN** the console names that role and takes the rights its
+  `<guid>.0` resource carries in the extension store
 
 ### Requirement: Skip unreadable Config resources
 A Config resource the decoder cannot read — one that is not UTF-8 or not

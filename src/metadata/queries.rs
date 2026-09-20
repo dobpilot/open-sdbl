@@ -1,3 +1,4 @@
+use super::extension::ContentKey;
 use super::value_storage::StoredValueRef;
 use super::{Guid, MetadataError, MetadataErrorKind};
 
@@ -156,6 +157,29 @@ impl PostgresMetadataQueries {
     /// `partno` as `(name, part, data)` rows with part zero.
     pub const EXTENSION_RESOURCES_LEGACY: &'static str =
         "SELECT rtrim(filename::text), 0::int, binarydata FROM configcas ORDER BY filename";
+
+    /// Whether the base carries `_ExtensionsInfo`: `1` or `0`.
+    pub const EXTENSIONS_PROBE: &'static str = "SELECT CASE WHEN EXISTS (SELECT 1 FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = 'public' AND c.relname = '_extensionsinfo' AND c.relkind IN ('r','p')) THEN 1 ELSE 0 END";
+
+    /// Reads the configuration extensions: the name of each and the
+    /// record carrying the key of its root resource, in extension order.
+    pub const EXTENSIONS: &'static str =
+        "SELECT _extname::text, _extensionzippedinfo FROM _extensionsinfo ORDER BY _extensionorder";
+
+    /// Reads the parts of one resource of the extension store, ordered.
+    /// The key is written as hexadecimal, so the text carries no
+    /// untrusted input.
+    #[must_use]
+    pub fn extension_resource(layout: &StorageLayout, key: &ContentKey) -> String {
+        let key = key.as_hex();
+        if layout.extension_store_parts {
+            format!(
+                "SELECT binarydata FROM configcas WHERE rtrim(filename::text) = '{key}' ORDER BY partno"
+            )
+        } else {
+            format!("SELECT binarydata FROM configcas WHERE rtrim(filename::text) = '{key}'")
+        }
+    }
 
     /// Reads extension restructure records mapping extension attributes to
     /// their physical `Fld` columns.
@@ -354,6 +378,29 @@ impl MsSqlMetadataQueries {
     /// Their content-addressed graph is decoded by the application-side
     /// extension boundary, not by the database adapter.
     pub const EXTENSION_RESOURCES: &'static str = "SELECT CONVERT(nvarchar(128), [FileName]), [PartNo], [BinaryData] FROM [dbo].[ConfigCAS] ORDER BY [FileName], [PartNo]";
+
+    /// Whether the base carries `_ExtensionsInfo`: `1` or `0`.
+    pub const EXTENSIONS_PROBE: &'static str =
+        "SELECT CASE WHEN OBJECT_ID(N'dbo._ExtensionsInfo', N'U') IS NULL THEN 0 ELSE 1 END";
+
+    /// Reads the configuration extensions: the name of each and the
+    /// record carrying the key of its root resource, in extension order.
+    pub const EXTENSIONS: &'static str = "SELECT CONVERT(nvarchar(255), [_ExtName]), [_ExtensionZippedInfo] FROM [dbo].[_ExtensionsInfo] ORDER BY [_ExtensionOrder]";
+
+    /// Reads the parts of one resource of the extension store, ordered.
+    #[must_use]
+    pub fn extension_resource(layout: &StorageLayout, key: &ContentKey) -> String {
+        let key = key.as_hex();
+        if layout.extension_store_parts {
+            format!(
+                "SELECT [BinaryData] FROM [dbo].[ConfigCAS] WHERE CONVERT(nvarchar(128), [FileName]) = N'{key}' ORDER BY [PartNo]"
+            )
+        } else {
+            format!(
+                "SELECT [BinaryData] FROM [dbo].[ConfigCAS] WHERE CONVERT(nvarchar(128), [FileName]) = N'{key}'"
+            )
+        }
+    }
 
     /// Reads single-row extension resources of a `ConfigCAS` without
     /// `PartNo` as `(name, part, data)` rows with part zero.

@@ -15,6 +15,7 @@ mod auth;
 mod cells;
 mod db;
 mod error;
+mod extensions;
 mod limits;
 mod net;
 mod output;

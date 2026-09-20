@@ -31,7 +31,8 @@ pub use config::{
 pub use db_names::{DbNameEntry, DbNames, MetadataKind, parse_db_names};
 pub use deflate::{DEFAULT_OUTPUT_LIMIT, inflate_raw_deflate, inflate_raw_deflate_bounded};
 pub use extension::{
-    ExtensionFieldRestructure, ExtensionRestructure, extension_metadata_from_restructure,
+    ContentKey, ExtensionFieldRestructure, ExtensionResource, ExtensionRestructure,
+    extension_metadata_from_restructure, extension_root_key, parse_extension_index,
     parse_extension_restructure,
 };
 pub use guid::Guid;
@@ -60,7 +61,7 @@ pub use schema::{
     parse_schema_storage,
 };
 pub use users::{InfoBaseUser, UserData, UserRow, decode_user_data};
-pub use value::{Value, parse_serialized};
+pub use value::{Value, parse_serialized, parse_serialized_sequence};
 pub use value_storage::{
     StoredValueRef, decode_stored_value, entry_string, parse_stored_value_ref, stored_map_entries,
 };

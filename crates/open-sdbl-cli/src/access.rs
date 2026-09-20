@@ -26,6 +26,7 @@ use open_sdbl::query::{
 use crate::access_cache::{read_current_user, read_template_parameters};
 use crate::cells::{Cell, QueryRows};
 use crate::error::CliError;
+use crate::extensions::{ExtensionIndex, read_extension_index, read_extension_roles};
 use crate::params::ParameterStore;
 use crate::restrict::RestrictionStore;
 use crate::session::{DatabaseDialect, DatabaseSession};
@@ -47,6 +48,8 @@ pub(crate) struct AccessStore {
     /// Roles whose rights resource the base does not carry: asked for
     /// once, then skipped.
     unreadable: Vec<Guid>,
+    /// The resources the configuration extensions declare, read once.
+    extensions: Option<ExtensionIndex>,
     current: Option<InfoBaseUser>,
 }
 
@@ -58,6 +61,7 @@ impl AccessStore {
             users: None,
             rights: HashMap::new(),
             unreadable: Vec::new(),
+            extensions: None,
             current: None,
         }
     }
@@ -395,9 +399,29 @@ pub(crate) async fn ensure_rights(
     for (role, rights) in read_role_rights(session, layout, &missing).await? {
         store.insert_rights(role, rights);
     }
-    // A role the configuration no longer declares — one deleted since, or
-    // one of an extension, whose rights live in ConfigCas — carries no
-    // resource: it is remembered, and grants nothing.
+    // What Config does not carry the extensions may: they keep their
+    // resources in the content-addressed store.
+    let missing = store.missing_rights(roles);
+    if !missing.is_empty() {
+        if store.extensions.is_none() {
+            store.extensions = Some(read_extension_index(session, layout).await?);
+        }
+        let index = store.extensions.as_ref().expect("the index is read");
+        if !index.is_empty() {
+            let (rights, descriptors) =
+                read_extension_roles(session, layout, index, &missing).await?;
+            let guids = rights
+                .iter()
+                .map(|(role, _)| role.clone())
+                .collect::<Vec<_>>();
+            store.catalog.extend(&guids, &descriptors);
+            for (role, rights) in rights {
+                store.insert_rights(role, rights);
+            }
+        }
+    }
+    // A role neither the configuration nor an extension carries — one
+    // deleted since — grants nothing; it is remembered, not asked again.
     let unread = store.missing_rights(roles);
     store.unreadable.extend(unread.iter().cloned());
     Ok(unread)
