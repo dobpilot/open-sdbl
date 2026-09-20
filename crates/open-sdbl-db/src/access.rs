@@ -15,8 +15,8 @@ use open_sdbl::metadata::{
     parse_role_rights,
 };
 use open_sdbl::query::{
-    AccessRestriction, RestrictionRequest, SessionParameters, find_metadata_object,
-    object_query_name,
+    AccessDecision, AccessRestriction, RestrictionRequest, RestrictionTarget, SessionParameters,
+    find_metadata_object, object_query_name,
 };
 
 use crate::cells::{Cell, QueryRows};
@@ -89,6 +89,17 @@ impl AccessStore {
     /// Remembers the rights of one role.
     pub fn insert_rights(&mut self, role: Guid, rights: RoleRights) {
         self.rights.insert(role, rights);
+    }
+
+    /// The roles among `roles` whose rights resource the base does not
+    /// carry. Their grants are unknown, so a restricted compilation must
+    /// not treat their silence as permission.
+    pub fn unreadable_rights(&self, roles: &[Guid]) -> Vec<Guid> {
+        roles
+            .iter()
+            .filter(|role| self.unreadable.contains(*role))
+            .cloned()
+            .collect()
     }
 
     /// The roles among `roles` whose rights are not read yet and may
@@ -886,6 +897,134 @@ pub fn role_restrictions(
     }
     derived.sort_by(|left, right| left.0.cmp(&right.0));
     (derived, failures)
+}
+
+/// The access decisions of the current user for every target of a
+/// restricted compilation.
+///
+/// Unlike [`user_restrictions`], this answers each target explicitly and
+/// fails rather than leaving one out: an absent user, a role whose rights
+/// the base does not carry, an object the snapshot cannot resolve, or any
+/// expansion error fails the whole answer. A partially expanded set is
+/// never enough to run a restricted query, and missing data is never read
+/// as permission.
+///
+/// Authenticating the user is the caller's business; this function only
+/// reads what the roles of an already chosen user grant for `Чтение`.
+///
+/// # Errors
+///
+/// Returns [`DbError::Data`] naming the target and the reason.
+pub fn user_decisions(
+    store: &AccessStore,
+    snapshot: &MetadataSnapshot,
+    request: &RestrictionRequest,
+    covered: &[AccessRestriction],
+    session_parameters: &SessionParameters,
+) -> Result<Vec<AccessDecision>, DbError> {
+    let Some(user) = store.current_user() else {
+        return Err(DbError::Data(
+            "a restricted compilation needs a current user; none is set".to_owned(),
+        ));
+    };
+    // A role whose rights are unread — because the base carries none, or
+    // because nobody read them yet — grants an unknown set. Silence is not
+    // permission, so the whole answer fails.
+    let mut unknown = store.unreadable_rights(&user.data.roles);
+    unknown.extend(store.missing_rights(&user.data.roles));
+    if !unknown.is_empty() {
+        let names = unknown
+            .iter()
+            .map(|role| store.role_name(role))
+            .collect::<Vec<_>>();
+        return Err(DbError::Data(format!(
+            "the rights of {} roles of user {:?} are unread ({}); what they grant is unknown",
+            names.len(),
+            user.name,
+            names.join(", ")
+        )));
+    }
+    let roles = store.rights_of(&user.data.roles);
+    let mut decisions = Vec::new();
+    for target in &request.targets {
+        if covered
+            .iter()
+            .any(|restriction| target.matches(restriction))
+        {
+            continue;
+        }
+        let object = snapshot.object_by_id(target.object).ok_or_else(|| {
+            DbError::Data(format!(
+                "the snapshot does not resolve restriction target {:?}",
+                target.object
+            ))
+        })?;
+        let table_name = object_query_name(snapshot, object)
+            .unwrap_or_else(|| object.name.clone().unwrap_or_default());
+        let scope = RestrictionScope {
+            table_name: &table_name,
+            right: &Right::Read,
+            session: session_parameters,
+        };
+        let access = read_access(&roles, &object.guid, &Right::Read, &scope).map_err(|error| {
+            DbError::Data(format!(
+                "restriction of {table_name} for user {:?}: {error}; set the session parameters the template reads (the session command)",
+                user.name
+            ))
+        })?;
+        decisions.push(match &access {
+            Access::Denied => AccessDecision::denied(target.clone()),
+            Access::Unrestricted => AccessDecision::unrestricted(target.clone()),
+            Access::Restricted(_) => {
+                let condition = access
+                    .condition()
+                    .map_err(|error| {
+                        DbError::Data(format!("restriction of {table_name}: {error}"))
+                    })?
+                    .ok_or_else(|| {
+                        DbError::Data(format!("restriction of {table_name} expanded to nothing"))
+                    })?;
+                AccessDecision::restricted(section_restriction(
+                    target,
+                    &table_name,
+                    &access,
+                    condition,
+                ))
+            }
+            // A kind this version does not know is refused, not allowed:
+            // the safe reading of an unrecognized grant is no grant.
+            _ => AccessDecision::denied(target.clone()),
+        });
+    }
+    Ok(decisions)
+}
+
+/// Binds an expanded condition to the target, reading a tabular section
+/// through the access of its owner row.
+fn section_restriction(
+    target: &RestrictionTarget,
+    table_name: &str,
+    access: &Access,
+    condition: String,
+) -> AccessRestriction {
+    let condition = match (&target.table_part, access) {
+        (Some(_), Access::Restricted(restrictions)) => {
+            let alias = restrictions
+                .iter()
+                .find_map(|restriction| restriction.alias.clone())
+                .unwrap_or_else(|| open_sdbl::access::CURRENT_TABLE.to_owned());
+            let body = condition
+                .split_once(" ГДЕ ")
+                .map_or(condition.as_str(), |(_, body)| body);
+            format!("Ссылка В (ВЫБРАТЬ {alias}.Ссылка ИЗ {table_name} КАК {alias} ГДЕ ({body}))")
+        }
+        _ => condition,
+    };
+    let mut restriction = AccessRestriction::new(target.object, condition);
+    if let Some(section) = &target.table_part {
+        restriction = restriction.table_part(section.clone());
+    }
+    restriction
 }
 
 /// The restrictions of the current user for the targets of a batch that

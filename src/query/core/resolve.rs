@@ -12,7 +12,9 @@ use crate::metadata::{
 use crate::query::core::ast::SourceAst;
 use crate::query::core::names::{folded_name, names_equal};
 use crate::query::core::params::{ParameterDate, ParameterValue, Parameters};
-use crate::query::core::restrict::{AccessRestriction, RestrictionTarget};
+use crate::query::core::restrict::{
+    AccessDecision, AccessRestriction, RestrictionMode, RestrictionTarget,
+};
 use crate::query::core::temp_tables::{TempTableSource, TempTablesManager};
 use crate::query::core::{QueryDiagnostic, QueryDiagnosticKind};
 
@@ -702,13 +704,23 @@ pub(super) struct CompilationCatalog<'snapshot> {
     used_temporary: RefCell<BTreeSet<u32>>,
     /// Access restrictions supplied by the application.
     restrictions: &'snapshot [AccessRestriction],
-    /// Whether the statement carries `РАЗРЕШЕННЫЕ`; cleared while a
-    /// restriction's own text compiles so its nested queries stay free.
+    /// Explicit access decisions supplied by the application.
+    decisions: &'snapshot [AccessDecision],
+    /// Which statements this batch filters.
+    mode: Cell<RestrictionMode>,
+    /// Whether preparation is collecting targets rather than generating
+    /// SQL; a decision is demanded only once the application has had the
+    /// request to answer.
+    collecting: Cell<bool>,
+    /// Whether the statement is filtered; cleared while a restriction's
+    /// own text compiles so its nested queries stay free.
     restricting: Cell<bool>,
     /// Targets read under the keyword.
     restriction_targets: RefCell<BTreeSet<RestrictionTarget>>,
     /// Positions in `restrictions` that matched a target.
     used_restrictions: RefCell<BTreeSet<usize>>,
+    /// Positions in `decisions` that matched a target.
+    used_decisions: RefCell<BTreeSet<usize>>,
     /// Set while a restriction's text compiles: query parameters are then
     /// hidden so the text sees session parameters only.
     restriction_mode: Cell<bool>,
@@ -718,6 +730,51 @@ pub(super) struct CompilationCatalog<'snapshot> {
     /// they were requested.
     hierarchy_ctes: RefCell<Vec<(String, String)>>,
 }
+
+/// The restriction state one statement is compiled under.
+#[derive(Debug, Clone, Copy)]
+pub(super) struct RestrictionState<'snapshot> {
+    /// Conditions supplied through `CompileOptions::restrictions`.
+    pub(super) restrictions: &'snapshot [AccessRestriction],
+    /// Decisions supplied through `CompileOptions::decisions`.
+    pub(super) decisions: &'snapshot [AccessDecision],
+    /// Which statements the batch filters.
+    pub(super) mode: RestrictionMode,
+    /// Whether the statement carries `РАЗРЕШЕННЫЕ`.
+    pub(super) keyword: bool,
+    /// Whether preparation is collecting the request.
+    pub(super) collecting: bool,
+}
+
+/// What a statement applies to one target it reads.
+#[derive(Debug, Clone, Copy)]
+pub(super) enum TargetDecision<'snapshot> {
+    /// The statement is not filtered, or the application named no
+    /// condition in the mode that allows that.
+    Unfiltered,
+    /// The application allowed the target with no row filter.
+    Allowed,
+    /// The application allowed the rows the condition holds for.
+    Condition(&'snapshot AccessRestriction),
+    /// The application refused the target: no row may be read.
+    Denied,
+}
+
+impl<'snapshot> TargetDecision<'snapshot> {
+    /// The condition text to filter the source by, if any. A denial
+    /// filters by a literal false rather than by nothing at all.
+    pub(super) fn condition(self) -> Option<&'snapshot str> {
+        match self {
+            Self::Unfiltered | Self::Allowed => None,
+            Self::Condition(restriction) => Some(restriction.condition()),
+            Self::Denied => Some(DENIED_CONDITION),
+        }
+    }
+}
+
+/// The condition a denied target is filtered by: the platform's own false
+/// literal, compiled like any other restriction text.
+pub(super) const DENIED_CONDITION: &str = "ЛОЖЬ";
 
 impl<'snapshot> CompilationCatalog<'snapshot> {
     // Allows wide generated 1C documents to participate in substantial UNION
@@ -745,9 +802,13 @@ impl<'snapshot> CompilationCatalog<'snapshot> {
             temporary,
             used_temporary: RefCell::new(BTreeSet::new()),
             restrictions: &[],
+            decisions: &[],
+            mode: Cell::new(RestrictionMode::Statement),
+            collecting: Cell::new(false),
             restricting: Cell::new(false),
             restriction_targets: RefCell::new(BTreeSet::new()),
             used_restrictions: RefCell::new(BTreeSet::new()),
+            used_decisions: RefCell::new(BTreeSet::new()),
             restriction_mode: Cell::new(false),
             separators: resolve_statement_separators(snapshot, parameters),
             hierarchy_ctes: RefCell::new(Vec::new()),
@@ -805,40 +866,87 @@ impl<'snapshot> CompilationCatalog<'snapshot> {
         }
     }
 
-    /// Arms the statement's restriction state: `restricting` is whether it
-    /// carries `РАЗРЕШЕННЫЕ`.
-    pub(super) fn set_restrictions(
-        &mut self,
-        restrictions: &'snapshot [AccessRestriction],
-        restricting: bool,
-    ) {
-        self.restrictions = restrictions;
-        self.restricting.set(restricting);
+    /// Arms the statement's restriction state. A restricted batch filters
+    /// every statement; otherwise only one carrying `РАЗРЕШЕННЫЕ` is.
+    pub(super) fn set_restrictions(&mut self, state: RestrictionState<'snapshot>) {
+        self.restrictions = state.restrictions;
+        self.decisions = state.decisions;
+        self.mode.set(state.mode);
+        self.collecting.set(state.collecting);
+        self.restricting
+            .set(state.keyword || state.mode.is_restricted());
     }
 
-    /// Records that the statement reads `target` and returns the
-    /// restriction to apply, if the statement is restricted and the
-    /// application supplied one.
-    pub(super) fn restriction_for(
+    /// Whether the batch filters every statement.
+    pub(super) fn is_restricted_mode(&self) -> bool {
+        self.mode.get().is_restricted()
+    }
+
+    /// Refuses a base-table read a restricted compilation cannot filter.
+    ///
+    /// The refusal is silent outside the restricted mode, so the existing
+    /// behaviour of `РАЗРЕШЕННЫЕ` is untouched, and silent inside a
+    /// restriction's own text, whose reads are deliberately unfiltered.
+    pub(super) fn refuse_unfiltered_read(
+        &self,
+        token: Option<&Token<'_>>,
+        what: &str,
+    ) -> Result<(), QueryDiagnostic> {
+        if !self.mode.get().is_restricted() || self.restriction_mode.get() {
+            return Ok(());
+        }
+        Err(QueryDiagnostic::at(
+            QueryDiagnosticKind::UnsupportedFeature,
+            token,
+            format!("{what} cannot be read under an access-restricted compilation"),
+        ))
+    }
+
+    /// Records that the statement reads `target` and answers what to apply.
+    ///
+    /// In the restricted mode a target the application decided nothing
+    /// about is an error rather than an unfiltered read; while preparation
+    /// collects the request there is nothing to decide yet.
+    pub(super) fn decide(
         &self,
         target: RestrictionTarget,
-    ) -> Option<&'snapshot AccessRestriction> {
+        token: Option<&Token<'_>>,
+        label: impl FnOnce() -> String,
+    ) -> Result<TargetDecision<'snapshot>, QueryDiagnostic> {
         if !self.restricting.get() {
-            return None;
+            return Ok(TargetDecision::Unfiltered);
         }
-        let (index, restriction) = self
+        let decision = self
+            .decisions
+            .iter()
+            .enumerate()
+            .find(|(_, decision)| decision.matches(&target));
+        let restriction = self
             .restrictions
             .iter()
             .enumerate()
-            .find(|(_, restriction)| target.matches(restriction))
-            .map_or((None, None), |(index, restriction)| {
-                (Some(index), Some(restriction))
-            });
+            .find(|(_, restriction)| target.matches(restriction));
         self.restriction_targets.borrow_mut().insert(target);
-        if let Some(index) = index {
-            self.used_restrictions.borrow_mut().insert(index);
+        if let Some((index, decision)) = decision {
+            self.used_decisions.borrow_mut().insert(index);
+            return Ok(match decision {
+                AccessDecision::Unrestricted(_) => TargetDecision::Allowed,
+                AccessDecision::Denied(_) => TargetDecision::Denied,
+                AccessDecision::Restricted(restriction) => TargetDecision::Condition(restriction),
+            });
         }
-        restriction
+        if let Some((index, restriction)) = restriction {
+            self.used_restrictions.borrow_mut().insert(index);
+            return Ok(TargetDecision::Condition(restriction));
+        }
+        if self.mode.get().is_restricted() && !self.collecting.get() {
+            return Err(QueryDiagnostic::at(
+                QueryDiagnosticKind::Restriction,
+                token,
+                format!("{} has no access decision", label()),
+            ));
+        }
+        Ok(TargetDecision::Unfiltered)
     }
 
     /// Runs `compile` the way a restriction's text is compiled: query
@@ -860,6 +968,11 @@ impl<'snapshot> CompilationCatalog<'snapshot> {
     /// Positions of the supplied restrictions that matched a target.
     pub(super) fn used_restrictions(&self) -> BTreeSet<usize> {
         self.used_restrictions.borrow().clone()
+    }
+
+    /// Positions of the supplied decisions that matched a target.
+    pub(super) fn used_decisions(&self) -> BTreeSet<usize> {
+        self.used_decisions.borrow().clone()
     }
 
     /// Resolves a temporary-table source and records it, with everything it

@@ -300,3 +300,45 @@ fn a_role_the_base_carries_no_rights_of_is_asked_for_once() {
             .contains("is not in Config")
     );
 }
+
+#[test]
+fn decisions_refuse_to_answer_without_a_current_user() {
+    let snapshot = crate::enumeration_snapshot_support::enumeration_snapshot();
+    let store = AccessStore::new(&snapshot);
+    let error = user_decisions(
+        &store,
+        &snapshot,
+        &open_sdbl::query::RestrictionRequest::default(),
+        &[],
+        &SessionParameters::new(),
+    )
+    .unwrap_err();
+    assert!(
+        error.to_string().contains("needs a current user"),
+        "no user must never read as permission: {error}"
+    );
+}
+
+#[test]
+fn decisions_refuse_to_answer_for_a_role_whose_rights_are_unread() {
+    let snapshot = crate::enumeration_snapshot_support::enumeration_snapshot();
+    let mut store = AccessStore::new(&snapshot);
+    let user = users_from_rows(&user_rows())
+        .unwrap()
+        .into_iter()
+        .find(|user| !user.data.roles.is_empty())
+        .expect("the fixture has a user with roles");
+    store.set_current_user(Some(user));
+    let error = user_decisions(
+        &store,
+        &snapshot,
+        &open_sdbl::query::RestrictionRequest::default(),
+        &[],
+        &SessionParameters::new(),
+    )
+    .unwrap_err();
+    assert!(
+        error.to_string().contains("are unread"),
+        "an unread role must never read as permission: {error}"
+    );
+}

@@ -21,12 +21,12 @@ mod postgres;
 use crate::metadata::{MetadataSnapshot, SnapshotFingerprint};
 
 pub use core::{
-    AccessRestriction, ColumnKind, CompileOptions, CompiledColumn, CompiledQuery,
+    AccessDecision, AccessRestriction, ColumnKind, CompileOptions, CompiledColumn, CompiledQuery,
     InvalidParameterDate, ParameterColumn, ParameterDate, ParameterValue, PresentationExpression,
     PresentationPlan, PresentationRequest, PresentationTarget, QueryDiagnostic,
     QueryDiagnosticKind, QueryParameter, QueryableColumn, QueryableField, QueryableFieldCatalog,
-    RestrictionRequest, RestrictionTarget, SessionParameters, TempTable, TempTablesManager,
-    TypeValue, constants_table_fields, find_metadata_object, object_query_name,
+    RestrictionMode, RestrictionRequest, RestrictionTarget, SessionParameters, TempTable,
+    TempTablesManager, TypeValue, constants_table_fields, find_metadata_object, object_query_name,
     queryable_field_catalog, queryable_fields,
 };
 pub use mssql::{InvalidMsSqlYearOffset, MsSqlBackend, MsSqlDialectLevel};
@@ -87,7 +87,13 @@ impl<B: Backend> QueryCompiler<'_, B> {
         source: &str,
         options: &CompileOptions<'_>,
     ) -> Result<CompiledQuery, QueryDiagnostic> {
-        core::compile_query(source, self.snapshot, options, self.backend.dialect())
+        core::compile_query(
+            source,
+            self.snapshot,
+            options,
+            self.backend.dialect(),
+            RestrictionMode::Statement,
+        )
     }
 
     /// Compiles a batch of `;`-separated statements, updating `manager`.
@@ -114,6 +120,7 @@ impl<B: Backend> QueryCompiler<'_, B> {
             options,
             self.backend.dialect(),
             manager,
+            RestrictionMode::Statement,
         )
     }
 
@@ -128,12 +135,37 @@ impl<B: Backend> QueryCompiler<'_, B> {
     /// Returns a positional diagnostic when the query cannot be safely
     /// resolved.
     pub fn prepare(&self, source: &str) -> Result<Prepared<B>, QueryDiagnostic> {
-        let requests = core::prepare_query(source, self.snapshot, self.backend.dialect())?;
+        self.prepare_with_options(source, &PrepareOptions::new())
+    }
+
+    /// Resolves a query under explicit preparation options.
+    ///
+    /// The restriction mode is fixed here, not at compile time: a query
+    /// prepared in [`RestrictionMode::Restricted`] stays restricted for
+    /// every compilation of the resulting [`Prepared`].
+    ///
+    /// # Errors
+    ///
+    /// Returns a positional diagnostic when the query cannot be safely
+    /// resolved.
+    pub fn prepare_with_options(
+        &self,
+        source: &str,
+        options: &PrepareOptions<'_>,
+    ) -> Result<Prepared<B>, QueryDiagnostic> {
+        let requests = core::prepare_query_with(
+            source,
+            self.snapshot,
+            self.backend.dialect(),
+            options.temporary_tables_in_effect(),
+            options.restriction_mode_in_effect(),
+        )?;
         Ok(Prepared {
             source: source.to_owned(),
             backend: self.backend,
             request: requests.presentations,
             restrictions: requests.restrictions,
+            mode: options.restriction_mode_in_effect(),
             snapshot_fingerprint: self.snapshot.fingerprint(),
         })
     }
@@ -153,15 +185,7 @@ impl<B: Backend> QueryCompiler<'_, B> {
         source: &str,
         manager: &TempTablesManager,
     ) -> Result<Prepared<B>, QueryDiagnostic> {
-        let requests =
-            core::prepare_query_with(source, self.snapshot, self.backend.dialect(), manager)?;
-        Ok(Prepared {
-            source: source.to_owned(),
-            backend: self.backend,
-            request: requests.presentations,
-            restrictions: requests.restrictions,
-            snapshot_fingerprint: self.snapshot.fingerprint(),
-        })
+        self.prepare_with_options(source, &PrepareOptions::new().temporary_tables(manager))
     }
 
     /// Compiles a query with validated application presentation plans.
@@ -192,6 +216,71 @@ impl<B: Backend> QueryCompiler<'_, B> {
     }
 }
 
+/// Inputs a preparation may need beyond the source text.
+///
+/// ```
+/// use open_sdbl::query::{PrepareOptions, RestrictionMode};
+///
+/// let options = PrepareOptions::new().restricted();
+/// assert_eq!(options.restriction_mode_in_effect(), RestrictionMode::Restricted);
+/// ```
+#[derive(Debug, Clone, Copy)]
+#[non_exhaustive]
+pub struct PrepareOptions<'a> {
+    temporary: &'a TempTablesManager,
+    mode: RestrictionMode,
+}
+
+impl Default for PrepareOptions<'_> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl<'a> PrepareOptions<'a> {
+    /// Options with no temporary tables visible, in the default mode.
+    #[must_use]
+    pub const fn new() -> Self {
+        Self {
+            temporary: TempTablesManager::none(),
+            mode: RestrictionMode::Statement,
+        }
+    }
+
+    /// Makes the tables of `manager` visible to the batch.
+    #[must_use]
+    pub const fn temporary_tables(mut self, manager: &'a TempTablesManager) -> Self {
+        self.temporary = manager;
+        self
+    }
+
+    /// Selects the mode every compilation of the prepared query applies.
+    #[must_use]
+    pub const fn restriction_mode(mut self, mode: RestrictionMode) -> Self {
+        self.mode = mode;
+        self
+    }
+
+    /// Prepares in [`RestrictionMode::Restricted`]: every statement is
+    /// filtered and every target of the request needs a decision.
+    #[must_use]
+    pub const fn restricted(self) -> Self {
+        self.restriction_mode(RestrictionMode::Restricted)
+    }
+
+    /// The temporary tables in effect.
+    #[must_use]
+    pub const fn temporary_tables_in_effect(&self) -> &'a TempTablesManager {
+        self.temporary
+    }
+
+    /// The mode in effect.
+    #[must_use]
+    pub const fn restriction_mode_in_effect(&self) -> RestrictionMode {
+        self.mode
+    }
+}
+
 /// Query resolved far enough to request application presentation plans
 /// and access restrictions.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -200,6 +289,8 @@ pub struct Prepared<B: Backend> {
     backend: B,
     request: PresentationRequest,
     restrictions: RestrictionRequest,
+    /// Fixed at preparation; no compile-time value can lower it.
+    mode: RestrictionMode,
     snapshot_fingerprint: SnapshotFingerprint,
 }
 
@@ -218,6 +309,13 @@ impl<B: Backend> Prepared<B> {
     #[must_use]
     pub fn restriction_request(&self) -> &RestrictionRequest {
         &self.restrictions
+    }
+
+    /// The mode the query was prepared in. Compilation applies this
+    /// value; nothing passed to `compile_with` can lower it.
+    #[must_use]
+    pub const fn restriction_mode(&self) -> RestrictionMode {
+        self.mode
     }
 
     /// Recompiles the source with application-provided presentation plans.
@@ -250,7 +348,13 @@ impl<B: Backend> Prepared<B> {
         if snapshot.fingerprint() != self.snapshot_fingerprint {
             return Err(QueryDiagnostic::snapshot_mismatch());
         }
-        core::compile_query(&self.source, snapshot, options, self.backend.dialect())
+        core::compile_query(
+            &self.source,
+            snapshot,
+            options,
+            self.backend.dialect(),
+            self.mode,
+        )
     }
 
     /// Recompiles the prepared batch, updating `manager`.
@@ -275,6 +379,7 @@ impl<B: Backend> Prepared<B> {
             options,
             self.backend.dialect(),
             manager,
+            self.mode,
         )
     }
 }

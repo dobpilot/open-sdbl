@@ -105,3 +105,129 @@ impl AccessRestriction {
         &self.condition
     }
 }
+
+/// Which statements of a batch are filtered by access decisions.
+///
+/// The mode is chosen when a query is prepared and belongs to the
+/// compilation, not to the query text: `РАЗРЕШЕННЫЕ` is what the text can
+/// say, [`RestrictionMode::Restricted`] is what an application can
+/// demand of any text at all.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
+#[non_exhaustive]
+pub enum RestrictionMode {
+    /// Only statements carrying `РАЗРЕШЕННЫЕ` are filtered, and a target
+    /// the application says nothing about is read unfiltered. This is what
+    /// the compiler has always done.
+    #[default]
+    Statement,
+    /// Every statement is filtered, whether or not it carries the keyword,
+    /// and every target of the request needs an explicit
+    /// [`AccessDecision`]. A read the compiler cannot filter is refused
+    /// before any SQL is generated.
+    Restricted,
+}
+
+impl RestrictionMode {
+    /// Whether every statement of the batch is filtered.
+    #[must_use]
+    pub const fn is_restricted(self) -> bool {
+        matches!(self, Self::Restricted)
+    }
+}
+
+/// What the application decided about one target of a restriction request.
+///
+/// The absence of an [`AccessRestriction`] cannot say whether the
+/// application allowed the table or simply did not answer, so
+/// [`RestrictionMode::Restricted`] asks for a decision instead.
+///
+/// ```
+/// use open_sdbl::metadata::ObjectId;
+/// use open_sdbl::query::{AccessDecision, AccessRestriction, RestrictionTarget};
+///
+/// let object = ObjectId::from_bytes([0x11; 16]);
+/// let target = RestrictionTarget { object, table_part: None };
+/// let allowed = AccessDecision::unrestricted(target.clone());
+/// let denied = AccessDecision::denied(target.clone());
+/// let filtered = AccessDecision::restricted(AccessRestriction::new(object, "Проведен"));
+///
+/// assert!(allowed.matches(&target) && denied.matches(&target) && filtered.matches(&target));
+/// assert!(denied.is_denied());
+/// assert_eq!(filtered.restriction().map(AccessRestriction::condition), Some("Проведен"));
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum AccessDecision {
+    /// The target may be read in full, with no row filter.
+    Unrestricted(RestrictionTarget),
+    /// The target may be read where the condition holds.
+    Restricted(AccessRestriction),
+    /// The target may not be read: the source is filtered by a predicate
+    /// no row satisfies, never left unfiltered.
+    Denied(RestrictionTarget),
+}
+
+impl AccessDecision {
+    /// Allows the target without a row filter.
+    #[must_use]
+    pub const fn unrestricted(target: RestrictionTarget) -> Self {
+        Self::Unrestricted(target)
+    }
+
+    /// Refuses the target: its source admits no row.
+    #[must_use]
+    pub const fn denied(target: RestrictionTarget) -> Self {
+        Self::Denied(target)
+    }
+
+    /// Allows the rows of the target the restriction's condition holds for.
+    #[must_use]
+    pub const fn restricted(restriction: AccessRestriction) -> Self {
+        Self::Restricted(restriction)
+    }
+
+    /// The metadata object the decision addresses.
+    #[must_use]
+    pub const fn object(&self) -> ObjectId {
+        match self {
+            Self::Unrestricted(target) | Self::Denied(target) => target.object,
+            Self::Restricted(restriction) => restriction.object(),
+        }
+    }
+
+    /// The tabular section the decision addresses, if any.
+    #[must_use]
+    pub fn table_part_name(&self) -> Option<&str> {
+        match self {
+            Self::Unrestricted(target) | Self::Denied(target) => target.table_part.as_deref(),
+            Self::Restricted(restriction) => restriction.table_part_name(),
+        }
+    }
+
+    /// The condition, when the decision carries one.
+    #[must_use]
+    pub const fn restriction(&self) -> Option<&AccessRestriction> {
+        match self {
+            Self::Restricted(restriction) => Some(restriction),
+            Self::Unrestricted(_) | Self::Denied(_) => None,
+        }
+    }
+
+    /// Whether the decision refuses the target.
+    #[must_use]
+    pub const fn is_denied(&self) -> bool {
+        matches!(self, Self::Denied(_))
+    }
+
+    /// Whether the decision addresses `target`; section names compare
+    /// case-insensitively, like every 1C identifier.
+    #[must_use]
+    pub fn matches(&self, target: &RestrictionTarget) -> bool {
+        target.object == self.object()
+            && match (&target.table_part, self.table_part_name()) {
+                (None, None) => true,
+                (Some(wanted), Some(supplied)) => names_equal(wanted, supplied),
+                _ => false,
+            }
+    }
+}

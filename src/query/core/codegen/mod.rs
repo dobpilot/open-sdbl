@@ -17,7 +17,7 @@ mod virtual_tables;
 mod windowed;
 
 pub(crate) use entry::{
-    compile_batch, compile_presentation_lookup, compile_query, prepare_query, prepare_query_with,
+    compile_batch, compile_presentation_lookup, compile_query, prepare_query_with,
 };
 
 #[cfg(test)]

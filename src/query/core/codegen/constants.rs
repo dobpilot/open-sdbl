@@ -50,6 +50,7 @@ pub(super) fn constants_source_scope(
     default_alias: &str,
     dialect: SqlDialect,
 ) -> Result<SourceScope, QueryDiagnostic> {
+    catalog.refuse_unfiltered_read(Some(source.object), "the Константы source")?;
     let mut fields = Vec::new();
     let mut entries = Vec::new();
     for (object, field) in catalog.constants_fields(Some(source.object))? {

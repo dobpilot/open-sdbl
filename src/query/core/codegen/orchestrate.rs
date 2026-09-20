@@ -4,12 +4,14 @@ use super::select::{BranchMode, compile_branch};
 use super::totals::wrap_totals;
 use crate::Token;
 use crate::metadata::{MetadataSnapshot, ObjectId};
-use crate::query::core::ast::{OrderTerm, Projection, QueryAst};
+use crate::query::core::ast::{OrderTerm, Projection, QueryAst, TotalsAst};
 use crate::query::core::params::Parameters;
 use crate::query::core::resolve::{
     ColumnKind, CompilationCatalog, CompiledColumn, CompiledQuery, NestedResult, PresentationPlan,
 };
-use crate::query::core::restrict::{AccessRestriction, RestrictionTarget};
+use crate::query::core::restrict::{
+    AccessDecision, AccessRestriction, RestrictionMode, RestrictionTarget,
+};
 use crate::query::core::{QueryDiagnostic, QueryDiagnosticKind, SqlDialect};
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -169,10 +171,18 @@ pub(super) struct PresentationCompilation<'plans> {
     pub(super) parameters: Parameters<'plans>,
     /// Access restrictions handed to every statement's catalog.
     pub(super) restrictions: &'plans [AccessRestriction],
+    /// Access decisions handed to every statement's catalog.
+    pub(super) decisions: &'plans [AccessDecision],
+    /// Which statements of the batch are filtered.
+    pub(super) mode: RestrictionMode,
+    /// Whether preparation is collecting the request.
+    pub(super) collecting: bool,
     /// Targets read under `РАЗРЕШЕННЫЕ` across the batch.
     pub(super) restriction_targets: BTreeSet<RestrictionTarget>,
     /// Positions in `restrictions` that some statement applied.
     pub(super) used_restrictions: BTreeSet<usize>,
+    /// Positions in `decisions` that some statement applied.
+    pub(super) used_decisions: BTreeSet<usize>,
     /// Whether statements with `ИТОГИ` append the `__level` column.
     pub(super) totals_level: bool,
 }
@@ -190,14 +200,29 @@ impl<'plans> PresentationCompilation<'plans> {
             dialect,
             parameters,
             restrictions: &[],
+            decisions: &[],
+            mode: RestrictionMode::Statement,
+            collecting: false,
             restriction_targets: BTreeSet::new(),
             used_restrictions: BTreeSet::new(),
+            used_decisions: BTreeSet::new(),
             totals_level: false,
         }
     }
 
-    pub(super) fn with_restrictions(mut self, restrictions: &'plans [AccessRestriction]) -> Self {
+    pub(super) fn with_restrictions(
+        mut self,
+        restrictions: &'plans [AccessRestriction],
+        decisions: &'plans [AccessDecision],
+    ) -> Self {
         self.restrictions = restrictions;
+        self.decisions = decisions;
+        self
+    }
+
+    /// Binds the mode the batch is compiled under.
+    pub(super) const fn with_mode(mut self, mode: RestrictionMode) -> Self {
+        self.mode = mode;
         self
     }
 
@@ -214,8 +239,12 @@ impl<'plans> PresentationCompilation<'plans> {
             dialect,
             parameters: Parameters::unbound(),
             restrictions: &[],
+            decisions: &[],
+            mode: RestrictionMode::Statement,
+            collecting: true,
             restriction_targets: BTreeSet::new(),
             used_restrictions: BTreeSet::new(),
+            used_decisions: BTreeSet::new(),
             totals_level: false,
         }
     }
@@ -494,16 +523,19 @@ pub(super) fn compile_query_ast_with_outer(
             service_columns: branch.service_columns,
         };
         let compiled = match &ast.totals {
-            Some(totals) => wrap_totals(
-                ast,
-                totals,
-                compiled,
-                &branch.order,
-                presentations.totals_level,
-                presentations.parameters,
-                snapshot,
-                dialect,
-            ),
+            Some(totals) => {
+                refuse_hierarchy_totals(totals, catalog)?;
+                wrap_totals(
+                    ast,
+                    totals,
+                    compiled,
+                    &branch.order,
+                    presentations.totals_level,
+                    presentations.parameters,
+                    snapshot,
+                    dialect,
+                )
+            }
             None => Ok(compiled),
         };
         return attach_hierarchy_ctes(compiled, catalog, nested, dialect);
@@ -592,19 +624,40 @@ pub(super) fn compile_query_ast_with_outer(
         service_columns: Vec::new(),
     };
     let compiled = match &ast.totals {
-        Some(totals) => wrap_totals(
-            ast,
-            totals,
-            compiled,
-            &first.order,
-            presentations.totals_level,
-            presentations.parameters,
-            snapshot,
-            dialect,
-        ),
+        Some(totals) => {
+            refuse_hierarchy_totals(totals, catalog)?;
+            wrap_totals(
+                ast,
+                totals,
+                compiled,
+                &first.order,
+                presentations.totals_level,
+                presentations.parameters,
+                snapshot,
+                dialect,
+            )
+        }
         None => Ok(compiled),
     };
     attach_hierarchy_ctes(compiled, catalog, nested, dialect)
+}
+
+/// A `ИТОГИ … ПО … ИЕРАРХИЯ` control point descends the parent chain of
+/// the catalog with no filter of its own, the way `В ИЕРАРХИИ` does, so a
+/// restricted compilation refuses it too.
+fn refuse_hierarchy_totals(
+    totals: &TotalsAst<'_, '_>,
+    catalog: &CompilationCatalog<'_>,
+) -> Result<(), QueryDiagnostic> {
+    for point in &totals.points {
+        if let Some(hierarchy) = &point.hierarchy {
+            catalog.refuse_unfiltered_read(
+                Some(hierarchy.token),
+                "a hierarchy control point of ИТОГИ",
+            )?;
+        }
+    }
+    Ok(())
 }
 
 /// Prefixes the statement with the recursive CTEs its `В ИЕРАРХИИ`

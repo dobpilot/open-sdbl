@@ -8,7 +8,7 @@ use crate::query::core::ast::days_in_month;
 use crate::query::core::names::names_equal;
 use crate::query::core::resolve::ColumnKind;
 use crate::query::core::resolve::PresentationPlan;
-use crate::query::core::restrict::AccessRestriction;
+use crate::query::core::restrict::{AccessDecision, AccessRestriction};
 use crate::query::core::{QueryDiagnostic, QueryDiagnosticKind};
 
 /// A calendar date and time supplied as a query parameter.
@@ -326,6 +326,7 @@ pub struct CompileOptions<'a> {
     parameters: &'a [QueryParameter],
     session: &'a SessionParameters,
     restrictions: &'a [AccessRestriction],
+    decisions: &'a [AccessDecision],
     totals_level: bool,
 }
 
@@ -344,6 +345,7 @@ impl<'a> CompileOptions<'a> {
             parameters: &[],
             session: &EMPTY_SESSION,
             restrictions: &[],
+            decisions: &[],
             totals_level: false,
         }
     }
@@ -384,10 +386,29 @@ impl<'a> CompileOptions<'a> {
         self.session
     }
 
+    /// Supplies the explicit access decisions of a restricted
+    /// compilation; see [`crate::query::RestrictionMode::Restricted`].
+    ///
+    /// A decision says what the application allows for one target of
+    /// [`crate::query::Prepared::restriction_request`]: the whole table,
+    /// the rows a condition holds for, or nothing at all. In the
+    /// restricted mode every target needs one.
+    #[must_use]
+    pub const fn decisions(mut self, decisions: &'a [AccessDecision]) -> Self {
+        self.decisions = decisions;
+        self
+    }
+
     /// The access restrictions in effect.
     #[must_use]
     pub const fn access_restrictions(&self) -> &'a [AccessRestriction] {
         self.restrictions
+    }
+
+    /// The access decisions in effect.
+    #[must_use]
+    pub const fn access_decisions(&self) -> &'a [AccessDecision] {
+        self.decisions
     }
 
     /// The bound parameter values: query values first, then session

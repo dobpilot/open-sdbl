@@ -10,7 +10,9 @@ use crate::query::core::ast::{
 };
 use crate::query::core::dialect::SqlDialect;
 use crate::query::core::names::names_equal;
-use crate::query::core::resolve::{ColumnKind, CompilationCatalog, CompiledColumn, CompiledQuery};
+use crate::query::core::resolve::{
+    ColumnKind, CompilationCatalog, CompiledColumn, CompiledQuery, RestrictionState,
+};
 use crate::query::core::temp_tables::{TempTablesManager, cte_name};
 use crate::query::core::{QueryDiagnostic, QueryDiagnosticKind};
 
@@ -61,6 +63,7 @@ pub(super) fn compile_batch_ast(
                     dialect,
                     final_statement,
                     snapshot,
+                    presentations.mode.is_restricted() || query.allowed.is_some(),
                 )?;
             }
         }
@@ -81,7 +84,13 @@ fn compile_statement(
 ) -> Result<CompiledStatement, QueryDiagnostic> {
     let mut catalog =
         CompilationCatalog::with_temporary(snapshot, presentations.parameters, manager);
-    catalog.set_restrictions(presentations.restrictions, query.allowed.is_some());
+    catalog.set_restrictions(RestrictionState {
+        restrictions: presentations.restrictions,
+        decisions: presentations.decisions,
+        mode: presentations.mode,
+        keyword: query.allowed.is_some(),
+        collecting: presentations.collecting,
+    });
     let compiled = compile_query_ast(
         query,
         snapshot,
@@ -102,6 +111,9 @@ fn compile_statement(
     presentations
         .used_restrictions
         .extend(catalog.used_restrictions());
+    presentations
+        .used_decisions
+        .extend(catalog.used_decisions());
     if let Some(index) = &query.index {
         check_index_fields(index, query, &compiled.columns)?;
     }
@@ -113,6 +125,7 @@ fn compile_statement(
 }
 
 /// Stores a definition, or renders the final statement of the batch.
+#[allow(clippy::too_many_arguments)]
 fn place_statement(
     query: &QueryAst<'_, '_>,
     compiled: CompiledStatement,
@@ -120,6 +133,7 @@ fn place_statement(
     dialect: SqlDialect,
     final_statement: bool,
     snapshot: &MetadataSnapshot,
+    restricted: bool,
 ) -> Result<Option<CompiledQuery>, QueryDiagnostic> {
     let fingerprint = snapshot.fingerprint();
     let Some(into) = &query.into else {
@@ -169,6 +183,7 @@ fn place_statement(
             hierarchy,
             dialect,
             fingerprint,
+            restricted,
         )?;
         // Only the appended rows are counted, so the base table is not read.
         return Ok(final_statement.then(|| {
@@ -188,6 +203,7 @@ fn place_statement(
         hierarchy,
         dialect,
         fingerprint,
+        restricted,
     )?;
     if !final_statement {
         return Ok(None);

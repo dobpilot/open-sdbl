@@ -14,7 +14,9 @@ use crate::query::core::resolve::{
     ColumnKind, CompilationCatalog, CompiledColumn, CompiledQuery, PresentationPlan,
     PresentationRequest, PresentationTarget, restriction_label,
 };
-use crate::query::core::restrict::{AccessRestriction, RestrictionRequest, RestrictionTarget};
+use crate::query::core::restrict::{
+    AccessDecision, AccessRestriction, RestrictionMode, RestrictionRequest, RestrictionTarget,
+};
 use crate::query::core::temp_tables::TempTablesManager;
 use crate::query::core::{QueryDiagnostic, QueryDiagnosticKind};
 use crate::{TokenKind, tokenize};
@@ -23,14 +25,6 @@ use crate::{TokenKind, tokenize};
 pub(crate) struct PreparedRequests {
     pub(crate) presentations: PresentationRequest,
     pub(crate) restrictions: RestrictionRequest,
-}
-
-pub(crate) fn prepare_query(
-    source: &str,
-    snapshot: &MetadataSnapshot,
-    dialect: SqlDialect,
-) -> Result<PreparedRequests, QueryDiagnostic> {
-    prepare_query_with(source, snapshot, dialect, &TempTablesManager::new())
 }
 
 /// Collects presentation and restriction targets with the caller's
@@ -42,13 +36,14 @@ pub(crate) fn prepare_query_with(
     snapshot: &MetadataSnapshot,
     dialect: SqlDialect,
     manager: &TempTablesManager,
+    mode: RestrictionMode,
 ) -> Result<PreparedRequests, QueryDiagnostic> {
     let tokens = tokenize(source)?
         .into_iter()
         .filter(|token| token.kind != TokenKind::Comment)
         .collect::<Vec<_>>();
     let ast = Parser::new(&tokens, source).parse()?;
-    let mut presentations = PresentationCompilation::collect(dialect);
+    let mut presentations = PresentationCompilation::collect(dialect).with_mode(mode);
     let mut scratch = manager.clone();
     let _ = compile_batch_ast(&ast, snapshot, &mut presentations, &mut scratch)?;
     Ok(PreparedRequests {
@@ -164,9 +159,10 @@ pub(crate) fn compile_query(
     snapshot: &MetadataSnapshot,
     options: &CompileOptions<'_>,
     dialect: SqlDialect,
+    mode: RestrictionMode,
 ) -> Result<CompiledQuery, QueryDiagnostic> {
     let mut manager = TempTablesManager::new();
-    compile_batch(source, snapshot, options, dialect, &mut manager)?.ok_or_else(|| {
+    compile_batch(source, snapshot, options, dialect, &mut manager, mode)?.ok_or_else(|| {
         QueryDiagnostic::unpositioned(
             QueryDiagnosticKind::TemporaryTable,
             "the batch returns no rows; compile it with a temporary table manager",
@@ -181,6 +177,7 @@ pub(crate) fn compile_batch(
     options: &CompileOptions<'_>,
     dialect: SqlDialect,
     manager: &mut TempTablesManager,
+    mode: RestrictionMode,
 ) -> Result<Option<CompiledQuery>, QueryDiagnostic> {
     let tokens = tokenize(source)?
         .into_iter()
@@ -189,11 +186,13 @@ pub(crate) fn compile_batch(
     let parameters = options.bound_parameters();
     check_parameter_binding(&tokens, options.parameter_values(), parameters)?;
     let restrictions = options.access_restrictions();
-    check_restriction_uniqueness(snapshot, restrictions)?;
+    let decisions = options.access_decisions();
+    check_decision_uniqueness(snapshot, restrictions, decisions)?;
     let ast = Parser::new(&tokens, source).parse()?;
     let mut presentations =
         PresentationCompilation::strict(options.presentation_plans(), parameters, dialect)
-            .with_restrictions(restrictions)
+            .with_restrictions(restrictions, decisions)
+            .with_mode(mode)
             .with_totals_level(options.totals_level_enabled());
     let compiled = compile_batch_ast(&ast, snapshot, &mut presentations, manager)?;
     if let Some(unused) = (0..restrictions.len())
@@ -208,7 +207,26 @@ pub(crate) fn compile_batch(
             ),
         ));
     }
+    if let Some(unused) = (0..decisions.len())
+        .find(|index| !presentations.used_decisions.contains(index))
+        .map(|index| &decisions[index])
+    {
+        return Err(QueryDiagnostic::unpositioned(
+            QueryDiagnosticKind::Restriction,
+            format!(
+                "access decision for {} is supplied but no statement reads it",
+                restriction_label(snapshot, &decision_target(unused))
+            ),
+        ));
+    }
     Ok(compiled)
+}
+
+fn decision_target(decision: &AccessDecision) -> RestrictionTarget {
+    RestrictionTarget {
+        object: decision.object(),
+        table_part: decision.table_part_name().map(str::to_owned),
+    }
 }
 
 fn restriction_target(restriction: &AccessRestriction) -> RestrictionTarget {
@@ -218,18 +236,27 @@ fn restriction_target(restriction: &AccessRestriction) -> RestrictionTarget {
     }
 }
 
-/// Two restrictions of one target would have to be combined by a rule the
-/// application did not state, so they are rejected.
-fn check_restriction_uniqueness(
+/// Two answers about one target would have to be combined by a rule the
+/// application did not state, so they are rejected — whether both are
+/// conditions, both decisions, or one of each.
+fn check_decision_uniqueness(
     snapshot: &MetadataSnapshot,
     restrictions: &[AccessRestriction],
+    decisions: &[AccessDecision],
 ) -> Result<(), QueryDiagnostic> {
-    for (index, restriction) in restrictions.iter().enumerate() {
-        let target = restriction_target(restriction);
-        if restrictions[..index]
-            .iter()
-            .any(|previous| target.matches(previous))
-        {
+    // Section names compare case-insensitively, like every 1C identifier,
+    // so two spellings of one section are still two answers about it.
+    let same = |left: &RestrictionTarget, right: &RestrictionTarget| {
+        left.object == right.object
+            && match (&left.table_part, &right.table_part) {
+                (None, None) => true,
+                (Some(left), Some(right)) => names_equal(left, right),
+                _ => false,
+            }
+    };
+    let mut seen: Vec<RestrictionTarget> = Vec::new();
+    let mut check = |target: RestrictionTarget| -> Result<(), QueryDiagnostic> {
+        if seen.iter().any(|previous| same(previous, &target)) {
             return Err(QueryDiagnostic::unpositioned(
                 QueryDiagnosticKind::Restriction,
                 format!(
@@ -238,6 +265,14 @@ fn check_restriction_uniqueness(
                 ),
             ));
         }
+        seen.push(target);
+        Ok(())
+    };
+    for restriction in restrictions {
+        check(restriction_target(restriction))?;
+    }
+    for decision in decisions {
+        check(decision_target(decision))?;
     }
     Ok(())
 }

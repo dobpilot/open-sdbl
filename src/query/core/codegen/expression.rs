@@ -3195,6 +3195,12 @@ fn compile_in_hierarchy(
         .and_then(|target| hierarchical_catalog_of(target, context.snapshot, dialect))
     {
         Some((table, id, parent)) => {
+            // The descent reads the parent chain of the catalog with no
+            // filter of its own; a restricted compilation refuses it
+            // rather than pretending the walk is contained.
+            context
+                .catalog
+                .refuse_unfiltered_read(Some(token), "a hierarchy descent (В ИЕРАРХИИ)")?;
             let name = context.catalog.next_hierarchy_name();
             let quoted = dialect.quote_identifier(&name);
             let source = dialect.quote_identifier("__catalog");

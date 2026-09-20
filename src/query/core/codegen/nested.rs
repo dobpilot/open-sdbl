@@ -110,6 +110,13 @@ pub(super) fn resolve_section(
     label: String,
     position: usize,
 ) -> Result<PendingSection, QueryDiagnostic> {
+    // The section rows are fetched by a second query the caller runs on
+    // its own, so the decision of this compilation does not reach them.
+    // A restricted compilation refuses the projection rather than
+    // returning rows nothing filtered.
+    context
+        .catalog
+        .refuse_unfiltered_read(Some(section), "a nested tabular-section projection")?;
     let source = context.source(scope);
     let object = context
         .snapshot

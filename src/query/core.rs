@@ -23,11 +23,13 @@ pub use resolve::{
     QueryableFieldCatalog, constants_table_fields, find_metadata_object, object_query_name,
     queryable_field_catalog, queryable_fields,
 };
-pub use restrict::{AccessRestriction, RestrictionRequest, RestrictionTarget};
+pub use restrict::{
+    AccessDecision, AccessRestriction, RestrictionMode, RestrictionRequest, RestrictionTarget,
+};
 pub use temp_tables::{TempTable, TempTablesManager};
 pub use types::TypeValue;
 
 pub(super) use codegen::{
-    compile_batch, compile_presentation_lookup, compile_query, prepare_query, prepare_query_with,
+    compile_batch, compile_presentation_lookup, compile_query, prepare_query_with,
 };
 pub(super) use dialect::SqlDialect;

@@ -32,14 +32,15 @@ use crate::query::core::resolve::{
     ColumnKind, CompilationCatalog, CompiledColumn, QueryableColumn, QueryableField,
     kind_from_query_name, resolve_source_metadata,
 };
-use crate::query::core::restrict::AccessRestriction;
 use crate::query::core::types::TypeValue;
 use crate::query::core::{QueryDiagnostic, QueryDiagnosticKind};
 use crate::{Keyword, Token, TokenKind, tokenize};
 
 /// The access restriction applied to the source being compiled.
 pub(super) struct SourceRestriction<'restriction> {
-    pub(super) restriction: &'restriction AccessRestriction,
+    /// The condition text: what the application decided, or the false
+    /// literal a denied target is filtered by.
+    pub(super) condition: &'restriction str,
     /// `Справочник.Номенклатура`, for diagnostics.
     pub(super) label: String,
     /// Whether the source's identity column is its base `ID`; copied to
@@ -69,7 +70,7 @@ pub(super) fn compile_restriction_predicate(
     alias: &str,
     dialect: SqlDialect,
 ) -> Result<RestrictionPredicate, QueryDiagnostic> {
-    let text = restriction.restriction.condition();
+    let text = restriction.condition;
     catalog
         .in_restriction(|| {
             let tokens = tokenize(text)?
@@ -253,7 +254,7 @@ fn restriction_exists(
     sql
 }
 
-fn wrap_restricted_relation(
+pub(super) fn wrap_restricted_relation(
     relation: &str,
     fields: &[QueryableField],
     predicate: &RestrictionPredicate,

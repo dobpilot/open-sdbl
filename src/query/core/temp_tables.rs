@@ -50,6 +50,10 @@ pub(super) struct TempTableEntry {
     /// table, rendered before the definition itself.
     pub(super) ctes: Vec<(String, String)>,
     pub(super) visible: bool,
+    /// Whether the defining statement was itself access-restricted. A
+    /// restricted statement may read only rows that were filtered when
+    /// they were placed.
+    pub(super) restricted: bool,
 }
 
 /// What a resolved temporary-table source contributes to a statement.
@@ -59,6 +63,8 @@ pub(super) struct TempTableSource {
     pub(super) name: String,
     pub(super) columns: Vec<CompiledColumn>,
     pub(super) dependencies: BTreeSet<u32>,
+    /// Whether the defining statement was access-restricted.
+    pub(super) restricted: bool,
 }
 
 /// Compiled temporary tables shared by consecutive batches.
@@ -85,6 +91,8 @@ pub struct TempTablesManager {
     binding: Option<(SqlDialect, SnapshotFingerprint)>,
 }
 
+static EMPTY_MANAGER: TempTablesManager = TempTablesManager::new();
+
 impl TempTablesManager {
     /// The largest number of definitions one manager keeps. `ДОБАВИТЬ`
     /// defines a new entry, so long append chains count toward the bound.
@@ -101,9 +109,9 @@ impl TempTablesManager {
     }
 
     /// A shared empty manager for compilations without temporary tables.
-    pub(super) fn none() -> &'static Self {
-        static EMPTY: TempTablesManager = TempTablesManager::new();
-        &EMPTY
+    #[must_use]
+    pub const fn none() -> &'static Self {
+        &EMPTY_MANAGER
     }
 
     /// The tables a statement can read, in definition order.
@@ -161,6 +169,7 @@ impl TempTablesManager {
             name: entry.name.clone(),
             columns: entry.columns.clone(),
             dependencies: entry.dependencies.clone(),
+            restricted: entry.restricted,
         })
     }
 
@@ -187,6 +196,7 @@ impl TempTablesManager {
 
     /// Registers a `ПОМЕСТИТЬ` definition and returns its CTE id.
     #[allow(clippy::too_many_arguments)]
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn define(
         &mut self,
         name: &Token<'_>,
@@ -196,6 +206,7 @@ impl TempTablesManager {
         ctes: Vec<(String, String)>,
         dialect: SqlDialect,
         fingerprint: SnapshotFingerprint,
+        restricted: bool,
     ) -> Result<u32, QueryDiagnostic> {
         if self.visible(name.lexeme).is_some() {
             return Err(QueryDiagnostic::at(
@@ -213,6 +224,7 @@ impl TempTablesManager {
             dialect,
             fingerprint,
             Some(name),
+            restricted,
         )
     }
 
@@ -227,6 +239,7 @@ impl TempTablesManager {
         ctes: Vec<(String, String)>,
         dialect: SqlDialect,
         fingerprint: SnapshotFingerprint,
+        restricted: bool,
     ) -> Result<u32, QueryDiagnostic> {
         let previous = self
             .visible(name.lexeme)
@@ -248,6 +261,7 @@ impl TempTablesManager {
             dialect,
             fingerprint,
             Some(name),
+            restricted,
         )
     }
 
@@ -276,6 +290,7 @@ impl TempTablesManager {
     }
 
     #[allow(clippy::too_many_arguments)]
+    #[allow(clippy::too_many_arguments)]
     fn push(
         &mut self,
         name: String,
@@ -286,6 +301,7 @@ impl TempTablesManager {
         dialect: SqlDialect,
         fingerprint: SnapshotFingerprint,
         token: Option<&Token<'_>>,
+        restricted: bool,
     ) -> Result<u32, QueryDiagnostic> {
         if self.entries.len() == Self::MAX_DEFINITIONS {
             return Err(QueryDiagnostic::at_or_unpositioned(
@@ -328,6 +344,7 @@ impl TempTablesManager {
             dependencies,
             ctes: renamed,
             visible: true,
+            restricted,
         });
         Ok(id)
     }

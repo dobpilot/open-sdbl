@@ -51,7 +51,7 @@ pub mod session;
 pub use access::{
     AccessStore, DerivedRestrictions, derive_restrictions, describe_role, describe_templates,
     describe_user, ensure_rights, ensure_users, list_restrictions, list_roles, list_users,
-    rls_report, role_restrictions, user_restrictions,
+    rls_report, role_restrictions, user_decisions, user_restrictions,
 };
 pub use access_cache::{TemplateParameters, read_current_user, read_template_parameters};
 pub use cells::{Cell, DateTimeParts, QueryRows};

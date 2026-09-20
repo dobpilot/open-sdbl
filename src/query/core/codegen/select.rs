@@ -743,6 +743,14 @@ fn temporary_source_scope(
     dialect: SqlDialect,
 ) -> Result<SourceScope, QueryDiagnostic> {
     let table = catalog.temporary_source(source.object)?;
+    if !table.restricted {
+        // The rows were placed by a statement nothing filtered, so
+        // reading them would read past the decisions of this batch.
+        catalog.refuse_unfiltered_read(
+            Some(source.object),
+            "a temporary table defined outside an access-restricted compilation",
+        )?;
+    }
     let alias = source
         .alias
         .map_or_else(|| table.name.clone(), |token| token.lexeme.to_owned());
@@ -784,6 +792,7 @@ fn criterion_source_scope(
     default_alias: &str,
     dialect: SqlDialect,
 ) -> Result<SourceScope, QueryDiagnostic> {
+    catalog.refuse_unfiltered_read(Some(source.object), "a filter criterion")?;
     let criterion = snapshot.criterion(source.object.lexeme).ok_or_else(|| {
         QueryDiagnostic::at(
             QueryDiagnosticKind::UnknownObject,
@@ -2330,14 +2339,14 @@ fn resolve_join_source(
     }
     let resolved = resolve_source_metadata(source, snapshot, catalog)?;
     let target = resolved.restriction_target();
-    let restriction =
-        catalog
-            .restriction_for(target.clone())
-            .map(|restriction| SourceRestriction {
-                restriction,
-                label: restriction_label(snapshot, &target),
-                identity_is_base: resolved.identity_is_base,
-            });
+    let decision = catalog.decide(target.clone(), Some(source.object), || {
+        restriction_label(snapshot, &target)
+    })?;
+    let restriction = decision.condition().map(|condition| SourceRestriction {
+        condition,
+        label: restriction_label(snapshot, &target),
+        identity_is_base: resolved.identity_is_base,
+    });
     let sql_alias = source
         .alias
         .map_or_else(|| default_alias.to_owned(), |token| token.lexeme.to_owned());

@@ -289,3 +289,106 @@ async fn reads_dereferences_and_presents_the_mssql_demo_extension_table() {
     }));
     session.close().await.unwrap();
 }
+
+/// A denied target must return no row of that table from the server, not
+/// merely carry a predicate in the SQL text.
+#[tokio::test]
+#[ignore = "requires OPEN_SDBL_MSSQL_TEST_USER, MSSQL_PASSWORD, and a live 1C database"]
+async fn a_denied_target_returns_no_row_from_the_server() {
+    use open_sdbl::query::{
+        AccessDecision, CompileOptions, ParameterValue, PrepareOptions, QueryCompiler,
+        QueryParameter, RestrictionTarget, SessionParameters,
+    };
+
+    let mut session = MsSqlSession::connect(
+        &mssql_test_connection(),
+        &mssql_test_credentials(),
+        Limits::default(),
+    )
+    .await
+    .unwrap();
+    let (snapshot, _) = session.metadata(&mut NoProgress).await.unwrap();
+    let catalog = snapshot
+        .objects()
+        .iter()
+        .find(|object| {
+            object.kind == Some(open_sdbl::metadata::MetadataKind::Catalog)
+                && object.live
+                && object.name.is_some()
+        })
+        .expect("a base has at least one live catalog");
+    let source = format!(
+        "ВЫБРАТЬ ПЕРВЫЕ 10 Ссылка ИЗ Справочник.{}",
+        catalog.name.as_deref().unwrap()
+    );
+    let backend = session.backend();
+    let prepared = QueryCompiler::new(&snapshot, backend)
+        .prepare_with_options(&source, &PrepareOptions::new().restricted())
+        .unwrap();
+    let targets = prepared.restriction_request().targets.clone();
+    assert!(!targets.is_empty(), "the source must be a target");
+
+    // A separated base needs the data-area value before any table
+    // compiles; the value itself is irrelevant to what is being tested.
+    let mut values = SessionParameters::new();
+    for name in [
+        "ОбластьДанныхЗначение",
+        "ОбластьДанныхОсновныеДанные",
+        "ОбластьДанныхВспомогательныеДанные",
+    ] {
+        values.set(QueryParameter::new(
+            name,
+            ParameterValue::Number {
+                unscaled: 0,
+                scale: 0,
+            },
+        ));
+    }
+
+    // Allowed: the server returns whatever the table holds.
+    let allowed = targets
+        .iter()
+        .map(|target| AccessDecision::unrestricted(target.clone()))
+        .collect::<Vec<_>>();
+    let compiled = prepared
+        .compile_with(
+            &snapshot,
+            &CompileOptions::new().decisions(&allowed).session(&values),
+        )
+        .unwrap();
+    let rows = session
+        .query(&compiled.sql, compiled.columns.len())
+        .await
+        .unwrap();
+
+    // Denied: the same query returns nothing at all.
+    let denied = targets
+        .iter()
+        .map(|target| {
+            AccessDecision::denied(RestrictionTarget {
+                object: target.object,
+                table_part: target.table_part.clone(),
+            })
+        })
+        .collect::<Vec<_>>();
+    let compiled = prepared
+        .compile_with(
+            &snapshot,
+            &CompileOptions::new().decisions(&denied).session(&values),
+        )
+        .unwrap();
+    let denied_rows = session
+        .query(&compiled.sql, compiled.columns.len())
+        .await
+        .unwrap();
+    assert!(
+        denied_rows.is_empty(),
+        "a denied target returned {} rows from the server",
+        denied_rows.len()
+    );
+    assert!(
+        !rows.is_empty(),
+        "the allowed read returned nothing, so the denial proves nothing"
+    );
+    session.close().await.unwrap();
+}

@@ -11,13 +11,14 @@ use super::expression::{
 use super::orchestrate::PresentationCompilation;
 use super::select::{composite_member_kind_of, derived_data_type, derived_owner};
 use super::sources::{
-    ReferencePresentationTargets, compile_deferred_reference_presentation, compile_live_relation,
-    presentation_targets, wrap_reference_presentation,
+    ReferencePresentationTargets, SourceRestriction, compile_deferred_reference_presentation,
+    compile_live_relation, compile_restriction_predicate, presentation_targets,
+    wrap_reference_presentation, wrap_restricted_relation,
 };
 use super::virtual_tables::AggregateSource;
 use super::virtual_tables::compile_presentation_plan;
 use crate::Token;
-use crate::metadata::{MetadataKind, MetadataSnapshot, ObjectId};
+use crate::metadata::{LiveTable, MetadataKind, MetadataObject, MetadataSnapshot, ObjectId};
 use crate::query::core::ast::{
     Expression, FieldReference, PresentationArgument, PresentationOperation,
 };
@@ -25,8 +26,9 @@ use crate::query::core::dialect::{SqlDialect, compile_literal};
 use crate::query::core::names::names_equal;
 use crate::query::core::resolve::{
     ColumnKind, CompilationCatalog, CompiledColumn, QueryableColumn, QueryableField,
-    is_standard_field_name, kind_from_query_name,
+    is_standard_field_name, kind_from_query_name, restriction_label,
 };
+use crate::query::core::restrict::RestrictionTarget;
 use crate::query::core::types::TypeValue;
 use crate::query::core::{QueryDiagnostic, QueryDiagnosticKind};
 
@@ -365,6 +367,95 @@ impl ResolvedPath {
                 || format!("{path_label}_{}", column.output_label),
                 |suffix| format!("{path_label}{suffix}"),
             )
+    }
+}
+
+impl CompilationContext<'_, '_> {
+    /// The relation a reference join reads, with the access decision of
+    /// its target applied.
+    ///
+    /// A dereference is a read of the target table that the query never
+    /// names, so it takes the same wrapper a named source takes: the rows
+    /// the decision excludes contribute no attribute value, and the
+    /// `LEFT JOIN` yields `NULL`s for them. The target is registered in
+    /// the restriction request, so the application is asked about it.
+    fn reference_target_relation(
+        &self,
+        object: &MetadataObject,
+        live_table: &LiveTable,
+        fields: &[QueryableField],
+        alias: &str,
+        token: &Token<'_>,
+    ) -> Result<(String, Vec<String>), QueryDiagnostic> {
+        if !self.catalog.is_restricted_mode() {
+            // Outside the restricted mode a dereference reads its target
+            // unfiltered, as it always has: `РАЗРЕШЕННЫЕ` covers the
+            // sources the statement names, and nothing more.
+            let relation = compile_live_relation(
+                self.snapshot,
+                self.catalog,
+                live_table,
+                fields,
+                alias,
+                Some(token),
+                self.dialect,
+            )?;
+            return Ok((relation.sql, relation.separators));
+        }
+        let target = RestrictionTarget {
+            object: ObjectId::from(&object.guid),
+            table_part: None,
+        };
+        let decision = self.catalog.decide(target.clone(), Some(token), || {
+            restriction_label(self.snapshot, &target)
+        })?;
+        let Some(condition) = decision.condition() else {
+            let relation = compile_live_relation(
+                self.snapshot,
+                self.catalog,
+                live_table,
+                fields,
+                alias,
+                Some(token),
+                self.dialect,
+            )?;
+            return Ok((relation.sql, relation.separators));
+        };
+        let label = restriction_label(self.snapshot, &target);
+        let relation = compile_live_relation(
+            self.snapshot,
+            self.catalog,
+            live_table,
+            fields,
+            "__restricted",
+            Some(token),
+            self.dialect,
+        )?;
+        let restriction = SourceRestriction {
+            condition,
+            label,
+            identity_is_base: true,
+        };
+        let predicate = compile_restriction_predicate(
+            &restriction,
+            self.snapshot,
+            self.catalog,
+            object,
+            &restriction.label,
+            fields,
+            "__restricted",
+            self.dialect,
+        )?;
+        Ok((
+            wrap_restricted_relation(
+                &relation.sql,
+                fields,
+                &predicate,
+                &relation.separators,
+                self.dialect,
+            ),
+            Vec::new(),
+        ))
     }
 }
 
@@ -1181,14 +1272,12 @@ impl CompilationContext<'_, '_> {
             alias
         } else {
             let alias = self.next_reference_alias(scope);
-            let target = compile_live_relation(
-                self.snapshot,
-                self.catalog,
+            let (target_relation, target_separators) = self.reference_target_relation(
+                target_object,
                 target_live_table,
                 &target_fields,
                 &alias,
-                Some(reference_token),
-                self.dialect,
+                reference_token,
             )?;
             self.source_mut(scope).reference_joins.push(JoinPlan {
                 source_alias,
@@ -1197,12 +1286,12 @@ impl CompilationContext<'_, '_> {
                 source_type_column: None,
                 database_type: None,
                 target_object: target_object_id,
-                target_relation: target.sql,
+                target_relation,
                 target_id_column,
                 alias: alias.clone(),
                 source_value_sql: None,
                 source_type_sql: None,
-                target_predicates: target.separators,
+                target_predicates: target_separators,
             });
             alias
         };
@@ -1328,14 +1417,12 @@ impl CompilationContext<'_, '_> {
             alias
         } else {
             let alias = self.next_reference_alias(scope);
-            let target = compile_live_relation(
-                self.snapshot,
-                self.catalog,
+            let (target_relation, target_separators) = self.reference_target_relation(
+                target_object,
                 target_live_table,
                 &target_fields,
                 &alias,
-                Some(reference_token),
-                self.dialect,
+                reference_token,
             )?;
             self.source_mut(scope).reference_joins.push(JoinPlan {
                 source_alias: source_alias.to_owned(),
@@ -1344,12 +1431,12 @@ impl CompilationContext<'_, '_> {
                 source_type_column: None,
                 database_type: None,
                 target_object: target_object_id,
-                target_relation: target.sql,
+                target_relation,
                 target_id_column,
                 alias: alias.clone(),
                 source_value_sql: None,
                 source_type_sql: None,
-                target_predicates: target.separators,
+                target_predicates: target_separators,
             });
             alias
         };
@@ -1920,14 +2007,12 @@ impl CompilationContext<'_, '_> {
             join.alias.clone()
         } else {
             let alias = self.next_reference_alias(scope);
-            let target = compile_live_relation(
-                self.snapshot,
-                self.catalog,
+            let (target_relation, target_separators) = self.reference_target_relation(
+                object,
                 live_table,
                 &fields,
                 &alias,
-                Some(reference_token),
-                self.dialect,
+                reference_token,
             )?;
             self.source_mut(scope).reference_joins.push(JoinPlan {
                 source_alias,
@@ -1936,7 +2021,7 @@ impl CompilationContext<'_, '_> {
                 source_type_column: source.type_column.clone(),
                 database_type: Some(database_type),
                 target_object: candidate,
-                target_relation: target.sql,
+                target_relation,
                 target_id_column: id_column,
                 alias: alias.clone(),
                 source_value_sql: source
@@ -1947,7 +2032,7 @@ impl CompilationContext<'_, '_> {
                     .type_column
                     .is_none()
                     .then(|| source.type_sql.clone()),
-                target_predicates: target.separators,
+                target_predicates: target_separators,
             });
             alias
         };
@@ -2233,14 +2318,12 @@ impl CompilationContext<'_, '_> {
             return Ok(join.alias.clone());
         }
         let alias = self.next_reference_alias(scope);
-        let target_relation = compile_live_relation(
-            self.snapshot,
-            self.catalog,
+        let (target_relation, target_separators) = self.reference_target_relation(
+            target_object,
             target_table,
             &target_fields,
             &alias,
-            Some(token),
-            self.dialect,
+            token,
         )?;
         self.source_mut(scope).reference_joins.push(JoinPlan {
             source_alias: source_alias.to_owned(),
@@ -2249,12 +2332,12 @@ impl CompilationContext<'_, '_> {
             source_type_column,
             database_type,
             target_object: target,
-            target_relation: target_relation.sql,
+            target_relation,
             target_id_column,
             alias: alias.clone(),
             source_value_sql: None,
             source_type_sql: None,
-            target_predicates: target_relation.separators,
+            target_predicates: target_separators,
         });
         Ok(alias)
     }
@@ -2417,6 +2500,12 @@ pub(super) fn compile_presentation(
     }
 
     if targets == ReferencePresentationTargets::Deferred {
+        // The presentation is resolved by a second lookup the caller runs
+        // with `compile_presentation_lookup`, which this compilation does
+        // not filter; a restricted compilation refuses to defer.
+        context
+            .catalog
+            .refuse_unfiltered_read(Some(reference.last()), "a deferred reference presentation")?;
         let payload = compile_deferred_reference_presentation(
             &source_alias,
             resolved.field(),
