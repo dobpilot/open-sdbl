@@ -127,3 +127,19 @@ fn provides_the_users_statements() {
     );
     assert!(MsSqlMetadataQueries::USERS.contains("FROM [dbo].[v8users] ORDER BY [Name]"));
 }
+
+#[test]
+fn the_identifier_of_a_user_is_stored_in_the_physical_order() {
+    // Measured on the demo base: the record of `v8users` carries the
+    // identifier of the user as text, and
+    // `Справочник.Пользователи.ИдентификаторПользователяИБ` holds the same
+    // value in the physical byte order of 1C, which is how the console
+    // finds the element of the current user.
+    let guid = Guid::from_str("119bd10c-c65c-44c7-a0bc-4fb9fc12f3c5").unwrap();
+    let hex = guid
+        .to_1c_bytes()
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect::<String>();
+    assert_eq!(hex, "a0bc4fb9fc12f3c544c7c65c119bd10c");
+}

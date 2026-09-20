@@ -10,11 +10,13 @@
 //! those names, leaving alone the ones the operator typed.
 
 use open_sdbl::metadata::{
-    DEFAULT_OUTPUT_LIMIT, MetadataSnapshot, MsSqlMetadataQueries, PostgresMetadataQueries,
-    decode_stored_value, entry_string, parse_stored_value_ref, stored_map_entries,
+    DEFAULT_OUTPUT_LIMIT, Guid, MetadataSnapshot, MsSqlMetadataQueries, ObjectId,
+    PostgresMetadataQueries, decode_stored_value, entry_string, parse_stored_value_ref,
+    stored_map_entries,
 };
 use open_sdbl::query::{
-    CompileOptions, PostgresBackend, QueryCompiler, SessionParameters, TempTablesManager,
+    CompileOptions, ParameterValue, PostgresBackend, QueryCompiler, QueryParameter,
+    SessionParameters, TempTablesManager, find_metadata_object,
 };
 
 use crate::cells::Cell;
@@ -64,11 +66,7 @@ pub(crate) async fn read_template_parameters(
     let Some(cell) = rows.first().and_then(|row| row.first()) else {
         return Ok(Vec::new());
     };
-    let bytes = match cell {
-        Cell::Bytes(bytes) => bytes.clone(),
-        Cell::Text(text) => decode_hex(text).unwrap_or_default(),
-        _ => Vec::new(),
-    };
+    let bytes = cell_bytes(cell);
     let Some(reference) = parse_stored_value_ref(&bytes) else {
         return Ok(Vec::new());
     };
@@ -79,12 +77,8 @@ pub(crate) async fn read_template_parameters(
     let parts = session.query(&statement, 1).await?;
     let mut content = Vec::new();
     for row in &parts {
-        match row.first() {
-            Some(Cell::Bytes(bytes)) => content.extend_from_slice(bytes),
-            Some(Cell::Text(text)) => {
-                content.extend_from_slice(&decode_hex(text).unwrap_or_default());
-            }
-            _ => {}
+        if let Some(cell) = row.first() {
+            content.extend_from_slice(&cell_bytes(cell));
         }
     }
     if content.is_empty() {
@@ -116,6 +110,57 @@ pub(crate) fn template_parameters(value: &open_sdbl::metadata::Value) -> Vec<(St
     values
 }
 
+/// The catalog of the users and the attribute carrying the identifier of
+/// the information-base user.
+const USERS_QUERY: &str = "ВЫБРАТЬ ПЕРВЫЕ 1 Ссылка ИЗ Справочник.Пользователи ГДЕ ИдентификаторПользователяИБ = &ИдентификаторПользователяИБ";
+
+/// Reads the element of `Справочник.Пользователи` of the information-base
+/// user, for the session parameter `ТекущийПользователь`.
+///
+/// Answers `None` when the configuration has no such catalog or
+/// attribute, or carries no element of that user.
+pub(crate) async fn read_current_user(
+    session: &mut DatabaseSession,
+    snapshot: &MetadataSnapshot,
+    session_parameters: &SessionParameters,
+    user: &Guid,
+) -> Result<Option<ParameterValue>, CliError> {
+    let Ok(object) = find_metadata_object(snapshot, "Справочник.Пользователи")
+    else {
+        return Ok(None);
+    };
+    let parameters = [QueryParameter::new(
+        "ИдентификаторПользователяИБ",
+        ParameterValue::Binary(user.to_1c_bytes().to_vec()),
+    )];
+    let options = CompileOptions::new()
+        .session(session_parameters)
+        .parameters(&parameters);
+    let Some(sql) = compile(session, snapshot, USERS_QUERY, &options) else {
+        return Ok(None);
+    };
+    let rows = session.query(&sql, 1).await?;
+    let Some(bytes) = rows.first().and_then(|row| row.first()).map(cell_bytes) else {
+        return Ok(None);
+    };
+    let Ok(id) = <[u8; 16]>::try_from(bytes.as_slice()) else {
+        return Ok(None);
+    };
+    Ok(Some(ParameterValue::Reference {
+        object: ObjectId::from(&object.guid),
+        id,
+    }))
+}
+
+/// The bytes of a cell, whichever way the provider answers them.
+fn cell_bytes(cell: &Cell) -> Vec<u8> {
+    match cell {
+        Cell::Bytes(bytes) => bytes.clone(),
+        Cell::Text(text) => decode_hex(text).unwrap_or_default(),
+        _ => Vec::new(),
+    }
+}
+
 /// Compiles the reading of the cache; `None` when the configuration has
 /// no such register, or the statement needs what the session lacks.
 fn compile_cache_query(
@@ -124,16 +169,27 @@ fn compile_cache_query(
     session_parameters: &SessionParameters,
 ) -> Option<String> {
     let options = CompileOptions::new().session(session_parameters);
+    compile(session, snapshot, CACHE_QUERY, &options)
+}
+
+/// Compiles one statement of this module; `None` when the configuration
+/// does not carry what it reads, or the session lacks what it needs.
+fn compile(
+    session: &DatabaseSession,
+    snapshot: &MetadataSnapshot,
+    statement: &str,
+    options: &CompileOptions<'_>,
+) -> Option<String> {
     let mut temporary = TempTablesManager::new();
     let compiled = match session.dialect() {
         DatabaseDialect::Postgres => QueryCompiler::new(snapshot, PostgresBackend)
-            .prepare(CACHE_QUERY)
+            .prepare(statement)
             .ok()?
-            .compile_batch(snapshot, &options, &mut temporary),
+            .compile_batch(snapshot, options, &mut temporary),
         DatabaseDialect::MsSql { backend } => QueryCompiler::new(snapshot, backend)
-            .prepare(CACHE_QUERY)
+            .prepare(statement)
             .ok()?
-            .compile_batch(snapshot, &options, &mut temporary),
+            .compile_batch(snapshot, options, &mut temporary),
     };
     Some(compiled.ok()??.sql)
 }

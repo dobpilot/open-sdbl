@@ -23,7 +23,7 @@ use open_sdbl::query::{
     object_query_name,
 };
 
-use crate::access_cache::read_template_parameters;
+use crate::access_cache::{read_current_user, read_template_parameters};
 use crate::cells::{Cell, QueryRows};
 use crate::error::CliError;
 use crate::params::ParameterStore;
@@ -274,6 +274,7 @@ pub(crate) async fn apply_access_command(
                 .ok_or_else(|| CliError::Data(format!("user {name:?} is not in v8users")))?;
             ensure_rights(store, session, &user.data.roles).await?;
             let roles = user.role_names(store.catalog());
+            let user_id = user.data.id.clone();
             store.current = Some(user);
             let mut text = format!(
                 "Current user: {name} ({} roles): {}\n",
@@ -288,6 +289,14 @@ pub(crate) async fn apply_access_command(
                 if parameters.set_if_absent(&name, ParameterValue::String(value)) {
                     stored.push(name);
                 }
+            }
+            // The restrictions compare rows with the element of the user
+            // catalog of the information-base user.
+            if let Some(current) =
+                read_current_user(session, snapshot, session_parameters, &user_id).await?
+                && parameters.set_if_absent("ТекущийПользователь", current)
+            {
+                stored.push("ТекущийПользователь".to_owned());
             }
             // A user of the base is not an external one: the templates
             // compare the parameter with an empty reference.
@@ -305,7 +314,7 @@ pub(crate) async fn apply_access_command(
             if !stored.is_empty() {
                 stored.sort();
                 text.push_str(&format!(
-                    "{} session parameters read from ПараметрыОграниченияДоступа: {}\n",
+                    "{} session parameters read from the base: {}\n",
                     stored.len(),
                     stored.join(", ")
                 ));

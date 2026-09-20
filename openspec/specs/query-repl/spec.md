@@ -3741,11 +3741,14 @@ SHALL restore `open-sdbl=>`.
 
 `\as <пользователь>` SHALL read the session parameters the base carries
 for its restriction templates — the values the information register
-`ПараметрыОграниченияДоступа` stores, and the empty reference of
-`Справочник.ВнешниеПользователи` for the current external user, both when
-the configuration has them — SHALL store only the ones no `\session`
+`ПараметрыОграниченияДоступа` stores, the element of
+`Справочник.Пользователи` whose `ИдентификаторПользователяИБ` is the
+identifier of that user as `ТекущийПользователь`, and the empty reference
+of `Справочник.ВнешниеПользователи` for the current external user, each
+when the configuration has it — SHALL store only the ones no `\session`
 already holds, so what the operator typed always wins, and SHALL name
-those it stored. A configuration without that register SHALL be no error.
+those it stored. A configuration without those tables, and a user without
+a row in the catalog, SHALL be no error.
 
 `\as <пользователь>` SHALL then expand, against the session parameters,
 the `Чтение` restrictions every object the user's roles restrict carries,
@@ -3808,6 +3811,12 @@ the parameter to set with `\session`.
 - **WHEN** `\session ВерсииШаблоновОграниченияДоступа …` was entered
   before `\as`
 - **THEN** that value stays and `\as` does not name it among those read
+
+#### Scenario: The current user of the base
+- **WHEN** `\as ХохловМЗ` is accepted on a base whose
+  `Справочник.Пользователи` carries that information-base user
+- **THEN** `ТекущийПользователь` holds the reference of that element and
+  a restriction comparing a row with it compiles
 
 ### Requirement: Skip unreadable Config resources
 A Config resource the decoder cannot read — one that is not UTF-8 or not
