@@ -123,7 +123,7 @@ pub fn expand_restriction(
     let text = expand_templates(&text, templates, 0)?;
     let text = evaluate_directives(&text, scope)?;
     let text = substitute_names(&text, scope);
-    parse_form(text.trim())
+    parse_form(text.trim(), scope.table_name)
 }
 
 /// One node of a restriction text or of a template body.
@@ -965,9 +965,10 @@ fn tokenize_expression(text: &str) -> Result<Vec<ExprToken>, RestrictionError> {
                 let end = word_end(index + 1);
                 let name = text[index + 1..end].to_lowercase();
                 tokens.push(match name.as_str() {
-                    "имятекущейтаблицы" | "currenttablename" => {
-                        ExprToken::CurrentTable
-                    }
+                    "имятекущейтаблицы"
+                    | "currenttablename"
+                    | "текущаятаблица"
+                    | "currenttable" => ExprToken::CurrentTable,
                     "имятекущегоправадоступа" | "currentaccessrightname" => {
                         ExprToken::CurrentRight
                     }
@@ -1241,6 +1242,10 @@ fn evaluate_expression(text: &str, scope: &RestrictionScope<'_>) -> Result<bool,
 fn substitute_names(text: &str, scope: &RestrictionScope<'_>) -> String {
     let text = replace_ignoring_case(text, "#ИмяТекущейТаблицы", scope.table_name);
     let text = replace_ignoring_case(&text, "#CurrentTableName", scope.table_name);
+    // The name of the table stands for itself where the text reads it as
+    // a source, not as a string.
+    let text = replace_ignoring_case(&text, &format!("#{CURRENT_TABLE}"), scope.table_name);
+    let text = replace_ignoring_case(&text, "#CurrentTable", scope.table_name);
     let text = replace_ignoring_case(
         &text,
         "#ИмяТекущегоПраваДоступа",
@@ -1253,8 +1258,9 @@ fn substitute_names(text: &str, scope: &RestrictionScope<'_>) -> String {
     )
 }
 
-/// Reads the platform's form of the expanded text.
-fn parse_form(text: &str) -> Result<ExpandedRestriction, RestrictionError> {
+/// Reads the platform's form of the expanded text. `table` is the name
+/// of the restricted table, which the source description may name.
+fn parse_form(text: &str, table: &str) -> Result<ExpandedRestriction, RestrictionError> {
     if text.is_empty() {
         return Err(RestrictionError::Syntax(
             "the expansion is empty".to_owned(),
@@ -1290,6 +1296,32 @@ fn parse_form(text: &str) -> Result<ExpandedRestriction, RestrictionError> {
             alias = Some(name.to_owned());
             rest = rest[name.len()..].trim_start();
             next = words.next().unwrap_or_default();
+        }
+        // The full form describes the restricted table after `ИЗ`; the
+        // alias it gives is the one the condition reads.
+        if next.to_lowercase() == "из" || next.eq_ignore_ascii_case("from") {
+            rest = rest[next.len()..].trim_start();
+            let source = words.next().unwrap_or_default();
+            if source.is_empty() {
+                return Err(RestrictionError::Syntax("ИЗ without a source".to_owned()));
+            }
+            if !names_equal(source, table) && !names_equal(source, CURRENT_TABLE) {
+                return Err(RestrictionError::Unsupported(format!(
+                    "a restriction reading another table is not supported (ИЗ {source}, restricting {table})"
+                )));
+            }
+            rest = rest[source.len()..].trim_start();
+            next = words.next().unwrap_or_default();
+            if next.to_lowercase() == "как" || next.eq_ignore_ascii_case("as") {
+                rest = rest[next.len()..].trim_start();
+                let name = words.next().unwrap_or_default();
+                if name.is_empty() {
+                    return Err(RestrictionError::Syntax("КАК without an alias".to_owned()));
+                }
+                alias = Some(name.to_owned());
+                rest = rest[name.len()..].trim_start();
+                next = words.next().unwrap_or_default();
+            }
         }
         if next.to_lowercase() == "где" || next.eq_ignore_ascii_case("where") {
             rest = rest[next.len()..].trim_start();

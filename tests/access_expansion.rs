@@ -375,3 +375,88 @@ fn reports_where_a_text_stops_making_sense() {
         "{nodes:?}"
     );
 }
+
+#[test]
+fn reads_the_source_description_of_the_full_form() {
+    let role = reading_role();
+    let session = universal(",ДляОбъекта9,");
+    let scope = RestrictionScope {
+        table_name: TABLE,
+        right: &Right::Read,
+        session: &session,
+    };
+    // The platform's full form: the table names itself after ИЗ, through
+    // the directive, and gives the alias the condition reads.
+    let expanded = expand_restriction(
+        "ТекущаяТаблица ИЗ #ТекущаяТаблица КАК ТекущаяТаблица ГДЕ ТекущаяТаблица.Ссылка = &Ссылка",
+        &role.templates,
+        &scope,
+    )
+    .unwrap();
+    assert_eq!(expanded.alias.as_deref(), Some("ТекущаяТаблица"));
+    assert_eq!(expanded.condition, "ТекущаяТаблица.Ссылка = &Ссылка");
+    assert_eq!(
+        expanded.text(),
+        "ТекущаяТаблица КАК ТекущаяТаблица ГДЕ ТекущаяТаблица.Ссылка = &Ссылка"
+    );
+
+    // The table may name itself, and the alias may be left out.
+    let expanded = expand_restriction(
+        &format!("ТекущаяТаблица ИЗ {TABLE} ГДЕ ИСТИНА"),
+        &role.templates,
+        &scope,
+    )
+    .unwrap();
+    assert_eq!(expanded.alias, None);
+    assert_eq!(expanded.condition, "ИСТИНА");
+
+    // Another table is not the restricted one.
+    let error = expand_restriction(
+        "ТекущаяТаблица ИЗ Справочник.Другой КАК Т ГДЕ ИСТИНА",
+        &role.templates,
+        &scope,
+    )
+    .unwrap_err();
+    match &error {
+        RestrictionError::Unsupported(message) => {
+            assert!(message.contains("Справочник.Другой"), "{message}");
+            assert!(message.contains(TABLE), "{message}");
+        }
+        other => panic!("{other:?}"),
+    }
+
+    // A join before ГДЕ still names what it found.
+    let error = expand_restriction(
+        &format!("ТекущаяТаблица ИЗ {TABLE} КАК Т ЛЕВОЕ СОЕДИНЕНИЕ Справочник.Х КАК Д ПО ИСТИНА ГДЕ ИСТИНА"),
+        &role.templates,
+        &scope,
+    )
+    .unwrap_err();
+    assert!(error.to_string().contains("ЛЕВОЕ"), "{error}");
+}
+
+#[test]
+fn the_table_stands_for_the_directive_naming_it() {
+    let role = reading_role();
+    let session = universal(",ДляОбъекта9,");
+    let scope = RestrictionScope {
+        table_name: TABLE,
+        right: &Right::Read,
+        session: &session,
+    };
+    let expanded = expand_restriction(
+        "ТекущаяТаблица ГДЕ #ТекущаяТаблица = #ИмяТекущейТаблицы",
+        &role.templates,
+        &scope,
+    )
+    .unwrap();
+    assert_eq!(expanded.condition, format!("{TABLE} = {TABLE}"));
+    // A directive expression reads it as the name too.
+    let expanded = expand_restriction(
+        "#Если #ТекущаяТаблица = #ИмяТекущейТаблицы #Тогда ТекущаяТаблица ГДЕ ИСТИНА #Иначе ТекущаяТаблица ГДЕ ЛОЖЬ #КонецЕсли",
+        &role.templates,
+        &scope,
+    )
+    .unwrap();
+    assert_eq!(expanded.condition, "ИСТИНА");
+}
