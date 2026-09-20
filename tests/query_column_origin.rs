@@ -244,3 +244,38 @@ fn the_generated_sql_is_unchanged_by_the_origin() {
         "the origin does not depend on the dialect"
     );
 }
+
+#[test]
+fn a_single_type_reference_is_not_a_composite_member() {
+    // The two projection styles differ — a statement collapses a
+    // reference pair into one payload column, a nested section emits one
+    // column per physical member — so the flag is checked in both: it
+    // says "this field spreads over more than one *result* column", and a
+    // plain reference spreads over none.
+    let snapshot = tabular_section_snapshot();
+    let compiled = compile_both(
+        &snapshot,
+        "ВЫБРАТЬ Т.ЦФО ИЗ Документ.бит_ДополнительныеУсловияПоДоговору.ГрафикНачислений КАК Т",
+    );
+    assert_eq!(compiled.columns.len(), 1);
+    assert_eq!(
+        compiled.columns[0]
+            .origin
+            .as_ref()
+            .map(|origin| origin.composite_member),
+        Some(false)
+    );
+
+    let nested = QueryCompiler::new(&snapshot, PostgresBackend)
+        .compile("ВЫБРАТЬ Ссылка, ГрафикНачислений ИЗ Документ.бит_ДополнительныеУсловияПоДоговору")
+        .unwrap();
+    let section = &nested.nested[0];
+    assert!(
+        section
+            .columns
+            .iter()
+            .filter_map(|column| column.origin.as_ref())
+            .all(|origin| !origin.composite_member),
+        "no field of this section spreads over several columns"
+    );
+}
