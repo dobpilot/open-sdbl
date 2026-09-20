@@ -4,7 +4,7 @@ use std::ops::Deref;
 
 use crate::names::{folded_name, names_equal};
 
-use super::config::PredefinedSource;
+use super::config::{PredefinedSource, Synonym};
 use super::db_names::DbNameFieldConflict;
 use super::normalize::{normalize_logical_name, normalize_standard_field_name};
 use super::{
@@ -84,6 +84,11 @@ pub struct MetadataObject {
     pub kind: Option<MetadataKind>,
     /// Human metadata name from Config, when available.
     pub name: Option<String>,
+    /// Localized synonyms from Config in source order; empty when the
+    /// object has no descriptor or the descriptor names none.
+    pub synonyms: Vec<Synonym>,
+    /// Descriptor comment from Config, when the descriptor carries one.
+    pub comment: Option<String>,
     /// Descriptor marker from Config, when available.
     pub marker: Option<String>,
     /// Main numeric DBNames code, when tabular.
@@ -103,6 +108,58 @@ pub struct MetadataObject {
     pub code_allowed_length: Option<AllowedLength>,
     /// Allowed-length mode inferred from the live Number SQL column.
     pub number_allowed_length: Option<AllowedLength>,
+}
+
+/// The synonym of `language` among `synonyms`, trimmed; a blank synonym
+/// counts as absent, because the configurator stores one for a field
+/// nobody gave a presentation to.
+fn synonym_of<'synonyms>(synonyms: &'synonyms [Synonym], language: &str) -> Option<&'synonyms str> {
+    synonyms
+        .iter()
+        .find(|synonym| synonym.language.eq_ignore_ascii_case(language))
+        .map(|synonym| synonym.text.trim())
+        .filter(|text| !text.is_empty())
+}
+
+impl MetadataObject {
+    /// The synonym the configuration gives this object in `language`.
+    ///
+    /// Language codes compare case-insensitively, the text is trimmed, and
+    /// a blank synonym reads as absent.
+    ///
+    /// ```
+    /// # fn example(snapshot: &open_sdbl::metadata::MetadataSnapshot) {
+    /// let object = &snapshot.objects()[0];
+    /// let _ = object.synonym("ru");
+    /// # }
+    /// ```
+    #[must_use]
+    pub fn synonym(&self, language: &str) -> Option<&str> {
+        synonym_of(&self.synonyms, language)
+    }
+
+    /// How to present this object in `language`: its synonym, or the
+    /// metadata name when the configuration gives none.
+    #[must_use]
+    pub fn presentation(&self, language: &str) -> Option<&str> {
+        self.synonym(language).or(self.name.as_deref())
+    }
+}
+
+impl MetadataField {
+    /// The synonym the configuration gives this field in `language`,
+    /// under the same rule as [`MetadataObject::synonym`].
+    #[must_use]
+    pub fn synonym(&self, language: &str) -> Option<&str> {
+        synonym_of(&self.synonyms, language)
+    }
+
+    /// How to present this field in `language`: its synonym, or the
+    /// metadata name when the configuration gives none.
+    #[must_use]
+    pub fn presentation(&self, language: &str) -> Option<&str> {
+        self.synonym(language).or(self.name.as_deref())
+    }
 }
 
 /// A reference type that stands for every object of one kind rather than
@@ -208,6 +265,11 @@ pub struct MetadataField {
     pub guid: Guid,
     /// Human metadata name from Config, when available.
     pub name: Option<String>,
+    /// Localized synonyms from Config in source order; empty when the
+    /// field has no descriptor or the descriptor names none.
+    pub synonyms: Vec<Synonym>,
+    /// Descriptor comment from Config, when the descriptor carries one.
+    pub comment: Option<String>,
     /// Semantic purpose from the enclosing Config collection, when recognized.
     pub purpose: Option<ConfigFieldPurpose>,
     /// Whether an accounting-register dimension or resource is a balance
@@ -697,6 +759,23 @@ impl MetadataSnapshot {
             .map(|index| &self.objects[*index])
     }
 
+    /// The synonym of the object `id` in `language`, under the rule of
+    /// [`MetadataObject::synonym`]; `None` when the snapshot does not
+    /// resolve the identifier.
+    #[must_use]
+    pub fn object_synonym(&self, id: ObjectId, language: &str) -> Option<&str> {
+        self.object_by_id(id)
+            .and_then(|object| object.synonym(language))
+    }
+
+    /// How to present the object `id` in `language`: its synonym, or its
+    /// metadata name when the configuration gives none.
+    #[must_use]
+    pub fn object_presentation(&self, id: ObjectId, language: &str) -> Option<&str> {
+        self.object_by_id(id)
+            .and_then(|object| object.presentation(language))
+    }
+
     /// Looks up a custom attribute GUID by owner GUID and Config name in
     /// expected O(1) time after name normalization.
     ///
@@ -1059,6 +1138,10 @@ pub fn resolve_metadata_with_predefined_values_and_extensions(
             name: descriptor
                 .map(|value| value.name.clone())
                 .or_else(|| kind.is_service().then(|| entry.alias.clone())),
+            synonyms: descriptor
+                .map(|value| value.synonyms.clone())
+                .unwrap_or_default(),
+            comment: descriptor.and_then(|value| value.comment.clone()),
             marker: descriptor.map(|value| value.marker.clone()),
             number: Some(entry.number),
             declared: schema_tables.contains(&folded_name(
@@ -1137,6 +1220,8 @@ pub fn resolve_metadata_with_predefined_values_and_extensions(
                 guid: owner.guid.clone(),
                 kind: Some(MetadataKind::CalculationKindDependency),
                 name: Some(name.to_owned()),
+                synonyms: Vec::new(),
+                comment: None,
                 marker: None,
                 number: Some(table.number),
                 physical_table: Some(physical),
@@ -1159,6 +1244,8 @@ pub fn resolve_metadata_with_predefined_values_and_extensions(
                 guid: descriptor.object_guid.clone(),
                 kind: None,
                 name: Some(descriptor.name.clone()),
+                synonyms: descriptor.synonyms.clone(),
+                comment: descriptor.comment.clone(),
                 marker: Some(descriptor.marker.clone()),
                 number: None,
                 physical_table: None,
@@ -1228,6 +1315,13 @@ pub fn resolve_metadata_with_predefined_values_and_extensions(
             name: descriptor_by_guid
                 .get(&entry.guid)
                 .map(|descriptor| descriptor.name.clone()),
+            synonyms: descriptor_by_guid
+                .get(&entry.guid)
+                .map(|descriptor| descriptor.synonyms.clone())
+                .unwrap_or_default(),
+            comment: descriptor_by_guid
+                .get(&entry.guid)
+                .and_then(|descriptor| descriptor.comment.clone()),
             purpose: descriptor_by_guid
                 .get(&entry.guid)
                 .and_then(|descriptor| descriptor.field_purpose),

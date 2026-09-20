@@ -342,7 +342,24 @@ fn build_metadata(
 
 Коллекции `MetadataSnapshot` закрыты от внешней мутации и доступны как срезы
 через `db_names()`, `descriptors()`, `schema()`, `live_tables()`, `objects()`,
-`fields()`, `values()` и `indexes()`. `Prepared<B>` запоминает fingerprint
+`fields()`, `values()` и `indexes()`.
+
+Кроме имени, объект и поле несут то, что `Config` даёт им для показа:
+локализованные синонимы в исходном порядке (`synonyms`) и комментарий
+дескриптора (`comment`). Выбирать синоним вручную не нужно —
+`synonym("ru")` сравнивает код языка без учёта регистра, обрезает пробелы
+и считает пустой синоним отсутствующим, а `presentation("ru")` подставляет
+имя метаданных, когда синонима нет. То же для объекта по идентификатору:
+`snapshot.object_synonym(id, "ru")` и `snapshot.object_presentation(id, "ru")`.
+Синоним ничего не переименовывает: язык запросов по-прежнему адресует имя
+метаданных.
+
+```rust
+let object = snapshot.object_by_id(id).unwrap();
+assert_eq!(object.name.as_deref(), Some("КоррСчет"));
+assert_eq!(object.presentation("ru"), Some("Корр. счет"));
+assert_eq!(object.presentation("fr"), Some("КоррСчет")); // синонима нет — имя
+``` `Prepared<B>` запоминает fingerprint
 снимка: попытка завершить подготовленный запрос с другим снимком возвращает
 `QueryDiagnosticKind::SnapshotMismatch`. Компиляция также имеет общий бюджет
 работы для веток, проекций и разыменований, поэтому патологически большой

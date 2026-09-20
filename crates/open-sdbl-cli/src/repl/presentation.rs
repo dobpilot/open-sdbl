@@ -203,26 +203,9 @@ pub(super) fn default_presentation_plan(
 ) -> PresentationPlan {
     let metadata_object = snapshot.object_by_id(object);
     let kind = metadata_object.and_then(|object| object.kind);
-    let type_name = metadata_object.map_or_else(
-        || "Документ".to_owned(),
-        |metadata_object| {
-            snapshot
-                .descriptors()
-                .iter()
-                .find(|descriptor| descriptor.object_guid == metadata_object.guid)
-                .and_then(|descriptor| {
-                    descriptor
-                        .synonyms
-                        .iter()
-                        .find(|synonym| synonym.language.eq_ignore_ascii_case("ru"))
-                        .map(|synonym| synonym.text.trim())
-                        .filter(|text| !text.is_empty())
-                })
-                .map(str::to_owned)
-                .or_else(|| metadata_object.name.clone())
-                .unwrap_or_else(|| "Документ".to_owned())
-        },
-    );
+    let type_name = metadata_object
+        .and_then(|metadata_object| metadata_object.presentation("ru"))
+        .map_or_else(|| "Документ".to_owned(), str::to_owned);
     let description = snapshot.field_id(object, "Наименование").ok();
     let code = snapshot.field_id(object, "Код").ok();
     let number = snapshot.field_id(object, "Номер").ok();
