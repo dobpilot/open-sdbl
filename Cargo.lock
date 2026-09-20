@@ -685,11 +685,11 @@ checksum = "9f7c3e4beb33f85d45ae3e3a1792185706c8e16d043238c593331cc7cd313b50"
 
 [[package]]
 name = "open-sdbl"
-version = "0.6.0"
+version = "0.7.0"
 
 [[package]]
 name = "open-sdbl-cli"
-version = "0.6.0"
+version = "0.7.0"
 dependencies = [
  "libc",
  "open-sdbl",
@@ -702,7 +702,7 @@ dependencies = [
 
 [[package]]
 name = "open-sdbl-db"
-version = "0.6.0"
+version = "0.7.0"
 dependencies = [
  "futures-util",
  "open-sdbl",

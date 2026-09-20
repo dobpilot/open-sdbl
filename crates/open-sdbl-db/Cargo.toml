@@ -1,6 +1,6 @@
 [package]
 name = "open-sdbl-db"
-version = "0.6.0"
+version = "0.7.0"
 edition = "2024"
 rust-version = "1.85"
 description = "Database layer for open-sdbl: sessions, metadata acquisition and access rights"
