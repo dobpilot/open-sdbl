@@ -723,7 +723,8 @@ fn accepts_the_platform_form_of_a_restriction_with_the_current_table_qualifier()
         correlated.sql
     );
 
-    // A join before ГДЕ is not a condition the wrapper can hold.
+    // A join of the full form reads the joined table under its alias,
+    // correlated with the restricted row, without multiplying its rows.
     let joined = compile_both(
         &snapshot,
         source,
@@ -735,10 +736,65 @@ fn accepts_the_platform_form_of_a_restriction_with_the_current_table_qualifier()
             )])
             .session(&session),
     )
-    .unwrap_err();
-    assert_eq!(joined.kind(), QueryDiagnosticKind::Restriction);
+    .unwrap();
     assert!(
-        joined.message().contains("joining other tables"),
-        "{joined}"
+        joined.sql.contains(
+            "FROM \"_reference53\" AS \"__restricted\" WHERE EXISTS (SELECT 1 FROM (VALUES (1)) AS \"__restriction_row\"(\"__row\") LEFT JOIN \"_reference53\" AS \"К\" ON (\"К\".\"_code\" = \"__restricted\".\"_code\") WHERE (\"К\".\"_code\" = 'A'))"
+        ),
+        "{}",
+        joined.sql
+    );
+
+    // An inner join keeps its kind; a right join is refused.
+    let inner = compile_both(
+        &snapshot,
+        source,
+        &CompileOptions::new()
+            .restrictions(&[restriction(
+                &snapshot,
+                "Catalog.OpenSdblMetadataProbe",
+                "ТекущаяТаблица ВНУТРЕННЕЕ СОЕДИНЕНИЕ Catalog.OpenSdblMetadataProbe КАК К ПО К.Code = ТекущаяТаблица.Code ГДЕ ИСТИНА",
+            )])
+            .session(&session),
+    )
+    .unwrap();
+    assert!(
+        inner.sql.contains("INNER JOIN \"_reference53\" AS \"К\""),
+        "{}",
+        inner.sql
+    );
+
+    let right = compile_both(
+        &snapshot,
+        source,
+        &CompileOptions::new()
+            .restrictions(&[restriction(
+                &snapshot,
+                "Catalog.OpenSdblMetadataProbe",
+                "ТекущаяТаблица ПРАВОЕ СОЕДИНЕНИЕ Catalog.OpenSdblMetadataProbe КАК К ПО К.Code = ТекущаяТаблица.Code ГДЕ ИСТИНА",
+            )])
+            .session(&session),
+    )
+    .unwrap_err();
+    assert_eq!(right.kind(), QueryDiagnosticKind::Restriction);
+    assert!(right.message().contains("ЛЕВОЕ"), "{right}");
+
+    // A join may read only a metadata table.
+    let nested = compile_both(
+        &snapshot,
+        source,
+        &CompileOptions::new()
+            .restrictions(&[restriction(
+                &snapshot,
+                "Catalog.OpenSdblMetadataProbe",
+                "ТекущаяТаблица ЛЕВОЕ СОЕДИНЕНИЕ (ВЫБРАТЬ Code КАК Code ИЗ Catalog.OpenSdblMetadataProbe) КАК К ПО К.Code = ТекущаяТаблица.Code ГДЕ ИСТИНА",
+            )])
+            .session(&session),
+    )
+    .unwrap_err();
+    assert_eq!(nested.kind(), QueryDiagnosticKind::Restriction);
+    assert!(
+        nested.message().contains("metadata tables only"),
+        "{nested}"
     );
 }

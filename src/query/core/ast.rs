@@ -278,6 +278,16 @@ impl AccumulationKind {
     }
 }
 
+/// The platform's full form of a restriction text.
+pub(super) struct RestrictionAst<'tokens, 'source> {
+    /// The alias the text gives the restricted table after `КАК`.
+    pub(super) alias: Option<&'tokens Token<'source>>,
+    /// The join clauses written before `ГДЕ`.
+    pub(super) joins: Vec<JoinAst<'tokens, 'source>>,
+    /// The condition the restriction applies.
+    pub(super) condition: Expression<'tokens, 'source>,
+}
+
 #[derive(Debug)]
 pub(super) struct JoinAst<'tokens, 'source> {
     pub(super) token: &'tokens Token<'source>,

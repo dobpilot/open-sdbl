@@ -21,8 +21,8 @@ use crate::metadata::{
     ConfigFieldPurpose, LiveTable, MetadataKind, MetadataObject, MetadataSnapshot, ObjectId,
 };
 use crate::query::core::ast::{
-    AggregateArgument, AggregateKind, CastTarget, Expression, OrderTerm, PresentationArgument,
-    PresentationOperation, Projection, SelectAst, SourceAst,
+    AggregateArgument, AggregateKind, CastTarget, Expression, JoinAst, JoinKind, OrderTerm,
+    PresentationArgument, PresentationOperation, Projection, SelectAst, SourceAst,
 };
 use crate::query::core::dialect::{OutputLabelAllocator, SqlDialect, compile_literal};
 use crate::query::core::names::names_equal;
@@ -30,7 +30,7 @@ use crate::query::core::params::Parameters;
 use crate::query::core::parser::Parser;
 use crate::query::core::resolve::{
     ColumnKind, CompilationCatalog, CompiledColumn, QueryableColumn, QueryableField,
-    kind_from_query_name,
+    kind_from_query_name, resolve_source_metadata,
 };
 use crate::query::core::restrict::AccessRestriction;
 use crate::query::core::types::TypeValue;
@@ -76,8 +76,7 @@ pub(super) fn compile_restriction_predicate(
                 .into_iter()
                 .filter(|token| token.kind != TokenKind::Comment)
                 .collect::<Vec<_>>();
-            let (start, source_alias) = restriction_form(&tokens)?;
-            let expression = Parser::new(&tokens[start..], text).parse_condition()?;
+            let ast = Parser::new(&tokens, text).parse_restriction()?;
             let mut context = CompilationContext {
                 snapshot,
                 catalog,
@@ -87,7 +86,7 @@ pub(super) fn compile_restriction_predicate(
                     relation: String::new(),
                     sql_alias: alias.to_owned(),
                     object_name: object_name.to_owned(),
-                    source_alias,
+                    source_alias: ast.alias.map(|token| token.lexeme.to_owned()),
                     identity_is_base: restriction.identity_is_base,
                     reference_joins: Vec::new(),
                     separator_predicates: Vec::new(),
@@ -104,11 +103,36 @@ pub(super) fn compile_restriction_predicate(
                 section_aliases: std::cell::Cell::new(0),
                 local_sources: 1,
             };
-            let sql = compile_predicate(&expression, &mut context)?;
+            // The joined sources are visible to every condition of the
+            // text, their own included.
+            for (index, join) in ast.joins.iter().enumerate() {
+                let scope = restriction_join_scope(join, snapshot, catalog, index, dialect)?;
+                context.sources.push(scope);
+                context.source_elements.push(0);
+                context.local_sources += 1;
+            }
+            let mut conditions = Vec::with_capacity(ast.joins.len());
+            for join in &ast.joins {
+                let condition = join.condition.as_ref().ok_or_else(|| {
+                    QueryDiagnostic::at(
+                        QueryDiagnosticKind::UnsupportedFeature,
+                        Some(join.token),
+                        "a restriction joins only with ПО",
+                    )
+                })?;
+                conditions.push(compile_predicate(condition, &mut context)?);
+            }
+            let predicate = compile_predicate(&ast.condition, &mut context)?;
+            let joined = context.sources.split_off(1);
             let scope = context
                 .sources
                 .pop()
                 .expect("the restriction context has one source");
+            let sql = if ast.joins.is_empty() {
+                predicate
+            } else {
+                restriction_exists(&ast.joins, &joined, &conditions, &predicate, dialect)
+            };
             Ok(RestrictionPredicate {
                 sql,
                 reference_joins: scope.reference_joins,
@@ -117,69 +141,118 @@ pub(super) fn compile_restriction_predicate(
         .map_err(|error: QueryDiagnostic| error.into_restriction(&restriction.label))
 }
 
-/// Reads the platform's full form of a restriction text — an optional
-/// `ТекущаяТаблица`, an optional alias after `КАК`, an optional `ГДЕ` —
-/// and answers where the condition starts and the alias declared. A join
-/// written before `ГДЕ` is refused: the restriction wraps one table.
-fn restriction_form(tokens: &[Token<'_>]) -> Result<(usize, Option<String>), QueryDiagnostic> {
-    let mut start = 0;
-    let mut alias = None;
-    let is_current_table = |token: &Token<'_>| {
-        token.kind == TokenKind::Identifier
-            && names_equal(token.lexeme, crate::access::CURRENT_TABLE)
+/// The scope of a table a restriction joins: a plain metadata table read
+/// under the alias the clause gives it.
+fn restriction_join_scope(
+    join: &JoinAst<'_, '_>,
+    snapshot: &MetadataSnapshot,
+    catalog: &CompilationCatalog<'_>,
+    index: usize,
+    dialect: SqlDialect,
+) -> Result<SourceScope, QueryDiagnostic> {
+    let source = &join.source;
+    let unsupported = |what: &str| {
+        Err(QueryDiagnostic::at(
+            QueryDiagnosticKind::UnsupportedFeature,
+            Some(source.object),
+            format!("a restriction joins metadata tables only, not {what}"),
+        ))
     };
-    if tokens.first().is_some_and(is_current_table) {
-        start = 1;
-        if tokens
-            .get(start)
-            .is_some_and(|token| token.kind == TokenKind::Keyword(Keyword::As))
-        {
-            let name = tokens.get(start + 1).ok_or_else(|| {
-                QueryDiagnostic::at(
-                    QueryDiagnosticKind::Syntax,
-                    tokens.get(start),
-                    "expected an alias after КАК in the restriction",
-                )
-            })?;
-            if name.kind != TokenKind::Identifier {
-                return Err(QueryDiagnostic::at(
-                    QueryDiagnosticKind::Syntax,
-                    Some(name),
-                    "expected an alias after КАК in the restriction",
-                ));
-            }
-            alias = Some(name.lexeme.to_owned());
-            start += 2;
-        }
-        match tokens.get(start) {
-            Some(token) if token.kind == TokenKind::Keyword(Keyword::Where) => start += 1,
-            Some(token) => {
-                return Err(QueryDiagnostic::at(
-                    QueryDiagnosticKind::UnsupportedFeature,
-                    Some(token),
-                    "a restriction joining other tables is not supported; write the condition after ГДЕ",
-                ));
-            }
-            None => {
-                return Err(QueryDiagnostic::at(
-                    QueryDiagnosticKind::Syntax,
-                    tokens.get(start - 1),
-                    "restriction condition is empty",
-                ));
-            }
-        }
-    } else if tokens
-        .first()
-        .is_some_and(|token| token.kind == TokenKind::Keyword(Keyword::Where))
-    {
-        start = 1;
+    if source.nested.is_some() {
+        return unsupported("a nested query");
     }
-    Ok((start, alias))
+    if source.temporary {
+        return unsupported("a temporary table");
+    }
+    if source.parameter {
+        return unsupported("a parameter table");
+    }
+    if source.constants {
+        return unsupported("the constants table");
+    }
+    if source.criterion.is_some() {
+        return unsupported("a filter criterion");
+    }
+    if source.slice.is_some() || source.accumulation.is_some() {
+        return unsupported("a virtual table");
+    }
+    if !matches!(join.kind, JoinKind::Left | JoinKind::Inner) {
+        return Err(QueryDiagnostic::at(
+            QueryDiagnosticKind::UnsupportedFeature,
+            Some(join.token),
+            "a restriction joins with ЛЕВОЕ or ВНУТРЕННЕЕ СОЕДИНЕНИЕ only",
+        ));
+    }
+    let resolved = resolve_source_metadata(source, snapshot, catalog)?;
+    let sql_alias = source.alias.map_or_else(
+        || format!("__restriction{index}"),
+        |token| token.lexeme.to_owned(),
+    );
+    let relation = compile_live_relation(
+        snapshot,
+        catalog,
+        resolved.live_table,
+        &resolved.fields,
+        &sql_alias,
+        Some(source.object),
+        dialect,
+    )?;
+    Ok(SourceScope {
+        object: ObjectId::from(&resolved.object.guid),
+        fields: resolved.fields,
+        relation: relation.sql,
+        sql_alias,
+        object_name: resolved.qualifier_name,
+        source_alias: source.alias.map(|token| token.lexeme.to_owned()),
+        identity_is_base: resolved.identity_is_base,
+        reference_joins: Vec::new(),
+        separator_predicates: relation.separators,
+        constants: None,
+        aggregate: None,
+        used_fields: RefCell::new(BTreeSet::new()),
+        current_table: false,
+    })
 }
 
-/// Wraps a live relation in a derived table that keeps only the rows the
-/// restriction allows. Every physical column of the scope is projected
-/// under its own name, so the outer statement is unaware of the wrapper.
+/// Renders the joins of a restriction as one correlated predicate: the
+/// joined rows of the restricted row must carry a row the condition
+/// holds for, an outer join contributing its unmatched row.
+fn restriction_exists(
+    joins: &[JoinAst<'_, '_>],
+    scopes: &[SourceScope],
+    conditions: &[String],
+    predicate: &str,
+    dialect: SqlDialect,
+) -> String {
+    let anchor = dialect.quote_identifier("__restriction_row");
+    let column = dialect.quote_identifier("__row");
+    let mut sql = format!("EXISTS (SELECT 1 FROM (VALUES (1)) AS {anchor}({column})");
+    for ((join, scope), condition) in joins.iter().zip(scopes).zip(conditions) {
+        sql.push_str(match join.kind {
+            JoinKind::Inner => " INNER JOIN ",
+            _ => " LEFT JOIN ",
+        });
+        sql.push_str(&scope.relation);
+        sql.push_str(" AS ");
+        sql.push_str(&dialect.quote_identifier(&scope.sql_alias));
+        sql.push_str(" ON ");
+        sql.push_str(condition);
+        for reference in &scope.reference_joins {
+            append_reference_join(&mut sql, reference, dialect);
+        }
+    }
+    sql.push_str(" WHERE ");
+    for scope in scopes {
+        for separator in &scope.separator_predicates {
+            sql.push_str(separator);
+            sql.push_str(" AND ");
+        }
+    }
+    sql.push_str(predicate);
+    sql.push(')');
+    sql
+}
+
 fn wrap_restricted_relation(
     relation: &str,
     fields: &[QueryableField],

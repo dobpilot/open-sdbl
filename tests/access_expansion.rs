@@ -426,14 +426,48 @@ fn reads_the_source_description_of_the_full_form() {
         other => panic!("{other:?}"),
     }
 
-    // A join before ГДЕ still names what it found.
+    // A join clause is kept beside the condition, for the compiler.
+    let expanded = expand_restriction(
+        &format!(
+            "ТекущаяТаблица ИЗ {TABLE} КАК Т ЛЕВОЕ СОЕДИНЕНИЕ Справочник.Х КАК Д ПО Т.Ссылка = Д.Объект ГДЕ Д.Поле"
+        ),
+        &role.templates,
+        &scope,
+    )
+    .unwrap();
+    assert_eq!(
+        expanded.joins,
+        "ЛЕВОЕ СОЕДИНЕНИЕ Справочник.Х КАК Д ПО Т.Ссылка = Д.Объект"
+    );
+    assert_eq!(expanded.condition, "Д.Поле");
+    assert_eq!(
+        expanded.text(),
+        "ТекущаяТаблица КАК Т ЛЕВОЕ СОЕДИНЕНИЕ Справочник.Х КАК Д ПО Т.Ссылка = Д.Объект ГДЕ Д.Поле"
+    );
+
+    // A `ГДЕ` inside the join condition does not end the clauses.
+    let expanded = expand_restriction(
+        &format!(
+            "ТекущаяТаблица ИЗ {TABLE} КАК Т ЛЕВОЕ СОЕДИНЕНИЕ Справочник.Х КАК Д ПО ИСТИНА В (ВЫБРАТЬ ПЕРВЫЕ 1 ИСТИНА ИЗ Справочник.У КАК У ГДЕ У.Ссылка = Т.Ссылка) ГДЕ Д.Поле"
+        ),
+        &role.templates,
+        &scope,
+    )
+    .unwrap();
+    assert!(
+        expanded.joins.ends_with("У.Ссылка = Т.Ссылка)"),
+        "{expanded:?}"
+    );
+    assert_eq!(expanded.condition, "Д.Поле");
+
+    // Anything else before ГДЕ is still refused.
     let error = expand_restriction(
-        &format!("ТекущаяТаблица ИЗ {TABLE} КАК Т ЛЕВОЕ СОЕДИНЕНИЕ Справочник.Х КАК Д ПО ИСТИНА ГДЕ ИСТИНА"),
+        &format!("ТекущаяТаблица ИЗ {TABLE} КАК Т, Справочник.Х КАК Д ГДЕ ИСТИНА"),
         &role.templates,
         &scope,
     )
     .unwrap_err();
-    assert!(error.to_string().contains("ЛЕВОЕ"), "{error}");
+    assert!(error.to_string().contains("another source"), "{error}");
 }
 
 #[test]

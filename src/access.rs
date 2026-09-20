@@ -38,6 +38,9 @@ pub struct ExpandedRestriction {
     /// The alias the text gives the restricted table after `КАК`, if any;
     /// `ТекущаяТаблица` names it in either case.
     pub alias: Option<String>,
+    /// The join clauses written between the table and `ГДЕ`, as the text
+    /// wrote them; empty when the restriction joins nothing.
+    pub joins: String,
     /// The condition after `ГДЕ`.
     pub condition: String,
 }
@@ -46,10 +49,18 @@ impl ExpandedRestriction {
     /// The restriction in the platform's full form, for the compiler.
     #[must_use]
     pub fn text(&self) -> String {
-        match &self.alias {
-            Some(alias) => format!("ТекущаяТаблица КАК {alias} ГДЕ {}", self.condition),
-            None => format!("ТекущаяТаблица ГДЕ {}", self.condition),
+        let mut text = CURRENT_TABLE.to_owned();
+        if let Some(alias) = &self.alias {
+            text.push_str(" КАК ");
+            text.push_str(alias);
         }
+        if !self.joins.is_empty() {
+            text.push(' ');
+            text.push_str(&self.joins);
+        }
+        text.push_str(" ГДЕ ");
+        text.push_str(&self.condition);
+        text
     }
 }
 
@@ -1309,6 +1320,7 @@ fn parse_form(text: &str, table: &str) -> Result<ExpandedRestriction, Restrictio
     let mut words = text.split_whitespace();
     let mut rest = text;
     let mut alias = None;
+    let mut joins = String::new();
     let first = words.next().unwrap_or_default();
     if first.eq_ignore_ascii_case(CURRENT_TABLE)
         || first.to_lowercase() == CURRENT_TABLE.to_lowercase()
@@ -1356,9 +1368,18 @@ fn parse_form(text: &str, table: &str) -> Result<ExpandedRestriction, Restrictio
         }
         if next.to_lowercase() == "где" || next.eq_ignore_ascii_case("where") {
             rest = rest[next.len()..].trim_start();
+        } else if is_join_keyword(next) {
+            // The join clauses of the full form run up to its `ГДЕ`.
+            let Some((at, length)) = top_level_where(rest) else {
+                return Err(RestrictionError::Syntax(
+                    "a restriction that joins has no ГДЕ".to_owned(),
+                ));
+            };
+            joins = rest[..at].trim_end().to_owned();
+            rest = rest[at + length..].trim_start();
         } else if !next.is_empty() {
             return Err(RestrictionError::Unsupported(format!(
-                "a restriction joining other tables is not supported (\"{next}\" after {CURRENT_TABLE})"
+                "a restriction reading another source is not supported (\"{next}\" after {CURRENT_TABLE})"
             )));
         }
     } else if first.to_lowercase() == "где" || first.eq_ignore_ascii_case("where") {
@@ -1371,8 +1392,67 @@ fn parse_form(text: &str, table: &str) -> Result<ExpandedRestriction, Restrictio
     }
     Ok(ExpandedRestriction {
         alias,
+        joins,
         condition: rest.to_owned(),
     })
+}
+
+/// Whether the word opens a join clause of the full form.
+fn is_join_keyword(word: &str) -> bool {
+    const KEYWORDS: [&str; 12] = [
+        "левое",
+        "правое",
+        "полное",
+        "внутреннее",
+        "соединение",
+        "left",
+        "right",
+        "full",
+        "inner",
+        "join",
+        "outer",
+        "cross",
+    ];
+    let word = word.to_lowercase();
+    KEYWORDS.contains(&word.as_str())
+}
+
+/// The offset and length of the first `ГДЕ` outside parentheses and
+/// string literals: where the join clauses of the full form end.
+fn top_level_where(text: &str) -> Option<(usize, usize)> {
+    let mut depth = 0_usize;
+    let mut in_string = false;
+    let mut word_start = None;
+    for (at, character) in text.char_indices() {
+        if character == '"' {
+            in_string = !in_string;
+            word_start = None;
+            continue;
+        }
+        if in_string {
+            continue;
+        }
+        match character {
+            '(' => depth += 1,
+            ')' => depth = depth.saturating_sub(1),
+            _ => {}
+        }
+        if character.is_alphanumeric() || character == '_' {
+            if word_start.is_none() {
+                word_start = Some(at);
+            }
+            continue;
+        }
+        if let Some(start) = word_start.take()
+            && depth == 0
+        {
+            let word = &text[start..at];
+            if word.to_lowercase() == "где" || word.eq_ignore_ascii_case("where") {
+                return Some((start, word.len()));
+            }
+        }
+    }
+    None
 }
 
 /// The access a set of roles gives to one right of one object.
@@ -1396,12 +1476,22 @@ impl Access {
     /// # Errors
     ///
     /// Returns [`RestrictionError::Unsupported`] when the restrictions
-    /// give the table different aliases.
+    /// give the table different aliases, or when more than one of them
+    /// joins other tables, which cannot be merged.
     pub fn condition(&self) -> Result<Option<String>, RestrictionError> {
         match self {
             Self::Denied => Ok(Some(format!("{CURRENT_TABLE} ГДЕ ЛОЖЬ"))),
             Self::Unrestricted => Ok(None),
             Self::Restricted(restrictions) => {
+                let joining = restrictions
+                    .iter()
+                    .filter(|restriction| !restriction.joins.is_empty())
+                    .count();
+                if joining > 1 {
+                    return Err(RestrictionError::Unsupported(format!(
+                        "{joining} restrictions join other tables and cannot be merged"
+                    )));
+                }
                 let mut alias: Option<&str> = None;
                 for restriction in restrictions {
                     match (&restriction.alias, alias) {
@@ -1423,9 +1513,14 @@ impl Access {
                         .collect::<Vec<_>>()
                         .join(" ИЛИ ")
                 };
+                let joins = restrictions
+                    .iter()
+                    .find(|restriction| !restriction.joins.is_empty())
+                    .map_or_else(String::new, |restriction| restriction.joins.clone());
                 Ok(Some(
                     ExpandedRestriction {
                         alias: alias.map(ToOwned::to_owned),
+                        joins,
                         condition: joined,
                     }
                     .text(),
@@ -1460,10 +1555,18 @@ pub fn read_access(
         }
         let mut conditions = Vec::with_capacity(restrictions.len());
         let mut alias = None;
+        let mut joins = String::new();
         for restriction in restrictions {
             let expanded = expand_restriction(&restriction.condition, &role.templates, scope)?;
             if alias.is_none() {
                 alias = expanded.alias;
+            }
+            if joins.is_empty() {
+                joins = expanded.joins;
+            } else if !expanded.joins.is_empty() {
+                return Err(RestrictionError::Unsupported(
+                    "two restrictions of one right join other tables".to_owned(),
+                ));
             }
             conditions.push(expanded.condition);
         }
@@ -1477,7 +1580,11 @@ pub fn read_access(
                 .collect::<Vec<_>>()
                 .join(" И ")
         };
-        restricted.push(ExpandedRestriction { alias, condition });
+        restricted.push(ExpandedRestriction {
+            alias,
+            joins,
+            condition,
+        });
     }
     Ok(if granted {
         Access::Restricted(restricted)

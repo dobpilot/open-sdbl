@@ -123,13 +123,15 @@ error naming the parameter. A result that is a labelled message —
 `Ошибка: …`, `НеверноеПраво: …` — SHALL be an error carrying the message.
 
 The expanded text SHALL be the platform's form
-`[ТекущаяТаблица [КАК <псевдоним>] [ИЗ <таблица> [КАК <псевдоним>]]] [ГДЕ] <условие>`,
-returned as the condition with its alias, where the source description
-SHALL name the restricted table — by its query name or as
-`ТекущаяТаблица` — and SHALL give the alias the condition reads. A source
-description naming another table, and anything else written before `ГДЕ`
-such as a join or a second source, SHALL be an error naming what was
-found.
+`[ТекущаяТаблица [КАК <псевдоним>] [ИЗ <таблица> [КАК <псевдоним>]] [<соединения>]] [ГДЕ] <условие>`,
+returned as the condition with its alias and the text of its join
+clauses, where the source description SHALL name the restricted table —
+by its query name or as `ТекущаяТаблица` — and SHALL give the alias the
+condition reads. A source description naming another table, and a second
+source written with a comma, SHALL be an error naming what was found.
+The join clauses SHALL be answered as they were written, for the
+compiler to read, and [`ExpandedRestriction::text`] SHALL write them
+between the table and `ГДЕ`.
 
 #### Scenario: Universal restriction branch
 - **WHEN** the condition of `ЧтениеЭлектронныхДокументов` is expanded
@@ -181,13 +183,20 @@ found.
 - **THEN** the body of that template stands in its place, and no `#`
   survives the expansion
 
+#### Scenario: A restriction that joins
+- **WHEN** the text reads
+  `ТекущаяТаблица ИЗ #ТекущаяТаблица КАК Т ЛЕВОЕ СОЕДИНЕНИЕ РегистрСведений.Д КАК Д ПО Т.Ссылка = Д.Объект ГДЕ Д.Поле`
+- **THEN** the join clause is answered beside the condition `Д.Поле`,
+  and the text written for the compiler carries both
+
 ### Requirement: Combine the access of a user's roles
 `read_access` SHALL answer, for a set of roles, one object and one
 right: `Denied` when no role grants the right; `Unrestricted` when a
 role grants it without a restriction, whatever the other roles restrict;
 otherwise `Restricted` with the expanded restriction of every granting
 role. `Access::condition` SHALL join the restrictions with `ИЛИ` under
-one alias, or fail when the aliases differ.
+one alias, or fail when the aliases differ or when more than one of the
+restrictions joins other tables, which cannot be merged.
 
 #### Scenario: One role restricts, another grants freely
 - **WHEN** a user holds a role restricting `Чтение` of a catalog and a
@@ -201,6 +210,11 @@ one alias, or fail when the aliases differ.
 #### Scenario: No role grants
 - **WHEN** no role of the user lists the right as granted
 - **THEN** the access is `Denied`
+
+#### Scenario: Two restrictions that join
+- **WHEN** two of the granting roles restrict the right with texts that
+  join other tables
+- **THEN** `Access::condition` fails, saying they cannot be merged
 
 ### Requirement: Rights not listed follow the role default
 A rights resource records only what differs from the role's default: a

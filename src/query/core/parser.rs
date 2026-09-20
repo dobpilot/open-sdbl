@@ -5,14 +5,19 @@ use crate::query::core::ast::{
     CastTarget, ControlPoint, DatePart, Expression, FieldReference, GroupKey, HierarchyTotals,
     IndexAst, IndexField, IntoAst, JoinAst, JoinKind, OrderKeyAst, OrderTerm, PeriodKind,
     PeriodsAst, PresentationArgument, PresentationOperation, PrimitiveType, Projection,
-    ProjectionItem, QueryAst, ScalarFunction, SelectAst, SliceAst, SliceKind, SourceAst,
-    StatementAst, TotalsAst, TotalsField, TypeName, UnionLink, parse_datetime_value,
+    ProjectionItem, QueryAst, RestrictionAst, ScalarFunction, SelectAst, SliceAst, SliceKind,
+    SourceAst, StatementAst, TotalsAst, TotalsField, TypeName, UnionLink, parse_datetime_value,
 };
 use crate::query::core::diag::SourcePosition;
 use crate::query::core::names::names_equal;
 use crate::query::core::resolve::kind_from_query_name;
 use crate::query::core::{QueryDiagnostic, QueryDiagnosticKind};
 use crate::{Keyword, Token, TokenKind};
+
+/// Whether the token is the `ТекущаяТаблица` of a restriction text.
+fn is_current_table_token(token: &Token<'_>) -> bool {
+    token.kind == TokenKind::Identifier && names_equal(token.lexeme, crate::access::CURRENT_TABLE)
+}
 
 pub(super) struct Parser<'tokens, 'source> {
     tokens: &'tokens [Token<'source>],
@@ -410,11 +415,27 @@ impl<'tokens, 'source> Parser<'tokens, 'source> {
         })
     }
 
-    /// Parses one boolean expression that must span the whole input; used
-    /// for access-restriction text, which is a condition without a query.
-    pub(super) fn parse_condition(
+    /// Parses the platform's full form of a restriction text: the
+    /// leading `ТекущаяТаблица` with its optional alias, the join clauses,
+    /// the optional `ГДЕ`, and the condition, which must span the rest.
+    pub(super) fn parse_restriction(
         mut self,
-    ) -> Result<Expression<'tokens, 'source>, QueryDiagnostic> {
+    ) -> Result<RestrictionAst<'tokens, 'source>, QueryDiagnostic> {
+        let mut alias = None;
+        if self
+            .peek()
+            .is_some_and(|token| is_current_table_token(token))
+        {
+            self.offset += 1;
+            if self.consume_keyword(Keyword::As) {
+                alias = Some(self.expect_alias("expected an alias after КАК in the restriction")?);
+            }
+        }
+        let mut joins = Vec::new();
+        while let Some(mut group) = self.parse_join()? {
+            joins.append(&mut group);
+        }
+        self.consume_keyword(Keyword::Where);
         if self.peek().is_none() {
             return Err(self.diagnostic(
                 QueryDiagnosticKind::Syntax,
@@ -422,7 +443,7 @@ impl<'tokens, 'source> Parser<'tokens, 'source> {
                 "restriction condition is empty",
             ));
         }
-        let expression = self.parse_or()?;
+        let condition = self.parse_or()?;
         if let Some(token) = self.peek() {
             return Err(QueryDiagnostic::at(
                 QueryDiagnosticKind::Syntax,
@@ -433,7 +454,11 @@ impl<'tokens, 'source> Parser<'tokens, 'source> {
                 ),
             ));
         }
-        Ok(expression)
+        Ok(RestrictionAst {
+            alias,
+            joins,
+            condition,
+        })
     }
 
     /// Parses `ИНДЕКСИРОВАТЬ ПО <поля>` and
