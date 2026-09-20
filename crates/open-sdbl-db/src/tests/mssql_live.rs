@@ -441,3 +441,52 @@ async fn stopping_a_streaming_read_ends_the_statement() {
     assert_eq!(rows.len(), 1);
     session.close().await.unwrap();
 }
+
+/// The fingerprint statement must be stable across two reads of a base
+/// nobody wrote to, and must cost one round trip.
+#[tokio::test]
+#[ignore = "requires OPEN_SDBL_MSSQL_TEST_USER, MSSQL_PASSWORD, and a live 1C database"]
+async fn the_configuration_fingerprint_is_stable_across_reads() {
+    use open_sdbl::metadata::MsSqlMetadataQueries;
+
+    let mut session = MsSqlSession::connect(
+        &mssql_test_connection(),
+        &mssql_test_credentials(),
+        Limits::default(),
+    )
+    .await
+    .unwrap();
+
+    async fn read(session: &mut MsSqlSession) -> Vec<String> {
+        let rows = session
+            .query(MsSqlMetadataQueries::CONFIG_FINGERPRINT, 3)
+            .await
+            .unwrap();
+        assert_eq!(rows.len(), 1, "one row, one round trip");
+        rows[0]
+            .iter()
+            .map(|cell| cell.render().into_owned())
+            .collect::<Vec<_>>()
+    }
+    let first = read(&mut session).await;
+    let second = read(&mut session).await;
+    assert_eq!(first, second, "an unchanged base answers the same value");
+    assert_ne!(
+        first[0], "0",
+        "the base must carry Config resources for this to mean anything"
+    );
+    assert_ne!(first[2], "0", "the digest sum is not empty");
+
+    // Sensitivity: two payloads of equal length must fold to different
+    // values, which is what `CONFIG_TOTALS` cannot see. Checked on the
+    // server against literals, so the base is not written to.
+    let probe = "SELECT CONVERT(numeric(38, 0), CONVERT(bigint, CONVERT(binary(8),                  HASHBYTES(N'MD5', CONVERT(varbinary(max), 0x0102030405))))),                  CONVERT(numeric(38, 0), CONVERT(bigint, CONVERT(binary(8),                  HASHBYTES(N'MD5', CONVERT(varbinary(max), 0x0102030406)))))";
+    let rows = session.query(probe, 2).await.unwrap();
+    let left = rows[0][0].render().into_owned();
+    let right = rows[0][1].render().into_owned();
+    assert_ne!(
+        left, right,
+        "a rewrite of the same length must change the digest"
+    );
+    session.close().await.unwrap();
+}

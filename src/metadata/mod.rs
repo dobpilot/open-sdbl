@@ -42,11 +42,10 @@ pub use normalize::{
     LogicalField, collapse_logical_fields, normalize_index_key, recase_postgres_identifier,
 };
 pub use queries::{MsSqlMetadataQueries, PostgresMetadataQueries, StorageLayout};
-pub(crate) use resolve::SnapshotFingerprint;
 pub use resolve::{
     AllowedLength, ExtensionMetadata, IndexComparison, LiveColumn, LiveIndex, LiveTable,
     MetadataCriterion, MetadataField, MetadataObject, MetadataSnapshot, MetadataValue,
-    ResolutionFinding, ResolutionReport, ResolvedMetadata, resolve_metadata,
+    ResolutionFinding, ResolutionReport, ResolvedMetadata, SnapshotFingerprint, resolve_metadata,
     resolve_metadata_with_criteria, resolve_metadata_with_extensions,
     resolve_metadata_with_predefined_values,
     resolve_metadata_with_predefined_values_and_extensions,

@@ -631,8 +631,20 @@ pub struct MetadataSnapshot {
     fingerprint: SnapshotFingerprint,
 }
 
+/// Identifies one loaded snapshot.
+///
+/// Two snapshots resolved from the same metadata compare equal, which is
+/// how a [`crate::query::Prepared`] refuses a snapshot other than the one
+/// it was prepared against, and how an application confirms that a reload
+/// left its prepared queries valid.
+///
+/// It says nothing about a base until that base has been read: computing
+/// it needs the whole load. To ask whether a configuration changed without
+/// loading it, run
+/// [`crate::metadata::PostgresMetadataQueries::CONFIG_FINGERPRINT`] or its
+/// SQL Server counterpart.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct SnapshotFingerprint([u64; 2]);
+pub struct SnapshotFingerprint([u64; 2]);
 
 impl MetadataSnapshot {
     /// Returns the authoritative DBNames mapping.
@@ -728,7 +740,9 @@ impl MetadataSnapshot {
         &self.indexes
     }
 
-    pub(crate) const fn fingerprint(&self) -> SnapshotFingerprint {
+    /// Identifies this snapshot; see [`SnapshotFingerprint`].
+    #[must_use]
+    pub const fn fingerprint(&self) -> SnapshotFingerprint {
         self.fingerprint
     }
 

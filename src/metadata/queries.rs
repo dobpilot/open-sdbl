@@ -145,6 +145,24 @@ impl PostgresMetadataQueries {
     /// matched by [`Self::CONFIG`] or [`Self::CONFIG_LEGACY`].
     pub const CONFIG_TOTALS: &'static str = "SELECT count(DISTINCT filename), COALESCE(sum(octet_length(binarydata)), 0) FROM config WHERE rtrim(filename::text) ~ '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}(\\.1c|\\.9|\\.7)?$'";
 
+    /// Summarizes the current content of every `Config` resource the
+    /// acquisition reads, computed on the server.
+    ///
+    /// Answers `(resource count, compressed bytes, digest sum)`. Each row
+    /// is hashed on its own and the digests are summed, so the value does
+    /// not depend on the order the server returns rows in and no resource
+    /// content crosses the wire. A rewrite that leaves a resource the same
+    /// length changes the digest and therefore the sum, which
+    /// [`Self::CONFIG_TOTALS`] cannot detect.
+    ///
+    /// The digest is a change detector, not a security primitive: whoever
+    /// can rewrite `Config` already owns the configuration. MD5 is what
+    /// SQL Server 2008 offers, which this crate still supports.
+    ///
+    /// One statement serves both storage layouts: a part is hashed like
+    /// any other row, so a change in any part changes the sum.
+    pub const CONFIG_FINGERPRINT: &'static str = "SELECT count(*), COALESCE(sum(octet_length(binarydata)), 0), COALESCE(sum(('x' || substr(md5(binarydata), 1, 15))::bit(60)::bigint), 0) FROM config WHERE rtrim(filename::text) ~ '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}(\\.1c|\\.9|\\.7)?$'";
+
     /// Reads every part of the opaque configuration-extension resources as
     /// `(name, part, data)` rows ordered by name and part.
     ///
@@ -300,7 +318,7 @@ impl PostgresMetadataQueries {
 
     /// Returns every acquisition statement, both layout variants included.
     #[must_use]
-    pub const fn all() -> [&'static str; 14] {
+    pub const fn all() -> [&'static str; 15] {
         [
             Self::VERIFY_TRANSACTION,
             Self::SERVER_VERSION,
@@ -308,6 +326,7 @@ impl PostgresMetadataQueries {
             Self::DB_NAMES,
             Self::DB_NAMES_LEGACY,
             Self::CONFIG_TOTALS,
+            Self::CONFIG_FINGERPRINT,
             Self::CONFIG,
             Self::CONFIG_LEGACY,
             Self::EXTENSION_RESOURCES,
@@ -371,6 +390,21 @@ impl MsSqlMetadataQueries {
     /// Counts distinct resources and the compressed bytes of every part
     /// matched by [`Self::CONFIG`] or [`Self::CONFIG_LEGACY`].
     pub const CONFIG_TOTALS: &'static str = "SELECT COUNT_BIG(DISTINCT [FileName]), COALESCE(SUM(CONVERT(bigint, DATALENGTH([BinaryData]))), CONVERT(bigint, 0)) FROM [dbo].[Config] WHERE ([FileName] LIKE N'[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]-[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]-[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]-[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]-[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]' OR [FileName] LIKE N'[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]-[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]-[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]-[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]-[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f].1c' OR [FileName] LIKE N'[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]-[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]-[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]-[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]-[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f].9' OR [FileName] LIKE N'[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]-[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]-[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]-[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]-[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f].7')";
+
+    /// Summarizes the current content of every `Config` resource the
+    /// acquisition reads, computed on the server.
+    ///
+    /// Answers `(resource count, compressed bytes, digest sum)`. Each
+    /// row is hashed on its own and the digests are summed into a decimal
+    /// accumulator, which no number of resources can overflow,
+    /// so the value does not depend on the order the server returns rows
+    /// in and no resource content crosses the wire. A rewrite that leaves
+    /// a resource the same length changes the digest and therefore the
+    /// sum, which [`Self::CONFIG_TOTALS`] cannot detect.
+    ///
+    /// One statement serves both storage layouts: a part is hashed like
+    /// any other row, so a change in any part changes the sum.
+    pub const CONFIG_FINGERPRINT: &'static str = "SELECT COUNT_BIG(*), COALESCE(SUM(CONVERT(bigint, DATALENGTH([BinaryData]))), CONVERT(bigint, 0)), COALESCE(SUM(CONVERT(numeric(38, 0), CONVERT(bigint, CONVERT(binary(8), HASHBYTES(N'MD5', [BinaryData]))))), CONVERT(numeric(38, 0), 0)) FROM [dbo].[Config] WHERE ([FileName] LIKE N'[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]-[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]-[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]-[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]-[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]' OR [FileName] LIKE N'[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]-[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]-[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]-[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]-[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f].1c' OR [FileName] LIKE N'[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]-[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]-[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]-[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]-[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f].9' OR [FileName] LIKE N'[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]-[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]-[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]-[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]-[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f].7')";
 
     /// Reads every part of the opaque configuration-extension resources as
     /// `(name, part, data)` rows ordered by name and part.
@@ -506,7 +540,7 @@ impl MsSqlMetadataQueries {
 
     /// Returns every acquisition statement, both layout variants included.
     #[must_use]
-    pub const fn all() -> [&'static str; 14] {
+    pub const fn all() -> [&'static str; 15] {
         [
             Self::VERIFY_DATABASE,
             Self::PRODUCT_VERSION,
@@ -515,6 +549,7 @@ impl MsSqlMetadataQueries {
             Self::DB_NAMES,
             Self::DB_NAMES_LEGACY,
             Self::CONFIG_TOTALS,
+            Self::CONFIG_FINGERPRINT,
             Self::CONFIG,
             Self::CONFIG_LEGACY,
             Self::EXTENSION_RESOURCES,
@@ -559,15 +594,44 @@ mod tests {
     }
 
     #[test]
+    fn the_fingerprint_statements_hash_content_without_moving_it() {
+        for query in [
+            PostgresMetadataQueries::CONFIG_FINGERPRINT,
+            MsSqlMetadataQueries::CONFIG_FINGERPRINT,
+        ] {
+            let upper = query.to_ascii_uppercase();
+            assert!(upper.starts_with("SELECT "), "{query}");
+            // The summary is computed by the server: the content itself is
+            // never projected, so nothing crosses the wire.
+            assert!(!upper.contains("BINARYDATA,"), "{query}");
+            // Size alone cannot see a same-length rewrite, so a digest of
+            // the bytes is what the value rests on.
+            assert!(
+                upper.contains("MD5(") || upper.contains("HASHBYTES("),
+                "{query}"
+            );
+            // The digests are combined order-independently, because
+            // neither server promises an order without a sort.
+            assert!(upper.contains("SUM("), "{query}");
+        }
+        assert!(
+            PostgresMetadataQueries::all().contains(&PostgresMetadataQueries::CONFIG_FINGERPRINT)
+        );
+        assert!(MsSqlMetadataQueries::all().contains(&MsSqlMetadataQueries::CONFIG_FINGERPRINT));
+    }
+
+    #[test]
     fn legacy_variants_never_mention_part_numbers() {
         for query in [
             PostgresMetadataQueries::DB_NAMES_LEGACY,
             PostgresMetadataQueries::CONFIG_LEGACY,
             PostgresMetadataQueries::CONFIG_TOTALS,
+            PostgresMetadataQueries::CONFIG_FINGERPRINT,
             PostgresMetadataQueries::EXTENSION_RESOURCES_LEGACY,
             MsSqlMetadataQueries::DB_NAMES_LEGACY,
             MsSqlMetadataQueries::CONFIG_LEGACY,
             MsSqlMetadataQueries::CONFIG_TOTALS,
+            MsSqlMetadataQueries::CONFIG_FINGERPRINT,
             MsSqlMetadataQueries::EXTENSION_RESOURCES_LEGACY,
         ] {
             assert!(!query.to_ascii_uppercase().contains("PARTNO"), "{query}");
@@ -610,6 +674,7 @@ mod tests {
             MsSqlMetadataQueries::CONFIG,
             MsSqlMetadataQueries::CONFIG_LEGACY,
             MsSqlMetadataQueries::CONFIG_TOTALS,
+            MsSqlMetadataQueries::CONFIG_FINGERPRINT,
         ] {
             assert!(
                 query.contains(&format!("[FileName] LIKE N'{guid}'")),
