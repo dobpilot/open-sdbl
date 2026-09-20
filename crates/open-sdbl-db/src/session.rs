@@ -11,7 +11,7 @@ use open_sdbl::metadata::{MetadataSnapshot, ResolutionReport, StorageLayout};
 use open_sdbl::query::MsSqlBackend;
 use tokio::time::timeout;
 
-use crate::cells::QueryRows;
+use crate::cells::{Cell, QueryRows, RowFlow};
 use crate::connection::DatabaseConnection;
 use crate::credentials::Credentials;
 use crate::db::mssql::MsSqlSession;
@@ -177,10 +177,42 @@ impl DatabaseSession {
     }
 
     /// Runs one read-only statement and decodes `column_count` columns.
+    ///
+    /// The whole result is held in memory. A caller that cannot promise
+    /// the result is small reads it with [`DatabaseSession::query_each`]
+    /// instead.
     pub async fn query(&mut self, sql: &str, column_count: usize) -> Result<QueryRows, DbError> {
         match self {
             Self::Postgres(session) => session.query(sql, column_count).await,
             Self::MsSql(session) => session.query(sql, column_count).await,
+        }
+    }
+
+    /// Reads one read-only statement row by row.
+    ///
+    /// Each row is decoded on its own and handed to `on_row` before the
+    /// next is read from the server, so a result larger than memory is
+    /// readable. Answering [`RowFlow::Stop`] ends the read at once: the
+    /// rows that follow are never fetched, decoded, or allocated.
+    ///
+    /// Stopping early costs a SQL Server session its connection — that is
+    /// the only way to end a running statement there, and the session
+    /// reports [`DatabaseSession::is_dead`] afterwards. A PostgreSQL
+    /// session stays usable.
+    ///
+    /// # Errors
+    ///
+    /// Returns what the server reported, what decoding a row reported, or
+    /// what `on_row` returned.
+    pub async fn query_each(
+        &mut self,
+        sql: &str,
+        column_count: usize,
+        on_row: impl FnMut(Vec<Cell>) -> Result<RowFlow, DbError>,
+    ) -> Result<(), DbError> {
+        match self {
+            Self::Postgres(session) => session.query_each(sql, column_count, on_row).await,
+            Self::MsSql(session) => session.query_each(sql, column_count, on_row).await,
         }
     }
 

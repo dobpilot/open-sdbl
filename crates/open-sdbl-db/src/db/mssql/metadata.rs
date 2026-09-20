@@ -346,7 +346,11 @@ impl MsSqlSession {
         self.backend
     }
 
-    pub(crate) const fn is_dead(&self) -> bool {
+    /// Whether the session can no longer be used: a failure poisoned it,
+    /// or a streaming read was stopped and the connection carrying the
+    /// statement was dropped to end it.
+    #[must_use]
+    pub const fn is_dead(&self) -> bool {
         self.poisoned
     }
 }

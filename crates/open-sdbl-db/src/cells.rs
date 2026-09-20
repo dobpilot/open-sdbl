@@ -9,6 +9,19 @@
 /// The rows a query returns, as the providers hand them over.
 pub type QueryRows = Vec<Vec<Cell>>;
 
+/// What a streaming reader wants after one row.
+///
+/// Answering [`RowFlow::Stop`] ends the read at once: the rows that follow
+/// are never read from the server, never decoded, and never allocated.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum RowFlow {
+    /// Read the next row.
+    Continue,
+    /// Stop here; the remainder of the result is not read.
+    Stop,
+}
+
 use std::borrow::Cow;
 use std::fmt::Write as _;
 

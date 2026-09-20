@@ -46,6 +46,7 @@ pub mod net;
 pub mod pipeline;
 pub mod progress;
 pub mod restrict;
+mod rows;
 pub mod session;
 
 pub use access::{
@@ -54,7 +55,7 @@ pub use access::{
     rls_report, role_restrictions, user_decisions, user_restrictions,
 };
 pub use access_cache::{TemplateParameters, read_current_user, read_template_parameters};
-pub use cells::{Cell, DateTimeParts, QueryRows};
+pub use cells::{Cell, DateTimeParts, QueryRows, RowFlow};
 pub use connection::{
     ConnectionOptions, DatabaseConnection, MsSqlConnection, PostgresConnection, PostgresSslMode,
 };

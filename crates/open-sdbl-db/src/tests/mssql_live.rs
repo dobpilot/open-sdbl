@@ -392,3 +392,52 @@ async fn a_denied_target_returns_no_row_from_the_server() {
     );
     session.close().await.unwrap();
 }
+
+/// Stopping a streaming read early must end the statement on the server.
+/// SQL Server is given no execution limit by this crate, so the only way
+/// to end a running statement is to drop what carries it — which is what
+/// the session does, and what this test observes.
+#[tokio::test]
+#[ignore = "requires OPEN_SDBL_MSSQL_TEST_USER, MSSQL_PASSWORD, and a live 1C database"]
+async fn stopping_a_streaming_read_ends_the_statement() {
+    use crate::cells::RowFlow;
+
+    let mut session = MsSqlSession::connect(
+        &mssql_test_connection(),
+        &mssql_test_credentials(),
+        Limits::default(),
+    )
+    .await
+    .unwrap();
+
+    // A cross join of the catalog views produces far more rows than the
+    // reader takes, so the statement is still running when it stops.
+    let sql = "SELECT TOP 1000000 o1.name FROM sys.all_objects AS o1 \
+               CROSS JOIN sys.all_objects AS o2";
+    let mut seen = 0_usize;
+    session
+        .query_each(sql, 1, |_| {
+            seen += 1;
+            Ok(if seen == 5 {
+                RowFlow::Stop
+            } else {
+                RowFlow::Continue
+            })
+        })
+        .await
+        .unwrap();
+
+    assert_eq!(seen, 5, "exactly the rows the reader asked for");
+    assert!(
+        session.is_dead(),
+        "the connection carrying the statement must be dropped, which is \
+         what ends the statement on the server"
+    );
+
+    // And the caller can carry on after reconnecting.
+    session.cancel_and_reconnect().await.unwrap();
+    assert!(!session.is_dead());
+    let rows = session.query("SELECT 1", 1).await.unwrap();
+    assert_eq!(rows.len(), 1);
+    session.close().await.unwrap();
+}

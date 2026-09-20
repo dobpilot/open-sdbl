@@ -4,6 +4,7 @@
 use std::sync::Arc;
 use std::time::Duration;
 
+use futures_util::StreamExt as _;
 use open_sdbl::metadata::{MetadataSnapshot, ResolutionReport};
 use rustls::client::danger::{HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier};
 use rustls::client::{WebPkiServerVerifier, verify_server_cert_signed_by_trust_anchor};
@@ -15,13 +16,14 @@ use tokio::net::TcpStream;
 use tokio::time::timeout;
 use tokio_postgres::config::SslMode;
 use tokio_postgres::tls::MakeTlsConnect;
+use tokio_postgres::types::ToSql;
 use tokio_postgres::{IsolationLevel, NoTls};
 use tokio_postgres_rustls::MakeRustlsConnect;
 use zeroize::Zeroizing;
 
 use super::cells::PostgresCell;
 use super::metadata::{PostgresMetadataSource, verify_transaction};
-use crate::cells::QueryRows;
+use crate::cells::{Cell, QueryRows, RowFlow};
 use crate::connection::{PostgresConnection, PostgresSslMode};
 use crate::credentials::Credentials;
 use crate::error::DbError;
@@ -29,6 +31,7 @@ use crate::limits::Limits;
 use crate::net::socks5::{connect_socks5, socks5_password};
 use crate::pipeline::acquire_metadata;
 use crate::progress::MetadataProgress;
+use crate::rows::drive_rows;
 use crate::session::query_timeout;
 use open_sdbl::metadata::StorageLayout;
 
@@ -324,6 +327,33 @@ impl PostgresSession {
 
     /// Runs one read-only statement and decodes `column_count` columns.
     pub async fn query(&mut self, sql: &str, column_count: usize) -> Result<QueryRows, DbError> {
+        let mut rows = QueryRows::new();
+        self.query_each(sql, column_count, |row| {
+            rows.push(row);
+            Ok(RowFlow::Continue)
+        })
+        .await?;
+        Ok(rows)
+    }
+
+    /// Reads one read-only statement row by row.
+    ///
+    /// Each row is decoded on its own and handed to `on_row` before the
+    /// next is read from the server. Answering [`RowFlow::Stop`] ends the
+    /// read there: the rows that follow are never fetched or decoded. The
+    /// session stays usable either way, because the server bounds the
+    /// statement by the `statement_timeout` set at connect.
+    ///
+    /// # Errors
+    ///
+    /// Returns what the server reported, what decoding a row reported, or
+    /// what `on_row` returned.
+    pub async fn query_each(
+        &mut self,
+        sql: &str,
+        column_count: usize,
+        on_row: impl FnMut(Vec<Cell>) -> Result<RowFlow, DbError>,
+    ) -> Result<(), DbError> {
         let limits = self.limits;
         let transaction = query_timeout(limits, "PostgreSQL transaction start", async {
             self.client
@@ -342,29 +372,25 @@ impl PostgresSession {
             .await;
             return Err(error);
         }
-        let query = query_timeout(limits, "PostgreSQL query", async {
-            transaction.query(sql, &[]).await.map_err(DbError::from)
-        })
+        let read = async {
+            let parameters = std::iter::empty::<&(dyn ToSql + Sync)>();
+            let rows = query_timeout(limits, "PostgreSQL query", async {
+                transaction
+                    .query_raw(sql, parameters)
+                    .await
+                    .map_err(DbError::from)
+            })
+            .await?;
+            let decoded = rows.map(move |row| decode_postgres_row(row, column_count));
+            drive_rows(decoded, on_row).await
+        }
         .await;
-        match query {
-            Ok(rows) => {
-                let rows = rows
-                    .iter()
-                    .map(|row| {
-                        (0..column_count)
-                            .map(|index| {
-                                row.try_get::<_, PostgresCell>(index)
-                                    .map(|cell| cell.0)
-                                    .map_err(DbError::from)
-                            })
-                            .collect()
-                    })
-                    .collect::<Result<Vec<_>, _>>()?;
+        match read {
+            Ok(_) => {
                 query_timeout(limits, "PostgreSQL transaction commit", async {
                     transaction.commit().await.map_err(DbError::from)
                 })
-                .await?;
-                Ok(rows)
+                .await
             }
             Err(error) => {
                 let _ = query_timeout(limits, "PostgreSQL transaction rollback", async {
@@ -441,6 +467,21 @@ impl PostgresSession {
         drop(self.client);
         await_postgres_driver(self.driver, close_timeout).await
     }
+}
+
+/// Decodes the first `column_count` values of one PostgreSQL row.
+fn decode_postgres_row(
+    row: Result<tokio_postgres::Row, tokio_postgres::Error>,
+    column_count: usize,
+) -> Result<Vec<Cell>, DbError> {
+    let row = row?;
+    (0..column_count)
+        .map(|index| {
+            row.try_get::<_, PostgresCell>(index)
+                .map(|cell| cell.0)
+                .map_err(DbError::from)
+        })
+        .collect()
 }
 
 pub(crate) async fn await_postgres_driver(

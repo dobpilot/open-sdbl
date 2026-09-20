@@ -1,6 +1,7 @@
 //! Opening and driving a SQL Server session: TLS, transactions,
 //! queries and recovery after a failure.
 
+use futures_util::StreamExt as _;
 use open_sdbl::metadata::{
     MetadataSnapshot, MsSqlMetadataQueries, ResolutionReport, StorageLayout,
 };
@@ -11,7 +12,7 @@ use tokio::time::timeout;
 use tokio_util::compat::{Compat, TokioAsyncWriteCompatExt};
 use zeroize::Zeroizing;
 
-use crate::cells::QueryRows;
+use crate::cells::{Cell, QueryRows, RowFlow};
 use crate::connection::MsSqlConnection;
 use crate::credentials::Credentials;
 use crate::error::DbError;
@@ -21,6 +22,7 @@ use crate::net::socks5::{connect_socks5, socks5_password};
 use crate::pipeline::MetadataSource;
 use crate::pipeline::acquire_metadata;
 use crate::progress::MetadataProgress;
+use crate::rows::{ReadEnd, drive_rows};
 use crate::session::query_timeout;
 
 /// The statement that reads the transaction depth of an MSSQL session.
@@ -357,6 +359,39 @@ impl MsSqlSession {
 
     /// Runs one read-only statement and decodes `column_count` columns.
     pub async fn query(&mut self, sql: &str, column_count: usize) -> Result<QueryRows, DbError> {
+        let mut rows = QueryRows::new();
+        self.query_each(sql, column_count, |row| {
+            rows.push(row);
+            Ok(RowFlow::Continue)
+        })
+        .await?;
+        Ok(rows)
+    }
+
+    /// Reads one read-only statement row by row.
+    ///
+    /// Each row is decoded on its own and handed to `on_row` before the
+    /// next is read from the server. Answering [`RowFlow::Stop`] ends the
+    /// read there: the rows that follow are never fetched or decoded.
+    ///
+    /// Stopping early **costs the connection**. This crate gives SQL
+    /// Server no execution limit — `SET LOCK_TIMEOUT` bounds lock waiting
+    /// only — so dropping the statement is the only way to end it on the
+    /// server, and a TDS stream abandoned between protocol messages cannot
+    /// be reused. The session is therefore poisoned, reports
+    /// [`MsSqlSession::is_dead`], and the caller reconnects with
+    /// [`MsSqlSession::cancel_and_reconnect`].
+    ///
+    /// # Errors
+    ///
+    /// Returns what the server reported, what decoding a row reported, or
+    /// what `on_row` returned.
+    pub async fn query_each(
+        &mut self,
+        sql: &str,
+        column_count: usize,
+        on_row: impl FnMut(Vec<Cell>) -> Result<RowFlow, DbError>,
+    ) -> Result<(), DbError> {
         self.execute_batch("BEGIN TRANSACTION").await?;
         let limits = self.limits;
         let client = self.client_mut()?;
@@ -365,19 +400,26 @@ impl MsSqlSession {
                 .simple_query(sql)
                 .await
                 .map_err(DbError::mssql_query)?
-                .into_first_result()
-                .await
-                .map_err(DbError::mssql_query)?;
-            rows.iter()
-                .map(|row| mssql_row(row, column_count))
-                .collect()
+                .into_row_stream();
+            let decoded =
+                rows.map(move |row| mssql_row(&row.map_err(DbError::mssql_query)?, column_count));
+            drive_rows(decoded, on_row).await
         })
         .await;
         match result {
-            Ok(rows) => match self.execute_batch("COMMIT TRANSACTION").await {
-                Ok(()) => Ok(rows),
+            // The statement ran out: the stream is between messages only
+            // if it was abandoned, so a finished read commits as before.
+            Ok(ReadEnd::Exhausted) => match self.execute_batch("COMMIT TRANSACTION").await {
+                Ok(()) => Ok(()),
                 Err(error) => Err(self.rollback_after_error(error).await),
             },
+            // The caller stopped: the statement is still producing rows on
+            // the server, and the only way to end it is to drop what
+            // carries it.
+            Ok(ReadEnd::Stopped) => {
+                self.poison_and_drop();
+                Ok(())
+            }
             Err(error) => Err(self.rollback_after_error(error).await),
         }
     }
