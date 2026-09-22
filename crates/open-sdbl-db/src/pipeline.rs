@@ -295,9 +295,11 @@ pub async fn acquire_metadata(
 /// read succeeded; any failure rolls the transaction back and answers the
 /// error instead.
 ///
-/// The whole `Config` table is held in memory, bounded by
+/// The whole `Config` table is held in memory, and so is the extension
+/// store beside it. Each is bounded on its own by
 /// [`Limits::config_resource_limit`] and
-/// [`Limits::config_retained_byte_limit`]. A caller that only needs names
+/// [`Limits::config_retained_byte_limit`], so the peak is those ceilings
+/// once per store, not once for the read. A caller that only needs names
 /// reads with [`acquire_metadata`].
 pub async fn acquire_configuration(
     source: &mut impl MetadataSource,
@@ -801,8 +803,8 @@ where
     Ok((descriptors, predefined_values, criteria, roles))
 }
 
-/// Refuses a whole-configuration read whose totals already exceed what
-/// the caller allows to be held.
+/// Refuses a read whose totals already exceed what the caller allows one
+/// store to hold.
 ///
 /// The totals are a statement of their own, so they can be stale by the
 /// time the rows arrive; [`collect_bounded_resources`] checks again as it
@@ -833,7 +835,9 @@ pub fn check_retention_totals(
 ///
 /// The limits are checked against what has actually arrived, not against
 /// what the totals promised, so a table that grew after the totals were
-/// read fails here rather than filling memory.
+/// read fails here rather than filling memory. They bound this one
+/// collection: a read that collects `Config` and then the extension
+/// store applies them twice, once to each.
 pub async fn collect_bounded_resources<S>(
     resources: S,
     limits: Limits,

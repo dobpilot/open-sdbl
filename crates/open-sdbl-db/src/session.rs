@@ -181,15 +181,16 @@ impl DatabaseSession {
     /// is `READ COMMITTED`, and what that does and does not promise is
     /// spelled out on [`AcquiredConfiguration`].
     ///
-    /// The whole table is held in memory, bounded by
-    /// [`Limits::config_resource_limit`] and
-    /// [`Limits::config_retained_byte_limit`]; a caller that only wants
-    /// names reads with [`DatabaseSession::metadata`].
+    /// The whole table is held in memory, and the extension store with
+    /// it. [`Limits::config_resource_limit`] and
+    /// [`Limits::config_retained_byte_limit`] bound each of them
+    /// separately, so the peak is those ceilings once per store; a caller
+    /// that only wants names reads with [`DatabaseSession::metadata`].
     ///
     /// # Errors
     ///
     /// Returns what the server reported, what decoding reported, or a
-    /// data error when the configuration exceeds those limits. Any
+    /// data error when either store exceeds those limits. Any
     /// failure rolls the read-only transaction back and answers the
     /// error; no partial configuration is ever answered.
     pub async fn configuration(
