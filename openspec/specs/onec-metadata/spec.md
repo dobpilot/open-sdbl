@@ -981,8 +981,24 @@ statement probing whether the base carries `_ExtensionsInfo`, a statement
 reading the extensions, and a statement reading the parts of one stored
 resource by its key.
 
+The statement reading the extensions SHALL answer, for each extension and
+in ascending `_ExtensionOrder`: the reference `_IDRRef` that identifies
+it, that order, the name `_ExtName`, and the `_ExtensionZippedInfo`
+record.
+
 A resource that carries several records one after another — the root
 does — SHALL be parsed into the sequence of its records.
+
+`_ExtensionZippedInfo` SHALL decode into a typed record rather than being
+treated as opaque: after the marker and the root key it is a
+tag-length-value stream carrying the synonym of the extension as a
+UTF-16 string, its version as an ASCII string, and the flags of the
+extension. Whether the base applies the extension SHALL be read from the
+second-to-last tagged byte of the record, which is `0x82` where it does
+and `0x81` where it does not; a record whose flag is neither, or which
+carries no flags, SHALL read as applied. Decoding SHALL answer the root
+key even when the rest of the record is not understood, so that a
+platform writing an unfamiliar tail is still readable.
 
 #### Scenario: The index of an extension
 - **WHEN** the root resource of `_ДемоРасширение` is parsed
@@ -993,6 +1009,22 @@ does — SHALL be parsed into the sequence of its records.
 #### Scenario: A blob that is no extension record
 - **WHEN** `ExtensionZippedInfo` is shorter than its marker and key
 - **THEN** reading the root key answers none
+
+#### Scenario: The record of an extension
+- **WHEN** the `_ExtensionZippedInfo` of `_ДемоРасширение` is decoded
+- **THEN** the record answers its root key, its version and its synonym
+
+#### Scenario: An extension the base does not apply
+- **WHEN** the records of two extensions of one base, alike but for the
+  platform applying one and not the other, are decoded
+- **THEN** they differ in the root key, in the synonym naming them apart
+  and in that one flag, and only the second is read as inactive
+
+#### Scenario: An unfamiliar tail
+- **WHEN** the stream after the root key carries a tag the decoder does
+  not know
+- **THEN** the root key is still answered and the undecoded fields are
+  reported as unknown rather than failing the read
 
 ### Requirement: Expose localized synonyms and comments on resolved metadata
 Resolution SHALL carry the localized synonyms and the descriptor comment of
@@ -1082,3 +1114,61 @@ and it is not the statement above.
   different fingerprint
 - **THEN** compilation fails with the snapshot-mismatch diagnostic, as it
   does today
+
+### Requirement: Acquire every resource of the Config table
+Both providers SHALL offer SELECT-only statements reading every row of
+the `Config` table as `(name, part, data)`, ordered by name and part, in
+a variant for each storage layout: the multi-part variant orders by
+`PartNo` and returns it, and the legacy variant reports part zero for the
+single row a resource has. The statements SHALL carry no name filter, so
+that a resource the acquisition filter rejects — a name that is not a
+bare GUID or a GUID with `.1c`, `.9` or `.7` — is read like any other.
+Each provider SHALL also offer the matching totals statement counting the
+distinct resources and the compressed bytes of every part, and both
+statements SHALL be listed among the provider's acquisition statements.
+
+Parts SHALL be assembled by the rule that already governs multi-part
+resources: contiguous from zero, concatenated in ascending part order,
+and a gap, a repeat or a start after zero SHALL be a data error naming
+the resource.
+
+#### Scenario: A resource outside the acquisition filter
+- **WHEN** the table carries a resource whose name is not GUID-shaped
+- **THEN** the whole-table statement returns it and the filtered
+  acquisition statement does not
+
+#### Scenario: A resource stored in parts
+- **WHEN** a resource is stored as parts 0, 1 and 2
+- **THEN** the whole-table read answers one resource whose bytes are the
+  three parts concatenated in order, and answers it once
+
+#### Scenario: A broken part sequence
+- **WHEN** a resource has parts 0 and 2, or part 0 twice, or starts at
+  part 1
+- **THEN** the read fails with a data error naming that resource and the
+  part that was expected
+
+#### Scenario: Legacy layout
+- **WHEN** the base has no `PartNo` column
+- **THEN** the legacy variant reads each resource as one row reported as
+  part zero, and the result is the same shape as on a modern base
+
+### Requirement: Name the Config resources metadata resolution decodes
+The core SHALL expose one predicate answering whether a `Config` resource
+name is one metadata resolution decodes: a bare GUID, or a GUID followed
+by `.1c`, `.9` or `.7`. The predicate SHALL match exactly the names the
+filtered acquisition statements of both providers select, so that a read
+of the whole table and a filtered read decode the same set of resources.
+
+A name the predicate rejects SHALL NOT be handed to the resource decoder,
+and SHALL still be counted towards the progress a read reports.
+
+#### Scenario: The shapes the statements match
+- **WHEN** the predicate is asked about a bare GUID and about the same
+  GUID with `.1c`, `.9` and `.7`
+- **THEN** it answers yes to each
+
+#### Scenario: A name no statement matches
+- **WHEN** the predicate is asked about `DBNames`, about a GUID with
+  another suffix, or about a name that is not a GUID
+- **THEN** it answers no
