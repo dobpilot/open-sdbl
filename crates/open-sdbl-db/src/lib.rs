@@ -66,7 +66,10 @@ pub use error::DbError;
 pub use extensions::{ExtensionIndex, read_extension_index, read_extension_roles};
 pub use limits::Limits;
 pub use net::socks5::{Socks5Proxy, parse_socks5_proxy};
-pub use pipeline::{MetadataSource, acquire_metadata};
+pub use pipeline::{
+    AcquiredConfiguration, AcquiredExtension, ConfigResource, ExtensionCatalogRow, MetadataSource,
+    acquire_configuration, acquire_metadata,
+};
 pub use progress::{MetadataProgress, NoProgress};
 pub use restrict::{RestrictionOrigin, RestrictionStore};
 pub use session::{

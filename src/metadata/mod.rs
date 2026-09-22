@@ -31,9 +31,9 @@ pub use config::{
 pub use db_names::{DbNameEntry, DbNames, MetadataKind, parse_db_names};
 pub use deflate::{DEFAULT_OUTPUT_LIMIT, inflate_raw_deflate, inflate_raw_deflate_bounded};
 pub use extension::{
-    ContentKey, ExtensionFieldRestructure, ExtensionResource, ExtensionRestructure,
+    ContentKey, ExtensionFieldRestructure, ExtensionInfo, ExtensionResource, ExtensionRestructure,
     extension_metadata_from_restructure, extension_root_key, parse_extension_index,
-    parse_extension_restructure,
+    parse_extension_info, parse_extension_restructure,
 };
 pub use guid::Guid;
 pub use identity::{AttributeId, FieldId, LookupError, ObjectId, StandardFieldId};
@@ -41,7 +41,9 @@ pub(crate) use normalize::normalize_standard_field_name;
 pub use normalize::{
     LogicalField, collapse_logical_fields, normalize_index_key, recase_postgres_identifier,
 };
-pub use queries::{MsSqlMetadataQueries, PostgresMetadataQueries, StorageLayout};
+pub use queries::{
+    MsSqlMetadataQueries, PostgresMetadataQueries, StorageLayout, is_config_metadata_resource,
+};
 pub use resolve::{
     AllowedLength, ExtensionMetadata, IndexComparison, LiveColumn, LiveIndex, LiveTable,
     MetadataCriterion, MetadataField, MetadataObject, MetadataSnapshot, MetadataValue,

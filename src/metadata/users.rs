@@ -70,6 +70,18 @@ impl InfoBaseUser {
         })
     }
 
+    /// Whether the user has any way to log in.
+    ///
+    /// True when standard 1C authentication is on, or when the
+    /// operating-system login is not blank once trimmed. Nothing else
+    /// decides it: neither whether the user is shown in the login list,
+    /// nor the administrative flag — which is a right, not a way in —
+    /// nor the roles, nor the name.
+    #[must_use]
+    pub fn can_authenticate(&self) -> bool {
+        self.standard_authentication || !self.os_name.trim().is_empty()
+    }
+
     /// The names of the user's roles through the catalog; a role the
     /// catalog does not know is named by its identifier.
     #[must_use]

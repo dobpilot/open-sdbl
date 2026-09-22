@@ -11,11 +11,11 @@ use super::session::PostgresSession;
 use crate::error::DbError;
 use crate::limits::Limits;
 use crate::pipeline::{
-    ConfigDecodeLimits, ConfigMetadata, ConfigResource, MetadataSource, assemble_parts,
-    assemble_single_resource, config_pipeline_depth, decode_catalog_values, decode_config_stream,
-    run_metadata_blocking, unsigned_progress_total,
+    ConfigDecodeLimits, ConfigMetadata, ConfigResource, ExtensionCatalogRow, MetadataSource,
+    assemble_parts, assemble_single_resource, config_pipeline_depth, decode_catalog_values,
+    decode_config_stream, decode_retained_config, run_metadata_blocking, unsigned_progress_total,
 };
-use crate::progress::MetadataProgress;
+use crate::progress::{MetadataProgress, NoProgress};
 use crate::session::query_timeout;
 
 pub(super) struct PostgresMetadataSource<'transaction> {
@@ -138,6 +138,88 @@ impl MetadataSource for PostgresMetadataSource<'_> {
         .await
     }
 
+    async fn read_whole_config(
+        &mut self,
+        layout: &StorageLayout,
+        progress: &mut dyn MetadataProgress,
+    ) -> Result<(ConfigMetadata, Vec<ConfigResource>), DbError> {
+        let limits = self.limits;
+        let transaction = self.transaction()?;
+        let totals = query_timeout(limits, "PostgreSQL whole Config totals query", async {
+            transaction
+                .query_one(PostgresMetadataQueries::CONFIG_ALL_TOTALS, &[])
+                .await
+                .map_err(DbError::from)
+        })
+        .await?;
+        progress.config_totals(
+            unsigned_progress_total(totals.try_get(0)?, "resource count")?,
+            unsigned_progress_total(totals.try_get(1)?, "compressed byte count")?,
+        );
+
+        let parameters = std::iter::empty::<&(dyn ToSql + Sync)>();
+        let rows = query_timeout(limits, "PostgreSQL whole Config query", async {
+            transaction
+                .query_raw(PostgresMetadataQueries::config_all(layout), parameters)
+                .await
+                .map_err(DbError::from)
+        })
+        .await?;
+        let parts = rows.map(|row| {
+            let row = row?;
+            Ok((
+                row.try_get::<_, String>(0)?,
+                row.try_get::<_, i32>(1)?,
+                row.try_get::<_, Vec<u8>>(2)?,
+            ))
+        });
+        let resources = collect_resources(assemble_parts(parts), progress).await?;
+        let metadata = decode_retained_config(
+            &resources,
+            limits.config_decode_batch_size,
+            ConfigDecodeLimits::default(),
+            limits.query_timeout,
+        )
+        .await?;
+        Ok((metadata, resources))
+    }
+
+    async fn read_extension_catalog(
+        &mut self,
+        layout: &StorageLayout,
+    ) -> Result<Vec<ExtensionCatalogRow>, DbError> {
+        if !layout.extension_store {
+            return Ok(Vec::new());
+        }
+        let probe = postgres_rows(
+            self.transaction()?,
+            self.limits,
+            "PostgreSQL extension probe",
+            PostgresMetadataQueries::EXTENSIONS_PROBE,
+        )
+        .await?;
+        if exactly_one_row(&probe, "extension probe")?.try_get::<_, i32>(0)? == 0 {
+            return Ok(Vec::new());
+        }
+        let rows = postgres_rows(
+            self.transaction()?,
+            self.limits,
+            "PostgreSQL extensions query",
+            PostgresMetadataQueries::EXTENSIONS,
+        )
+        .await?;
+        rows.iter()
+            .map(|row| {
+                Ok(ExtensionCatalogRow {
+                    identity: row.try_get::<_, Vec<u8>>(0)?,
+                    order: row.try_get::<_, i32>(1)?,
+                    name: row.try_get::<_, String>(2)?.trim().to_owned(),
+                    info: row.try_get::<_, Vec<u8>>(3)?,
+                })
+            })
+            .collect()
+    }
+
     async fn read_extension_resources(
         &mut self,
         layout: &StorageLayout,
@@ -161,12 +243,7 @@ impl MetadataSource for PostgresMetadataSource<'_> {
                 row.try_get::<_, Vec<u8>>(2)?,
             ))
         });
-        let mut resources = std::pin::pin!(assemble_parts(parts));
-        let mut assembled = Vec::new();
-        while let Some(resource) = resources.next().await {
-            assembled.push(resource?);
-        }
-        Ok(assembled)
+        collect_resources(assemble_parts(parts), &mut NoProgress).await
     }
 
     async fn read_extension_restructures(
@@ -238,6 +315,21 @@ impl MetadataSource for PostgresMetadataSource<'_> {
         }
         original
     }
+}
+
+/// Drains assembled resources into memory, reporting each as it lands.
+pub(super) async fn collect_resources(
+    resources: impl futures_util::Stream<Item = Result<ConfigResource, DbError>>,
+    progress: &mut dyn MetadataProgress,
+) -> Result<Vec<ConfigResource>, DbError> {
+    let mut resources = std::pin::pin!(resources);
+    let mut assembled = Vec::new();
+    while let Some(resource) = resources.next().await {
+        let resource = resource?;
+        progress.advance_config(1, resource.compressed.len());
+        assembled.push(resource);
+    }
+    Ok(assembled)
 }
 
 pub(super) async fn verify_transaction(

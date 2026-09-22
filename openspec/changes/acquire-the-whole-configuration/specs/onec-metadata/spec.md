@@ -84,9 +84,12 @@ does — SHALL be parsed into the sequence of its records.
 treated as opaque: after the marker and the root key it is a
 tag-length-value stream carrying the synonym of the extension as a
 UTF-16 string, its version as an ASCII string, and the flags of the
-extension, among them whether the base applies it. Decoding SHALL answer
-the root key even when the rest of the record is not understood, so that
-a platform writing an unfamiliar tail is still readable.
+extension. Whether the base applies the extension SHALL be read from the
+second-to-last tagged byte of the record, which is `0x82` where it does
+and `0x81` where it does not; a record whose flag is neither, or which
+carries no flags, SHALL read as applied. Decoding SHALL answer the root
+key even when the rest of the record is not understood, so that a
+platform writing an unfamiliar tail is still readable.
 
 #### Scenario: The index of an extension
 - **WHEN** the root resource of `_ДемоРасширение` is parsed
@@ -101,6 +104,12 @@ a platform writing an unfamiliar tail is still readable.
 #### Scenario: The record of an extension
 - **WHEN** the `_ExtensionZippedInfo` of `_ДемоРасширение` is decoded
 - **THEN** the record answers its root key, its version and its synonym
+
+#### Scenario: An extension the base does not apply
+- **WHEN** the records of two extensions of one base, alike but for the
+  platform applying one and not the other, are decoded
+- **THEN** they differ in the root key, in the synonym naming them apart
+  and in that one flag, and only the second is read as inactive
 
 #### Scenario: An unfamiliar tail
 - **WHEN** the stream after the root key carries a tag the decoder does

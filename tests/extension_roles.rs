@@ -8,8 +8,8 @@ use std::str::FromStr;
 
 use open_sdbl::metadata::{
     Guid, MsSqlMetadataQueries, PostgresMetadataQueries, Right, StorageLayout, extension_root_key,
-    inflate_raw_deflate, parse_config_descriptors, parse_extension_index, parse_role_rights,
-    parse_serialized_sequence,
+    inflate_raw_deflate, parse_config_descriptors, parse_extension_index, parse_extension_info,
+    parse_role_rights, parse_serialized_sequence,
 };
 
 const ROOT: &str = "344e701a5292613d188f54a0461ba28cdc4e64a0";
@@ -37,6 +37,67 @@ fn reads_the_root_key_of_an_extension() {
     // A record shorter than the marker and the key is none.
     assert!(extension_root_key(&info[..16]).is_none());
     assert!(extension_root_key(&[]).is_none());
+}
+
+#[test]
+fn reads_the_record_of_an_extension() {
+    let info = fixture("extension_info.bin");
+    let record = parse_extension_info(&info).unwrap();
+    assert_eq!(record.root_key.as_hex(), ROOT);
+    assert_eq!(record.version.as_deref(), Some("1.0.1.14"));
+    let synonym = record.synonym.as_deref().unwrap();
+    assert!(synonym.contains("Расширение"), "{synonym}");
+    assert!(record.active, "the demo extension is applied");
+    assert_eq!(record.flags, [0xa1, 0x81, 0x81, 0x82, 0x81]);
+
+    // A record shorter than the marker and the key answers none; one that
+    // stops right after the key still answers the key.
+    assert!(parse_extension_info(&info[..16]).is_none());
+    let bare = parse_extension_info(&info[..24]).unwrap();
+    assert_eq!(bare.root_key.as_hex(), ROOT);
+    assert!(bare.synonym.is_none() && bare.version.is_none());
+    assert!(bare.active, "a record with no flag reads as applied");
+}
+
+/// The two extensions of the PostgreSQL reference base, one the platform
+/// applies and one it does not. Everything else about them is equal, so
+/// the difference between the records is the applicability flag alone.
+#[test]
+fn reads_whether_the_base_applies_an_extension() {
+    let applied = fixture("extension_info_applied.bin");
+    let not_applied = fixture("extension_info_not_applied.bin");
+    assert_eq!(applied.len(), not_applied.len());
+
+    let differing = applied
+        .iter()
+        .zip(&not_applied)
+        .enumerate()
+        .filter(|(_, (left, right))| left != right)
+        .map(|(offset, _)| offset)
+        .collect::<Vec<_>>();
+    // The root key, the one character of the synonym naming them apart,
+    // and the flag: the second-to-last tagged byte of the record.
+    assert_eq!(differing.last(), Some(&(applied.len() - 3)));
+    assert_eq!(applied[applied.len() - 3], 0x82);
+    assert_eq!(not_applied[not_applied.len() - 3], 0x81);
+
+    let applied = parse_extension_info(&applied).unwrap();
+    let not_applied = parse_extension_info(&not_applied).unwrap();
+    assert!(applied.active);
+    assert!(!not_applied.active);
+    assert_ne!(applied.root_key.as_hex(), not_applied.root_key.as_hex());
+    // Neither carries a version, and both name themselves in the synonym.
+    assert!(applied.version.is_none() && not_applied.version.is_none());
+    assert!(applied.synonym.as_deref().unwrap().contains("асширение1"));
+    assert!(
+        not_applied
+            .synonym
+            .as_deref()
+            .unwrap()
+            .contains("асширение2")
+    );
+    assert_eq!(applied.flags, [0xa2, 0x82, 0x81, 0x81, 0x82, 0x82]);
+    assert_eq!(not_applied.flags, [0xa2, 0x82, 0x81, 0x81, 0x81, 0x82]);
 }
 
 #[test]
@@ -128,6 +189,9 @@ fn builds_the_statements_of_the_extension_store() {
     );
     assert!(PostgresMetadataQueries::EXTENSIONS.contains("_extensionsinfo"));
     assert!(MsSqlMetadataQueries::EXTENSIONS.contains("_ExtensionsInfo"));
+    // The statement answers the identity and the order beside the name.
+    assert!(PostgresMetadataQueries::EXTENSIONS.contains("_idrref"));
+    assert!(MsSqlMetadataQueries::EXTENSIONS.contains("[_IDRRef]"));
     assert!(PostgresMetadataQueries::EXTENSIONS_PROBE.contains("_extensionsinfo"));
     assert!(MsSqlMetadataQueries::EXTENSIONS_PROBE.contains("_ExtensionsInfo"));
 }

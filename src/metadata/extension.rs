@@ -272,6 +272,120 @@ pub fn extension_root_key(info: &[u8]) -> Option<ContentKey> {
     Some(ContentKey(key.try_into().ok()?))
 }
 
+/// What `_ExtensionsInfo.ExtensionZippedInfo` records about one
+/// configuration extension.
+///
+/// After the four-byte marker and the twenty-byte root key the record is
+/// a tag-length-value stream: `0x97` introduces a UTF-16 string of *n*
+/// code units — the localized synonym — `0x9a` a string of *n* bytes —
+/// the version — and single tagged bytes carry the flags of the
+/// extension. The decoder is deliberately tolerant: it answers the root
+/// key even when the rest is written by a platform whose tags it does
+/// not know, because the key is what reading the extension needs.
+#[non_exhaustive]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ExtensionInfo {
+    /// The key of the root resource of the extension.
+    pub root_key: ContentKey,
+    /// The localized synonym record, when the stream carried one.
+    pub synonym: Option<String>,
+    /// The version of the extension, when the stream carried one.
+    pub version: Option<String>,
+    /// Whether the base applies the extension.
+    ///
+    /// Measured on a PostgreSQL base carrying one extension the platform
+    /// applies and one it does not: of the 177 bytes of each record, the
+    /// two differ in the root key, in the one character of the synonym
+    /// that names them apart, and in one flag — the second-to-last
+    /// tagged byte of the record, `0x82` where the base applies the
+    /// extension and `0x81` where it does not. A record whose flag is
+    /// neither, or which carries no flags at all, reads as applied, so
+    /// that a platform writing something unfamiliar does not silently
+    /// drop every extension.
+    pub active: bool,
+    /// The tagged flag bytes, in the order the stream writes them.
+    pub flags: Vec<u8>,
+}
+
+/// The tagged byte the applicability flag carries where the base does
+/// not apply the extension.
+const EXTENSION_INFO_NOT_APPLIED: u8 = 0x81;
+
+/// The tag introducing a UTF-16 string counted in code units.
+const EXTENSION_INFO_UTF16: u8 = 0x97;
+/// The tag introducing a byte string counted in bytes.
+const EXTENSION_INFO_BYTES: u8 = 0x9a;
+
+/// Reads what `_ExtensionsInfo.ExtensionZippedInfo` records about one
+/// extension.
+///
+/// Answers `None` only when the record is shorter than the marker and the
+/// root key; anything after that is decoded as far as it is understood.
+#[must_use]
+pub fn parse_extension_info(info: &[u8]) -> Option<ExtensionInfo> {
+    let root_key = extension_root_key(info)?;
+    let mut record = ExtensionInfo {
+        root_key,
+        synonym: None,
+        version: None,
+        active: true,
+        flags: Vec::new(),
+    };
+    let mut offset = EXTENSION_INFO_MARKER + 20;
+    while let Some(&tag) = info.get(offset) {
+        match tag {
+            EXTENSION_INFO_UTF16 => {
+                let units = usize::from(*info.get(offset + 1)?);
+                let start = offset + 2;
+                let end = start.checked_add(units * 2)?;
+                let text = info.get(start..end)?;
+                if record.synonym.is_none() {
+                    record.synonym = decode_utf16_le(text);
+                }
+                offset = end;
+            }
+            EXTENSION_INFO_BYTES => {
+                let length = usize::from(*info.get(offset + 1)?);
+                let start = offset + 2;
+                let end = start.checked_add(length)?;
+                let text = info.get(start..end)?;
+                // The stream writes counted byte runs that are not text as
+                // well; only a printable run can be the version.
+                if record.version.is_none()
+                    && !text.is_empty()
+                    && text.iter().all(u8::is_ascii_graphic)
+                {
+                    record.version = String::from_utf8(text.to_vec()).ok();
+                }
+                offset = end;
+            }
+            _ => {
+                if tag & 0x80 != 0 {
+                    record.flags.push(tag);
+                }
+                offset += 1;
+            }
+        }
+    }
+    record.active = record
+        .flags
+        .len()
+        .checked_sub(2)
+        .and_then(|index| record.flags.get(index))
+        .is_none_or(|flag| *flag != EXTENSION_INFO_NOT_APPLIED);
+    Some(record)
+}
+
+/// Decodes a UTF-16 little-endian run, answering `None` when it is not
+/// valid UTF-16.
+fn decode_utf16_le(bytes: &[u8]) -> Option<String> {
+    let units = bytes
+        .chunks_exact(2)
+        .map(|pair| u16::from_le_bytes([pair[0], pair[1]]))
+        .collect::<Vec<_>>();
+    String::from_utf16(&units).ok()
+}
+
 /// One resource of an extension, as its root lists it.
 #[non_exhaustive]
 #[derive(Debug, Clone, PartialEq, Eq)]

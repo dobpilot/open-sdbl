@@ -91,8 +91,13 @@ task 3.1 before relying on it).
 - `Params.DBNames` is raw DEFLATE as expected; decompressed cleanly by
   the same algorithm the library uses.
 - `_ExtensionsInfo._ExtensionZippedInfo` is NOT deflate at any offset
-  (probed 0..40, wbits −15/15/47); layout ≈ 16-byte GUID + counters +
-  UTF-16LE brace-text tail. Treat as opaque until task 1.2.
+  (probed 0..40, wbits −15/15/47). Decoded since: a four-byte marker, the
+  twenty-byte root key, then a tag-length-value stream — `0x97` a UTF-16
+  string of *n* code units (the synonym), `0x9a` a byte string of *n*
+  bytes (the version), single tagged bytes the flags. The second-to-last
+  tagged byte says whether the base applies the extension (`0x82` yes,
+  `0x81` no), measured on the PostgreSQL reference base. See
+  `parse_extension_info`.
 
 ## PostgreSQL reference base (192.168.166.15/demo, admin1c)
 

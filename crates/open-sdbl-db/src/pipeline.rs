@@ -13,15 +13,16 @@ use std::time::Duration;
 use futures_util::{Stream, StreamExt};
 use open_sdbl::metadata::{
     ExtensionMetadata, LiveColumn, LiveIndex, LiveTable, MetadataErrorKind, MetadataSnapshot,
-    ResolutionReport, StorageLayout, extension_metadata_from_restructure,
-    parse_config_resource_bounded, parse_extension_restructure,
+    ResolutionReport, StorageLayout, extension_metadata_from_restructure, inflate_raw_deflate,
+    is_config_metadata_resource, parse_config_resource_bounded, parse_extension_index,
+    parse_extension_info, parse_extension_restructure,
     resolve_metadata_with_predefined_values_and_extensions,
 };
 use tokio::sync::Semaphore;
 use tokio::time::timeout;
 
 use crate::error::DbError;
-use crate::progress::MetadataProgress;
+use crate::progress::{MetadataProgress, NoProgress};
 
 const CONFIG_MAX_RESOURCE_DECODED_BYTES: usize = 32 * 1024 * 1024;
 const CONFIG_MAX_BATCH_DECODED_BYTES: usize = 64 * 1024 * 1024;
@@ -136,10 +137,38 @@ pub trait MetadataSource {
         Ok(Vec::new())
     }
     /// Decodes the extension resources into extension metadata.
+    ///
+    /// The store is borrowed, not consumed: a whole-configuration read
+    /// groups the same resources by extension afterwards.
     async fn read_extensions(
         &mut self,
-        _resources: Vec<ConfigResource>,
+        _resources: &[ConfigResource],
     ) -> Result<Vec<ExtensionMetadata>, DbError> {
+        Ok(Vec::new())
+    }
+
+    /// Reads every resource of the `Config` table, parts assembled, and
+    /// decodes the metadata-shaped ones out of what it read.
+    ///
+    /// Only a whole-configuration read calls this; a metadata read keeps
+    /// streaming through [`MetadataSource::read_config`] and retains
+    /// nothing.
+    async fn read_whole_config(
+        &mut self,
+        _layout: &StorageLayout,
+        _progress: &mut dyn MetadataProgress,
+    ) -> Result<(ConfigMetadata, Vec<ConfigResource>), DbError> {
+        Err(DbError::Data(
+            "this provider cannot read the whole configuration".to_owned(),
+        ))
+    }
+
+    /// Reads the rows of `_ExtensionsInfo` in the order the platform
+    /// applies the extensions.
+    async fn read_extension_catalog(
+        &mut self,
+        _layout: &StorageLayout,
+    ) -> Result<Vec<ExtensionCatalogRow>, DbError> {
         Ok(Vec::new())
     }
     /// Reads the `_ExtensionsRestruct._restructData` blobs of the base.
@@ -160,15 +189,108 @@ pub trait MetadataSource {
     async fn rollback_readonly(&mut self, original: DbError) -> DbError;
 }
 
+/// One row of `_ExtensionsInfo`, as every provider returns it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ExtensionCatalogRow {
+    /// `_IDRRef`, the reference the base gives the extension.
+    pub identity: Vec<u8>,
+    /// `_ExtensionOrder`, the order the platform applies extensions in.
+    pub order: i32,
+    /// `_ExtName`, the name of the extension.
+    pub name: String,
+    /// `_ExtensionZippedInfo`, the record carrying the root key.
+    pub info: Vec<u8>,
+}
+
+/// One configuration extension of a base, with its own resources.
+#[non_exhaustive]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AcquiredExtension {
+    /// The reference identifying the extension, in lower-case
+    /// hexadecimal. It survives a rename, which the name does not.
+    pub identity: String,
+    /// The name of the extension.
+    pub name: String,
+    /// Whether the base applies the extension.
+    pub active: bool,
+    /// The order the platform applies the extension in.
+    pub order: u32,
+    /// The resources of this extension, named as its own root index
+    /// names them, with the bytes the store holds. Two extensions naming
+    /// a resource identically keep one entry each.
+    pub resources: Vec<ConfigResource>,
+}
+
+/// What one whole-configuration read answers.
+///
+/// Everything here was read inside one read-only transaction, so the
+/// snapshot, the report and the resources describe the same state of the
+/// base. The value exists only when the whole read succeeded.
+#[non_exhaustive]
+#[derive(Debug)]
+pub struct AcquiredConfiguration {
+    /// The resolved metadata.
+    pub metadata: MetadataSnapshot,
+    /// What the resolver had to recover from.
+    pub report: ResolutionReport,
+    /// The storage layout the base was read from.
+    pub layout: StorageLayout,
+    /// Every resource of the `Config` table, parts assembled, bytes as
+    /// the base stores them.
+    pub config_resources: Vec<ConfigResource>,
+    /// The configuration extensions, in the order the platform applies
+    /// them.
+    pub extensions: Vec<AcquiredExtension>,
+}
+
+/// Which `Config` read one acquisition performs.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ConfigPlan {
+    /// Stream the resources metadata resolution decodes, keeping none.
+    Names,
+    /// Read every resource of the table and keep it.
+    Whole,
+}
+
 /// Reads the metadata of a base and answers the snapshot, the storage
 /// layout it was read from — which later reads of the same base reuse —
 /// and the report of what the resolver had to recover from.
 ///
-/// Nothing is printed: the report is the caller's to show.
+/// Nothing is printed: the report is the caller's to show. Nothing is
+/// retained either: each `Config` resource is dropped once decoded.
 pub async fn acquire_metadata(
     source: &mut impl MetadataSource,
     progress: &mut dyn MetadataProgress,
 ) -> Result<(MetadataSnapshot, StorageLayout, ResolutionReport), DbError> {
+    let acquired = acquire(source, progress, ConfigPlan::Names).await?;
+    Ok((acquired.metadata, acquired.layout, acquired.report))
+}
+
+/// Reads the whole configuration of a base in one read-only transaction:
+/// the metadata [`acquire_metadata`] answers, plus every resource of the
+/// `Config` table and the resources of each configuration extension.
+///
+/// The resources answered are the very resources the metadata was
+/// resolved from. The result is answered only after the whole read
+/// succeeded; any failure rolls the transaction back and answers the
+/// error instead.
+///
+/// The whole `Config` table is held in memory. A caller that only needs
+/// names reads with [`acquire_metadata`].
+pub async fn acquire_configuration(
+    source: &mut impl MetadataSource,
+    progress: &mut dyn MetadataProgress,
+) -> Result<AcquiredConfiguration, DbError> {
+    acquire(source, progress, ConfigPlan::Whole).await
+}
+
+/// The one acquisition both entry points run; the plan decides which
+/// `Config` read happens and whether the extensions are grouped.
+async fn acquire(
+    source: &mut impl MetadataSource,
+    progress: &mut dyn MetadataProgress,
+    plan: ConfigPlan,
+) -> Result<AcquiredConfiguration, DbError> {
     let result = async {
         progress.phase("transaction");
         source.begin_readonly().await?;
@@ -183,12 +305,21 @@ pub async fn acquire_metadata(
             "DBNames (legacy layout)"
         });
         let db_names = source.read_db_names(&layout).await?;
-        let (descriptors, predefined_values, criteria, roles) =
-            source.read_config(&layout, progress).await?;
+        let ((descriptors, predefined_values, criteria, roles), config_resources) = match plan {
+            ConfigPlan::Names => (source.read_config(&layout, progress).await?, Vec::new()),
+            ConfigPlan::Whole => source.read_whole_config(&layout, progress).await?,
+        };
 
         progress.phase("extensions");
         let extension_resources = source.read_extension_resources(&layout).await?;
-        let mut extensions = source.read_extensions(extension_resources).await?;
+        let mut extensions = source.read_extensions(&extension_resources).await?;
+        let acquired_extensions = match plan {
+            ConfigPlan::Names => Vec::new(),
+            ConfigPlan::Whole => {
+                let catalog = source.read_extension_catalog(&layout).await?;
+                group_extensions(&catalog, &extension_resources)?
+            }
+        };
         let restructure_blobs = source.read_extension_restructures(&layout).await?;
         if !restructure_blobs.is_empty() {
             let decoded = run_metadata_blocking("extension restructure", move || {
@@ -220,7 +351,13 @@ pub async fn acquire_metadata(
         })
         .await?;
         progress.finish();
-        Ok((resolved.snapshot, layout, resolved.report))
+        Ok(AcquiredConfiguration {
+            metadata: resolved.snapshot,
+            report: resolved.report,
+            layout,
+            config_resources,
+            extensions: acquired_extensions,
+        })
     }
     .await;
 
@@ -233,12 +370,109 @@ pub async fn acquire_metadata(
     }
 }
 
+/// Attributes the content-addressed store to the extensions that use it.
+///
+/// `ConfigCAS` names a row by the hash of its content, so the store says
+/// nothing about which extension a resource belongs to. Each extension's
+/// own root index does: it pairs the name a resource has with the key of
+/// its content. Grouping through the index therefore keeps two
+/// extensions apart even when they name a resource identically.
+fn group_extensions(
+    catalog: &[ExtensionCatalogRow],
+    store: &[ConfigResource],
+) -> Result<Vec<AcquiredExtension>, DbError> {
+    if catalog.is_empty() {
+        return Ok(Vec::new());
+    }
+    let by_key = store
+        .iter()
+        .map(|resource| (resource.file_name.as_str(), resource.compressed.as_slice()))
+        .collect::<BTreeMap<_, _>>();
+    let mut extensions = Vec::with_capacity(catalog.len());
+    for row in catalog {
+        let name = row.name.clone();
+        let order = u32::try_from(row.order).map_err(|_| {
+            DbError::Data(format!(
+                "extension {name:?} reports the negative application order {}",
+                row.order
+            ))
+        })?;
+        let info = parse_extension_info(&row.info).ok_or_else(|| {
+            DbError::Data(format!(
+                "extension {name:?} carries no root key in its info record"
+            ))
+        })?;
+        let root = content(&by_key, &info.root_key.as_hex(), &name, "its root")?;
+        let root = inflate_raw_deflate(root).map_err(|error| {
+            DbError::Data(format!("root resource of extension {name:?}: {error}"))
+        })?;
+        let index = parse_extension_index(&root)
+            .map_err(|error| DbError::Data(format!("root index of extension {name:?}: {error}")))?;
+        let mut resources = Vec::with_capacity(index.len());
+        for entry in index {
+            let bytes = content(&by_key, &entry.key.as_hex(), &name, &entry.name)?;
+            resources.push(ConfigResource {
+                file_name: entry.name,
+                compressed: bytes.to_vec(),
+            });
+        }
+        extensions.push(AcquiredExtension {
+            identity: hexadecimal(&row.identity),
+            name,
+            active: info.active,
+            order,
+            resources,
+        });
+    }
+    Ok(extensions)
+}
+
+/// The content the store holds under a key, or a data error naming what
+/// asked for it.
+fn content<'store>(
+    by_key: &BTreeMap<&str, &'store [u8]>,
+    key: &str,
+    extension: &str,
+    resource: &str,
+) -> Result<&'store [u8], DbError> {
+    by_key.get(key).copied().ok_or_else(|| {
+        DbError::Data(format!(
+            "the extension store carries no resource {key} — {resource} of extension {extension:?}"
+        ))
+    })
+}
+
+/// The lower-case hexadecimal of a byte string.
+fn hexadecimal(bytes: &[u8]) -> String {
+    use std::fmt::Write as _;
+    bytes.iter().fold(String::new(), |mut text, byte| {
+        let _ = write!(text, "{byte:02x}");
+        text
+    })
+}
+
 /// One whole resource of a file table, reassembled from its parts.
+#[derive(Clone, PartialEq, Eq)]
 pub struct ConfigResource {
     /// The name the row carries.
     pub file_name: String,
-    /// The bytes as the base stores them, still compressed.
+    /// The bytes as the base stores them: raw DEFLATE exactly as the row
+    /// holds it, neither inflated nor re-encoded. A caller that wants the
+    /// content inflates it with
+    /// [`open_sdbl::metadata::inflate_raw_deflate`].
     pub compressed: Vec<u8>,
+}
+
+impl std::fmt::Debug for ConfigResource {
+    /// Names the resource and its size; the content of a configuration is
+    /// not something a log should carry.
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("ConfigResource")
+            .field("file_name", &self.file_name)
+            .field("compressed_bytes", &self.compressed.len())
+            .finish()
+    }
 }
 
 /// One `(name, part, data)` row of a file table, as every layout variant
@@ -541,6 +775,42 @@ where
     Ok((descriptors, predefined_values, criteria, roles))
 }
 
+/// Decodes the metadata resources out of a whole `Config` table already
+/// read into memory.
+///
+/// Only the names [`is_config_metadata_resource`] accepts reach the
+/// resource decoder; the rest were counted towards progress while they
+/// were being assembled and are left alone here. Each decoded resource
+/// is cloned for the batch that decodes it and dropped with that batch,
+/// so what the caller keeps is read once and never held twice.
+pub async fn decode_retained_config(
+    resources: &[ConfigResource],
+    batch_size: usize,
+    limits: ConfigDecodeLimits,
+    progress_timeout: Duration,
+) -> Result<ConfigMetadata, DbError> {
+    let decodable = futures_util::stream::iter(
+        resources
+            .iter()
+            .filter(|resource| is_config_metadata_resource(&resource.file_name))
+            .map(|resource| {
+                Ok(ConfigResource {
+                    file_name: resource.file_name.clone(),
+                    compressed: resource.compressed.clone(),
+                })
+            }),
+    );
+    decode_config_stream(
+        decodable,
+        batch_size,
+        config_pipeline_depth(),
+        limits,
+        &mut NoProgress,
+        progress_timeout,
+    )
+    .await
+}
+
 /// Runs decoding work off the async runtime, naming it in the error.
 pub async fn run_metadata_blocking<T, F>(label: &'static str, work: F) -> Result<T, DbError>
 where
@@ -568,3 +838,7 @@ pub fn unsigned_progress_total(value: i64, label: &str) -> Result<u64, DbError> 
 #[cfg(test)]
 #[path = "tests/pipeline.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "tests/configuration.rs"]
+mod configuration_tests;

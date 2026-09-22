@@ -48,14 +48,17 @@ same rule has to be applied in Rust to decide which retained resource the
 metadata decoder is given.
 
 `open_sdbl::metadata::is_config_metadata_resource(name) -> bool` states
-the rule once. `decode_config_stream` consults it, which is a no-op for
-the filtered plan — every name the SQL returned passes — and is what
-selects the metadata resources out of the whole table for the other plan.
+the rule once. `decode_retained_config` — the decoder entry point of the
+whole-table plan — consults it and hands the resource decoder only what
+it accepts. `decode_config_stream`, which the filtered plan keeps using
+unchanged, needs no filter: every name its SQL returned passes anyway.
 A test pins the predicate against the shape both statements match.
 
-Resources the predicate rejects are still counted towards progress, so
-the totals a whole-table read announces and the batches it reports line
-up.
+Progress is reported where the bytes actually arrive. The whole-table
+read announces the totals of the whole table and reports each resource as
+it is assembled, the ones the predicate rejects included, so the totals
+and the advances line up; the decode that follows is silent. The filtered
+read keeps reporting at decode time, as it does today.
 
 ### 3. Resources are returned as stored
 
@@ -114,10 +117,23 @@ providers only return rows.
   after the four-byte marker and the twenty-byte root key it is a
   tag-length-value stream, in which `0x97` introduces a UTF-16 string of
   *n* code units (the synonym), `0x9a` an ASCII string of *n* bytes (the
-  version), and single tagged bytes carry the flags. The flag that
-  changes with the extension's active state is identified by measurement
-  against a base carrying the same extension enabled and disabled, and is
-  pinned by a fixture of both blobs.
+  version), and single tagged bytes carry the flags.
+
+  Which flag carries the activity was measured, not guessed. The
+  PostgreSQL reference base carries two extensions alike but for the
+  platform applying one and not the other; their records are 177 bytes
+  each and differ in exactly three places: the twenty bytes of the root
+  key, the one character of the synonym that names them apart, and the
+  byte three from the end — `0x82` for the applied one, `0x81` for the
+  other. Counted structurally that byte is the second-to-last tagged
+  flag, which is also where the demo base writes `0x82` for its one
+  applied extension even though its record carries a version string and
+  the reference base's do not. Both blobs are fixtures, and the test
+  asserts the difference between them is that flag.
+
+  A flag that is neither value, or a record with no flags, reads as
+  applied: an unfamiliar platform must not silently drop every
+  extension.
 
 `_ExtName` stays the name. `_ExtensionUsePurpose` and `_ExtensionScope`
 are not part of this change: nothing asked for them, and a field nobody

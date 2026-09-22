@@ -18,6 +18,7 @@ use crate::db::mssql::MsSqlSession;
 use crate::db::postgres::PostgresSession;
 use crate::error::DbError;
 use crate::limits::Limits;
+use crate::pipeline::AcquiredConfiguration;
 use crate::progress::MetadataProgress;
 
 #[cfg(test)]
@@ -165,6 +166,32 @@ impl DatabaseSession {
         match self {
             Self::Postgres(session) => session.metadata(progress).await,
             Self::MsSql(session) => session.metadata(progress).await,
+        }
+    }
+
+    /// Reads the whole configuration of the base in one read-only
+    /// transaction: the snapshot and report [`DatabaseSession::metadata`]
+    /// answers, every resource of the `Config` table, and the resources of
+    /// each configuration extension.
+    ///
+    /// The resources answered are the very resources the metadata was
+    /// resolved from, so a consumer never has to read `Config` again
+    /// against a base that may have changed in between. The whole table
+    /// is held in memory; a caller that only wants names reads with
+    /// [`DatabaseSession::metadata`].
+    ///
+    /// # Errors
+    ///
+    /// Returns what the server reported or what decoding reported. Any
+    /// failure rolls the read-only transaction back and answers the
+    /// error; no partial configuration is ever answered.
+    pub async fn configuration(
+        &mut self,
+        progress: &mut dyn MetadataProgress,
+    ) -> Result<AcquiredConfiguration, DbError> {
+        match self {
+            Self::Postgres(session) => session.configuration(progress).await,
+            Self::MsSql(session) => session.configuration(progress).await,
         }
     }
 

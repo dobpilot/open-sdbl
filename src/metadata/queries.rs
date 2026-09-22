@@ -16,6 +16,43 @@ fn role_rights_names(roles: &[Guid], opening_quote: &str) -> String {
         .join(", ")
 }
 
+/// Whether a `Config` resource name is one metadata resolution decodes.
+///
+/// The acquisition statements of both providers select a bare GUID or a
+/// GUID followed by `.1c`, `.9` or `.7` — the descriptors and the
+/// predefined values. A read of the whole table has no such `WHERE`, so
+/// this is the same rule stated once for the decoder to apply.
+///
+/// ```
+/// use open_sdbl::metadata::is_config_metadata_resource;
+///
+/// assert!(is_config_metadata_resource("b8bac76b-c91b-4d78-8a70-ffa39f8de694"));
+/// assert!(is_config_metadata_resource("b8bac76b-c91b-4d78-8a70-ffa39f8de694.1c"));
+/// assert!(!is_config_metadata_resource("DBNames"));
+/// ```
+#[must_use]
+pub fn is_config_metadata_resource(name: &str) -> bool {
+    let stem = [".1c", ".9", ".7"]
+        .iter()
+        .find_map(|suffix| name.strip_suffix(suffix))
+        .unwrap_or(name);
+    is_guid_shaped(stem)
+}
+
+/// Whether the text is `8-4-4-4-12` hexadecimal digits separated by dashes.
+fn is_guid_shaped(text: &str) -> bool {
+    let mut groups = text.split('-');
+    for length in [8_usize, 4, 4, 4, 12] {
+        let Some(group) = groups.next() else {
+            return false;
+        };
+        if group.len() != length || !group.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+            return false;
+        }
+    }
+    groups.next().is_none()
+}
+
 /// Physical layout of the 1C service tables, detected from the database
 /// catalog before any metadata statement runs.
 ///
@@ -163,6 +200,25 @@ impl PostgresMetadataQueries {
     /// any other row, so a change in any part changes the sum.
     pub const CONFIG_FINGERPRINT: &'static str = "SELECT count(*), COALESCE(sum(octet_length(binarydata)), 0), COALESCE(sum(('x' || substr(md5(binarydata), 1, 15))::bit(60)::bigint), 0) FROM config WHERE rtrim(filename::text) ~ '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}(\\.1c|\\.9|\\.7)?$'";
 
+    /// Reads every part of every resource of `config` as `(name, part, data)`
+    /// rows ordered by name and part, with no name filter at all.
+    ///
+    /// [`Self::CONFIG`] reads what metadata resolution decodes; this reads
+    /// what the table holds, so that one acquisition can answer the whole
+    /// configuration.
+    pub const CONFIG_ALL: &'static str =
+        "SELECT rtrim(filename::text), partno, binarydata FROM config ORDER BY filename, partno";
+
+    /// Reads every single-row resource of a `config` without `partno` as
+    /// `(name, part, data)` rows with part zero.
+    pub const CONFIG_ALL_LEGACY: &'static str =
+        "SELECT rtrim(filename::text), 0::int, binarydata FROM config ORDER BY filename";
+
+    /// Counts the distinct resources and the compressed bytes of every part
+    /// [`Self::CONFIG_ALL`] or [`Self::CONFIG_ALL_LEGACY`] reads.
+    pub const CONFIG_ALL_TOTALS: &'static str =
+        "SELECT count(DISTINCT filename), COALESCE(sum(octet_length(binarydata)), 0) FROM config";
+
     /// Reads every part of the opaque configuration-extension resources as
     /// `(name, part, data)` rows ordered by name and part.
     ///
@@ -179,10 +235,10 @@ impl PostgresMetadataQueries {
     /// Whether the base carries `_ExtensionsInfo`: `1` or `0`.
     pub const EXTENSIONS_PROBE: &'static str = "SELECT CASE WHEN EXISTS (SELECT 1 FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = 'public' AND c.relname = '_extensionsinfo' AND c.relkind IN ('r','p')) THEN 1 ELSE 0 END";
 
-    /// Reads the configuration extensions: the name of each and the
-    /// record carrying the key of its root resource, in extension order.
-    pub const EXTENSIONS: &'static str =
-        "SELECT _extname::text, _extensionzippedinfo FROM _extensionsinfo ORDER BY _extensionorder";
+    /// Reads the configuration extensions in the order the platform
+    /// applies them: the reference identifying each, that order, the name,
+    /// and the record carrying the key of the root resource.
+    pub const EXTENSIONS: &'static str = "SELECT _idrref, _extensionorder::int, _extname::text, _extensionzippedinfo FROM _extensionsinfo ORDER BY _extensionorder";
 
     /// Reads the parts of one resource of the extension store, ordered.
     /// The key is written as hexadecimal, so the text carries no
@@ -247,6 +303,16 @@ impl PostgresMetadataQueries {
             Self::CONFIG
         } else {
             Self::CONFIG_LEGACY
+        }
+    }
+
+    /// Selects the whole-table Config statement for a detected layout.
+    #[must_use]
+    pub const fn config_all(layout: &StorageLayout) -> &'static str {
+        if layout.config_parts {
+            Self::CONFIG_ALL
+        } else {
+            Self::CONFIG_ALL_LEGACY
         }
     }
 
@@ -318,7 +384,7 @@ impl PostgresMetadataQueries {
 
     /// Returns every acquisition statement, both layout variants included.
     #[must_use]
-    pub const fn all() -> [&'static str; 15] {
+    pub const fn all() -> [&'static str; 18] {
         [
             Self::VERIFY_TRANSACTION,
             Self::SERVER_VERSION,
@@ -329,6 +395,9 @@ impl PostgresMetadataQueries {
             Self::CONFIG_FINGERPRINT,
             Self::CONFIG,
             Self::CONFIG_LEGACY,
+            Self::CONFIG_ALL,
+            Self::CONFIG_ALL_LEGACY,
+            Self::CONFIG_ALL_TOTALS,
             Self::EXTENSION_RESOURCES,
             Self::EXTENSION_RESOURCES_LEGACY,
             Self::EXTENSION_RESTRUCTURE,
@@ -406,6 +475,22 @@ impl MsSqlMetadataQueries {
     /// any other row, so a change in any part changes the sum.
     pub const CONFIG_FINGERPRINT: &'static str = "SELECT COUNT_BIG(*), COALESCE(SUM(CONVERT(bigint, DATALENGTH([BinaryData]))), CONVERT(bigint, 0)), COALESCE(SUM(CONVERT(numeric(38, 0), CONVERT(bigint, CONVERT(binary(8), HASHBYTES(N'MD5', [BinaryData]))))), CONVERT(numeric(38, 0), 0)) FROM [dbo].[Config] WHERE ([FileName] LIKE N'[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]-[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]-[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]-[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]-[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]' OR [FileName] LIKE N'[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]-[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]-[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]-[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]-[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f].1c' OR [FileName] LIKE N'[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]-[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]-[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]-[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]-[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f].9' OR [FileName] LIKE N'[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]-[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]-[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]-[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]-[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f].7')";
 
+    /// Reads every part of every resource of `Config` as `(name, part, data)`
+    /// rows ordered by name and part, with no name filter at all.
+    ///
+    /// [`Self::CONFIG`] reads what metadata resolution decodes; this reads
+    /// what the table holds, so that one acquisition can answer the whole
+    /// configuration.
+    pub const CONFIG_ALL: &'static str = "SELECT CONVERT(nvarchar(128), [FileName]), [PartNo], [BinaryData] FROM [dbo].[Config] ORDER BY [FileName], [PartNo]";
+
+    /// Reads every single-row resource of a `Config` without `PartNo` as
+    /// `(name, part, data)` rows with part zero.
+    pub const CONFIG_ALL_LEGACY: &'static str = "SELECT CONVERT(nvarchar(128), [FileName]), CONVERT(int, 0), [BinaryData] FROM [dbo].[Config] ORDER BY [FileName]";
+
+    /// Counts the distinct resources and the compressed bytes of every part
+    /// [`Self::CONFIG_ALL`] or [`Self::CONFIG_ALL_LEGACY`] reads.
+    pub const CONFIG_ALL_TOTALS: &'static str = "SELECT COUNT_BIG(DISTINCT [FileName]), COALESCE(SUM(CONVERT(bigint, DATALENGTH([BinaryData]))), CONVERT(bigint, 0)) FROM [dbo].[Config]";
+
     /// Reads every part of the opaque configuration-extension resources as
     /// `(name, part, data)` rows ordered by name and part.
     ///
@@ -417,9 +502,10 @@ impl MsSqlMetadataQueries {
     pub const EXTENSIONS_PROBE: &'static str =
         "SELECT CASE WHEN OBJECT_ID(N'dbo._ExtensionsInfo', N'U') IS NULL THEN 0 ELSE 1 END";
 
-    /// Reads the configuration extensions: the name of each and the
-    /// record carrying the key of its root resource, in extension order.
-    pub const EXTENSIONS: &'static str = "SELECT CONVERT(nvarchar(255), [_ExtName]), [_ExtensionZippedInfo] FROM [dbo].[_ExtensionsInfo] ORDER BY [_ExtensionOrder]";
+    /// Reads the configuration extensions in the order the platform
+    /// applies them: the reference identifying each, that order, the name,
+    /// and the record carrying the key of the root resource.
+    pub const EXTENSIONS: &'static str = "SELECT [_IDRRef], CONVERT(int, [_ExtensionOrder]), CONVERT(nvarchar(255), [_ExtName]), [_ExtensionZippedInfo] FROM [dbo].[_ExtensionsInfo] ORDER BY [_ExtensionOrder]";
 
     /// Reads the parts of one resource of the extension store, ordered.
     #[must_use]
@@ -469,6 +555,16 @@ impl MsSqlMetadataQueries {
             Self::CONFIG
         } else {
             Self::CONFIG_LEGACY
+        }
+    }
+
+    /// Selects the whole-table Config statement for a detected layout.
+    #[must_use]
+    pub const fn config_all(layout: &StorageLayout) -> &'static str {
+        if layout.config_parts {
+            Self::CONFIG_ALL
+        } else {
+            Self::CONFIG_ALL_LEGACY
         }
     }
 
@@ -540,7 +636,7 @@ impl MsSqlMetadataQueries {
 
     /// Returns every acquisition statement, both layout variants included.
     #[must_use]
-    pub const fn all() -> [&'static str; 15] {
+    pub const fn all() -> [&'static str; 18] {
         [
             Self::VERIFY_DATABASE,
             Self::PRODUCT_VERSION,
@@ -552,6 +648,9 @@ impl MsSqlMetadataQueries {
             Self::CONFIG_FINGERPRINT,
             Self::CONFIG,
             Self::CONFIG_LEGACY,
+            Self::CONFIG_ALL,
+            Self::CONFIG_ALL_LEGACY,
+            Self::CONFIG_ALL_TOTALS,
             Self::EXTENSION_RESOURCES,
             Self::EXTENSION_RESOURCES_LEGACY,
             Self::EXTENSION_RESTRUCTURE,
@@ -563,7 +662,9 @@ impl MsSqlMetadataQueries {
 
 #[cfg(test)]
 mod tests {
-    use super::{MsSqlMetadataQueries, PostgresMetadataQueries, StorageLayout};
+    use super::{
+        MsSqlMetadataQueries, PostgresMetadataQueries, StorageLayout, is_config_metadata_resource,
+    };
 
     #[test]
     fn every_acquisition_query_is_select_only() {
@@ -621,15 +722,105 @@ mod tests {
     }
 
     #[test]
+    fn the_resource_predicate_matches_what_the_statements_select() {
+        let guid = "b8bac76b-c91b-4d78-8a70-ffa39f8de694";
+        for name in [
+            guid.to_owned(),
+            format!("{guid}.1c"),
+            format!("{guid}.9"),
+            format!("{guid}.7"),
+            guid.to_uppercase(),
+        ] {
+            assert!(is_config_metadata_resource(&name), "{name}");
+        }
+        for name in [
+            "DBNames",
+            "commonpicture.bin",
+            "b8bac76b-c91b-4d78-8a70-ffa39f8de694.0",
+            "b8bac76b-c91b-4d78-8a70-ffa39f8de694.1",
+            "b8bac76b-c91b-4d78-8a70-ffa39f8de69",
+            "b8bac76bc91b4d788a70ffa39f8de694",
+            "zzzzzzzz-c91b-4d78-8a70-ffa39f8de694",
+            "",
+        ] {
+            assert!(!is_config_metadata_resource(name), "{name}");
+        }
+    }
+
+    #[test]
+    fn whole_table_statements_read_the_table_without_a_filter() {
+        for query in [
+            PostgresMetadataQueries::CONFIG_ALL,
+            PostgresMetadataQueries::CONFIG_ALL_LEGACY,
+            PostgresMetadataQueries::CONFIG_ALL_TOTALS,
+            MsSqlMetadataQueries::CONFIG_ALL,
+            MsSqlMetadataQueries::CONFIG_ALL_LEGACY,
+            MsSqlMetadataQueries::CONFIG_ALL_TOTALS,
+        ] {
+            let upper = query.to_ascii_uppercase();
+            assert!(upper.starts_with("SELECT "), "{query}");
+            assert!(!upper.contains("WHERE"), "{query}");
+            assert!(!upper.contains("LIKE"), "{query}");
+        }
+        assert!(PostgresMetadataQueries::all().contains(&PostgresMetadataQueries::CONFIG_ALL));
+        assert!(
+            PostgresMetadataQueries::all().contains(&PostgresMetadataQueries::CONFIG_ALL_LEGACY)
+        );
+        assert!(
+            PostgresMetadataQueries::all().contains(&PostgresMetadataQueries::CONFIG_ALL_TOTALS)
+        );
+        assert!(MsSqlMetadataQueries::all().contains(&MsSqlMetadataQueries::CONFIG_ALL));
+        assert!(MsSqlMetadataQueries::all().contains(&MsSqlMetadataQueries::CONFIG_ALL_LEGACY));
+        assert!(MsSqlMetadataQueries::all().contains(&MsSqlMetadataQueries::CONFIG_ALL_TOTALS));
+
+        assert_eq!(
+            PostgresMetadataQueries::config_all(&StorageLayout::MODERN),
+            PostgresMetadataQueries::CONFIG_ALL
+        );
+        assert_eq!(
+            PostgresMetadataQueries::config_all(&StorageLayout::LEGACY),
+            PostgresMetadataQueries::CONFIG_ALL_LEGACY
+        );
+        assert_eq!(
+            MsSqlMetadataQueries::config_all(&StorageLayout::MODERN),
+            MsSqlMetadataQueries::CONFIG_ALL
+        );
+        assert_eq!(
+            MsSqlMetadataQueries::config_all(&StorageLayout::LEGACY),
+            MsSqlMetadataQueries::CONFIG_ALL_LEGACY
+        );
+    }
+
+    #[test]
+    fn the_extensions_statement_answers_identity_and_order() {
+        for query in [
+            PostgresMetadataQueries::EXTENSIONS,
+            MsSqlMetadataQueries::EXTENSIONS,
+        ] {
+            let upper = query.to_ascii_uppercase();
+            assert!(upper.starts_with("SELECT "), "{query}");
+            assert!(upper.contains("_IDRREF"), "{query}");
+            assert!(upper.contains("_EXTNAME"), "{query}");
+            assert!(upper.contains("_EXTENSIONZIPPEDINFO"), "{query}");
+            assert!(upper.contains("ORDER BY"), "{query}");
+            assert!(upper.contains("_EXTENSIONORDER"), "{query}");
+        }
+    }
+
+    #[test]
     fn legacy_variants_never_mention_part_numbers() {
         for query in [
             PostgresMetadataQueries::DB_NAMES_LEGACY,
             PostgresMetadataQueries::CONFIG_LEGACY,
+            PostgresMetadataQueries::CONFIG_ALL_LEGACY,
+            PostgresMetadataQueries::CONFIG_ALL_TOTALS,
             PostgresMetadataQueries::CONFIG_TOTALS,
             PostgresMetadataQueries::CONFIG_FINGERPRINT,
             PostgresMetadataQueries::EXTENSION_RESOURCES_LEGACY,
             MsSqlMetadataQueries::DB_NAMES_LEGACY,
             MsSqlMetadataQueries::CONFIG_LEGACY,
+            MsSqlMetadataQueries::CONFIG_ALL_LEGACY,
+            MsSqlMetadataQueries::CONFIG_ALL_TOTALS,
             MsSqlMetadataQueries::CONFIG_TOTALS,
             MsSqlMetadataQueries::CONFIG_FINGERPRINT,
             MsSqlMetadataQueries::EXTENSION_RESOURCES_LEGACY,
@@ -639,8 +830,10 @@ mod tests {
         for query in [
             PostgresMetadataQueries::DB_NAMES,
             PostgresMetadataQueries::CONFIG,
+            PostgresMetadataQueries::CONFIG_ALL,
             MsSqlMetadataQueries::DB_NAMES,
             MsSqlMetadataQueries::CONFIG,
+            MsSqlMetadataQueries::CONFIG_ALL,
         ] {
             assert!(query.to_ascii_uppercase().contains("ORDER BY"), "{query}");
         }

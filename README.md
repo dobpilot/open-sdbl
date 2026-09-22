@@ -331,6 +331,38 @@ fn build_metadata(
 [`db/mssql`](crates/open-sdbl-db/src/db/mssql), где ведение сессии, чтение
 метаданных и декодирование значений разнесены по отдельным файлам.
 
+Если приложению нужны не только имена, но и сами ресурсы конфигурации,
+`open-sdbl-db` читает их одним согласованным чтением:
+
+```rust
+use open_sdbl_db::{DatabaseSession, Limits, NoProgress};
+
+let mut session = DatabaseSession::connect(&connection, &credentials, Limits::default()).await?;
+let configuration = session.configuration(&mut NoProgress).await?;
+
+// Снимок и отчёт — те же, что вернул бы `metadata()`.
+let snapshot = &configuration.metadata;
+// Каждый ресурс таблицы `Config`, собранный из всех `PartNo`, байтами как
+// их хранит база: сырой DEFLATE, без распаковки и перекодирования.
+for resource in &configuration.config_resources {
+    let _ = (&resource.file_name, &resource.compressed);
+}
+// Расширения в порядке применения платформой, каждое со своими ресурсами.
+for extension in configuration.extensions.iter().filter(|extension| extension.active) {
+    let _ = (&extension.identity, &extension.name, extension.order, &extension.resources);
+}
+```
+
+Всё это читается в одной read-only транзакции, которую открывает обычное
+получение метаданных: снимок, отчёт, `StorageLayout`, полный `Config` и
+хранилище расширений описывают одно и то же состояние базы, а перечитывать
+`Config` после `metadata()` — значит получить два разных состояния. Результат
+публикуется только после успешного завершения всего чтения; любая ошибка
+откатывает транзакцию и не отдаёт частичный результат. Ресурсы расширений
+группируются по корневому индексу каждого расширения, поэтому одинаковые имена
+в двух расширениях не сливаются. Цена — весь `Config` в памяти: тем, кому нужны
+только имена, по-прежнему подходит `metadata()`.
+
 `resolve_metadata*` возвращает `ResolvedMetadata`: поле `snapshot` используется
 для компиляции, а `report` содержит детерминированный список
 `ResolutionFinding`. Отчёт нужно проверять после каждого обновления метаданных:

@@ -143,3 +143,49 @@ fn the_identifier_of_a_user_is_stored_in_the_physical_order() {
         .collect::<String>();
     assert_eq!(hex, "a0bc4fb9fc12f3c544c7c65c119bd10c");
 }
+
+/// One user with the four flags the test varies, over the `Data` of a
+/// user the fixture already decodes.
+fn user_with(
+    standard_authentication: bool,
+    os_name: &str,
+    show_in_list: bool,
+    administrative: bool,
+) -> InfoBaseUser {
+    let mut user = users().remove(0);
+    user.standard_authentication = standard_authentication;
+    user.os_name = os_name.to_owned();
+    user.show_in_list = show_in_list;
+    user.administrative = administrative;
+    user
+}
+
+#[test]
+fn answers_whether_a_user_can_authenticate() {
+    assert!(user_with(true, "", false, false).can_authenticate());
+    assert!(user_with(false, "DOMAIN\\ivanov", false, false).can_authenticate());
+    assert!(user_with(true, "DOMAIN\\ivanov", false, false).can_authenticate());
+    assert!(!user_with(false, "", false, false).can_authenticate());
+    // A login that is only blanks is no way in either.
+    assert!(!user_with(false, "   ", false, false).can_authenticate());
+}
+
+#[test]
+fn the_login_flags_do_not_decide_whether_a_user_can_authenticate() {
+    for show_in_list in [false, true] {
+        for administrative in [false, true] {
+            assert!(user_with(true, "", show_in_list, administrative).can_authenticate());
+            assert!(
+                user_with(false, "DOMAIN\\ivanov", show_in_list, administrative).can_authenticate()
+            );
+            assert!(
+                !user_with(false, "", show_in_list, administrative).can_authenticate(),
+                "AdmRole is a right, not a way in"
+            );
+        }
+    }
+    // Neither do the roles the user holds.
+    let mut without_roles = user_with(false, "", true, true);
+    without_roles.data.roles.clear();
+    assert!(!without_roles.can_authenticate());
+}

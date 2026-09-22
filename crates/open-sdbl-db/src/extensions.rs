@@ -65,10 +65,11 @@ pub async fn read_extension_index(
     if !layout.extension_store || !answers_yes(session, probe).await? {
         return Ok(ExtensionIndex::default());
     }
-    let rows = session.query(extensions, 2).await?;
+    // The statement answers identity, order, name and the info record.
+    let rows = session.query(extensions, 4).await?;
     let mut resources = Vec::new();
     for row in &rows {
-        let Some(Cell::Bytes(info)) = row.get(1) else {
+        let Some(Cell::Bytes(info)) = row.get(3) else {
             continue;
         };
         let Some(root) = extension_root_key(info) else {
@@ -77,7 +78,7 @@ pub async fn read_extension_index(
         let Some(bytes) = read_resource(session, layout, &root).await? else {
             continue;
         };
-        let name = match row.first() {
+        let name = match row.get(2) {
             Some(Cell::Text(name)) => name.trim().to_owned(),
             _ => root.as_hex(),
         };

@@ -20,7 +20,7 @@ use crate::limits::Limits;
 use crate::net::socks5::{connect_socks5, socks5_password};
 #[cfg(test)]
 use crate::pipeline::MetadataSource;
-use crate::pipeline::acquire_metadata;
+use crate::pipeline::{AcquiredConfiguration, acquire_configuration, acquire_metadata};
 use crate::progress::MetadataProgress;
 use crate::rows::{ReadEnd, drive_rows};
 use crate::session::query_timeout;
@@ -343,6 +343,18 @@ impl MsSqlSession {
             acquire_metadata(&mut MsSqlMetadataSource::new(self), progress).await?;
         self.layout = Some(layout);
         Ok((snapshot, report))
+    }
+
+    /// Reads the whole configuration of the base in one read-only
+    /// transaction: the metadata [`MsSqlSession::metadata`] answers,
+    /// every resource of `Config`, and the resources of each extension.
+    pub async fn configuration(
+        &mut self,
+        progress: &mut dyn MetadataProgress,
+    ) -> Result<AcquiredConfiguration, DbError> {
+        let acquired = acquire_configuration(&mut MsSqlMetadataSource::new(self), progress).await?;
+        self.layout = Some(acquired.layout);
+        Ok(acquired)
     }
 
     /// The storage layout of the base, known after a metadata read.

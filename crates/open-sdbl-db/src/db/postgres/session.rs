@@ -29,7 +29,7 @@ use crate::credentials::Credentials;
 use crate::error::DbError;
 use crate::limits::Limits;
 use crate::net::socks5::{connect_socks5, socks5_password};
-use crate::pipeline::acquire_metadata;
+use crate::pipeline::{AcquiredConfiguration, acquire_configuration, acquire_metadata};
 use crate::progress::MetadataProgress;
 use crate::rows::drive_rows;
 use crate::session::query_timeout;
@@ -318,6 +318,33 @@ impl PostgresSession {
         .await?;
         self.layout = Some(layout);
         Ok((snapshot, report))
+    }
+
+    /// Reads the whole configuration of the base in one read-only
+    /// transaction: the metadata [`PostgresSession::metadata`] answers,
+    /// every resource of `Config`, and the resources of each extension.
+    pub async fn configuration(
+        &mut self,
+        progress: &mut dyn MetadataProgress,
+    ) -> Result<AcquiredConfiguration, DbError> {
+        let limits = self.limits;
+        let transaction = query_timeout(limits, "PostgreSQL transaction start", async {
+            self.client
+                .build_transaction()
+                .isolation_level(IsolationLevel::ReadCommitted)
+                .read_only(true)
+                .start()
+                .await
+                .map_err(DbError::from)
+        })
+        .await?;
+        let acquired = acquire_configuration(
+            &mut PostgresMetadataSource::new(transaction, limits),
+            progress,
+        )
+        .await?;
+        self.layout = Some(acquired.layout);
+        Ok(acquired)
     }
 
     /// The storage layout of the base, known after a metadata read.
