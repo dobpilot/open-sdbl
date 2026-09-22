@@ -39,6 +39,31 @@ and the rollback stay where they are: the result is returned only after
 over `metadata` (the whole-table read replaces the filtered one, plus
 `_ExtensionsInfo`), and `metadata` costs exactly what it costs today.
 
+### 1a. One transaction is not one snapshot
+
+Being inside one transaction is not the same as seeing one state of the
+base, and an earlier draft of this design claimed it was. The
+transaction is `READ COMMITTED` on both providers: PostgreSQL takes a
+fresh snapshot per statement, and SQL Server holds no read lock past the
+statement. A configuration update landing mid-acquisition can therefore
+have `DBNames` answered from before it and `Config` from after.
+
+Raising isolation would fix it and is not free. PostgreSQL
+`REPEATABLE READ` would be, but SQL Server has no MVCC level available
+without `ALLOW_SNAPSHOT_ISOLATION`, a database-level setting this library
+must not require of an operator, and the lock-taking levels would have a
+read-only tool block writers on a live base. The crate's premise is that
+it never interferes.
+
+So the contract is narrowed instead of the isolation raised. What the
+operation removes is the *second* read — the one a consumer would make
+after the session closed, against a base it can no longer reason about.
+It does not make the reads atomic, and the rustdoc, the README and the
+spec say exactly that. A consumer that needs to know whether the
+configuration moved has the fingerprint statement, which costs one round
+trip and transfers no content; pointing at it is documentation, not a
+mechanism this change adds.
+
 ### 2. The filter lives once, in the core
 
 The filtered statements encode "bare GUID, or GUID with `.1c`, `.9`,
@@ -60,16 +85,29 @@ it is assembled, the ones the predicate rejects included, so the totals
 and the advances line up; the decode that follows is silent. The filtered
 read keeps reporting at decode time, as it does today.
 
-### 3. Resources are returned as stored
+### 3. Resources are returned as stored, shared, and bounded
 
-`ConfigResource::compressed` is documented as, and remains, the bytes the
-row carries — raw DEFLATE as the platform wrote them, not inflated, not
-re-encoded. The consumer inflates what it needs with
-`open_sdbl::metadata::inflate_raw_deflate`. Decoding a resource into
-`ConfigResource` never copies it twice: the assembled parts are moved
-into the returned vector, and the metadata decoder is handed per-batch
-clones of the resources it actually decodes, which are dropped as each
-batch finishes.
+`ConfigResource::compressed` carries the bytes the row holds — raw
+DEFLATE as the platform wrote them, not inflated, not re-encoded. The
+consumer inflates what it needs with
+`open_sdbl::metadata::inflate_raw_deflate`.
+
+The field is `Arc<[u8]>`, not `Vec<u8>`. The whole table is retained and
+the same bytes are then handed to the decoder batch by batch and, for a
+resource two extensions both name, to each extension; copying per holder
+would multiply a configuration that is already the largest thing in
+memory. Sharing makes every one of those a reference.
+
+Retention is bounded, because it is the one thing in this crate that
+grows with the base rather than with the query. `Limits` gains
+`config_resource_limit` and `config_retained_byte_limit`. The totals
+statement is checked against them before a resource row is read — the
+cheap refusal — and `collect_bounded_resources` checks again against what
+actually arrives, because the totals are a statement of their own and the
+table can grow between the two. Either way the answer is a typed
+`DbError`, not an exhausted process. The decoding limits
+(`ConfigDecodeLimits`) are unchanged and orthogonal: they bound what is
+*inflated* at once, these bound what is *kept*.
 
 ### 4. Extensions are grouped, never flattened
 
@@ -119,21 +157,45 @@ providers only return rows.
   *n* code units (the synonym), `0x9a` an ASCII string of *n* bytes (the
   version), and single tagged bytes carry the flags.
 
-  Which flag carries the activity was measured, not guessed. The
+  Which byte carries the activity was measured, not guessed. The
   PostgreSQL reference base carries two extensions alike but for the
   platform applying one and not the other; their records are 177 bytes
   each and differ in exactly three places: the twenty bytes of the root
   key, the one character of the synonym that names them apart, and the
   byte three from the end — `0x82` for the applied one, `0x81` for the
-  other. Counted structurally that byte is the second-to-last tagged
-  flag, which is also where the demo base writes `0x82` for its one
-  applied extension even though its record carries a version string and
-  the reference base's do not. Both blobs are fixtures, and the test
-  asserts the difference between them is that flag.
+  other. The demo base writes the same two bytes in the same place for
+  its one applied extension, although its record carries a version string
+  and the reference base's do not. Both blobs are fixtures, and the test
+  asserts the difference between the two is that byte alone.
 
-  A flag that is neither value, or a record with no flags, reads as
-  applied: an unfamiliar platform must not silently drop every
-  extension.
+  **How the flag is read matters as much as where it is.** An earlier
+  draft scanned the stream for bytes with the high bit set and took the
+  second-to-last as the flag. That is unsound: a counted field whose tag
+  this decoder does not know carries payload bytes indistinguishable from
+  tags, so `98 02 81 82` — an unknown field holding `81` — answered
+  "inactive" for a record nobody understood. A consumer acting on that
+  skips code the base runs.
+
+  So the walk is structural and self-checking. It knows two counted tags
+  (`0x97`, `0x9a`) and the standalone tags measured so far
+  (`0x81`, `0x82`, `0xa1`, `0xa2`); anything else stops it, because an
+  unknown tag has an unknown length and stepping over it would resume
+  inside a payload. The activity is answered only when three things hold
+  at once: the walk reached the record's last byte, that byte is the
+  terminator every measured record ends with, and the byte three from the
+  end was one the walk itself reached *as a standalone tag* rather than
+  as payload. Anything else answers unknown — including a record that
+  ends early, one with an unfamiliar tag, and one whose payload happens
+  to sit where the flag sits.
+
+  The type is therefore `Option<bool>`, in the core record and in the
+  acquired extension alike. A consumer applying only the active
+  extensions has to decide what an unknown one means; what it must not be
+  handed is a `false` derived from bytes nobody decoded.
+
+  `parse_extension_info` answers `None` only when the record cannot carry
+  the marker and the root key. Everything past that is best-effort: the
+  key, and whatever was decoded before the walk stopped.
 
 `_ExtName` stays the name. `_ExtensionUsePurpose` and `_ExtensionScope`
 are not part of this change: nothing asked for them, and a field nobody

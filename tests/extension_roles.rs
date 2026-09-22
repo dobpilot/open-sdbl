@@ -47,8 +47,7 @@ fn reads_the_record_of_an_extension() {
     assert_eq!(record.version.as_deref(), Some("1.0.1.14"));
     let synonym = record.synonym.as_deref().unwrap();
     assert!(synonym.contains("Расширение"), "{synonym}");
-    assert!(record.active, "the demo extension is applied");
-    assert_eq!(record.flags, [0xa1, 0x81, 0x81, 0x82, 0x81]);
+    assert_eq!(record.active, Some(true), "the demo extension is applied");
 
     // A record shorter than the marker and the key answers none; one that
     // stops right after the key still answers the key.
@@ -56,7 +55,37 @@ fn reads_the_record_of_an_extension() {
     let bare = parse_extension_info(&info[..24]).unwrap();
     assert_eq!(bare.root_key.as_hex(), ROOT);
     assert!(bare.synonym.is_none() && bare.version.is_none());
-    assert!(bare.active, "a record with no flag reads as applied");
+    assert_eq!(bare.active, None, "no record, no flag, no guess");
+}
+
+/// A record the decoder cannot follow must never yield an activity: a
+/// byte it did not reach as a tag is payload, and reading payload as the
+/// flag would report an extension the base applies as inactive.
+#[test]
+fn never_guesses_the_activity_of_a_record_it_could_not_follow() {
+    let record = |tail: &[u8]| {
+        let mut blob = vec![0x43, 0xc2, 0x9a, 0x14];
+        blob.extend_from_slice(&[0x11_u8; 20]);
+        blob.extend_from_slice(tail);
+        parse_extension_info(&blob).expect("the key is always answered")
+    };
+
+    // A tag of unknown length: its payload must not be mistaken for the
+    // flag, with or without the terminator the real records end in.
+    assert_eq!(record(&[0x98, 0x02, 0x81, 0x82]).active, None);
+    assert_eq!(record(&[0x98, 0x02, 0x81, 0x82, 0x20]).active, None);
+    // A byte string whose payload happens to sit where the flag sits.
+    assert_eq!(record(&[0x9a, 0x03, 0xaa, 0x81, 0xcc, 0x20]).active, None);
+    // A field the decoder knows but that ends early: the key survives.
+    let truncated = record(&[0x97]);
+    assert_eq!(truncated.active, None);
+    assert_eq!(truncated.root_key.as_hex(), "11".repeat(20));
+    assert_eq!(record(&[0x97, 0x40, 0x00]).active, None);
+    // A record the decoder does follow to its terminator answers both.
+    assert_eq!(record(&[0xa2, 0x81, 0x82, 0x82, 0x20]).active, Some(true));
+    assert_eq!(record(&[0xa2, 0x81, 0x81, 0x82, 0x20]).active, Some(false));
+    // An unmeasured value where the flag sits is no answer either.
+    assert_eq!(record(&[0xa2, 0x81, 0xa1, 0x82, 0x20]).active, None);
 }
 
 /// The two extensions of the PostgreSQL reference base, one the platform
@@ -76,15 +105,15 @@ fn reads_whether_the_base_applies_an_extension() {
         .map(|(offset, _)| offset)
         .collect::<Vec<_>>();
     // The root key, the one character of the synonym naming them apart,
-    // and the flag: the second-to-last tagged byte of the record.
+    // and the flag: three bytes from the end of the record.
     assert_eq!(differing.last(), Some(&(applied.len() - 3)));
     assert_eq!(applied[applied.len() - 3], 0x82);
     assert_eq!(not_applied[not_applied.len() - 3], 0x81);
 
     let applied = parse_extension_info(&applied).unwrap();
     let not_applied = parse_extension_info(&not_applied).unwrap();
-    assert!(applied.active);
-    assert!(!not_applied.active);
+    assert_eq!(applied.active, Some(true));
+    assert_eq!(not_applied.active, Some(false));
     assert_ne!(applied.root_key.as_hex(), not_applied.root_key.as_hex());
     // Neither carries a version, and both name themselves in the synonym.
     assert!(applied.version.is_none() && not_applied.version.is_none());
@@ -96,8 +125,12 @@ fn reads_whether_the_base_applies_an_extension() {
             .unwrap()
             .contains("асширение2")
     );
-    assert_eq!(applied.flags, [0xa2, 0x82, 0x81, 0x81, 0x82, 0x82]);
-    assert_eq!(not_applied.flags, [0xa2, 0x82, 0x81, 0x81, 0x81, 0x82]);
+    // Flipping the one byte turns one record into the other's answer,
+    // which is what makes it the flag rather than a coincidence.
+    let mut flipped = fixture("extension_info_applied.bin");
+    let flag = flipped.len() - 3;
+    flipped[flag] = 0x81;
+    assert_eq!(parse_extension_info(&flipped).unwrap().active, Some(false));
 }
 
 #[test]

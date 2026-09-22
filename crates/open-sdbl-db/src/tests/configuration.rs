@@ -16,7 +16,8 @@ use open_sdbl::metadata::{
 use super::{
     AcquiredConfiguration, ConfigDecodeLimits, ConfigMetadata, ConfigResource, ExtensionCatalogRow,
     MetadataSource, ResourcePart, acquire_configuration, acquire_metadata, assemble_parts,
-    config_pipeline_depth, decode_config_stream, decode_retained_config,
+    check_retention_totals, collect_bounded_resources, config_pipeline_depth, decode_config_stream,
+    decode_retained_config,
 };
 use crate::error::DbError;
 use crate::hex_test_support::hex;
@@ -59,6 +60,7 @@ impl MetadataProgress for CountingProgress {
 /// A `MetadataSource` answering rows a test wrote, so that the whole
 /// acquisition runs without a database.
 struct FakeSource {
+    limits: Limits,
     config_rows: Vec<ResourcePart>,
     store_rows: Vec<ResourcePart>,
     extensions: Vec<ExtensionCatalogRow>,
@@ -71,6 +73,7 @@ struct FakeSource {
 impl FakeSource {
     fn new() -> Self {
         Self {
+            limits: Limits::default(),
             config_rows: config_rows(),
             store_rows: Vec::new(),
             extensions: Vec::new(),
@@ -139,20 +142,16 @@ impl MetadataSource for FakeSource {
         if let Some(failure) = &self.config_failure {
             return Err(DbError::Data(failure.clone()));
         }
-        progress.config_totals(
-            distinct_names(&self.config_rows),
-            self.config_rows
-                .iter()
-                .map(|(_, _, data)| data.len() as u64)
-                .sum(),
-        );
-        let mut resources = std::pin::pin!(assemble_parts(self.rows()));
-        let mut assembled = Vec::new();
-        while let Some(resource) = futures_util::StreamExt::next(&mut resources).await {
-            let resource = resource?;
-            progress.advance_config(1, resource.compressed.len());
-            assembled.push(resource);
-        }
+        let resource_count = distinct_names(&self.config_rows);
+        let compressed_bytes = self
+            .config_rows
+            .iter()
+            .map(|(_, _, data)| data.len() as u64)
+            .sum();
+        check_retention_totals(self.limits, resource_count, compressed_bytes)?;
+        progress.config_totals(resource_count, compressed_bytes);
+        let assembled =
+            collect_bounded_resources(assemble_parts(self.rows()), self.limits, progress).await?;
         let metadata = decode_retained_config(
             &assembled,
             8,
@@ -407,7 +406,7 @@ async fn keeps_a_resource_the_metadata_filter_rejects() {
         .iter()
         .find(|resource| resource.file_name == UNFILTERED)
         .expect("the resource outside the filter is kept");
-    assert_eq!(kept.compressed, b"a picture, not a descriptor");
+    assert_eq!(&*kept.compressed, b"a picture, not a descriptor");
     assert!(!open_sdbl::metadata::is_config_metadata_resource(
         UNFILTERED
     ));
@@ -422,7 +421,7 @@ async fn assembles_a_split_resource_once() {
         .filter(|resource| resource.file_name == SPLIT)
         .collect::<Vec<_>>();
     assert_eq!(split.len(), 1, "one resource, not one per part");
-    assert_eq!(split[0].compressed, hex(DESCRIPTOR));
+    assert_eq!(&*split[0].compressed, hex(DESCRIPTOR).as_slice());
 }
 
 #[tokio::test]
@@ -473,6 +472,102 @@ async fn rolls_back_and_publishes_nothing_when_a_read_fails() {
 }
 
 #[tokio::test]
+async fn refuses_a_configuration_larger_than_the_ceiling_before_reading_it() {
+    // The totals alone are enough to refuse: no resource row is read.
+    let mut source = FakeSource::new();
+    source.limits.config_resource_limit = 1;
+    let error = acquire_configuration(&mut source, &mut NoProgress)
+        .await
+        .unwrap_err()
+        .to_string();
+    assert!(error.contains("Config resources"), "{error}");
+    assert!(error.contains("this read may hold"), "{error}");
+    assert!(source.rolled_back && !source.committed);
+
+    let mut source = FakeSource::new();
+    source.limits.config_retained_byte_limit = 8;
+    let error = acquire_configuration(&mut source, &mut NoProgress)
+        .await
+        .unwrap_err()
+        .to_string();
+    assert!(error.contains("compressed bytes"), "{error}");
+    assert!(source.rolled_back && !source.committed);
+}
+
+#[tokio::test]
+async fn refuses_a_table_that_outgrew_its_totals() {
+    // The totals are a statement of their own and can be stale, so the
+    // ceiling is checked again against what actually arrives.
+    let limits = Limits {
+        config_resource_limit: 2,
+        ..Limits::default()
+    };
+    let rows = config_rows();
+    let error = collect_bounded_resources(
+        assemble_parts(futures_util::stream::iter(rows.into_iter().map(Ok))),
+        limits,
+        &mut NoProgress,
+    )
+    .await
+    .unwrap_err()
+    .to_string();
+    assert!(
+        error.contains("more Config resources than the 2"),
+        "{error}"
+    );
+
+    let limits = Limits {
+        config_retained_byte_limit: 4,
+        ..Limits::default()
+    };
+    let error = collect_bounded_resources(
+        assemble_parts(futures_util::stream::iter(
+            config_rows().into_iter().map(Ok),
+        )),
+        limits,
+        &mut NoProgress,
+    )
+    .await
+    .unwrap_err()
+    .to_string();
+    assert!(
+        error.contains("more than the 4 compressed bytes"),
+        "{error}"
+    );
+
+    // Under a ceiling it fits, the same rows assemble as they always did.
+    let resources = collect_bounded_resources(
+        assemble_parts(futures_util::stream::iter(
+            config_rows().into_iter().map(Ok),
+        )),
+        Limits::default(),
+        &mut NoProgress,
+    )
+    .await
+    .unwrap();
+    assert_eq!(resources.len(), 3);
+}
+
+#[tokio::test]
+async fn answers_an_unknown_activity_rather_than_guessing_it() {
+    let mut source = FakeSource::new().with_extensions();
+    // A record the decoder cannot follow: the flag is not read out of it.
+    let root = source.extensions[0].info[4..24].to_vec();
+    let mut unreadable = vec![0x43, 0xc2, 0x9a, 0x14];
+    unreadable.extend_from_slice(&root);
+    unreadable.extend_from_slice(&[0x98, 0x02, 0x81, 0x82, 0x20]);
+    source.extensions[0].info = unreadable;
+
+    let acquired = acquire_configuration(&mut source, &mut NoProgress)
+        .await
+        .unwrap();
+    assert_eq!(acquired.extensions[0].active, None);
+    assert_eq!(acquired.extensions[1].active, Some(false));
+    // The resources are still answered: only the activity is unknown.
+    assert!(!acquired.extensions[0].resources.is_empty());
+}
+
+#[tokio::test]
 async fn keeps_two_extensions_apart() {
     let acquired = configuration(FakeSource::new().with_extensions())
         .await
@@ -518,8 +613,8 @@ async fn never_merges_resources_two_extensions_name_alike() {
     let beta = shared(&acquired.extensions[1]);
     assert_eq!(alpha.len(), 1);
     assert_eq!(beta.len(), 1);
-    assert_eq!(alpha[0], b"shared, as alpha wrote it");
-    assert_eq!(beta[0], b"shared, as beta wrote it");
+    assert_eq!(&*alpha[0], b"shared, as alpha wrote it");
+    assert_eq!(&*beta[0], b"shared, as beta wrote it");
 }
 
 #[tokio::test]
@@ -527,8 +622,8 @@ async fn keeps_the_activity_of_an_extension() {
     let acquired = configuration(FakeSource::new().with_extensions())
         .await
         .unwrap();
-    assert!(acquired.extensions[0].active);
-    assert!(!acquired.extensions[1].active);
+    assert_eq!(acquired.extensions[0].active, Some(true));
+    assert_eq!(acquired.extensions[1].active, Some(false));
     // An inactive extension is answered with its resources all the same:
     // skipping it is the consumer's decision, not the reader's.
     assert!(!acquired.extensions[1].resources.is_empty());

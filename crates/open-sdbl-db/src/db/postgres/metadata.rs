@@ -12,8 +12,9 @@ use crate::error::DbError;
 use crate::limits::Limits;
 use crate::pipeline::{
     ConfigDecodeLimits, ConfigMetadata, ConfigResource, ExtensionCatalogRow, MetadataSource,
-    assemble_parts, assemble_single_resource, config_pipeline_depth, decode_catalog_values,
-    decode_config_stream, decode_retained_config, run_metadata_blocking, unsigned_progress_total,
+    assemble_parts, assemble_single_resource, check_retention_totals, collect_bounded_resources,
+    config_pipeline_depth, decode_catalog_values, decode_config_stream, decode_retained_config,
+    run_metadata_blocking, unsigned_progress_total,
 };
 use crate::progress::{MetadataProgress, NoProgress};
 use crate::session::query_timeout;
@@ -152,10 +153,11 @@ impl MetadataSource for PostgresMetadataSource<'_> {
                 .map_err(DbError::from)
         })
         .await?;
-        progress.config_totals(
-            unsigned_progress_total(totals.try_get(0)?, "resource count")?,
-            unsigned_progress_total(totals.try_get(1)?, "compressed byte count")?,
-        );
+        let resource_count = unsigned_progress_total(totals.try_get(0)?, "resource count")?;
+        let compressed_bytes =
+            unsigned_progress_total(totals.try_get(1)?, "compressed byte count")?;
+        check_retention_totals(limits, resource_count, compressed_bytes)?;
+        progress.config_totals(resource_count, compressed_bytes);
 
         let parameters = std::iter::empty::<&(dyn ToSql + Sync)>();
         let rows = query_timeout(limits, "PostgreSQL whole Config query", async {
@@ -173,7 +175,7 @@ impl MetadataSource for PostgresMetadataSource<'_> {
                 row.try_get::<_, Vec<u8>>(2)?,
             ))
         });
-        let resources = collect_resources(assemble_parts(parts), progress).await?;
+        let resources = collect_bounded_resources(assemble_parts(parts), limits, progress).await?;
         let metadata = decode_retained_config(
             &resources,
             limits.config_decode_batch_size,
@@ -243,7 +245,7 @@ impl MetadataSource for PostgresMetadataSource<'_> {
                 row.try_get::<_, Vec<u8>>(2)?,
             ))
         });
-        collect_resources(assemble_parts(parts), &mut NoProgress).await
+        collect_bounded_resources(assemble_parts(parts), self.limits, &mut NoProgress).await
     }
 
     async fn read_extension_restructures(
@@ -315,21 +317,6 @@ impl MetadataSource for PostgresMetadataSource<'_> {
         }
         original
     }
-}
-
-/// Drains assembled resources into memory, reporting each as it lands.
-pub(super) async fn collect_resources(
-    resources: impl futures_util::Stream<Item = Result<ConfigResource, DbError>>,
-    progress: &mut dyn MetadataProgress,
-) -> Result<Vec<ConfigResource>, DbError> {
-    let mut resources = std::pin::pin!(resources);
-    let mut assembled = Vec::new();
-    while let Some(resource) = resources.next().await {
-        let resource = resource?;
-        progress.advance_config(1, resource.compressed.len());
-        assembled.push(resource);
-    }
-    Ok(assembled)
 }
 
 pub(super) async fn verify_transaction(

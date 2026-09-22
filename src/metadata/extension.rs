@@ -277,11 +277,11 @@ pub fn extension_root_key(info: &[u8]) -> Option<ContentKey> {
 ///
 /// After the four-byte marker and the twenty-byte root key the record is
 /// a tag-length-value stream: `0x97` introduces a UTF-16 string of *n*
-/// code units — the localized synonym — `0x9a` a string of *n* bytes —
-/// the version — and single tagged bytes carry the flags of the
-/// extension. The decoder is deliberately tolerant: it answers the root
-/// key even when the rest is written by a platform whose tags it does
-/// not know, because the key is what reading the extension needs.
+/// code units — the localized synonym — and `0x9a` a string of *n* bytes
+/// — the version. The decoder reads those two and stops at anything it
+/// does not know, because the format is only partly measured: the key is
+/// what reading an extension needs, and it is answered whatever follows
+/// it.
 #[non_exhaustive]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ExtensionInfo {
@@ -291,36 +291,53 @@ pub struct ExtensionInfo {
     pub synonym: Option<String>,
     /// The version of the extension, when the stream carried one.
     pub version: Option<String>,
-    /// Whether the base applies the extension.
+    /// Whether the base applies the extension, or `None` when the record
+    /// is not in the shape the flag was measured in.
     ///
     /// Measured on a PostgreSQL base carrying one extension the platform
     /// applies and one it does not: of the 177 bytes of each record, the
     /// two differ in the root key, in the one character of the synonym
-    /// that names them apart, and in one flag — the second-to-last
-    /// tagged byte of the record, `0x82` where the base applies the
-    /// extension and `0x81` where it does not. A record whose flag is
-    /// neither, or which carries no flags at all, reads as applied, so
-    /// that a platform writing something unfamiliar does not silently
-    /// drop every extension.
-    pub active: bool,
-    /// The tagged flag bytes, in the order the stream writes them.
-    pub flags: Vec<u8>,
+    /// that names them apart, and in one byte — three from the end,
+    /// `0x82` where the base applies the extension and `0x81` where it
+    /// does not. The demo base writes the same two bytes in the same
+    /// place for its one applied extension.
+    ///
+    /// The flag is read from that place and nowhere else, and only when
+    /// the decoder followed the record's structure all the way to its
+    /// terminator and reached that byte as a standalone tag. It is
+    /// deliberately not derived by scanning the stream for bytes with
+    /// the high bit set: a counted field this decoder does not know
+    /// carries payload bytes that look exactly like flags, and reading
+    /// one of those would report an extension the base applies as
+    /// inactive — a consumer would then skip live code. Anything the
+    /// decoder could not follow answers `None`, which a consumer must
+    /// decide about rather than act on.
+    pub active: Option<bool>,
 }
 
-/// The tagged byte the applicability flag carries where the base does
-/// not apply the extension.
+/// The byte a record ends with, in every record measured so far.
+const EXTENSION_INFO_TERMINATOR: u8 = 0x20;
+/// How far from the end of the record the applicability flag sits.
+const EXTENSION_INFO_FLAG_FROM_END: usize = 3;
+/// The flag of an extension the base applies.
+const EXTENSION_INFO_APPLIED: u8 = 0x82;
+/// The flag of an extension the base does not apply.
 const EXTENSION_INFO_NOT_APPLIED: u8 = 0x81;
 
 /// The tag introducing a UTF-16 string counted in code units.
 const EXTENSION_INFO_UTF16: u8 = 0x97;
 /// The tag introducing a byte string counted in bytes.
 const EXTENSION_INFO_BYTES: u8 = 0x9a;
+/// The tags measured to stand alone, carrying no payload after them.
+const EXTENSION_INFO_SINGLE: [u8; 4] = [0x81, 0x82, 0xa1, 0xa2];
 
 /// Reads what `_ExtensionsInfo.ExtensionZippedInfo` records about one
 /// extension.
 ///
 /// Answers `None` only when the record is shorter than the marker and the
-/// root key; anything after that is decoded as far as it is understood.
+/// root key. A stream that ends inside a field, or carries a tag this
+/// decoder does not know, answers the key and whatever was decoded before
+/// it, with [`ExtensionInfo::active`] unknown.
 #[must_use]
 pub fn parse_extension_info(info: &[u8]) -> Option<ExtensionInfo> {
     let root_key = extension_root_key(info)?;
@@ -328,52 +345,71 @@ pub fn parse_extension_info(info: &[u8]) -> Option<ExtensionInfo> {
         root_key,
         synonym: None,
         version: None,
-        active: true,
-        flags: Vec::new(),
+        active: None,
     };
+    let flag_at = info.len().checked_sub(EXTENSION_INFO_FLAG_FROM_END);
+    let mut flag = None;
     let mut offset = EXTENSION_INFO_MARKER + 20;
     while let Some(&tag) = info.get(offset) {
-        match tag {
-            EXTENSION_INFO_UTF16 => {
-                let units = usize::from(*info.get(offset + 1)?);
-                let start = offset + 2;
-                let end = start.checked_add(units * 2)?;
-                let text = info.get(start..end)?;
-                if record.synonym.is_none() {
-                    record.synonym = decode_utf16_le(text);
-                }
-                offset = end;
-            }
-            EXTENSION_INFO_BYTES => {
-                let length = usize::from(*info.get(offset + 1)?);
-                let start = offset + 2;
-                let end = start.checked_add(length)?;
-                let text = info.get(start..end)?;
-                // The stream writes counted byte runs that are not text as
-                // well; only a printable run can be the version.
-                if record.version.is_none()
-                    && !text.is_empty()
-                    && text.iter().all(u8::is_ascii_graphic)
-                {
-                    record.version = String::from_utf8(text.to_vec()).ok();
-                }
-                offset = end;
-            }
-            _ => {
-                if tag & 0x80 != 0 {
-                    record.flags.push(tag);
-                }
-                offset += 1;
-            }
+        // A field the decoder knows but cannot read whole ends the walk;
+        // so does a tag it does not know, because its length is unknown
+        // and skipping it would resume in the middle of its payload.
+        let Some(next) = read_field(info, offset, tag, &mut record) else {
+            break;
+        };
+        // Only a byte the walk itself reached as a standalone tag can be
+        // the flag. A byte inside the payload of a counted field is never
+        // considered, however much it looks like one.
+        if next == offset + 1 && Some(offset) == flag_at {
+            flag = Some(tag);
         }
+        offset = next;
     }
-    record.active = record
-        .flags
-        .len()
-        .checked_sub(2)
-        .and_then(|index| record.flags.get(index))
-        .is_none_or(|flag| *flag != EXTENSION_INFO_NOT_APPLIED);
+    // The walk ends on the terminator, which is no field of its own. Any
+    // other stopping place means the decoder lost the structure, and a
+    // flag read out of a record it did not follow says nothing.
+    if offset + 1 == info.len() && info.get(offset) == Some(&EXTENSION_INFO_TERMINATOR) {
+        record.active = match flag {
+            Some(EXTENSION_INFO_APPLIED) => Some(true),
+            Some(EXTENSION_INFO_NOT_APPLIED) => Some(false),
+            _ => None,
+        };
+    }
     Some(record)
+}
+
+/// Reads one field, answering where the next begins, or `None` when the
+/// tag is unknown or the field does not fit in what is left.
+fn read_field(info: &[u8], offset: usize, tag: u8, record: &mut ExtensionInfo) -> Option<usize> {
+    if EXTENSION_INFO_SINGLE.contains(&tag) {
+        return Some(offset + 1);
+    }
+    let count = usize::from(*info.get(offset + 1)?);
+    let start = offset + 2;
+    match tag {
+        EXTENSION_INFO_UTF16 => {
+            let end = start.checked_add(count.checked_mul(2)?)?;
+            let text = info.get(start..end)?;
+            if record.synonym.is_none() {
+                record.synonym = decode_utf16_le(text);
+            }
+            Some(end)
+        }
+        EXTENSION_INFO_BYTES => {
+            let end = start.checked_add(count)?;
+            let text = info.get(start..end)?;
+            // The stream writes counted byte runs that are not text as
+            // well; only a printable run can be the version.
+            if record.version.is_none() && !text.is_empty() && text.iter().all(u8::is_ascii_graphic)
+            {
+                record.version = String::from_utf8(text.to_vec()).ok();
+            }
+            Some(end)
+        }
+        // Everything else is a byte whose meaning, and therefore whose
+        // length, is unmeasured. Walking past it would be guessing.
+        _ => None,
+    }
 }
 
 /// Decodes a UTF-16 little-endian run, answering `None` when it is not

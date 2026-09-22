@@ -175,14 +175,21 @@ impl DatabaseSession {
     /// each configuration extension.
     ///
     /// The resources answered are the very resources the metadata was
-    /// resolved from, so a consumer never has to read `Config` again
-    /// against a base that may have changed in between. The whole table
-    /// is held in memory; a caller that only wants names reads with
-    /// [`DatabaseSession::metadata`].
+    /// resolved from, so a consumer never has to read `Config` a second
+    /// time, after the session ended, against a base that may have moved
+    /// in between. It is not an atomic view of the base: the transaction
+    /// is `READ COMMITTED`, and what that does and does not promise is
+    /// spelled out on [`AcquiredConfiguration`].
+    ///
+    /// The whole table is held in memory, bounded by
+    /// [`Limits::config_resource_limit`] and
+    /// [`Limits::config_retained_byte_limit`]; a caller that only wants
+    /// names reads with [`DatabaseSession::metadata`].
     ///
     /// # Errors
     ///
-    /// Returns what the server reported or what decoding reported. Any
+    /// Returns what the server reported, what decoding reported, or a
+    /// data error when the configuration exceeds those limits. Any
     /// failure rolls the read-only transaction back and answers the
     /// error; no partial configuration is ever answered.
     pub async fn configuration(

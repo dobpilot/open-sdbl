@@ -13,8 +13,9 @@ use crate::error::DbError;
 use crate::limits::Limits;
 use crate::pipeline::{
     ConfigDecodeLimits, ConfigMetadata, ConfigResource, ExtensionCatalogRow, MetadataSource,
-    assemble_parts, assemble_single_resource, config_pipeline_depth, decode_catalog_values,
-    decode_config_stream, decode_retained_config, run_metadata_blocking, unsigned_progress_total,
+    assemble_parts, assemble_single_resource, check_retention_totals, collect_bounded_resources,
+    config_pipeline_depth, decode_catalog_values, decode_config_stream, decode_retained_config,
+    run_metadata_blocking, unsigned_progress_total,
 };
 use crate::progress::{MetadataProgress, NoProgress};
 use crate::session::query_timeout;
@@ -154,16 +155,16 @@ impl MetadataSource for MsSqlMetadataSource<'_> {
         )
         .await?;
         let totals = exactly_one_mssql_row(&totals, "whole Config totals")?;
-        progress.config_totals(
-            unsigned_progress_total(
-                required_mssql_i64(totals, 0, "Config resource count")?,
-                "resource count",
-            )?,
-            unsigned_progress_total(
-                required_mssql_i64(totals, 1, "Config compressed byte count")?,
-                "compressed byte count",
-            )?,
-        );
+        let resource_count = unsigned_progress_total(
+            required_mssql_i64(totals, 0, "Config resource count")?,
+            "resource count",
+        )?;
+        let compressed_bytes = unsigned_progress_total(
+            required_mssql_i64(totals, 1, "Config compressed byte count")?,
+            "compressed byte count",
+        )?;
+        check_retention_totals(limits, resource_count, compressed_bytes)?;
+        progress.config_totals(resource_count, compressed_bytes);
 
         let rows = query_timeout(limits, "MSSQL whole Config query", async {
             client
@@ -181,7 +182,7 @@ impl MetadataSource for MsSqlMetadataSource<'_> {
                 required_mssql_bytes(&row, 2, "Config payload")?,
             ))
         });
-        let resources = collect_resources(assemble_parts(parts), progress).await?;
+        let resources = collect_bounded_resources(assemble_parts(parts), limits, progress).await?;
         let metadata = decode_retained_config(
             &resources,
             limits.config_decode_batch_size,
@@ -261,7 +262,7 @@ impl MetadataSource for MsSqlMetadataSource<'_> {
                 required_mssql_bytes(&row, 2, "ConfigCAS payload")?,
             ))
         });
-        collect_resources(assemble_parts(parts), &mut NoProgress).await
+        collect_bounded_resources(assemble_parts(parts), limits, &mut NoProgress).await
     }
 
     async fn read_extension_restructures(
@@ -336,21 +337,6 @@ impl MetadataSource for MsSqlMetadataSource<'_> {
     async fn rollback_readonly(&mut self, original: DbError) -> DbError {
         self.session.rollback_after_error(original).await
     }
-}
-
-/// Drains assembled resources into memory, reporting each as it lands.
-async fn collect_resources(
-    resources: impl futures_util::Stream<Item = Result<ConfigResource, DbError>>,
-    progress: &mut dyn MetadataProgress,
-) -> Result<Vec<ConfigResource>, DbError> {
-    let mut resources = std::pin::pin!(resources);
-    let mut assembled = Vec::new();
-    while let Some(resource) = resources.next().await {
-        let resource = resource?;
-        progress.advance_config(1, resource.compressed.len());
-        assembled.push(resource);
-    }
-    Ok(assembled)
 }
 
 pub(super) async fn mssql_rows(

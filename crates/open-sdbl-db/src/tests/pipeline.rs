@@ -39,7 +39,7 @@ async fn assembled(rows: Vec<(&str, i32, &[u8])>) -> Result<Vec<(String, Vec<u8>
     let mut stream = std::pin::pin!(assemble_parts(stream::iter(rows)));
     while let Some(resource) = stream.next().await {
         let resource = resource.map_err(|error| error.to_string())?;
-        resources.push((resource.file_name, resource.compressed));
+        resources.push((resource.file_name, resource.compressed.to_vec()));
     }
     Ok(resources)
 }
@@ -105,11 +105,11 @@ async fn streamed_config_decoding_preserves_order_and_propagates_errors() {
     let resources = futures_util::stream::iter([
         Ok(ConfigResource {
             file_name: "b8bac76b-c91b-4d78-8a70-ffa39f8de694".to_owned(),
-            compressed: compressed.clone(),
+            compressed: compressed.clone().into(),
         }),
         Ok(ConfigResource {
             file_name: "25c96bd3-fac4-42ef-b695-74c9af43589b".to_owned(),
-            compressed: compressed.clone(),
+            compressed: compressed.clone().into(),
         }),
     ]);
     let mut progress = CountingProgress::default();
@@ -139,7 +139,7 @@ async fn streamed_config_decoding_preserves_order_and_propagates_errors() {
 
     let invalid = futures_util::stream::iter([Ok(ConfigResource {
         file_name: "b8bac76b-c91b-4d78-8a70-ffa39f8de694".to_owned(),
-        compressed: b"not deflate".to_vec(),
+        compressed: b"not deflate".to_vec().into(),
     })]);
     let error = decode_config_stream(
         invalid,
@@ -155,7 +155,7 @@ async fn streamed_config_decoding_preserves_order_and_propagates_errors() {
 
     let limited = futures_util::stream::iter([Ok(ConfigResource {
         file_name: "b8bac76b-c91b-4d78-8a70-ffa39f8de694".to_owned(),
-        compressed: compressed.clone(),
+        compressed: compressed.clone().into(),
     })]);
     let error = decode_config_stream(
         limited,
@@ -180,7 +180,7 @@ async fn streamed_config_decoding_preserves_order_and_propagates_errors() {
 
     let total_limited = futures_util::stream::iter([Ok(ConfigResource {
         file_name: "b8bac76b-c91b-4d78-8a70-ffa39f8de694".to_owned(),
-        compressed,
+        compressed: compressed.into(),
     })]);
     let error = decode_config_stream(
         total_limited,

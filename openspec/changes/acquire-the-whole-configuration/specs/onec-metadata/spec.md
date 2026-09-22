@@ -83,13 +83,22 @@ does — SHALL be parsed into the sequence of its records.
 `_ExtensionZippedInfo` SHALL decode into a typed record rather than being
 treated as opaque: after the marker and the root key it is a
 tag-length-value stream carrying the synonym of the extension as a
-UTF-16 string, its version as an ASCII string, and the flags of the
-extension. Whether the base applies the extension SHALL be read from the
-second-to-last tagged byte of the record, which is `0x82` where it does
-and `0x81` where it does not; a record whose flag is neither, or which
-carries no flags, SHALL read as applied. Decoding SHALL answer the root
-key even when the rest of the record is not understood, so that a
-platform writing an unfamiliar tail is still readable.
+UTF-16 string and its version as an ASCII string.
+
+Whether the base applies the extension SHALL be answered only from the
+shape it was measured in: a record ending in the terminator, with the
+flag three bytes from its end, `0x82` where the base applies the
+extension and `0x81` where it does not. A record of any other shape, or
+carrying any other value there, SHALL answer that the activity is
+**unknown**. Decoding SHALL NOT derive the flag by scanning for
+high-bit bytes: a length-bearing tag the decoder does not know carries
+payload bytes indistinguishable from flags, and reading one of those as
+the flag would report an extension the base applies as inactive.
+
+Decoding SHALL answer `None` only when the record is too short to carry
+the marker and the root key. A stream that ends inside a field, or
+carries a tag the decoder does not know, SHALL answer the root key and
+whatever was decoded before it, with the activity unknown.
 
 #### Scenario: The index of an extension
 - **WHEN** the root resource of `_ДемоРасширение` is parsed
@@ -105,14 +114,24 @@ platform writing an unfamiliar tail is still readable.
 - **WHEN** the `_ExtensionZippedInfo` of `_ДемоРасширение` is decoded
 - **THEN** the record answers its root key, its version and its synonym
 
+#### Scenario: A tag the decoder does not know
+- **WHEN** the stream carries an unknown length-bearing tag whose payload
+  bytes have the high bit set
+- **THEN** the activity is unknown, and no payload byte is read as the
+  flag
+
+#### Scenario: A field that ends early
+- **WHEN** the stream ends inside a string the decoder does know
+- **THEN** the root key and what was decoded before it are answered, and
+  the activity is unknown
+
 #### Scenario: An extension the base does not apply
 - **WHEN** the records of two extensions of one base, alike but for the
   platform applying one and not the other, are decoded
 - **THEN** they differ in the root key, in the synonym naming them apart
   and in that one flag, and only the second is read as inactive
 
-#### Scenario: An unfamiliar tail
-- **WHEN** the stream after the root key carries a tag the decoder does
-  not know
-- **THEN** the root key is still answered and the undecoded fields are
-  reported as unknown rather than failing the read
+#### Scenario: A record carrying nothing after the key
+- **WHEN** the record stops right after the root key
+- **THEN** the key is answered, the synonym and the version are absent,
+  and the activity is unknown

@@ -68,7 +68,7 @@ pub use limits::Limits;
 pub use net::socks5::{Socks5Proxy, parse_socks5_proxy};
 pub use pipeline::{
     AcquiredConfiguration, AcquiredExtension, ConfigResource, ExtensionCatalogRow, MetadataSource,
-    acquire_configuration, acquire_metadata,
+    acquire_configuration, acquire_metadata, check_retention_totals, collect_bounded_resources,
 };
 pub use progress::{MetadataProgress, NoProgress};
 pub use restrict::{RestrictionOrigin, RestrictionStore};

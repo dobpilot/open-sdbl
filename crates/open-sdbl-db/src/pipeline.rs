@@ -22,6 +22,7 @@ use tokio::sync::Semaphore;
 use tokio::time::timeout;
 
 use crate::error::DbError;
+use crate::limits::Limits;
 use crate::progress::{MetadataProgress, NoProgress};
 
 const CONFIG_MAX_RESOURCE_DECODED_BYTES: usize = 32 * 1024 * 1024;
@@ -211,8 +212,14 @@ pub struct AcquiredExtension {
     pub identity: String,
     /// The name of the extension.
     pub name: String,
-    /// Whether the base applies the extension.
-    pub active: bool,
+    /// Whether the base applies the extension, or `None` when its record
+    /// is not in the shape the flag was measured in.
+    ///
+    /// A consumer that applies only the active extensions has to decide
+    /// what to do about an unknown one. It is never guessed: reporting an
+    /// applied extension as inactive would have the consumer skip code
+    /// the base runs.
+    pub active: Option<bool>,
     /// The order the platform applies the extension in.
     pub order: u32,
     /// The resources of this extension, named as its own root index
@@ -223,9 +230,20 @@ pub struct AcquiredExtension {
 
 /// What one whole-configuration read answers.
 ///
-/// Everything here was read inside one read-only transaction, so the
-/// snapshot, the report and the resources describe the same state of the
-/// base. The value exists only when the whole read succeeded.
+/// Everything here was read inside one read-only transaction, and the
+/// resources are the ones the snapshot was resolved from — the read
+/// happens once, not twice. That is not the same as a consistent
+/// snapshot of the base: the transaction is `READ COMMITTED`, so each
+/// statement sees what was committed when *it* began, and a base written
+/// to while it is being read can answer one statement from before that
+/// write and the next from after it.
+///
+/// A consumer that must know whether the configuration moved compares
+/// the fingerprint statement
+/// ([`open_sdbl::metadata::PostgresMetadataQueries::CONFIG_FINGERPRINT`]
+/// and its SQL Server counterpart) before and after.
+///
+/// The value exists only when the whole read succeeded.
 #[non_exhaustive]
 #[derive(Debug)]
 pub struct AcquiredConfiguration {
@@ -271,12 +289,16 @@ pub async fn acquire_metadata(
 /// `Config` table and the resources of each configuration extension.
 ///
 /// The resources answered are the very resources the metadata was
-/// resolved from. The result is answered only after the whole read
-/// succeeded; any failure rolls the transaction back and answers the
+/// resolved from, so the configuration is read once rather than twice.
+/// What it is not is an atomic view of the base — see
+/// [`AcquiredConfiguration`]. The result is answered only after the whole
+/// read succeeded; any failure rolls the transaction back and answers the
 /// error instead.
 ///
-/// The whole `Config` table is held in memory. A caller that only needs
-/// names reads with [`acquire_metadata`].
+/// The whole `Config` table is held in memory, bounded by
+/// [`Limits::config_resource_limit`] and
+/// [`Limits::config_retained_byte_limit`]. A caller that only needs names
+/// reads with [`acquire_metadata`].
 pub async fn acquire_configuration(
     source: &mut impl MetadataSource,
     progress: &mut dyn MetadataProgress,
@@ -386,7 +408,7 @@ fn group_extensions(
     }
     let by_key = store
         .iter()
-        .map(|resource| (resource.file_name.as_str(), resource.compressed.as_slice()))
+        .map(|resource| (resource.file_name.as_str(), &resource.compressed))
         .collect::<BTreeMap<_, _>>();
     let mut extensions = Vec::with_capacity(catalog.len());
     for row in catalog {
@@ -413,7 +435,7 @@ fn group_extensions(
             let bytes = content(&by_key, &entry.key.as_hex(), &name, &entry.name)?;
             resources.push(ConfigResource {
                 file_name: entry.name,
-                compressed: bytes.to_vec(),
+                compressed: Arc::clone(bytes),
             });
         }
         extensions.push(AcquiredExtension {
@@ -430,11 +452,11 @@ fn group_extensions(
 /// The content the store holds under a key, or a data error naming what
 /// asked for it.
 fn content<'store>(
-    by_key: &BTreeMap<&str, &'store [u8]>,
+    by_key: &BTreeMap<&str, &'store Arc<[u8]>>,
     key: &str,
     extension: &str,
     resource: &str,
-) -> Result<&'store [u8], DbError> {
+) -> Result<&'store Arc<[u8]>, DbError> {
     by_key.get(key).copied().ok_or_else(|| {
         DbError::Data(format!(
             "the extension store carries no resource {key} — {resource} of extension {extension:?}"
@@ -460,7 +482,11 @@ pub struct ConfigResource {
     /// holds it, neither inflated nor re-encoded. A caller that wants the
     /// content inflates it with
     /// [`open_sdbl::metadata::inflate_raw_deflate`].
-    pub compressed: Vec<u8>,
+    ///
+    /// The bytes are shared, not owned: a resource two extensions both
+    /// name is read once and held once, and handing one to a decoder
+    /// costs a reference rather than a copy of the configuration.
+    pub compressed: Arc<[u8]>,
 }
 
 impl std::fmt::Debug for ConfigResource {
@@ -512,7 +538,7 @@ where
                             .take()
                             .map(|(file_name, _, compressed)| ConfigResource {
                                 file_name,
-                                compressed,
+                                compressed: compressed.into(),
                             });
                     return Ok(finished.map(|resource| (resource, state)));
                 };
@@ -530,7 +556,7 @@ where
                             return Ok(Some((
                                 ConfigResource {
                                     file_name,
-                                    compressed,
+                                    compressed: compressed.into(),
                                 },
                                 state,
                             )));
@@ -775,14 +801,81 @@ where
     Ok((descriptors, predefined_values, criteria, roles))
 }
 
+/// Refuses a whole-configuration read whose totals already exceed what
+/// the caller allows to be held.
+///
+/// The totals are a statement of their own, so they can be stale by the
+/// time the rows arrive; [`collect_bounded_resources`] checks again as it
+/// assembles. This check is the cheap one: it fails before a single
+/// resource row crosses the wire.
+pub fn check_retention_totals(
+    limits: Limits,
+    resources: u64,
+    compressed_bytes: u64,
+) -> Result<(), DbError> {
+    if resources > limits.config_resource_limit as u64 {
+        return Err(DbError::Data(format!(
+            "the configuration has {resources} Config resources, more than the {} this read may hold",
+            limits.config_resource_limit
+        )));
+    }
+    if compressed_bytes > limits.config_retained_byte_limit as u64 {
+        return Err(DbError::Data(format!(
+            "the configuration is {compressed_bytes} compressed bytes, more than the {} this read may hold",
+            limits.config_retained_byte_limit
+        )));
+    }
+    Ok(())
+}
+
+/// Drains assembled resources into memory under the retention limits,
+/// reporting each as it lands.
+///
+/// The limits are checked against what has actually arrived, not against
+/// what the totals promised, so a table that grew after the totals were
+/// read fails here rather than filling memory.
+pub async fn collect_bounded_resources<S>(
+    resources: S,
+    limits: Limits,
+    progress: &mut dyn MetadataProgress,
+) -> Result<Vec<ConfigResource>, DbError>
+where
+    S: Stream<Item = Result<ConfigResource, DbError>>,
+{
+    let mut resources = std::pin::pin!(resources);
+    let mut assembled: Vec<ConfigResource> = Vec::new();
+    let mut held_bytes = 0_usize;
+    while let Some(resource) = resources.next().await {
+        let resource = resource?;
+        if assembled.len() >= limits.config_resource_limit {
+            return Err(DbError::Data(format!(
+                "the configuration has more Config resources than the {} this read may hold",
+                limits.config_resource_limit
+            )));
+        }
+        held_bytes = held_bytes
+            .checked_add(resource.compressed.len())
+            .ok_or_else(|| DbError::Data("retained Config byte count overflowed".to_owned()))?;
+        if held_bytes > limits.config_retained_byte_limit {
+            return Err(DbError::Data(format!(
+                "the configuration is more than the {} compressed bytes this read may hold",
+                limits.config_retained_byte_limit
+            )));
+        }
+        progress.advance_config(1, resource.compressed.len());
+        assembled.push(resource);
+    }
+    Ok(assembled)
+}
+
 /// Decodes the metadata resources out of a whole `Config` table already
 /// read into memory.
 ///
 /// Only the names [`is_config_metadata_resource`] accepts reach the
 /// resource decoder; the rest were counted towards progress while they
-/// were being assembled and are left alone here. Each decoded resource
-/// is cloned for the batch that decodes it and dropped with that batch,
-/// so what the caller keeps is read once and never held twice.
+/// were being assembled and are left alone here. A batch borrows the
+/// bytes it decodes rather than copying them, so the configuration is
+/// held once however many times it is decoded from.
 pub async fn decode_retained_config(
     resources: &[ConfigResource],
     batch_size: usize,
@@ -793,12 +886,7 @@ pub async fn decode_retained_config(
         resources
             .iter()
             .filter(|resource| is_config_metadata_resource(&resource.file_name))
-            .map(|resource| {
-                Ok(ConfigResource {
-                    file_name: resource.file_name.clone(),
-                    compressed: resource.compressed.clone(),
-                })
-            }),
+            .map(|resource| Ok(resource.clone())),
     );
     decode_config_stream(
         decodable,

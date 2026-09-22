@@ -62,12 +62,32 @@
   layouts, and are listed in `all()`.
 - [x] 5.12 The existing metadata tests pass unchanged.
 
-## 6. Checks
+## 6. Review findings
 
-- [x] 6.1 `cargo fmt --all -- --check`
-- [x] 6.2 `cargo clippy --workspace --all-targets -- -D warnings`
-- [x] 6.3 `cargo test --workspace`
-- [x] 6.4 `RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps`
-- [x] 6.5 `cargo tree -p open-sdbl -e normal` still empty
-- [ ] 6.6 `openspec validate acquire-the-whole-configuration --strict`;
+- [x] 6.1 The consistency claim is narrowed everywhere it was made —
+  rustdoc, README, spec — and the fingerprint statement is named as what
+  a consumer compares instead.
+- [x] 6.2 The extension record answers `Option<bool>`, never a flag read
+  out of a payload: the walk knows its tags, stops at anything else, and
+  trusts the byte only when it reached the terminator and read that byte
+  as a standalone tag.
+- [x] 6.3 `parse_extension_info` answers `None` only without the root
+  key; a field that ends early answers the key and what preceded it.
+- [x] 6.4 `Limits` bounds retained resources and retained bytes; the
+  totals are checked before the first row and the ceiling again as rows
+  arrive.
+- [x] 6.5 `ConfigResource::compressed` is `Arc<[u8]>`, so shared store
+  rows and decoder batches cost a reference, not a copy.
+- [x] 6.6 Tests: unknown tag, unknown tag with the terminator, payload
+  where the flag sits, a field that ends early, both ceilings before the
+  read and during it, and an extension whose activity is unknown.
+
+## 7. Checks
+
+- [x] 7.1 `cargo fmt --all -- --check`
+- [x] 7.2 `cargo clippy --workspace --all-targets -- -D warnings`
+- [x] 7.3 `cargo test --workspace`
+- [x] 7.4 `RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps`
+- [x] 7.5 `cargo tree -p open-sdbl -e normal` still empty
+- [x] 7.6 `openspec validate acquire-the-whole-configuration --strict`;
   archive
