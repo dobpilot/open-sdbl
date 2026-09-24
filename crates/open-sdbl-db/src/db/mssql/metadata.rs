@@ -216,11 +216,23 @@ impl MetadataSource for MsSqlMetadataSource<'_> {
         {
             return Ok(Vec::new());
         }
+        let columns = mssql_rows(
+            self.session.client_mut()?,
+            limits,
+            "MSSQL extension columns probe",
+            MsSqlMetadataQueries::EXTENSION_COLUMNS,
+        )
+        .await?;
+        let columns = exactly_one_mssql_row(&columns, "extension columns probe")?;
+        let statement = MsSqlMetadataQueries::extension_catalog(
+            required_mssql_i32(columns, 0, "extension scope probe")? != 0,
+            required_mssql_i32(columns, 1, "extension distribution probe")? != 0,
+        );
         let rows = mssql_rows(
             self.session.client_mut()?,
             limits,
             "MSSQL extensions query",
-            MsSqlMetadataQueries::EXTENSIONS,
+            &statement,
         )
         .await?;
         rows.iter()
@@ -232,6 +244,10 @@ impl MetadataSource for MsSqlMetadataSource<'_> {
                         .trim()
                         .to_owned(),
                     info: required_mssql_bytes(row, 3, "extension info record")?,
+                    scope: row.try_get::<i32, _>(4).map_err(DbError::mssql_query)?,
+                    used_in_distributed_infobase: row
+                        .try_get::<i32, _>(5)
+                        .map_err(DbError::mssql_query)?,
                 })
             })
             .collect()

@@ -36,6 +36,11 @@ pub enum DbError {
         /// The driver error.
         source: tiberius::error::Error,
     },
+    /// An operation called on a blocking session after it was closed.
+    SessionClosed,
+    /// A blocking operation called on a thread that is already driving an
+    /// asynchronous runtime, where blocking on another would panic.
+    AsyncContext,
 }
 
 impl DbError {
@@ -68,6 +73,11 @@ impl DbError {
     /// Whether a call was abandoned because it exceeded its limit.
     pub const fn is_database_timeout(&self) -> bool {
         matches!(self, Self::DatabaseTimeout { .. })
+    }
+
+    /// Whether the call was made on a session that was already closed.
+    pub const fn is_session_closed(&self) -> bool {
+        matches!(self, Self::SessionClosed)
     }
 
     /// Whether the SQL Server connection itself failed, rather than the
@@ -108,6 +118,9 @@ impl fmt::Display for DbError {
                 duration.as_secs_f64()
             ),
             Self::Data(message) | Self::Database(message) => formatter.write_str(message),
+            Self::SessionClosed => formatter.write_str("the database session is closed"),
+            Self::AsyncContext => formatter
+                .write_str("a blocking database call was made from inside an asynchronous runtime"),
         }
     }
 }
@@ -118,7 +131,11 @@ impl std::error::Error for DbError {
             Self::Io(_, error) => Some(error),
             Self::Metadata(error) => Some(error),
             Self::MsSql { source, .. } => Some(source),
-            Self::Data(_) | Self::Database(_) | Self::DatabaseTimeout { .. } => None,
+            Self::Data(_)
+            | Self::Database(_)
+            | Self::DatabaseTimeout { .. }
+            | Self::SessionClosed
+            | Self::AsyncContext => None,
         }
     }
 }

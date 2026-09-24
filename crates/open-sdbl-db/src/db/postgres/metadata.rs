@@ -203,11 +203,23 @@ impl MetadataSource for PostgresMetadataSource<'_> {
         if exactly_one_row(&probe, "extension probe")?.try_get::<_, i32>(0)? == 0 {
             return Ok(Vec::new());
         }
+        let columns = postgres_rows(
+            self.transaction()?,
+            self.limits,
+            "PostgreSQL extension columns probe",
+            PostgresMetadataQueries::EXTENSION_COLUMNS,
+        )
+        .await?;
+        let columns = exactly_one_row(&columns, "extension columns probe")?;
+        let statement = PostgresMetadataQueries::extension_catalog(
+            columns.try_get::<_, i32>(0)? != 0,
+            columns.try_get::<_, i32>(1)? != 0,
+        );
         let rows = postgres_rows(
             self.transaction()?,
             self.limits,
             "PostgreSQL extensions query",
-            PostgresMetadataQueries::EXTENSIONS,
+            &statement,
         )
         .await?;
         rows.iter()
@@ -217,6 +229,8 @@ impl MetadataSource for PostgresMetadataSource<'_> {
                     order: row.try_get::<_, i32>(1)?,
                     name: row.try_get::<_, String>(2)?.trim().to_owned(),
                     info: row.try_get::<_, Vec<u8>>(3)?,
+                    scope: row.try_get::<_, Option<i32>>(4)?,
+                    used_in_distributed_infobase: row.try_get::<_, Option<i32>>(5)?,
                 })
             })
             .collect()

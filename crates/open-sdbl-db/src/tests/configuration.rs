@@ -59,11 +59,11 @@ impl MetadataProgress for CountingProgress {
 
 /// A `MetadataSource` answering rows a test wrote, so that the whole
 /// acquisition runs without a database.
-struct FakeSource {
+pub(crate) struct FakeSource {
     limits: Limits,
     config_rows: Vec<ResourcePart>,
-    store_rows: Vec<ResourcePart>,
-    extensions: Vec<ExtensionCatalogRow>,
+    pub(crate) store_rows: Vec<ResourcePart>,
+    pub(crate) extensions: Vec<ExtensionCatalogRow>,
     /// When set, reading `Config` fails with this message.
     config_failure: Option<String>,
     committed: bool,
@@ -71,7 +71,7 @@ struct FakeSource {
 }
 
 impl FakeSource {
-    fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self {
             limits: Limits::default(),
             config_rows: config_rows(),
@@ -83,7 +83,7 @@ impl FakeSource {
         }
     }
 
-    fn with_extensions(mut self) -> Self {
+    pub(crate) fn with_extensions(mut self) -> Self {
         let (store, catalog) = two_extensions();
         self.store_rows = store;
         self.extensions = catalog;
@@ -351,12 +351,16 @@ fn two_extensions() -> (Vec<ResourcePart>, Vec<ExtensionCatalogRow>) {
             order: 1,
             name: "Альфа".to_owned(),
             info: info_record(&alpha_root, true),
+            scope: None,
+            used_in_distributed_infobase: None,
         },
         ExtensionCatalogRow {
             identity: vec![0xbb; 16],
             order: 2,
             name: "Бета".to_owned(),
             info: info_record(&beta_root, false),
+            scope: None,
+            used_in_distributed_infobase: None,
         },
     ];
     (store, catalog)

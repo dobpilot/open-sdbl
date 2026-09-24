@@ -355,8 +355,44 @@ for extension in &configuration.extensions {
         continue;
     }
     let _ = (&extension.identity, &extension.name, extension.order, &extension.resources);
+    // Что база записала о расширении. Всё, что не измерено надёжно, —
+    // `Option`, и `None` значит «неизвестно», а не значение по умолчанию.
+    let _ = (&extension.version, &extension.content_hash);
+    let _ = (extension.scope, extension.used_in_distributed_infobase, extension.safe_mode);
+    // Классы и объекты конфигурации расширения; `None`, если корень
+    // конфигурации не в измеренной форме, — но никогда не частичный каталог.
+    if let Some(catalog) = &extension.catalog {
+        for class in &catalog.classes {
+            let _ = (&class.class, &class.objects);
+        }
+    }
+    // Заголовки объектов: собственный или заимствованный, и явная связь
+    // заимствованного объекта с объектом основной конфигурации — из его
+    // собственного заголовка, а не из имени ресурса `ConfigCAS`. Список
+    // отдаётся целиком или никак: `None`, если его нельзя проверить на полноту.
+    let Some(objects) = &extension.objects else {
+        continue;
+    };
+    for described in objects {
+        let _ = (&described.resource, &described.object.belonging, &described.object.extends);
+    }
 }
 ```
+
+`content_hash` — ключ корневого ресурса расширения: `ConfigCAS` называет
+строку SHA-1 её байтов, а корень перечисляет ключи всех ресурсов, поэтому
+ключ меняется при любом изменении расширения. Это не `ХешСумма` платформы.
+`scope` отдаётся кодом, как он хранится в `_ExtensionScope` (на всех
+измеренных базах — `1`), без сопоставления с перечислением. `safe_mode` пока
+всегда `None`: какой флаг записи означает безопасный режим, не измерено.
+`objects` — `Some` только для полного, проверенного списка: каждый ресурс
+описания (голый GUID в корневом индексе) распакован и разобран, каталог
+известен, и у каждого объекта каталога есть собственный заголовок в ресурсе с
+его именем. Любой сбой — `None` для всего списка, а не укороченный `Vec`; без
+каталога нет и заголовков, потому что сверять их не с чем. Ресурсы с суффиксом
+в имени (`<guid>.0` и т. п.) — не описания и на полноту не влияют.
+Модули BSL остаются ресурсами: `open-sdbl` не знает их слотов и не собирает
+итоговый граф.
 
 Всё это читается в одной read-only транзакции, которую открывает обычное
 получение метаданных, и возвращаются те самые ресурсы, из которых разрешён
@@ -378,6 +414,29 @@ for extension in &configuration.extensions {
 пик равен потолку столько раз, сколько хранилищ собирается, а не одному потолку
 на всё чтение. При превышении возвращается типизированная ошибка, а не OOM. Тем,
 кому нужны только имена, по-прежнему подходит `metadata()`.
+
+Синхронному приложению не нужны ни свой async runtime, ни прямая зависимость
+на `zeroize`: `BlockingDatabaseSession` владеет однопоточным Tokio runtime и
+одним `DatabaseSession`, а каждый его метод доводит до конца асинхронную
+операцию с тем же именем — `connect`, `configuration`, `metadata`, `query`,
+`query_each`, `close`. Второго SQL-пути нет, поэтому лимиты, тайм-ауты,
+диагностика и правило «сломанный сеанс SQL Server не переиспользуется» те же.
+Один экземпляр — одно соединение; закрытие одного не трогает остальные.
+
+```rust
+use open_sdbl_db::{BlockingDatabaseSession, Credentials, Limits, NoProgress};
+
+// Строки переносятся в память, которая затирается при освобождении.
+let credentials = Credentials::new(Some(password), None, None);
+let mut session = BlockingDatabaseSession::connect(&connection, &credentials, Limits::default())?;
+let configuration = session.configuration(&mut NoProgress)?;
+session.close()?;
+// Любой вызов после `close` — `DbError::SessionClosed`, а вызов из потока,
+// который уже крутит Tokio runtime, — `DbError::AsyncContext`, не паника.
+```
+
+`Debug` у `Credentials` показывает только, какие секреты есть, но не их
+значения; в `DatabaseConnection` и в тексты ошибок пароль не попадает.
 
 `resolve_metadata*` возвращает `ResolvedMetadata`: поле `snapshot` используется
 для компиляции, а `report` содержит детерминированный список

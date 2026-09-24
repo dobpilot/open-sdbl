@@ -11,6 +11,7 @@ mod config;
 mod db_names;
 mod deflate;
 mod extension;
+mod extension_structure;
 mod guid;
 mod identity;
 mod normalize;
@@ -34,6 +35,10 @@ pub use extension::{
     ContentKey, ExtensionFieldRestructure, ExtensionInfo, ExtensionResource, ExtensionRestructure,
     extension_metadata_from_restructure, extension_root_key, parse_extension_index,
     parse_extension_info, parse_extension_restructure,
+};
+pub use extension_structure::{
+    ExtensionCatalog, ExtensionClass, ExtensionObject, ObjectBelonging,
+    extension_configuration_root, parse_extension_catalog, parse_extension_objects,
 };
 pub use guid::Guid;
 pub use identity::{AttributeId, FieldId, LookupError, ObjectId, StandardFieldId};

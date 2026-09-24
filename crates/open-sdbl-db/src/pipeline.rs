@@ -12,11 +12,12 @@ use std::time::Duration;
 
 use futures_util::{Stream, StreamExt};
 use open_sdbl::metadata::{
-    ExtensionMetadata, LiveColumn, LiveIndex, LiveTable, MetadataErrorKind, MetadataSnapshot,
-    ResolutionReport, StorageLayout, extension_metadata_from_restructure, inflate_raw_deflate,
-    is_config_metadata_resource, parse_config_resource_bounded, parse_extension_index,
-    parse_extension_info, parse_extension_restructure,
-    resolve_metadata_with_predefined_values_and_extensions,
+    ExtensionCatalog, ExtensionMetadata, ExtensionObject, LiveColumn, LiveIndex, LiveTable,
+    MetadataErrorKind, MetadataSnapshot, ResolutionReport, StorageLayout,
+    extension_configuration_root, extension_metadata_from_restructure, inflate_raw_deflate,
+    inflate_raw_deflate_bounded, is_config_metadata_resource, parse_config_resource_bounded,
+    parse_extension_catalog, parse_extension_index, parse_extension_info, parse_extension_objects,
+    parse_extension_restructure, resolve_metadata_with_predefined_values_and_extensions,
 };
 use tokio::sync::Semaphore;
 use tokio::time::timeout;
@@ -201,6 +202,13 @@ pub struct ExtensionCatalogRow {
     pub name: String,
     /// `_ExtensionZippedInfo`, the record carrying the root key.
     pub info: Vec<u8>,
+    /// `_ExtensionScope`, the scope code as the base stores it, or `None`
+    /// when the base has no such column.
+    pub scope: Option<i32>,
+    /// `_UsedInDistributedInfoBase` as `0` or `1`, or `None` when the base
+    /// has no such column. Both providers answer it as an integer: it is a
+    /// `boolean` in PostgreSQL and a `binary(1)` in SQL Server.
+    pub used_in_distributed_infobase: Option<i32>,
 }
 
 /// One configuration extension of a base, with its own resources.
@@ -226,6 +234,70 @@ pub struct AcquiredExtension {
     /// names them, with the bytes the store holds. Two extensions naming
     /// a resource identically keep one entry each.
     pub resources: Vec<ConfigResource>,
+    /// The version the extension record carries, or `None` when it
+    /// carries none.
+    pub version: Option<String>,
+    /// The lower-case hexadecimal of the key of the extension's root
+    /// resource.
+    ///
+    /// The store names every row by the SHA-1 of the bytes it holds, and
+    /// the root lists the key of every other resource of the extension, so
+    /// the key changes whenever any resource of the extension does, and
+    /// two extensions with the same key carry the same content. It is not
+    /// the platform's own hash sum of the extension, which is not read.
+    pub content_hash: String,
+    /// Whether the extension runs in safe mode.
+    ///
+    /// Always `None` today: the record carries a few flags besides the
+    /// activity one, but which of them is safe mode has not been measured,
+    /// and reading the wrong one would tell a consumer an extension is
+    /// confined when it is not.
+    pub safe_mode: Option<bool>,
+    /// Whether the extension is used in a distributed information base,
+    /// or `None` when the base does not record it.
+    pub used_in_distributed_infobase: Option<bool>,
+    /// The scope code the base stores for the extension, or `None` when it
+    /// does not record one.
+    ///
+    /// Every extension measured so far — each attached to a whole,
+    /// unseparated base — stores `1`. The code is answered as stored rather
+    /// than mapped, because the value of the other scope was not observed.
+    pub scope: Option<u32>,
+    /// The classes and objects the extension's configuration declares, or
+    /// `None` when its configuration root is missing or not in the shape
+    /// that was measured. Never a partial catalog.
+    pub catalog: Option<ExtensionCatalog>,
+    /// The header of every object the extension's descriptions carry —
+    /// each object and each object nested in it — with the resource it was
+    /// read from, or `None` when that list cannot be answered whole.
+    ///
+    /// `Some` means checked and complete: every description resource — each
+    /// resource the root index names by a bare identifier — inflated within
+    /// the per-resource limit and parsed, [`AcquiredExtension::catalog`] is
+    /// known, and every object the catalog declares has a header of its own,
+    /// read from the resource named by that object. A single failure of any
+    /// of those answers `None`, never a shorter list; in particular, no
+    /// catalog means no object headers, because there is nothing to check
+    /// them against. Resources whose name carries a suffix — modules,
+    /// rights, templates — are not descriptions and do not count.
+    ///
+    /// An adopted object's link to the main configuration is read from its
+    /// own header, never from a resource name, and completeness adds no
+    /// data: a header outside the measured shape keeps its belonging and
+    /// link unknown, and an object adopted by name keeps no link.
+    pub objects: Option<Vec<AcquiredExtensionObject>>,
+}
+
+/// One object header of an acquired extension, with the resource it was
+/// read from.
+#[non_exhaustive]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AcquiredExtensionObject {
+    /// The name of the description resource, as the extension's root
+    /// index names it.
+    pub resource: String,
+    /// The header.
+    pub object: ExtensionObject,
 }
 
 /// What one whole-configuration read answers.
@@ -341,7 +413,11 @@ async fn acquire(
             ConfigPlan::Names => Vec::new(),
             ConfigPlan::Whole => {
                 let catalog = source.read_extension_catalog(&layout).await?;
-                group_extensions(&catalog, &extension_resources)?
+                let store = extension_resources.clone();
+                run_metadata_blocking("extension grouping", move || {
+                    group_extensions(&catalog, &store)
+                })
+                .await?
             }
         };
         let restructure_blobs = source.read_extension_restructures(&layout).await?;
@@ -440,15 +516,79 @@ fn group_extensions(
                 compressed: Arc::clone(bytes),
             });
         }
+        let catalog = extension_catalog(&root, &resources);
         extensions.push(AcquiredExtension {
             identity: hexadecimal(&row.identity),
             name,
             active: info.active,
             order,
+            version: info.version,
+            content_hash: info.root_key.as_hex(),
+            safe_mode: None,
+            used_in_distributed_infobase: match row.used_in_distributed_infobase {
+                Some(0) => Some(false),
+                Some(1) => Some(true),
+                _ => None,
+            },
+            scope: row.scope.and_then(|scope| u32::try_from(scope).ok()),
+            objects: catalog
+                .as_ref()
+                .and_then(|catalog| extension_objects(&resources, catalog)),
+            catalog,
             resources,
         });
     }
     Ok(extensions)
+}
+
+/// The catalog of an extension's configuration: the resource its root
+/// index names as the configuration root, decoded, or `None` when there is
+/// no such resource or it is not in the measured shape.
+fn extension_catalog(root: &[u8], resources: &[ConfigResource]) -> Option<ExtensionCatalog> {
+    let configuration = extension_configuration_root(root).ok()??;
+    let resource = resources
+        .iter()
+        .find(|resource| resource.file_name == configuration.as_str())?;
+    let text = inflate_raw_deflate_bounded(&resource.compressed, CONFIG_MAX_RESOURCE_DECODED_BYTES)
+        .ok()?;
+    parse_extension_catalog(&text).ok()
+}
+
+/// The object headers of every description resource of an extension,
+/// or `None` unless the list is complete.
+///
+/// A description is a resource named by a bare identifier. Every one must
+/// inflate within the per-resource limit and parse, and every object the
+/// catalog declares must have a header of its own in the resource named by
+/// it; the first thing that does not hold answers `None` for the whole list.
+fn extension_objects(
+    resources: &[ConfigResource],
+    catalog: &ExtensionCatalog,
+) -> Option<Vec<AcquiredExtensionObject>> {
+    let mut objects = Vec::new();
+    for resource in resources {
+        if resource.file_name.contains('.') {
+            continue;
+        }
+        let text =
+            inflate_raw_deflate_bounded(&resource.compressed, CONFIG_MAX_RESOURCE_DECODED_BYTES)
+                .ok()?;
+        let headers = parse_extension_objects(&text).ok()?;
+        objects.extend(headers.into_iter().map(|object| AcquiredExtensionObject {
+            resource: resource.file_name.clone(),
+            object,
+        }));
+    }
+    let described = catalog
+        .classes
+        .iter()
+        .flat_map(|class| &class.objects)
+        .all(|declared| {
+            objects
+                .iter()
+                .any(|entry| entry.resource == declared.as_str() && entry.object.id == *declared)
+        });
+    described.then_some(objects)
 }
 
 /// The content the store holds under a key, or a data error naming what
@@ -933,4 +1073,8 @@ mod tests;
 
 #[cfg(test)]
 #[path = "tests/configuration.rs"]
-mod configuration_tests;
+pub(crate) mod configuration_tests;
+
+#[cfg(test)]
+#[path = "tests/extension_details.rs"]
+mod extension_details_tests;

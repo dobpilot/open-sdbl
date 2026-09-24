@@ -240,6 +240,36 @@ impl PostgresMetadataQueries {
     /// and the record carrying the key of the root resource.
     pub const EXTENSIONS: &'static str = "SELECT _idrref, _extensionorder::int, _extname::text, _extensionzippedinfo FROM _extensionsinfo ORDER BY _extensionorder";
 
+    /// Whether `_ExtensionsInfo` carries `_ExtensionScope` and
+    /// `_UsedInDistributedInfoBase`: two columns, each `1` or `0`.
+    pub const EXTENSION_COLUMNS: &'static str = "SELECT CASE WHEN EXISTS (SELECT 1 FROM pg_attribute a JOIN pg_class c ON c.oid = a.attrelid JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = 'public' AND c.relname = '_extensionsinfo' AND a.attname = '_extensionscope' AND NOT a.attisdropped) THEN 1 ELSE 0 END, CASE WHEN EXISTS (SELECT 1 FROM pg_attribute a JOIN pg_class c ON c.oid = a.attrelid JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = 'public' AND c.relname = '_extensionsinfo' AND a.attname = '_usedindistributedinfobase' AND NOT a.attisdropped) THEN 1 ELSE 0 END";
+
+    /// Reads the configuration extensions in the order the platform
+    /// applies them, as [`Self::EXTENSIONS`] does, followed by the
+    /// `_ExtensionScope` code and `_UsedInDistributedInfoBase` as `0` or
+    /// `1`.
+    ///
+    /// `scope` and `distributed` say whether the base has those columns,
+    /// as [`Self::EXTENSION_COLUMNS`] answered; a column it lacks is
+    /// answered as `NULL` and never named. The text is built from fixed
+    /// fragments only.
+    #[must_use]
+    pub fn extension_catalog(scope: bool, distributed: bool) -> String {
+        format!(
+            "SELECT _idrref, _extensionorder::int, _extname::text, _extensionzippedinfo, {}, {} FROM _extensionsinfo ORDER BY _extensionorder",
+            if scope {
+                "_extensionscope::int"
+            } else {
+                "NULL::int"
+            },
+            if distributed {
+                "_usedindistributedinfobase::int"
+            } else {
+                "NULL::int"
+            },
+        )
+    }
+
     /// Reads the parts of one resource of the extension store, ordered.
     /// The key is written as hexadecimal, so the text carries no
     /// untrusted input.
@@ -384,7 +414,7 @@ impl PostgresMetadataQueries {
 
     /// Returns every acquisition statement, both layout variants included.
     #[must_use]
-    pub const fn all() -> [&'static str; 18] {
+    pub const fn all() -> [&'static str; 19] {
         [
             Self::VERIFY_TRANSACTION,
             Self::SERVER_VERSION,
@@ -401,6 +431,7 @@ impl PostgresMetadataQueries {
             Self::EXTENSION_RESOURCES,
             Self::EXTENSION_RESOURCES_LEGACY,
             Self::EXTENSION_RESTRUCTURE,
+            Self::EXTENSION_COLUMNS,
             Self::SCHEMA,
             Self::CATALOG,
             Self::CATALOG_LEGACY,
@@ -506,6 +537,36 @@ impl MsSqlMetadataQueries {
     /// applies them: the reference identifying each, that order, the name,
     /// and the record carrying the key of the root resource.
     pub const EXTENSIONS: &'static str = "SELECT [_IDRRef], CONVERT(int, [_ExtensionOrder]), CONVERT(nvarchar(255), [_ExtName]), [_ExtensionZippedInfo] FROM [dbo].[_ExtensionsInfo] ORDER BY [_ExtensionOrder]";
+
+    /// Whether `_ExtensionsInfo` carries `_ExtensionScope` and
+    /// `_UsedInDistributedInfoBase`: two columns, each `1` or `0`.
+    pub const EXTENSION_COLUMNS: &'static str = "SELECT CASE WHEN COL_LENGTH(N'dbo._ExtensionsInfo', N'_ExtensionScope') IS NULL THEN 0 ELSE 1 END, CASE WHEN COL_LENGTH(N'dbo._ExtensionsInfo', N'_UsedInDistributedInfoBase') IS NULL THEN 0 ELSE 1 END";
+
+    /// Reads the configuration extensions in the order the platform
+    /// applies them, as [`Self::EXTENSIONS`] does, followed by the
+    /// `_ExtensionScope` code and `_UsedInDistributedInfoBase` — a
+    /// `binary(1)` — as `0` or `1`.
+    ///
+    /// `scope` and `distributed` say whether the base has those columns,
+    /// as [`Self::EXTENSION_COLUMNS`] answered; a column it lacks is
+    /// answered as `NULL` and never named. The text is built from fixed
+    /// fragments only.
+    #[must_use]
+    pub fn extension_catalog(scope: bool, distributed: bool) -> String {
+        format!(
+            "SELECT [_IDRRef], CONVERT(int, [_ExtensionOrder]), CONVERT(nvarchar(255), [_ExtName]), [_ExtensionZippedInfo], {}, {} FROM [dbo].[_ExtensionsInfo] ORDER BY [_ExtensionOrder]",
+            if scope {
+                "CONVERT(int, [_ExtensionScope])"
+            } else {
+                "CONVERT(int, NULL)"
+            },
+            if distributed {
+                "CONVERT(int, [_UsedInDistributedInfoBase])"
+            } else {
+                "CONVERT(int, NULL)"
+            },
+        )
+    }
 
     /// Reads the parts of one resource of the extension store, ordered.
     #[must_use]
@@ -636,7 +697,7 @@ impl MsSqlMetadataQueries {
 
     /// Returns every acquisition statement, both layout variants included.
     #[must_use]
-    pub const fn all() -> [&'static str; 18] {
+    pub const fn all() -> [&'static str; 19] {
         [
             Self::VERIFY_DATABASE,
             Self::PRODUCT_VERSION,
@@ -654,6 +715,7 @@ impl MsSqlMetadataQueries {
             Self::EXTENSION_RESOURCES,
             Self::EXTENSION_RESOURCES_LEGACY,
             Self::EXTENSION_RESTRUCTURE,
+            Self::EXTENSION_COLUMNS,
             Self::SCHEMA,
             Self::CATALOG,
         ]
@@ -677,6 +739,38 @@ mod tests {
             for mutating in ["INSERT ", "UPDATE ", "DELETE ", "ALTER ", "DROP "] {
                 assert!(!normalized.contains(mutating));
             }
+        }
+    }
+
+    #[test]
+    fn the_extension_catalog_names_only_the_columns_the_base_has() {
+        for (statement, scope, distributed) in [false, true].into_iter().flat_map(|scope| {
+            [false, true].into_iter().flat_map(move |distributed| {
+                [
+                    (
+                        PostgresMetadataQueries::extension_catalog(scope, distributed),
+                        scope,
+                        distributed,
+                    ),
+                    (
+                        MsSqlMetadataQueries::extension_catalog(scope, distributed),
+                        scope,
+                        distributed,
+                    ),
+                ]
+            })
+        }) {
+            let normalized = statement.to_ascii_uppercase();
+            assert!(normalized.starts_with("SELECT "), "{statement}");
+            assert!(normalized.contains("ORDER BY"), "{statement}");
+            assert_eq!(normalized.contains("_EXTENSIONSCOPE"), scope, "{statement}");
+            assert_eq!(
+                normalized.contains("_USEDINDISTRIBUTEDINFOBASE"),
+                distributed,
+                "{statement}"
+            );
+            // Six columns, whichever are there.
+            assert!(normalized.matches(", ").count() >= 5, "{statement}");
         }
     }
 

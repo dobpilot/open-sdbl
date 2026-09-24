@@ -30,11 +30,16 @@
 //! # Ok(())
 //! # }
 //! ```
+//!
+//! Synchronous code drives the same session through
+//! [`BlockingDatabaseSession`], which owns a runtime of its own, and builds
+//! [`Credentials`] from owned strings with [`Credentials::new`].
 
 #![warn(missing_docs)]
 
 pub mod access;
 pub mod access_cache;
+pub mod blocking;
 pub mod cells;
 pub mod connection;
 pub mod credentials;
@@ -55,6 +60,7 @@ pub use access::{
     rls_report, role_restrictions, user_decisions, user_restrictions,
 };
 pub use access_cache::{TemplateParameters, read_current_user, read_template_parameters};
+pub use blocking::BlockingDatabaseSession;
 pub use cells::{Cell, DateTimeParts, QueryRows, RowFlow};
 pub use connection::{
     ConnectionOptions, DatabaseConnection, MsSqlConnection, PostgresConnection, PostgresSslMode,
@@ -67,8 +73,9 @@ pub use extensions::{ExtensionIndex, read_extension_index, read_extension_roles}
 pub use limits::Limits;
 pub use net::socks5::{Socks5Proxy, parse_socks5_proxy};
 pub use pipeline::{
-    AcquiredConfiguration, AcquiredExtension, ConfigResource, ExtensionCatalogRow, MetadataSource,
-    acquire_configuration, acquire_metadata, check_retention_totals, collect_bounded_resources,
+    AcquiredConfiguration, AcquiredExtension, AcquiredExtensionObject, ConfigResource,
+    ExtensionCatalogRow, MetadataSource, acquire_configuration, acquire_metadata,
+    check_retention_totals, collect_bounded_resources,
 };
 pub use progress::{MetadataProgress, NoProgress};
 pub use restrict::{RestrictionOrigin, RestrictionStore};
