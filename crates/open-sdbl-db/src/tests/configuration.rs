@@ -14,10 +14,11 @@ use open_sdbl::metadata::{
 };
 
 use super::{
-    AcquiredConfiguration, ConfigDecodeLimits, ConfigMetadata, ConfigResource, ExtensionCatalogRow,
-    MetadataSource, ResourcePart, acquire_configuration, acquire_metadata, assemble_parts,
-    check_retention_totals, collect_bounded_resources, config_pipeline_depth, decode_config_stream,
-    decode_retained_config,
+    AcquiredConfiguration, ConfigDecodeLimits, ConfigMetadata, ConfigResource, ConfigSelector,
+    ExtensionCatalogRow, MetadataSource, ResourcePart, acquire_configuration, acquire_metadata,
+    acquire_selected_configuration, assemble_parts, check_retention_totals,
+    collect_bounded_resources, config_pipeline_depth, decode_config_stream, decode_retained_config,
+    decode_selected_config,
 };
 use crate::error::DbError;
 use crate::hex_test_support::hex;
@@ -160,6 +161,54 @@ impl MetadataSource for FakeSource {
         )
         .await?;
         Ok((metadata, assembled))
+    }
+
+    async fn read_selected_config(
+        &mut self,
+        _layout: &StorageLayout,
+        progress: &mut dyn MetadataProgress,
+        selector: &mut dyn ConfigSelector,
+    ) -> Result<(ConfigMetadata, Vec<ConfigResource>), DbError> {
+        if let Some(failure) = &self.config_failure {
+            return Err(DbError::Data(failure.clone()));
+        }
+        let root = ConfigResource {
+            file_name: "root".to_owned(),
+            compressed: stored_deflate(b"bootstrap").into(),
+        };
+        let named = selector.root_resource_name(&root)?;
+        if named != WHOLE {
+            return Err(DbError::Data(format!(
+                "Config bootstrap resource {named:?} is missing"
+            )));
+        }
+        let descriptor = ConfigResource {
+            file_name: WHOLE.to_owned(),
+            compressed: hex(DESCRIPTOR).into(),
+        };
+        selector.configure(&descriptor)?;
+        let rows = self
+            .config_rows
+            .clone()
+            .into_iter()
+            .filter(|(name, _, _)| name != WHOLE)
+            .map(Ok);
+        progress.config_totals(
+            distinct_names(&self.config_rows) + 1,
+            self.config_rows
+                .iter()
+                .map(|(_, _, part)| part.len() as u64)
+                .sum::<u64>()
+                + root.compressed.len() as u64,
+        );
+        decode_selected_config(
+            assemble_parts(futures_util::stream::iter(rows)),
+            [root, descriptor],
+            selector,
+            self.limits,
+            progress,
+        )
+        .await
     }
 
     async fn read_extension_resources(
@@ -368,6 +417,125 @@ fn two_extensions() -> (Vec<ResourcePart>, Vec<ExtensionCatalogRow>) {
 
 async fn configuration(mut source: FakeSource) -> Result<AcquiredConfiguration, DbError> {
     acquire_configuration(&mut source, &mut NoProgress).await
+}
+
+struct OnlySplit {
+    configured: bool,
+    seen: Vec<String>,
+}
+
+impl ConfigSelector for OnlySplit {
+    fn root_resource_name(&mut self, root: &ConfigResource) -> Result<String, DbError> {
+        assert_eq!(root.file_name, "root");
+        Ok(WHOLE.to_owned())
+    }
+
+    fn configure(&mut self, descriptor: &ConfigResource) -> Result<(), DbError> {
+        assert_eq!(descriptor.file_name, WHOLE);
+        self.configured = true;
+        Ok(())
+    }
+
+    fn retain(&mut self, name: &str) -> bool {
+        assert!(self.configured);
+        self.seen.push(name.to_owned());
+        name == SPLIT
+    }
+}
+
+#[tokio::test]
+async fn selected_read_keeps_bootstrap_and_selected_names_but_resolves_all_metadata() {
+    let whole = acquire_configuration(&mut FakeSource::new().with_extensions(), &mut NoProgress)
+        .await
+        .unwrap();
+    let mut source = FakeSource::new().with_extensions();
+    let mut selector = OnlySplit {
+        configured: false,
+        seen: Vec::new(),
+    };
+    let mut progress = CountingProgress::default();
+    let selected = acquire_selected_configuration(&mut source, &mut progress, &mut selector)
+        .await
+        .unwrap();
+    assert_eq!(
+        selected.metadata.fingerprint(),
+        whole.metadata.fingerprint()
+    );
+    assert_eq!(selected.report, whole.report);
+    assert_eq!(selected.extensions, whole.extensions);
+    assert_eq!(
+        selected
+            .config_resources
+            .iter()
+            .map(|r| r.file_name.as_str())
+            .collect::<Vec<_>>(),
+        ["root", WHOLE, SPLIT]
+    );
+    assert_eq!(selector.seen, [SPLIT, UNFILTERED]);
+    assert_eq!(progress.announced_resources, progress.completed_resources);
+    assert_eq!(progress.announced_bytes, progress.completed_bytes);
+    assert!(source.committed);
+}
+
+struct RejectRoot;
+
+impl ConfigSelector for RejectRoot {
+    fn root_resource_name(&mut self, _root: &ConfigResource) -> Result<String, DbError> {
+        Err(DbError::Data("root rejected".to_owned()))
+    }
+
+    fn configure(&mut self, _root_descriptor: &ConfigResource) -> Result<(), DbError> {
+        unreachable!("root was rejected")
+    }
+
+    fn retain(&mut self, _name: &str) -> bool {
+        unreachable!("root was rejected")
+    }
+}
+
+#[tokio::test]
+async fn selected_read_accepts_full_totals_above_retention_limits() {
+    let mut source = FakeSource::new();
+    let bootstrap_bytes = stored_deflate(b"bootstrap").len();
+    let descriptor_bytes = hex(DESCRIPTOR).len();
+    source.limits.config_resource_limit = 3;
+    source.limits.config_retained_byte_limit = bootstrap_bytes + descriptor_bytes * 2;
+    let mut selector = OnlySplit {
+        configured: false,
+        seen: Vec::new(),
+    };
+    let selected = acquire_selected_configuration(&mut source, &mut NoProgress, &mut selector)
+        .await
+        .unwrap();
+    assert_eq!(selected.config_resources.len(), 3);
+    assert!(selector.seen.contains(&UNFILTERED.to_owned()));
+    assert!(source.committed);
+}
+
+#[tokio::test]
+async fn selected_read_rolls_back_when_bootstrap_is_rejected() {
+    let mut source = FakeSource::new();
+    let error = acquire_selected_configuration(&mut source, &mut NoProgress, &mut RejectRoot)
+        .await
+        .unwrap_err();
+    assert!(error.to_string().contains("root rejected"));
+    assert!(source.rolled_back);
+    assert!(!source.committed);
+}
+
+#[tokio::test]
+async fn selected_read_applies_limit_only_to_retained_resources() {
+    let mut source = FakeSource::new();
+    let mut selector = OnlySplit {
+        configured: false,
+        seen: Vec::new(),
+    };
+    source.limits.config_retained_byte_limit = 10;
+    let error = acquire_selected_configuration(&mut source, &mut NoProgress, &mut selector)
+        .await
+        .unwrap_err();
+    assert!(error.to_string().contains("compressed bytes"));
+    assert!(source.rolled_back);
 }
 
 #[tokio::test]

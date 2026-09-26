@@ -9,7 +9,9 @@
 
 use std::fmt;
 
-use open_sdbl::metadata::{MetadataSnapshot, ResolutionReport};
+use open_sdbl::metadata::{Guid, MetadataSnapshot, ResolutionReport};
+
+use crate::access::{AccessStore, ensure_rights, ensure_users};
 use tokio::runtime::{Builder, Handle, Runtime};
 
 use crate::cells::{Cell, QueryRows, RowFlow};
@@ -17,7 +19,7 @@ use crate::connection::DatabaseConnection;
 use crate::credentials::Credentials;
 use crate::error::DbError;
 use crate::limits::Limits;
-use crate::pipeline::AcquiredConfiguration;
+use crate::pipeline::{AcquiredConfiguration, ConfigSelector};
 use crate::progress::MetadataProgress;
 use crate::session::{DatabaseDialect, DatabaseSession};
 
@@ -47,6 +49,20 @@ pub(crate) trait SessionOperations: Sized {
     async fn configuration(
         &mut self,
         progress: &mut dyn MetadataProgress,
+    ) -> Result<AcquiredConfiguration, DbError>;
+
+    async fn ensure_users(&mut self, store: &mut AccessStore) -> Result<(), DbError>;
+
+    async fn ensure_rights(
+        &mut self,
+        store: &mut AccessStore,
+        roles: &[Guid],
+    ) -> Result<Vec<Guid>, DbError>;
+
+    async fn configuration_selected(
+        &mut self,
+        progress: &mut dyn MetadataProgress,
+        selector: &mut dyn ConfigSelector,
     ) -> Result<AcquiredConfiguration, DbError>;
 
     async fn metadata(
@@ -82,6 +98,26 @@ impl SessionOperations for DatabaseSession {
         progress: &mut dyn MetadataProgress,
     ) -> Result<AcquiredConfiguration, DbError> {
         Self::configuration(self, progress).await
+    }
+
+    async fn ensure_users(&mut self, store: &mut AccessStore) -> Result<(), DbError> {
+        ensure_users(store, self).await
+    }
+
+    async fn ensure_rights(
+        &mut self,
+        store: &mut AccessStore,
+        roles: &[Guid],
+    ) -> Result<Vec<Guid>, DbError> {
+        ensure_rights(store, self, roles).await
+    }
+
+    async fn configuration_selected(
+        &mut self,
+        progress: &mut dyn MetadataProgress,
+        selector: &mut dyn ConfigSelector,
+    ) -> Result<AcquiredConfiguration, DbError> {
+        Self::configuration_selected(self, progress, selector).await
     }
 
     async fn metadata(
@@ -162,6 +198,29 @@ impl<S: SessionOperations> BlockingDriver<S> {
     ) -> Result<AcquiredConfiguration, DbError> {
         let (runtime, session) = self.open()?;
         runtime.block_on(session.configuration(progress))
+    }
+
+    pub(crate) fn ensure_users(&mut self, store: &mut AccessStore) -> Result<(), DbError> {
+        let (runtime, session) = self.open()?;
+        runtime.block_on(session.ensure_users(store))
+    }
+
+    pub(crate) fn ensure_rights(
+        &mut self,
+        store: &mut AccessStore,
+        roles: &[Guid],
+    ) -> Result<Vec<Guid>, DbError> {
+        let (runtime, session) = self.open()?;
+        runtime.block_on(session.ensure_rights(store, roles))
+    }
+
+    pub(crate) fn configuration_selected(
+        &mut self,
+        progress: &mut dyn MetadataProgress,
+        selector: &mut dyn ConfigSelector,
+    ) -> Result<AcquiredConfiguration, DbError> {
+        let (runtime, session) = self.open()?;
+        runtime.block_on(session.configuration_selected(progress, selector))
     }
 
     pub(crate) fn metadata(
@@ -287,6 +346,44 @@ impl BlockingDatabaseSession {
         progress: &mut dyn MetadataProgress,
     ) -> Result<AcquiredConfiguration, DbError> {
         self.driver.configuration(progress)
+    }
+
+    /// Reads the users into `store` through the owned database session.
+    ///
+    /// # Errors
+    ///
+    /// Answers what [`ensure_users`] answers, [`DbError::SessionClosed`],
+    /// or [`DbError::AsyncContext`].
+    pub fn ensure_users(&mut self, store: &mut AccessStore) -> Result<(), DbError> {
+        self.driver.ensure_users(store)
+    }
+
+    /// Reads missing role rights into `store` through the owned session.
+    ///
+    /// # Errors
+    ///
+    /// Answers what [`ensure_rights`] answers, [`DbError::SessionClosed`],
+    /// or [`DbError::AsyncContext`].
+    pub fn ensure_rights(
+        &mut self,
+        store: &mut AccessStore,
+        roles: &[Guid],
+    ) -> Result<Vec<Guid>, DbError> {
+        self.driver.ensure_rights(store, roles)
+    }
+
+    /// Reads selected Config resources through the owned asynchronous session.
+    ///
+    /// # Errors
+    ///
+    /// Answers what [`DatabaseSession::configuration_selected`] answers,
+    /// [`DbError::SessionClosed`] or [`DbError::AsyncContext`].
+    pub fn configuration_selected(
+        &mut self,
+        progress: &mut dyn MetadataProgress,
+        selector: &mut dyn ConfigSelector,
+    ) -> Result<AcquiredConfiguration, DbError> {
+        self.driver.configuration_selected(progress, selector)
     }
 
     /// Reads and resolves the metadata of the base, as

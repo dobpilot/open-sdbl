@@ -11,7 +11,9 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
-use open_sdbl::metadata::{MetadataSnapshot, ResolutionReport};
+use open_sdbl::metadata::{Guid, MetadataSnapshot, ResolutionReport};
+
+use crate::access::AccessStore;
 
 use super::{BlockingDatabaseSession, BlockingDriver, SessionOperations};
 use crate::cells::{Cell, QueryRows, RowFlow};
@@ -22,7 +24,9 @@ use crate::credentials::Credentials;
 use crate::error::DbError;
 use crate::limits::Limits;
 use crate::pipeline::configuration_tests::FakeSource;
-use crate::pipeline::{AcquiredConfiguration, acquire_configuration, acquire_metadata};
+use crate::pipeline::{
+    AcquiredConfiguration, ConfigSelector, acquire_configuration, acquire_metadata,
+};
 use crate::progress::{MetadataProgress, NoProgress};
 
 const PASSWORD: &str = "s3cret-пароль-42";
@@ -59,6 +63,27 @@ impl SessionOperations for FakeSession {
         progress: &mut dyn MetadataProgress,
     ) -> Result<AcquiredConfiguration, DbError> {
         acquire_configuration(&mut FakeSource::new().with_extensions(), progress).await
+    }
+
+    async fn configuration_selected(
+        &mut self,
+        progress: &mut dyn MetadataProgress,
+        _selector: &mut dyn ConfigSelector,
+    ) -> Result<AcquiredConfiguration, DbError> {
+        self.configuration(progress).await
+    }
+
+    async fn ensure_users(&mut self, store: &mut AccessStore) -> Result<(), DbError> {
+        store.set_users(Vec::new());
+        Ok(())
+    }
+
+    async fn ensure_rights(
+        &mut self,
+        _store: &mut AccessStore,
+        _roles: &[Guid],
+    ) -> Result<Vec<Guid>, DbError> {
+        Ok(Vec::new())
     }
 
     async fn metadata(
@@ -144,6 +169,28 @@ fn same_configuration(left: &AcquiredConfiguration, right: &AcquiredConfiguratio
     assert_eq!(left.extensions, right.extensions);
 }
 
+struct NoopSelector;
+
+impl ConfigSelector for NoopSelector {
+    fn root_resource_name(
+        &mut self,
+        _root: &crate::pipeline::ConfigResource,
+    ) -> Result<String, DbError> {
+        Ok("00000000-0000-0000-0000-000000000000".to_owned())
+    }
+
+    fn configure(
+        &mut self,
+        _root_descriptor: &crate::pipeline::ConfigResource,
+    ) -> Result<(), DbError> {
+        Ok(())
+    }
+
+    fn retain(&mut self, _name: &str) -> bool {
+        true
+    }
+}
+
 #[test]
 fn answers_what_the_asynchronous_path_answers() {
     // Each path gets a server of its own, so each runs on its connection 1
@@ -196,6 +243,63 @@ fn answers_what_the_asynchronous_path_answers() {
         .unwrap();
     assert_eq!(seen, expected);
     assert_eq!(seen.len(), 2, "stopping ends the read at once");
+}
+
+#[test]
+fn selected_and_access_calls_use_the_open_session() {
+    let mut driver = blocking(&Arc::new(FakeServer::default()));
+    let acquired = driver
+        .configuration_selected(&mut NoProgress, &mut NoopSelector)
+        .unwrap();
+    let mut store = AccessStore::new(&acquired.metadata);
+    driver.ensure_users(&mut store).unwrap();
+    assert_eq!(store.users().unwrap().len(), 0);
+    assert!(driver.ensure_rights(&mut store, &[]).unwrap().is_empty());
+    driver.close().unwrap();
+    assert!(
+        driver
+            .configuration_selected(&mut NoProgress, &mut NoopSelector)
+            .unwrap_err()
+            .is_session_closed()
+    );
+    assert!(
+        driver
+            .ensure_users(&mut store)
+            .unwrap_err()
+            .is_session_closed()
+    );
+    assert!(
+        driver
+            .ensure_rights(&mut store, &[])
+            .unwrap_err()
+            .is_session_closed()
+    );
+}
+
+#[test]
+fn selected_and_access_calls_refuse_async_context_while_open() {
+    let mut driver = blocking(&Arc::new(FakeServer::default()));
+    let acquired = driver.configuration(&mut NoProgress).unwrap();
+    let mut store = AccessStore::new(&acquired.metadata);
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .build()
+        .unwrap();
+    runtime.block_on(async {
+        assert!(matches!(
+            driver.configuration_selected(&mut NoProgress, &mut NoopSelector),
+            Err(DbError::AsyncContext)
+        ));
+        assert!(matches!(
+            driver.ensure_users(&mut store),
+            Err(DbError::AsyncContext)
+        ));
+        assert!(matches!(
+            driver.ensure_rights(&mut store, &[]),
+            Err(DbError::AsyncContext)
+        ));
+    });
+    assert!(driver.session().is_some());
+    driver.ensure_users(&mut store).unwrap();
 }
 
 #[test]
@@ -314,11 +418,31 @@ fn refuses_to_block_inside_an_asynchronous_runtime() {
 fn a_closed_session_answers_session_closed_inside_a_runtime_too() {
     let server = Arc::new(FakeServer::default());
     let mut driver = blocking(&server);
+    let acquired = driver.configuration(&mut NoProgress).unwrap();
+    let mut store = AccessStore::new(&acquired.metadata);
     driver.close().unwrap();
     let runtime = tokio::runtime::Builder::new_current_thread()
         .build()
         .unwrap();
     runtime.block_on(async {
+        assert!(
+            driver
+                .configuration_selected(&mut NoProgress, &mut NoopSelector)
+                .unwrap_err()
+                .is_session_closed()
+        );
+        assert!(
+            driver
+                .ensure_users(&mut store)
+                .unwrap_err()
+                .is_session_closed()
+        );
+        assert!(
+            driver
+                .ensure_rights(&mut store, &[])
+                .unwrap_err()
+                .is_session_closed()
+        );
         assert!(
             driver
                 .configuration(&mut NoProgress)

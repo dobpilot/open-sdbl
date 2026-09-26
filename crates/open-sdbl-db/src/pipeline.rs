@@ -10,7 +10,7 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::time::Duration;
 
-use futures_util::{Stream, StreamExt};
+use futures_util::{Stream, StreamExt, TryStreamExt};
 use open_sdbl::metadata::{
     ExtensionCatalog, ExtensionMetadata, ExtensionObject, LiveColumn, LiveIndex, LiveTable,
     MetadataErrorKind, MetadataSnapshot, ResolutionReport, StorageLayout,
@@ -165,6 +165,19 @@ pub trait MetadataSource {
         ))
     }
 
+    /// Reads the bootstrap resources, then selects the resources kept from
+    /// one streaming read of the remaining Config table.
+    async fn read_selected_config(
+        &mut self,
+        _layout: &StorageLayout,
+        _progress: &mut dyn MetadataProgress,
+        _selector: &mut dyn ConfigSelector,
+    ) -> Result<(ConfigMetadata, Vec<ConfigResource>), DbError> {
+        Err(DbError::Data(
+            "this provider cannot read a selected configuration".to_owned(),
+        ))
+    }
+
     /// Reads the rows of `_ExtensionsInfo` in the order the platform
     /// applies the extensions.
     async fn read_extension_catalog(
@@ -300,11 +313,12 @@ pub struct AcquiredExtensionObject {
     pub object: ExtensionObject,
 }
 
-/// What one whole-configuration read answers.
+/// What one whole or selected configuration read answers.
 ///
-/// Everything here was read inside one read-only transaction, and the
-/// resources are the ones the snapshot was resolved from — the read
-/// happens once, not twice. That is not the same as a consistent
+/// Everything here was read inside one read-only transaction. The metadata
+/// was resolved from that read, while `config_resources` contains every
+/// resource for a whole read or only the selected resources for a selected
+/// read. No later read of Config is needed to build the answer. That is not the same as a consistent
 /// snapshot of the base: the transaction is `READ COMMITTED`, so each
 /// statement sees what was committed when *it* began, and a base written
 /// to while it is being read can answer one statement from before that
@@ -315,7 +329,7 @@ pub struct AcquiredExtensionObject {
 /// ([`open_sdbl::metadata::PostgresMetadataQueries::CONFIG_FINGERPRINT`]
 /// and its SQL Server counterpart) before and after.
 ///
-/// The value exists only when the whole read succeeded.
+/// The value exists only when the requested read succeeded.
 #[non_exhaustive]
 #[derive(Debug)]
 pub struct AcquiredConfiguration {
@@ -325,21 +339,50 @@ pub struct AcquiredConfiguration {
     pub report: ResolutionReport,
     /// The storage layout the base was read from.
     pub layout: StorageLayout,
-    /// Every resource of the `Config` table, parts assembled, bytes as
-    /// the base stores them.
+    /// The assembled `Config` resources, with bytes as the base stores
+    /// them. A whole read retains every resource; a selected read retains
+    /// the two bootstrap resources and the names the selector chose.
     pub config_resources: Vec<ConfigResource>,
     /// The configuration extensions, in the order the platform applies
     /// them.
     pub extensions: Vec<AcquiredExtension>,
 }
 
+/// Chooses which Config resources a selected acquisition retains.
+///
+/// `root_resource_name` receives `root` first and names its configuration
+/// descriptor. `configure` receives that descriptor once before any other
+/// decision. The two bootstrap resources are retained regardless of `retain`.
+/// Every later call to `retain` sees only a resource name, after its parts
+/// have been validated and assembled; the compressed bytes are not needed
+/// to decide whether to keep the resource.
+pub trait ConfigSelector {
+    /// Names the configuration descriptor referenced by `root`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when `root` cannot be interpreted.
+    fn root_resource_name(&mut self, root: &ConfigResource) -> Result<String, DbError>;
+
+    /// Prepares selection from the configuration descriptor.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the descriptor cannot be interpreted.
+    fn configure(&mut self, root_descriptor: &ConfigResource) -> Result<(), DbError>;
+
+    /// Whether to retain a non-bootstrap resource with this name.
+    fn retain(&mut self, name: &str) -> bool;
+}
+
 /// Which `Config` read one acquisition performs.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum ConfigPlan {
+enum ConfigPlan<'a> {
     /// Stream the resources metadata resolution decodes, keeping none.
     Names,
     /// Read every resource of the table and keep it.
     Whole,
+    /// Decode all metadata but retain only the selected resources.
+    Selected(&'a mut dyn ConfigSelector),
 }
 
 /// Reads the metadata of a base and answers the snapshot, the storage
@@ -380,12 +423,29 @@ pub async fn acquire_configuration(
     acquire(source, progress, ConfigPlan::Whole).await
 }
 
+/// Reads metadata and extensions as a whole read does, but retains only
+/// the Config resources chosen after the selector has inspected the root
+/// and configuration descriptor. The extension store is still retained
+/// independently, within its own limits.
+///
+/// # Errors
+///
+/// Answers a provider, decoder, selector or retention error. A failed
+/// read is rolled back and never answers a partial configuration.
+pub async fn acquire_selected_configuration(
+    source: &mut impl MetadataSource,
+    progress: &mut dyn MetadataProgress,
+    selector: &mut dyn ConfigSelector,
+) -> Result<AcquiredConfiguration, DbError> {
+    acquire(source, progress, ConfigPlan::Selected(selector)).await
+}
+
 /// The one acquisition both entry points run; the plan decides which
 /// `Config` read happens and whether the extensions are grouped.
 async fn acquire(
     source: &mut impl MetadataSource,
     progress: &mut dyn MetadataProgress,
-    plan: ConfigPlan,
+    plan: ConfigPlan<'_>,
 ) -> Result<AcquiredConfiguration, DbError> {
     let result = async {
         progress.phase("transaction");
@@ -401,24 +461,29 @@ async fn acquire(
             "DBNames (legacy layout)"
         });
         let db_names = source.read_db_names(&layout).await?;
+        let group_extension_resources = !matches!(plan, ConfigPlan::Names);
         let ((descriptors, predefined_values, criteria, roles), config_resources) = match plan {
             ConfigPlan::Names => (source.read_config(&layout, progress).await?, Vec::new()),
             ConfigPlan::Whole => source.read_whole_config(&layout, progress).await?,
+            ConfigPlan::Selected(selector) => {
+                source
+                    .read_selected_config(&layout, progress, selector)
+                    .await?
+            }
         };
 
         progress.phase("extensions");
         let extension_resources = source.read_extension_resources(&layout).await?;
         let mut extensions = source.read_extensions(&extension_resources).await?;
-        let acquired_extensions = match plan {
-            ConfigPlan::Names => Vec::new(),
-            ConfigPlan::Whole => {
-                let catalog = source.read_extension_catalog(&layout).await?;
-                let store = extension_resources.clone();
-                run_metadata_blocking("extension grouping", move || {
-                    group_extensions(&catalog, &store)
-                })
-                .await?
-            }
+        let acquired_extensions = if group_extension_resources {
+            let catalog = source.read_extension_catalog(&layout).await?;
+            let store = extension_resources.clone();
+            run_metadata_blocking("extension grouping", move || {
+                group_extensions(&catalog, &store)
+            })
+            .await?
+        } else {
+            Vec::new()
         };
         let restructure_blobs = source.read_extension_restructures(&layout).await?;
         if !restructure_blobs.is_empty() {
@@ -1010,6 +1075,81 @@ where
         assembled.push(resource);
     }
     Ok(assembled)
+}
+
+/// Decodes every metadata-shaped resource while retaining only selected
+/// resources. The bootstrap resources are already loaded and are counted
+/// once; the stream must exclude their names.
+pub async fn decode_selected_config<S>(
+    resources: S,
+    bootstrap: [ConfigResource; 2],
+    selector: &mut dyn ConfigSelector,
+    limits: Limits,
+    progress: &mut dyn MetadataProgress,
+) -> Result<(ConfigMetadata, Vec<ConfigResource>), DbError>
+where
+    S: Stream<Item = Result<ConfigResource, DbError>>,
+{
+    let mut retained = bootstrap.to_vec();
+    let mut held_bytes = retained.iter().try_fold(0_usize, |total, resource| {
+        total
+            .checked_add(resource.compressed.len())
+            .ok_or_else(|| DbError::Data("retained Config byte count overflowed".to_owned()))
+    })?;
+    check_selected_retention(limits, retained.len(), held_bytes)?;
+    for resource in &bootstrap {
+        progress.advance_config(1, resource.compressed.len());
+    }
+    let decodable = futures_util::stream::iter(bootstrap.into_iter().map(Ok))
+        .chain(resources)
+        .map(|resource| {
+            let resource = resource?;
+            if !retained
+                .iter()
+                .take(2)
+                .any(|initial| initial.file_name.eq_ignore_ascii_case(&resource.file_name))
+            {
+                if selector.retain(&resource.file_name) {
+                    let next_bytes = held_bytes
+                        .checked_add(resource.compressed.len())
+                        .ok_or_else(|| {
+                            DbError::Data("retained Config byte count overflowed".to_owned())
+                        })?;
+                    check_selected_retention(limits, retained.len() + 1, next_bytes)?;
+                    held_bytes = next_bytes;
+                    retained.push(resource.clone());
+                }
+                progress.advance_config(1, resource.compressed.len());
+            }
+            Ok::<_, DbError>(is_config_metadata_resource(&resource.file_name).then_some(resource))
+        })
+        .try_filter_map(|resource| async move { Ok(resource) });
+    let metadata = decode_config_stream(
+        decodable,
+        limits.config_decode_batch_size,
+        config_pipeline_depth(),
+        ConfigDecodeLimits::default(),
+        &mut NoProgress,
+        limits.query_timeout,
+    )
+    .await?;
+    Ok((metadata, retained))
+}
+
+fn check_selected_retention(limits: Limits, count: usize, bytes: usize) -> Result<(), DbError> {
+    if count > limits.config_resource_limit {
+        return Err(DbError::Data(format!(
+            "the configuration has more Config resources than the {} this read may hold",
+            limits.config_resource_limit
+        )));
+    }
+    if bytes > limits.config_retained_byte_limit {
+        return Err(DbError::Data(format!(
+            "the configuration is more than the {} compressed bytes this read may hold",
+            limits.config_retained_byte_limit
+        )));
+    }
+    Ok(())
 }
 
 /// Decodes the metadata resources out of a whole `Config` table already

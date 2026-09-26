@@ -2,7 +2,7 @@
 
 use futures_util::StreamExt;
 use open_sdbl::metadata::{
-    LiveTable, MsSqlMetadataQueries, StorageLayout, parse_db_names, parse_schema_storage,
+    Guid, LiveTable, MsSqlMetadataQueries, StorageLayout, parse_db_names, parse_schema_storage,
 };
 use open_sdbl::query::MsSqlBackend;
 use tiberius::Client as MsSqlClient;
@@ -12,10 +12,10 @@ use tokio_util::compat::Compat;
 use crate::error::DbError;
 use crate::limits::Limits;
 use crate::pipeline::{
-    ConfigDecodeLimits, ConfigMetadata, ConfigResource, ExtensionCatalogRow, MetadataSource,
-    assemble_parts, assemble_single_resource, check_retention_totals, collect_bounded_resources,
-    config_pipeline_depth, decode_catalog_values, decode_config_stream, decode_retained_config,
-    run_metadata_blocking, unsigned_progress_total,
+    ConfigDecodeLimits, ConfigMetadata, ConfigResource, ConfigSelector, ExtensionCatalogRow,
+    MetadataSource, assemble_parts, assemble_single_resource, check_retention_totals,
+    collect_bounded_resources, config_pipeline_depth, decode_catalog_values, decode_config_stream,
+    decode_retained_config, decode_selected_config, run_metadata_blocking, unsigned_progress_total,
 };
 use crate::progress::{MetadataProgress, NoProgress};
 use crate::session::query_timeout;
@@ -35,6 +35,46 @@ impl<'session> MsSqlMetadataSource<'session> {
     pub(super) fn new(session: &'session mut MsSqlSession) -> Self {
         Self { session }
     }
+}
+
+async fn selected_mssql_resource(
+    session: &mut MsSqlSession,
+    layout: &StorageLayout,
+    name: &str,
+) -> Result<ConfigResource, DbError> {
+    // The caller accepts only `root` or a validated GUID, so the literal
+    // cannot carry SQL syntax into this provider statement.
+    let query = MsSqlMetadataQueries::config_all(layout).replacen(
+        " ORDER BY ",
+        &format!(" WHERE [FileName] = N'{name}' ORDER BY "),
+        1,
+    );
+    let limits = session.limits();
+    let rows = query_timeout(limits, "MSSQL selected Config bootstrap query", async {
+        session
+            .client_mut()?
+            .simple_query(query)
+            .await
+            .map_err(DbError::mssql_query)
+    })
+    .await?
+    .into_row_stream();
+    let parts = rows.map(|row| {
+        let row = row.map_err(DbError::mssql_query)?;
+        Ok((
+            required_mssql_string(&row, 0, "Config file name")?,
+            required_mssql_i32(&row, 1, "Config part number")?,
+            required_mssql_bytes(&row, 2, "Config payload")?,
+        ))
+    });
+    let mut resources =
+        collect_bounded_resources(assemble_parts(parts), limits, &mut NoProgress).await?;
+    if resources.len() != 1 {
+        return Err(DbError::Data(format!(
+            "Config bootstrap resource {name:?} is missing"
+        )));
+    }
+    Ok(resources.remove(0))
 }
 
 impl MetadataSource for MsSqlMetadataSource<'_> {
@@ -191,6 +231,72 @@ impl MetadataSource for MsSqlMetadataSource<'_> {
         )
         .await?;
         Ok((metadata, resources))
+    }
+
+    async fn read_selected_config(
+        &mut self,
+        layout: &StorageLayout,
+        progress: &mut dyn MetadataProgress,
+        selector: &mut dyn ConfigSelector,
+    ) -> Result<(ConfigMetadata, Vec<ConfigResource>), DbError> {
+        let limits = self.session.limits();
+        let totals = mssql_rows(
+            self.session.client_mut()?,
+            limits,
+            "MSSQL selected Config totals query",
+            MsSqlMetadataQueries::CONFIG_ALL_TOTALS,
+        )
+        .await?;
+        let totals = exactly_one_mssql_row(&totals, "selected Config totals")?;
+        progress.config_totals(
+            unsigned_progress_total(
+                required_mssql_i64(totals, 0, "Config resource count")?,
+                "resource count",
+            )?,
+            unsigned_progress_total(
+                required_mssql_i64(totals, 1, "Config compressed byte count")?,
+                "compressed byte count",
+            )?,
+        );
+
+        let root = selected_mssql_resource(self.session, layout, "root").await?;
+        let descriptor_name = selector.root_resource_name(&root)?;
+        let descriptor_name = descriptor_name.parse::<Guid>()?.to_string();
+        let descriptor = selected_mssql_resource(self.session, layout, &descriptor_name).await?;
+        selector.configure(&descriptor)?;
+
+        let query = MsSqlMetadataQueries::config_all(layout).replacen(
+            " ORDER BY ",
+            &format!(
+                " WHERE [FileName] <> N'root' AND [FileName] <> N'{descriptor_name}' ORDER BY "
+            ),
+            1,
+        );
+        let rows = query_timeout(limits, "MSSQL selected Config query", async {
+            self.session
+                .client_mut()?
+                .simple_query(query)
+                .await
+                .map_err(DbError::mssql_query)
+        })
+        .await?
+        .into_row_stream();
+        let parts = rows.map(|row| {
+            let row = row.map_err(DbError::mssql_query)?;
+            Ok((
+                required_mssql_string(&row, 0, "Config file name")?,
+                required_mssql_i32(&row, 1, "Config part number")?,
+                required_mssql_bytes(&row, 2, "Config payload")?,
+            ))
+        });
+        decode_selected_config(
+            assemble_parts(parts),
+            [root, descriptor],
+            selector,
+            limits,
+            progress,
+        )
+        .await
     }
 
     async fn read_extension_catalog(

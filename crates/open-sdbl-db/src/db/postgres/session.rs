@@ -29,7 +29,10 @@ use crate::credentials::Credentials;
 use crate::error::DbError;
 use crate::limits::Limits;
 use crate::net::socks5::{connect_socks5, socks5_password};
-use crate::pipeline::{AcquiredConfiguration, acquire_configuration, acquire_metadata};
+use crate::pipeline::{
+    AcquiredConfiguration, ConfigSelector, acquire_configuration, acquire_metadata,
+    acquire_selected_configuration,
+};
 use crate::progress::MetadataProgress;
 use crate::rows::drive_rows;
 use crate::session::query_timeout;
@@ -341,6 +344,37 @@ impl PostgresSession {
         let acquired = acquire_configuration(
             &mut PostgresMetadataSource::new(transaction, limits),
             progress,
+        )
+        .await?;
+        self.layout = Some(acquired.layout);
+        Ok(acquired)
+    }
+
+    /// Reads selected Config resources with metadata and extensions.
+    ///
+    /// # Errors
+    ///
+    /// Answers a database, selector, decoding or retention error.
+    pub async fn configuration_selected(
+        &mut self,
+        progress: &mut dyn MetadataProgress,
+        selector: &mut dyn ConfigSelector,
+    ) -> Result<AcquiredConfiguration, DbError> {
+        let limits = self.limits;
+        let transaction = query_timeout(limits, "PostgreSQL transaction start", async {
+            self.client
+                .build_transaction()
+                .isolation_level(IsolationLevel::ReadCommitted)
+                .read_only(true)
+                .start()
+                .await
+                .map_err(DbError::from)
+        })
+        .await?;
+        let acquired = acquire_selected_configuration(
+            &mut PostgresMetadataSource::new(transaction, limits),
+            progress,
+            selector,
         )
         .await?;
         self.layout = Some(acquired.layout);

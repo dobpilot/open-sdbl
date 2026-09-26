@@ -2,7 +2,7 @@
 
 use futures_util::StreamExt;
 use open_sdbl::metadata::{
-    LiveTable, PostgresMetadataQueries, StorageLayout, parse_db_names, parse_schema_storage,
+    Guid, LiveTable, PostgresMetadataQueries, StorageLayout, parse_db_names, parse_schema_storage,
 };
 use tokio_postgres::types::ToSql;
 use tokio_postgres::{Row, Transaction};
@@ -11,10 +11,10 @@ use super::session::PostgresSession;
 use crate::error::DbError;
 use crate::limits::Limits;
 use crate::pipeline::{
-    ConfigDecodeLimits, ConfigMetadata, ConfigResource, ExtensionCatalogRow, MetadataSource,
-    assemble_parts, assemble_single_resource, check_retention_totals, collect_bounded_resources,
-    config_pipeline_depth, decode_catalog_values, decode_config_stream, decode_retained_config,
-    run_metadata_blocking, unsigned_progress_total,
+    ConfigDecodeLimits, ConfigMetadata, ConfigResource, ConfigSelector, ExtensionCatalogRow,
+    MetadataSource, assemble_parts, assemble_single_resource, check_retention_totals,
+    collect_bounded_resources, config_pipeline_depth, decode_catalog_values, decode_config_stream,
+    decode_retained_config, decode_selected_config, run_metadata_blocking, unsigned_progress_total,
 };
 use crate::progress::{MetadataProgress, NoProgress};
 use crate::session::query_timeout;
@@ -40,6 +40,47 @@ impl<'transaction> PostgresMetadataSource<'transaction> {
             DbError::Database("PostgreSQL metadata transaction is closed".to_owned())
         })
     }
+}
+
+async fn selected_postgres_resource(
+    transaction: &Transaction<'_>,
+    limits: Limits,
+    layout: &StorageLayout,
+    name: &str,
+) -> Result<ConfigResource, DbError> {
+    let query = PostgresMetadataQueries::config_all(layout).replacen(
+        " ORDER BY ",
+        " WHERE filename = $1 ORDER BY ",
+        1,
+    );
+    let parameters: [&(dyn ToSql + Sync); 1] = [&name];
+    let rows = query_timeout(
+        limits,
+        "PostgreSQL selected Config bootstrap query",
+        async {
+            transaction
+                .query_raw(&query, parameters)
+                .await
+                .map_err(DbError::from)
+        },
+    )
+    .await?;
+    let parts = rows.map(|row| {
+        let row = row?;
+        Ok((
+            row.try_get::<_, String>(0)?,
+            row.try_get::<_, i32>(1)?,
+            row.try_get::<_, Vec<u8>>(2)?,
+        ))
+    });
+    let mut resources =
+        collect_bounded_resources(assemble_parts(parts), limits, &mut NoProgress).await?;
+    if resources.len() != 1 {
+        return Err(DbError::Data(format!(
+            "Config bootstrap resource {name:?} is missing"
+        )));
+    }
+    Ok(resources.remove(0))
 }
 
 impl MetadataSource for PostgresMetadataSource<'_> {
@@ -184,6 +225,64 @@ impl MetadataSource for PostgresMetadataSource<'_> {
         )
         .await?;
         Ok((metadata, resources))
+    }
+
+    async fn read_selected_config(
+        &mut self,
+        layout: &StorageLayout,
+        progress: &mut dyn MetadataProgress,
+        selector: &mut dyn ConfigSelector,
+    ) -> Result<(ConfigMetadata, Vec<ConfigResource>), DbError> {
+        let limits = self.limits;
+        let transaction = self.transaction()?;
+        let totals = query_timeout(limits, "PostgreSQL selected Config totals query", async {
+            transaction
+                .query_one(PostgresMetadataQueries::CONFIG_ALL_TOTALS, &[])
+                .await
+                .map_err(DbError::from)
+        })
+        .await?;
+        progress.config_totals(
+            unsigned_progress_total(totals.try_get(0)?, "resource count")?,
+            unsigned_progress_total(totals.try_get(1)?, "compressed byte count")?,
+        );
+
+        let root = selected_postgres_resource(transaction, limits, layout, "root").await?;
+        let descriptor_name = selector.root_resource_name(&root)?;
+        let descriptor_name = descriptor_name.parse::<Guid>()?.to_string();
+        let descriptor =
+            selected_postgres_resource(transaction, limits, layout, &descriptor_name).await?;
+        selector.configure(&descriptor)?;
+
+        let query = PostgresMetadataQueries::config_all(layout).replacen(
+            " ORDER BY ",
+            " WHERE filename <> $1 AND filename <> $2 ORDER BY ",
+            1,
+        );
+        let parameters: [&(dyn ToSql + Sync); 2] = [&"root", &descriptor_name];
+        let rows = query_timeout(limits, "PostgreSQL selected Config query", async {
+            transaction
+                .query_raw(&query, parameters)
+                .await
+                .map_err(DbError::from)
+        })
+        .await?;
+        let parts = rows.map(|row| {
+            let row = row?;
+            Ok((
+                row.try_get::<_, String>(0)?,
+                row.try_get::<_, i32>(1)?,
+                row.try_get::<_, Vec<u8>>(2)?,
+            ))
+        });
+        decode_selected_config(
+            assemble_parts(parts),
+            [root, descriptor],
+            selector,
+            limits,
+            progress,
+        )
+        .await
     }
 
     async fn read_extension_catalog(

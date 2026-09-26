@@ -20,7 +20,10 @@ use crate::limits::Limits;
 use crate::net::socks5::{connect_socks5, socks5_password};
 #[cfg(test)]
 use crate::pipeline::MetadataSource;
-use crate::pipeline::{AcquiredConfiguration, acquire_configuration, acquire_metadata};
+use crate::pipeline::{
+    AcquiredConfiguration, ConfigSelector, acquire_configuration, acquire_metadata,
+    acquire_selected_configuration,
+};
 use crate::progress::MetadataProgress;
 use crate::rows::{ReadEnd, drive_rows};
 use crate::session::query_timeout;
@@ -353,6 +356,23 @@ impl MsSqlSession {
         progress: &mut dyn MetadataProgress,
     ) -> Result<AcquiredConfiguration, DbError> {
         let acquired = acquire_configuration(&mut MsSqlMetadataSource::new(self), progress).await?;
+        self.layout = Some(acquired.layout);
+        Ok(acquired)
+    }
+
+    /// Reads selected Config resources with metadata and extensions.
+    ///
+    /// # Errors
+    ///
+    /// Answers a database, selector, decoding or retention error.
+    pub async fn configuration_selected(
+        &mut self,
+        progress: &mut dyn MetadataProgress,
+        selector: &mut dyn ConfigSelector,
+    ) -> Result<AcquiredConfiguration, DbError> {
+        let acquired =
+            acquire_selected_configuration(&mut MsSqlMetadataSource::new(self), progress, selector)
+                .await?;
         self.layout = Some(acquired.layout);
         Ok(acquired)
     }

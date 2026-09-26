@@ -18,7 +18,7 @@ use crate::db::mssql::MsSqlSession;
 use crate::db::postgres::PostgresSession;
 use crate::error::DbError;
 use crate::limits::Limits;
-use crate::pipeline::AcquiredConfiguration;
+use crate::pipeline::{AcquiredConfiguration, ConfigSelector};
 use crate::progress::MetadataProgress;
 
 #[cfg(test)]
@@ -208,6 +208,24 @@ impl DatabaseSession {
         match self {
             Self::Postgres(session) => session.layout(),
             Self::MsSql(session) => session.layout(),
+        }
+    }
+
+    /// Reads selected Config resources with resolved metadata and extensions.
+    /// The selector sees the two bootstrap resources before deciding which
+    /// other names to retain.
+    ///
+    /// # Errors
+    ///
+    /// Returns a database, selector, decoding or retention error.
+    pub async fn configuration_selected(
+        &mut self,
+        progress: &mut dyn MetadataProgress,
+        selector: &mut dyn ConfigSelector,
+    ) -> Result<AcquiredConfiguration, DbError> {
+        match self {
+            Self::Postgres(session) => session.configuration_selected(progress, selector).await,
+            Self::MsSql(session) => session.configuration_selected(progress, selector).await,
         }
     }
 
