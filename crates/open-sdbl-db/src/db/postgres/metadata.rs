@@ -42,18 +42,58 @@ impl<'transaction> PostgresMetadataSource<'transaction> {
     }
 }
 
+#[cfg(test)]
+#[path = "../../tests/postgres_selected_config.rs"]
+mod selected_tests;
+
+#[derive(Clone, Copy)]
+enum ConfigBootstrapName<'a> {
+    Root,
+    Descriptor(&'a Guid),
+}
+
+impl ConfigBootstrapName<'_> {
+    fn as_str(&self) -> &str {
+        match self {
+            Self::Root => "root",
+            Self::Descriptor(guid) => guid.as_str(),
+        }
+    }
+}
+
+fn selected_postgres_bootstrap_sql(
+    layout: &StorageLayout,
+    name: ConfigBootstrapName<'_>,
+) -> String {
+    // The name is either a constant or a validated GUID. A literal lets
+    // PostgreSQL coerce it to 1C's `mvarchar` and use the filename index;
+    // a bound Rust string cannot be serialized as that custom type.
+    PostgresMetadataQueries::config_all(layout).replacen(
+        " ORDER BY ",
+        &format!(" WHERE filename = '{}' ORDER BY ", name.as_str()),
+        1,
+    )
+}
+
+fn selected_postgres_remaining_sql(layout: &StorageLayout, descriptor: &Guid) -> String {
+    PostgresMetadataQueries::config_all(layout).replacen(
+        " ORDER BY ",
+        &format!(
+            " WHERE filename <> 'root' AND filename <> '{}' ORDER BY ",
+            descriptor.as_str()
+        ),
+        1,
+    )
+}
+
 async fn selected_postgres_resource(
     transaction: &Transaction<'_>,
     limits: Limits,
     layout: &StorageLayout,
-    name: &str,
+    name: ConfigBootstrapName<'_>,
 ) -> Result<ConfigResource, DbError> {
-    let query = PostgresMetadataQueries::config_all(layout).replacen(
-        " ORDER BY ",
-        " WHERE filename = $1 ORDER BY ",
-        1,
-    );
-    let parameters: [&(dyn ToSql + Sync); 1] = [&name];
+    let query = selected_postgres_bootstrap_sql(layout, name);
+    let parameters = std::iter::empty::<&(dyn ToSql + Sync)>();
     let rows = query_timeout(
         limits,
         "PostgreSQL selected Config bootstrap query",
@@ -77,7 +117,8 @@ async fn selected_postgres_resource(
         collect_bounded_resources(assemble_parts(parts), limits, &mut NoProgress).await?;
     if resources.len() != 1 {
         return Err(DbError::Data(format!(
-            "Config bootstrap resource {name:?} is missing"
+            "Config bootstrap resource {:?} is missing",
+            name.as_str()
         )));
     }
     Ok(resources.remove(0))
@@ -247,19 +288,21 @@ impl MetadataSource for PostgresMetadataSource<'_> {
             unsigned_progress_total(totals.try_get(1)?, "compressed byte count")?,
         );
 
-        let root = selected_postgres_resource(transaction, limits, layout, "root").await?;
-        let descriptor_name = selector.root_resource_name(&root)?;
-        let descriptor_name = descriptor_name.parse::<Guid>()?.to_string();
-        let descriptor =
-            selected_postgres_resource(transaction, limits, layout, &descriptor_name).await?;
+        let root =
+            selected_postgres_resource(transaction, limits, layout, ConfigBootstrapName::Root)
+                .await?;
+        let descriptor_name = selector.root_resource_name(&root)?.parse::<Guid>()?;
+        let descriptor = selected_postgres_resource(
+            transaction,
+            limits,
+            layout,
+            ConfigBootstrapName::Descriptor(&descriptor_name),
+        )
+        .await?;
         selector.configure(&descriptor)?;
 
-        let query = PostgresMetadataQueries::config_all(layout).replacen(
-            " ORDER BY ",
-            " WHERE filename <> $1 AND filename <> $2 ORDER BY ",
-            1,
-        );
-        let parameters: [&(dyn ToSql + Sync); 2] = [&"root", &descriptor_name];
+        let query = selected_postgres_remaining_sql(layout, &descriptor_name);
+        let parameters = std::iter::empty::<&(dyn ToSql + Sync)>();
         let rows = query_timeout(limits, "PostgreSQL selected Config query", async {
             transaction
                 .query_raw(&query, parameters)
