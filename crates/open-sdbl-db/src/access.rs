@@ -8,15 +8,17 @@
 
 use std::collections::{HashMap, HashSet};
 
-use open_sdbl::access::{Access, RestrictionScope, TemplateNode, parse_template, read_access};
+use open_sdbl::access::{
+    Access, RestrictionError, RestrictionScope, TemplateNode, parse_template, read_access,
+};
 use open_sdbl::metadata::{
-    Guid, InfoBaseUser, MetadataSnapshot, MsSqlMetadataQueries, ObjectId, PostgresMetadataQueries,
-    RestrictionTemplate, Right, RoleCatalog, RoleEntry, RoleRights, StorageLayout, UserRow,
-    parse_role_rights,
+    FieldId, Guid, InfoBaseUser, MetadataSnapshot, MsSqlMetadataQueries, ObjectId,
+    PostgresMetadataQueries, RestrictionTemplate, Right, RoleCatalog, RoleEntry, RoleRights,
+    StorageLayout, UserRow, parse_role_rights,
 };
 use open_sdbl::query::{
-    AccessDecision, AccessRestriction, RestrictionRequest, RestrictionTarget, SessionParameters,
-    find_metadata_object, object_query_name,
+    AccessDecision, AccessRestriction, FieldUsageRequest, RestrictionRequest, RestrictionTarget,
+    SessionParameters, find_metadata_object, object_query_name,
 };
 
 use crate::cells::{Cell, QueryRows};
@@ -136,6 +138,147 @@ impl AccessStore {
             .filter_map(|role| self.rights.get(role))
             .collect()
     }
+}
+
+/// Checks every field the prepared query reads against the current user's
+/// loaded rights. An empty request still requires a current user and complete
+/// rights, so it cannot accidentally authorize an unauthenticated query.
+///
+/// This checks field access only. The caller must also apply the row-level
+/// decisions of [`user_decisions`] and reject their errors before execution.
+/// Standard fields have no Config GUID by which to map a member right, so
+/// they fail closed. Tabular-section fields currently fail closed too.
+///
+/// Custom attributes require an exact member GUID and explicit `Read` grant
+/// in a role that also grants object `Read`. An absent member entry is never
+/// read as permission. This is a proof boundary, not a claim of full 1C
+/// field-right compatibility.
+///
+/// # Errors
+///
+/// Returns [`DbError::Data`] if the user or any role rights are absent, a
+/// field cannot be resolved or matched safely, or no role grants its read.
+pub fn check_user_field_access(
+    store: &AccessStore,
+    snapshot: &MetadataSnapshot,
+    request: &FieldUsageRequest,
+) -> Result<(), DbError> {
+    let user = store.current_user().ok_or_else(|| {
+        DbError::Data("a field access check needs a current user; none is set".to_owned())
+    })?;
+    let mut unknown = store.unreadable_rights(&user.data.roles);
+    unknown.extend(store.missing_rights(&user.data.roles));
+    if !unknown.is_empty() {
+        return Err(DbError::Data(format!(
+            "the rights of roles of user {:?} are unread ({}); field access is unknown",
+            user.name,
+            unknown
+                .iter()
+                .map(|role| store.role_name(role))
+                .collect::<Vec<_>>()
+                .join(", ")
+        )));
+    }
+    let roles = store.rights_of(&user.data.roles);
+    for used in &request.fields {
+        let object = snapshot.object_by_id(used.object).ok_or_else(|| {
+            DbError::Data(format!(
+                "field access: metadata object {} is unresolved",
+                used.object
+            ))
+        })?;
+        let field = match used.field {
+            FieldId::Metadata(id) => {
+                let attribute = snapshot.attribute_by_id(id).map_err(|error| {
+                    DbError::Data(format!(
+                        "field access: attribute {id} is unresolved: {error}"
+                    ))
+                })?;
+                let name = attribute.name.as_deref().ok_or_else(|| {
+                    DbError::Data(format!("field access: attribute {id} has no metadata name"))
+                })?;
+                if snapshot.field_id(used.object, name).ok() != Some(used.field) {
+                    return Err(DbError::Data(format!(
+                        "field access: attribute {id} does not belong to object {}",
+                        used.object
+                    )));
+                }
+                Some(id.as_bytes())
+            }
+            FieldId::Standard(standard) => {
+                if snapshot.field_id(used.object, standard.schema_name()).ok() != Some(used.field) {
+                    return Err(DbError::Data(format!(
+                        "field access: standard field {standard:?} does not belong to object {}",
+                        used.object
+                    )));
+                }
+                None
+            }
+        };
+        if used.table_part.is_some() {
+            return Err(DbError::Data(format!(
+                "field access: tabular-section field {:?} of {} has no proven member-right mapping",
+                used.field, used.object
+            )));
+        }
+        let mut uncertain = false;
+        let mut allowed = false;
+        for role in &roles {
+            if !role.grants(&object.guid, &Right::Read) {
+                continue;
+            }
+            match field.as_ref() {
+                Some(field_guid) => {
+                    let members = role
+                        .objects
+                        .iter()
+                        .filter(|entry| entry.object == object.guid && !entry.members.is_empty());
+                    let mut exact = None;
+                    let mut nested = false;
+                    for entry in members {
+                        if entry
+                            .members
+                            .iter()
+                            .any(|member| member.id.to_bytes() == *field_guid)
+                        {
+                            if entry.members.len() != 1 || exact.is_some() {
+                                nested = true;
+                            } else {
+                                exact = Some(entry);
+                            }
+                        }
+                    }
+                    if nested {
+                        uncertain = true;
+                    } else if let Some(entry) = exact {
+                        if let Some(read) = entry.right(&Right::Read) {
+                            allowed = read.allowed;
+                        } else {
+                            uncertain = true;
+                        }
+                    }
+                }
+                None => {
+                    uncertain = true;
+                }
+            }
+            if allowed {
+                break;
+            }
+        }
+        if !allowed {
+            let reason = if uncertain {
+                "member rights cannot be mapped to the field"
+            } else {
+                "no role grants its Read right"
+            };
+            return Err(DbError::Data(format!(
+                "field access: {:?} of {} ({:?}) is denied for user {:?}: {reason}",
+                used.field, used.object, used.usage, user.name
+            )));
+        }
+    }
+    Ok(())
 }
 
 /// Reads the users of the base once, if they are not read yet.
@@ -966,21 +1109,15 @@ pub fn user_decisions(
             right: &Right::Read,
             session: session_parameters,
         };
-        let access = read_access(&roles, &object.guid, &Right::Read, &scope).map_err(|error| {
-            DbError::Data(format!(
-                "restriction of {table_name} for user {:?}: {error}; set the session parameters the template reads (the session command)",
-                user.name
-            ))
-        })?;
+        let access = read_access(&roles, &object.guid, &Right::Read, &scope)
+            .map_err(|error| restriction_error(error, &table_name, &user.name))?;
         decisions.push(match &access {
             Access::Denied => AccessDecision::denied(target.clone()),
             Access::Unrestricted => AccessDecision::unrestricted(target.clone()),
             Access::Restricted(_) => {
                 let condition = access
                     .condition()
-                    .map_err(|error| {
-                        DbError::Data(format!("restriction of {table_name}: {error}"))
-                    })?
+                    .map_err(|error| restriction_condition_error(error, &table_name, &user.name))?
                     .ok_or_else(|| {
                         DbError::Data(format!("restriction of {table_name} expanded to nothing"))
                     })?;
@@ -997,6 +1134,32 @@ pub fn user_decisions(
         });
     }
     Ok(decisions)
+}
+
+fn restriction_error(error: RestrictionError, table_name: &str, user_name: &str) -> DbError {
+    match error {
+        RestrictionError::MissingParameter(name) => DbError::MissingSessionParameter {
+            name,
+            context: format!("restriction of {table_name} for user {user_name:?}"),
+        },
+        other => DbError::Data(format!(
+            "restriction of {table_name} for user {user_name:?}: {other}; set the session parameters the template reads (the session command)"
+        )),
+    }
+}
+
+fn restriction_condition_error(
+    error: RestrictionError,
+    table_name: &str,
+    user_name: &str,
+) -> DbError {
+    match error {
+        RestrictionError::MissingParameter(name) => DbError::MissingSessionParameter {
+            name,
+            context: format!("restriction of {table_name} for user {user_name:?}"),
+        },
+        other => DbError::Data(format!("restriction of {table_name}: {other}")),
+    }
 }
 
 /// Binds an expanded condition to the target, reading a tabular section
@@ -1065,15 +1228,11 @@ pub fn user_restrictions(
             right: &Right::Read,
             session: session_parameters,
         };
-        let access = read_access(&roles, &object.guid, &Right::Read, &scope).map_err(|error| {
-            DbError::Data(format!(
-                "restriction of {table_name} for user {:?}: {error}; set the session parameters the template reads (the session command)",
-                user.name
-            ))
-        })?;
+        let access = read_access(&roles, &object.guid, &Right::Read, &scope)
+            .map_err(|error| restriction_error(error, &table_name, &user.name))?;
         let Some(condition) = access
             .condition()
-            .map_err(|error| DbError::Data(format!("restriction of {table_name}: {error}")))?
+            .map_err(|error| restriction_condition_error(error, &table_name, &user.name))?
         else {
             continue;
         };

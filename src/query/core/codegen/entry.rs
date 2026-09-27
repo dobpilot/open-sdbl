@@ -378,10 +378,11 @@ fn check_parameter_binding(
             Some(index) => referenced[index] = true,
             None if bound.contains(name) => {}
             None => {
-                return Err(QueryDiagnostic::at(
-                    QueryDiagnosticKind::Parameter,
-                    Some(token),
+                return Err(QueryDiagnostic::missing_parameter(
+                    name,
+                    token,
                     format!("parameter {:?} has no value", token.lexeme),
+                    false,
                 ));
             }
         }

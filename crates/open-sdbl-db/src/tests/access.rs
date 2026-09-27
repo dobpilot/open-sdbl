@@ -4,7 +4,11 @@
 use std::path::PathBuf;
 use std::str::FromStr;
 
-use open_sdbl::metadata::parse_config_descriptors;
+use open_sdbl::metadata::{
+    LiveColumn, LiveIndex, LiveTable, parse_config_descriptors, parse_db_names,
+    parse_schema_storage, resolve_metadata,
+};
+use open_sdbl::query::{FieldUsage, FieldUsageRequest, FieldUse};
 
 use super::*;
 
@@ -341,4 +345,282 @@ fn decisions_refuse_to_answer_for_a_role_whose_rights_are_unread() {
         error.to_string().contains("are unread"),
         "an unread role must never read as permission: {error}"
     );
+}
+
+fn field_snapshot() -> MetadataSnapshot {
+    let hex = crate::hex_test_support::hex;
+    let db_names = parse_db_names(&hex(
+        "0dcab10d03310800c05d5c83f46f631b16c800d9003054518a6f2def9e5c7dbbc23636f5390c5d6e435a9391755e98a94d92570c2128efc878e2eb51a0b703bb769761ab61aa13528d441bd271928b26b5ce62505e9ff5ff74ce0f",
+    ))
+    .unwrap();
+    let descriptors = parse_config_descriptors(
+        "b8bac76b-c91b-4d78-8a70-ffa39f8de694",
+        &hex("4d8d4b0ac3201400af22ae7d9018a3be650f505ae809def303857e426256c1bb37d850ba9e6166d36adb7ad529f64cc15986803d8389ce8327d741ce3460f631593455c9cb945eb7c88f732a14a9d0757e73926a4fc879955f2e965d10cfc31053536a3d467a0c68390e902918303a65608b23381390b219468fbc8f5af854ca7ce7b5fc1f1a10f423b5d60f"),
+    )
+    .unwrap();
+    let schema = parse_schema_storage(
+        br#"{0,{1,{"Reference53","N",53,"",{4,{"ID",0,{1,{"R",0,0,"Reference53",2}},"",0},{"Code",0,{1,{"S",2147483657,0,"",0}},"",0},{"Date_Time",0,{1,{"T",0,0,"",0}},"",0},{"Fld54",0,{1,{"B",16,0,"",0}},"",0}},{0},{1,{"Code",1,{2,"Code","ID"},0,0,0,{0},0}},1,"R",{0},{0},"",0}}}"#,
+    )
+    .unwrap();
+    let live = LiveTable {
+        name: "_reference53".to_owned(),
+        columns: ["_idrref", "_code", "_date_time", "_fld54"]
+            .into_iter()
+            .map(|name| LiveColumn {
+                name: name.to_owned(),
+                data_type: "bytea".to_owned(),
+            })
+            .collect(),
+        indexes: vec![LiveIndex {
+            name: "_reference53_2".to_owned(),
+            columns: vec!["_code".to_owned(), "_idrref".to_owned()],
+            unique: true,
+        }],
+    };
+    resolve_metadata(db_names, descriptors, schema, vec![live]).snapshot
+}
+
+fn field_fixture() -> (MetadataSnapshot, Guid, RoleRights, FieldUse, FieldUse) {
+    let snapshot = field_snapshot();
+    let object = snapshot
+        .objects()
+        .iter()
+        .find(|object| object.name.as_deref() == Some("OpenSdblMetadataProbe"))
+        .expect("the probe catalog exists");
+    let field = snapshot
+        .fields()
+        .iter()
+        .find(|field| field.name.as_deref() == Some("ProbeAttribute"))
+        .expect("the probe attribute exists");
+    let role = Guid::from_str("feadebe9-a90e-48b0-a89f-e1f5d4e23041").unwrap();
+    let mut rights = parse_role_rights(&fixture(&format!("buh_{role}.0.deflate"))).unwrap();
+    let mut object_rights = rights.objects[0].clone();
+    object_rights.object = object.guid.clone();
+    object_rights.members.clear();
+    object_rights
+        .rights
+        .retain(|entry| entry.right == Right::Read);
+    object_rights.rights[0].allowed = true;
+    rights.objects = vec![object_rights];
+    rights.set_for_new_objects = false;
+    rights.set_for_attributes_by_default = true;
+    let object_id = ObjectId::from(&object.guid);
+    let attribute_id = open_sdbl::metadata::AttributeId::from(&field.guid);
+    (
+        snapshot,
+        role,
+        rights,
+        FieldUse {
+            object: object_id,
+            table_part: None,
+            field: FieldId::Metadata(attribute_id),
+            usage: FieldUsage::Filter,
+        },
+        FieldUse {
+            object: object_id,
+            table_part: None,
+            field: FieldId::Standard(open_sdbl::metadata::StandardFieldId::Code),
+            usage: FieldUsage::Projection,
+        },
+    )
+}
+
+fn selected_store(snapshot: &MetadataSnapshot, role: &Guid, rights: RoleRights) -> AccessStore {
+    let mut store = AccessStore::new(snapshot);
+    let mut user = users_from_rows(&user_rows()).unwrap().remove(0);
+    user.data.roles = vec![role.clone()];
+    store.set_current_user(Some(user));
+    store.insert_rights(role.clone(), rights);
+    store
+}
+
+fn denied_field_entry(object: &Guid, field: &Guid) -> open_sdbl::metadata::ObjectRights {
+    let template_role = Guid::from_str(ROLE_GUIDS[0]).unwrap();
+    let template = parse_role_rights(&fixture(&format!("unf_{template_role}.0.deflate"))).unwrap();
+    let mut entry = template
+        .objects
+        .into_iter()
+        .find(|entry| !entry.members.is_empty())
+        .expect("the measured rights fixture has member entries");
+    entry.object = object.clone();
+    entry.members.truncate(1);
+    entry.members[0].id = field.clone();
+    let mut read = parse_role_rights(&fixture(
+        "buh_feadebe9-a90e-48b0-a89f-e1f5d4e23041.0.deflate",
+    ))
+    .unwrap()
+    .objects[0]
+        .right(&Right::Read)
+        .unwrap()
+        .clone();
+    read.allowed = false;
+    read.restrictions.clear();
+    entry.rights = vec![read];
+    entry
+}
+
+#[test]
+fn field_check_requires_selected_user_and_every_roles_rights() {
+    let (snapshot, role, rights, field, _) = field_fixture();
+    let request = FieldUsageRequest {
+        fields: vec![field],
+    };
+    let store = AccessStore::new(&snapshot);
+    assert!(check_user_field_access(&store, &snapshot, &FieldUsageRequest::default()).is_err());
+    assert!(
+        check_user_field_access(&store, &snapshot, &request)
+            .unwrap_err()
+            .to_string()
+            .contains("needs a current user")
+    );
+    let mut store = selected_store(&snapshot, &role, rights);
+    let missing = Guid::from_str(ROLE_GUIDS[1]).unwrap();
+    store.current.as_mut().unwrap().data.roles.push(missing);
+    assert!(
+        check_user_field_access(&store, &snapshot, &request)
+            .unwrap_err()
+            .to_string()
+            .contains("are unread")
+    );
+}
+
+#[test]
+fn field_check_rejects_an_explicitly_denied_filter_and_accepts_a_second_grant() {
+    let (snapshot, role, mut rights, filter, _) = field_fixture();
+    let object = snapshot.object_by_id(filter.object).unwrap().guid.clone();
+    let FieldId::Metadata(attribute) = filter.field else {
+        unreachable!()
+    };
+    let field = snapshot.attribute_by_id(attribute).unwrap().guid.clone();
+    rights.objects.push(denied_field_entry(&object, &field));
+    let mut store = selected_store(&snapshot, &role, rights.clone());
+    let request = FieldUsageRequest {
+        fields: vec![filter.clone()],
+    };
+    assert!(
+        check_user_field_access(&store, &snapshot, &request)
+            .unwrap_err()
+            .to_string()
+            .contains("no role grants")
+    );
+
+    let second_role = Guid::from_str(ROLE_GUIDS[1]).unwrap();
+    store
+        .current
+        .as_mut()
+        .unwrap()
+        .data
+        .roles
+        .push(second_role.clone());
+    rights.objects.last_mut().unwrap().rights[0].allowed = true;
+    store.insert_rights(second_role, rights);
+    check_user_field_access(&store, &snapshot, &request).unwrap();
+}
+
+#[test]
+fn standard_and_section_fields_fail_closed_when_member_mapping_is_unknown() {
+    let (snapshot, role, mut rights, filter, mut standard) = field_fixture();
+    let object = snapshot.object_by_id(filter.object).unwrap().guid.clone();
+    let FieldId::Metadata(attribute) = filter.field else {
+        unreachable!()
+    };
+    let field = snapshot.attribute_by_id(attribute).unwrap().guid.clone();
+    let store = selected_store(&snapshot, &role, rights.clone());
+    assert!(
+        check_user_field_access(
+            &store,
+            &snapshot,
+            &FieldUsageRequest {
+                fields: vec![standard.clone()],
+            },
+        )
+        .unwrap_err()
+        .to_string()
+        .contains("cannot be mapped")
+    );
+    rights.objects.push(denied_field_entry(&object, &field));
+    let store = selected_store(&snapshot, &role, rights);
+    assert!(
+        check_user_field_access(
+            &store,
+            &snapshot,
+            &FieldUsageRequest {
+                fields: vec![standard.clone()]
+            },
+        )
+        .unwrap_err()
+        .to_string()
+        .contains("cannot be mapped")
+    );
+    standard.table_part = Some("Items".to_owned());
+    assert!(
+        check_user_field_access(
+            &store,
+            &snapshot,
+            &FieldUsageRequest {
+                fields: vec![standard]
+            },
+        )
+        .unwrap_err()
+        .to_string()
+        .contains("tabular-section")
+    );
+}
+
+#[test]
+fn an_attribute_without_an_exact_grant_stays_denied_despite_the_default_flag() {
+    let (snapshot, role, mut rights, field, _) = field_fixture();
+    assert!(rights.set_for_attributes_by_default);
+    let store = selected_store(&snapshot, &role, rights.clone());
+    assert!(
+        check_user_field_access(
+            &store,
+            &snapshot,
+            &FieldUsageRequest {
+                fields: vec![field.clone()],
+            },
+        )
+        .unwrap_err()
+        .to_string()
+        .contains("no role grants")
+    );
+
+    let object = snapshot.object_by_id(field.object).unwrap().guid.clone();
+    let FieldId::Metadata(attribute) = field.field else {
+        unreachable!()
+    };
+    let field_guid = snapshot.attribute_by_id(attribute).unwrap().guid.clone();
+    let mut exact = denied_field_entry(&object, &field_guid);
+    exact.rights[0].allowed = true;
+    rights.objects.push(exact);
+    let store = selected_store(&snapshot, &role, rights);
+    check_user_field_access(
+        &store,
+        &snapshot,
+        &FieldUsageRequest {
+            fields: vec![field],
+        },
+    )
+    .unwrap();
+}
+
+#[test]
+fn missing_rls_parameter_keeps_its_name_through_both_database_apis() {
+    let (snapshot, role, mut rights, field, _) = field_fixture();
+    rights.objects[0].rights[0].restrictions[0].condition =
+        "#Если &НужноеЗначение #Тогда ТекущаяТаблица ГДЕ Ссылка = Ссылка #КонецЕсли".to_owned();
+    let store = selected_store(&snapshot, &role, rights);
+    let request = RestrictionRequest {
+        targets: vec![RestrictionTarget {
+            object: field.object,
+            table_part: None,
+        }],
+    };
+    for error in [
+        user_decisions(&store, &snapshot, &request, &[], &SessionParameters::new()).unwrap_err(),
+        user_restrictions(&store, &snapshot, &request, &[], &SessionParameters::new()).unwrap_err(),
+    ] {
+        assert_eq!(error.missing_session_parameter(), Some("НужноеЗначение"));
+        assert!(matches!(error, DbError::MissingSessionParameter { .. }));
+    }
 }

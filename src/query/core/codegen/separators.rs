@@ -38,13 +38,14 @@ pub(super) fn separator_predicates(
                 ));
             }
             SeparatorState::Missing(parameter) => {
-                return Err(QueryDiagnostic::at(
-                    QueryDiagnosticKind::Parameter,
-                    Some(token),
+                return Err(QueryDiagnostic::missing_parameter(
+                    parameter,
+                    token,
                     format!(
                         "data separator {:?} requires session parameter {parameter:?}",
                         separator.name
                     ),
+                    true,
                 ));
             }
             SeparatorState::Unsupported => {

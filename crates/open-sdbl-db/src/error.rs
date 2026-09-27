@@ -20,6 +20,13 @@ pub enum DbError {
     Metadata(MetadataError),
     /// Data a database returned that does not match what was expected.
     Data(String),
+    /// A restriction needs a session parameter whose value is absent.
+    MissingSessionParameter {
+        /// The parameter name as written in the restriction.
+        name: String,
+        /// The object and user whose restriction needed it.
+        context: String,
+    },
     /// A connection, a query, or a transaction the database refused.
     Database(String),
     /// A call that exceeded the limit it was given.
@@ -80,6 +87,14 @@ impl DbError {
         matches!(self, Self::SessionClosed)
     }
 
+    /// The name of a session parameter a restriction could not read.
+    pub fn missing_session_parameter(&self) -> Option<&str> {
+        match self {
+            Self::MissingSessionParameter { name, .. } => Some(name),
+            _ => None,
+        }
+    }
+
     /// Whether the SQL Server connection itself failed, rather than the
     /// statement sent over it.
     pub const fn is_mssql_connection_failure(&self) -> bool {
@@ -118,6 +133,12 @@ impl fmt::Display for DbError {
                 duration.as_secs_f64()
             ),
             Self::Data(message) | Self::Database(message) => formatter.write_str(message),
+            Self::MissingSessionParameter { name, context } => {
+                write!(
+                    formatter,
+                    "{context}: session parameter \"{name}\" has no value"
+                )
+            }
             Self::SessionClosed => formatter.write_str("the database session is closed"),
             Self::AsyncContext => formatter
                 .write_str("a blocking database call was made from inside an asynchronous runtime"),
@@ -132,6 +153,7 @@ impl std::error::Error for DbError {
             Self::Metadata(error) => Some(error),
             Self::MsSql { source, .. } => Some(source),
             Self::Data(_)
+            | Self::MissingSessionParameter { .. }
             | Self::Database(_)
             | Self::DatabaseTimeout { .. }
             | Self::SessionClosed

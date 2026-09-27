@@ -4,12 +4,12 @@ use std::fmt;
 
 use crate::Token;
 use crate::metadata::ObjectId;
+use crate::query::core::QueryDiagnostic;
 use crate::query::core::ast::days_in_month;
 use crate::query::core::names::names_equal;
 use crate::query::core::resolve::ColumnKind;
 use crate::query::core::resolve::PresentationPlan;
 use crate::query::core::restrict::{AccessDecision, AccessRestriction};
-use crate::query::core::{QueryDiagnostic, QueryDiagnosticKind};
 
 /// A calendar date and time supplied as a query parameter.
 ///
@@ -520,10 +520,11 @@ impl<'a> Parameters<'a> {
             .find(|parameter| names_equal(parameter.name(), name))
             .map(|parameter| Some(parameter.value()))
             .ok_or_else(|| {
-                QueryDiagnostic::at(
-                    QueryDiagnosticKind::Parameter,
-                    Some(token),
+                QueryDiagnostic::missing_parameter(
+                    name,
+                    token,
                     format!("parameter {:?} has no value", token.lexeme),
+                    false,
                 )
             })
     }

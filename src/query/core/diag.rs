@@ -14,6 +14,8 @@ pub struct QueryDiagnostic {
     line: usize,
     column: usize,
     source: Option<QueryDiagnosticSource>,
+    missing_parameter: Option<String>,
+    missing_session_parameter: bool,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -108,6 +110,8 @@ impl QueryDiagnostic {
             line,
             column,
             source: None,
+            missing_parameter: None,
+            missing_session_parameter: false,
         }
     }
 
@@ -123,6 +127,8 @@ impl QueryDiagnostic {
             line: position.line,
             column: position.column,
             source: None,
+            missing_parameter: None,
+            missing_session_parameter: false,
         }
     }
 
@@ -144,6 +150,8 @@ impl QueryDiagnostic {
             line: 0,
             column: 0,
             source: None,
+            missing_parameter: None,
+            missing_session_parameter: false,
         }
     }
 
@@ -156,6 +164,18 @@ impl QueryDiagnostic {
             Some(token) => Self::at_kind(kind, Some(token), message),
             None => Self::unpositioned(kind, message),
         }
+    }
+
+    pub(super) fn missing_parameter(
+        name: &str,
+        token: &Token<'_>,
+        message: impl Into<String>,
+        session: bool,
+    ) -> Self {
+        let mut diagnostic = Self::at_kind(QueryDiagnosticKind::Parameter, Some(token), message);
+        diagnostic.missing_parameter = Some(name.to_owned());
+        diagnostic.missing_session_parameter = session;
+        diagnostic
     }
 
     pub(super) fn lookup(
@@ -192,6 +212,19 @@ impl QueryDiagnostic {
     #[must_use]
     pub const fn kind(&self) -> QueryDiagnosticKind {
         self.kind
+    }
+
+    /// The name of an unbound parameter, without its leading `&`.
+    #[must_use]
+    pub fn missing_parameter_name(&self) -> Option<&str> {
+        self.missing_parameter.as_deref()
+    }
+
+    /// Whether a data separator specifically needs a session parameter.
+    /// An unbound `&Имя` alone has no such provenance and returns `false`.
+    #[must_use]
+    pub const fn is_missing_session_parameter(&self) -> bool {
+        self.missing_session_parameter
     }
 
     /// Returns the diagnostic text without its source position.
@@ -261,6 +294,8 @@ impl From<Diagnostic> for QueryDiagnostic {
             line: error.line,
             column: error.column,
             source: Some(QueryDiagnosticSource::Lex(error)),
+            missing_parameter: None,
+            missing_session_parameter: false,
         }
     }
 }
