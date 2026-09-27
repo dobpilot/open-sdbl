@@ -5,4 +5,4 @@
 - [x] 3. Add an all-or-error field-access check, with tests for role aggregation, explicit member denial, missing rights, standard fields, and unsupported paths.
 - [x] 4. Bump both library crates and workspace lockfile to 0.9.3.
 - [x] 5. Run formatting, Clippy, workspace tests, rustdoc, and strict OpenSpec validation; run available live read-only checks.
-- [ ] 6. Archive this change after checks pass.
+- [x] 6. Archive this change after checks pass.
