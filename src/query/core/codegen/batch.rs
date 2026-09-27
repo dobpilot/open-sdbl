@@ -3,13 +3,16 @@
 use std::collections::BTreeSet;
 
 use super::orchestrate::{PresentationCompilation, compile_query_ast};
+use super::select::render_parameter_table;
 use crate::Token;
 use crate::metadata::MetadataSnapshot;
+use crate::query::core::MaterializedBatchResult;
 use crate::query::core::ast::{
     BatchAst, Expression, IndexAst, IntoAst, Projection, QueryAst, StatementAst,
 };
 use crate::query::core::dialect::SqlDialect;
 use crate::query::core::names::names_equal;
+use crate::query::core::params::{ParameterColumn, ParameterValue};
 use crate::query::core::resolve::{
     ColumnKind, CompilationCatalog, CompiledColumn, CompiledQuery, RestrictionState,
 };
@@ -70,6 +73,252 @@ pub(super) fn compile_batch_ast(
     }
     *manager = scratch;
     Ok(result)
+}
+
+/// Executes each placement selection through the host before compiling the
+/// next statement. The manager is committed only after the whole batch succeeds.
+pub(super) fn compile_materialized_batch_ast<E, F>(
+    ast: &BatchAst<'_, '_>,
+    snapshot: &MetadataSnapshot,
+    presentations: &mut PresentationCompilation<'_>,
+    manager: &mut TempTablesManager,
+    on_placement: &mut F,
+) -> Result<MaterializedBatchResult, E>
+where
+    E: From<QueryDiagnostic>,
+    F: FnMut(&CompiledQuery) -> Result<Vec<Vec<ParameterValue>>, E>,
+{
+    let dialect = presentations.dialect;
+    let fingerprint = snapshot.fingerprint();
+    manager.check_binding(dialect, fingerprint)?;
+    let mut scratch = manager.clone();
+    let mut result = MaterializedBatchResult::Dropped;
+    let last = ast.statements.len().saturating_sub(1);
+    for (position, statement) in ast.statements.iter().enumerate() {
+        let final_statement = position == last;
+        match statement {
+            StatementAst::Drop { name } => {
+                scratch.drop_table(name)?;
+                if final_statement {
+                    result = MaterializedBatchResult::Dropped;
+                }
+            }
+            StatementAst::Query(query) => {
+                let compiled = compile_statement(
+                    query,
+                    snapshot,
+                    presentations,
+                    &scratch,
+                    query.into.as_ref(),
+                )?;
+                let Some(into) = &query.into else {
+                    if final_statement {
+                        let CompiledStatement {
+                            query,
+                            dependencies,
+                            ..
+                        } = compiled;
+                        check_materialized_dependencies(&scratch, &dependencies, None)?;
+                        result = MaterializedBatchResult::Query(CompiledQuery {
+                            sql: join_with_prefix(
+                                with_prefix(&scratch, &dependencies, dialect),
+                                &query.sql,
+                            ),
+                            ..query
+                        });
+                    }
+                    continue;
+                };
+                let CompiledStatement {
+                    query: selection,
+                    dependencies,
+                    hierarchy,
+                } = compiled;
+                check_materialized_dependencies(&scratch, &dependencies, Some(into.token))?;
+                if !into.append && scratch.contains(into.name.lexeme) {
+                    return Err(QueryDiagnostic::at(
+                        QueryDiagnosticKind::TemporaryTable,
+                        Some(into.name),
+                        format!("temporary table {:?} already exists", into.name.lexeme),
+                    )
+                    .into());
+                }
+                let previous = if into.append {
+                    let previous = scratch.source(into.name)?;
+                    check_append_structure(&previous.columns, &selection.columns, into.token)?;
+                    let entry = scratch
+                        .entry(previous.id)
+                        .expect("resolved temporary table exists");
+                    if !entry.materialized {
+                        return Err(QueryDiagnostic::at(
+                            QueryDiagnosticKind::TemporaryTable,
+                            Some(into.token),
+                            "cannot append materialized rows to a CTE-only temporary table",
+                        )
+                        .into());
+                    }
+                    Some(previous)
+                } else {
+                    None
+                };
+                let local = hierarchy
+                    .iter()
+                    .map(|(name, body)| format!("{} AS ({body})", dialect.quote_identifier(name)))
+                    .collect::<Vec<_>>();
+                let capture_sql =
+                    logical_capture_dates(&selection.sql, &selection.columns, dialect);
+                let local_sql = if local.is_empty() {
+                    capture_sql.clone()
+                } else {
+                    let keyword = if dialect == SqlDialect::Postgres {
+                        "WITH RECURSIVE"
+                    } else {
+                        "WITH"
+                    };
+                    format!("{keyword} {} {capture_sql}", local.join(", "))
+                };
+                let selection_sql =
+                    join_with_prefix(with_prefix(&scratch, &dependencies, dialect), &local_sql);
+                let selection = CompiledQuery {
+                    sql: selection_sql,
+                    ..selection
+                };
+                let rows = on_placement(&selection)?;
+                let count = rows.len();
+                let literal = materialized_relation(
+                    &selection.columns,
+                    &rows,
+                    into.token,
+                    snapshot,
+                    dialect,
+                )?;
+                let restricted = presentations.mode.is_restricted() || query.allowed.is_some();
+                let id = match previous {
+                    Some(previous) => {
+                        let previous_id = previous.id;
+                        let columns = previous.columns;
+                        let body = format!(
+                            "SELECT {} FROM {} UNION ALL {literal}",
+                            columns
+                                .iter()
+                                .map(|column| dialect.quote_identifier(&column.label))
+                                .collect::<Vec<_>>()
+                                .join(", "),
+                            dialect.quote_identifier(&cte_name(previous_id)),
+                        );
+                        scratch.append(
+                            into.name,
+                            body,
+                            columns,
+                            BTreeSet::from([previous_id]),
+                            Vec::new(),
+                            dialect,
+                            fingerprint,
+                            restricted,
+                        )?
+                    }
+                    None => scratch.define(
+                        into.name,
+                        literal,
+                        selection.columns,
+                        BTreeSet::new(),
+                        Vec::new(),
+                        dialect,
+                        fingerprint,
+                        restricted,
+                    )?,
+                };
+                scratch
+                    .entry_mut(id)
+                    .expect("new temporary table exists")
+                    .materialized = true;
+                scratch.check_materialized_size(into.token)?;
+                if final_statement {
+                    result = MaterializedBatchResult::Placed(count);
+                }
+            }
+        }
+    }
+    *manager = scratch;
+    Ok(result)
+}
+
+/// Placement compiles in the storage date domain. The host callback sees
+/// logical dates, and the literal renderer shifts them back on retention.
+fn logical_capture_dates(sql: &str, columns: &[CompiledColumn], dialect: SqlDialect) -> String {
+    if !dialect.is_mssql()
+        || !columns
+            .iter()
+            .any(|column| matches!(column.kind, ColumnKind::DateTime))
+    {
+        return sql.to_owned();
+    }
+    let alias = dialect.quote_identifier("__capture");
+    let projection = columns
+        .iter()
+        .map(|column| {
+            let label = dialect.quote_identifier(&column.label);
+            let value = dialect.qualified_column(Some("__capture"), &column.label);
+            let value = if matches!(column.kind, ColumnKind::DateTime) {
+                dialect.date_scalar(&value)
+            } else {
+                value
+            };
+            format!("{value} AS {label}")
+        })
+        .collect::<Vec<_>>()
+        .join(", ");
+    format!("SELECT {projection} FROM ({sql}) AS {alias}")
+}
+
+/// A CTE-only table would silently reread its source through the new path.
+fn check_materialized_dependencies(
+    manager: &TempTablesManager,
+    dependencies: &BTreeSet<u32>,
+    token: Option<&Token<'_>>,
+) -> Result<(), QueryDiagnostic> {
+    if dependencies
+        .iter()
+        .any(|id| manager.entry(*id).is_some_and(|entry| !entry.materialized))
+    {
+        return Err(QueryDiagnostic::at_or_unpositioned(
+            QueryDiagnosticKind::TemporaryTable,
+            token,
+            "materialized batch cannot read a CTE-only temporary table",
+        ));
+    }
+    Ok(())
+}
+
+/// Reuses the validated value-table renderer for rows captured by the host.
+fn materialized_relation(
+    columns: &[CompiledColumn],
+    rows: &[Vec<ParameterValue>],
+    token: &Token<'_>,
+    snapshot: &MetadataSnapshot,
+    dialect: SqlDialect,
+) -> Result<String, QueryDiagnostic> {
+    let parameter_columns = columns
+        .iter()
+        .map(|column| ParameterColumn::new(column.label.clone(), column.kind.clone()))
+        .collect::<Vec<_>>();
+    let (_, body) = render_parameter_table(&parameter_columns, rows, token, snapshot, dialect)
+        .map_err(|diagnostic| {
+            QueryDiagnostic::at(
+                QueryDiagnosticKind::TemporaryTable,
+                Some(token),
+                format!("materialized rows do not match projected columns: {diagnostic}"),
+            )
+        })?;
+    let names = columns
+        .iter()
+        .map(|column| dialect.quote_identifier(&column.label))
+        .collect::<Vec<_>>()
+        .join(", ");
+    Ok(format!(
+        "SELECT {names} FROM ({body}) AS {}",
+        dialect.quote_identifier("__materialized")
+    ))
 }
 
 /// Compiles one statement with the temporary tables of `manager` visible.

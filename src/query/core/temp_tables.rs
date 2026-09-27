@@ -1,10 +1,8 @@
-//! Temporary tables emulated with common table expressions.
+//! Temporary tables represented by common table expressions.
 //!
-//! The compiler never issues DDL: a read-only 1C database copy cannot hold
-//! real temporary tables. `ПОМЕСТИТЬ` therefore compiles its statement into
-//! a common table expression that later statements read, and this manager
-//! keeps those definitions between compilations the way 1C's
-//! `МенеджерВременныхТаблиц` keeps temporary tables between queries.
+//! The compiler never issues DDL. The legacy compilation path retains the
+//! source SQL; the opt-in materialization path retains typed host rows as SQL
+//! literals. Both share the manager's names, columns and visibility rules.
 
 use std::collections::BTreeSet;
 
@@ -50,6 +48,8 @@ pub(super) struct TempTableEntry {
     /// table, rendered before the definition itself.
     pub(super) ctes: Vec<(String, String)>,
     pub(super) visible: bool,
+    /// The SQL contains only rows returned by the host, never a live source.
+    pub(super) materialized: bool,
     /// Whether the defining statement was itself access-restricted. A
     /// restricted statement may read only rows that were filtered when
     /// they were placed.
@@ -67,11 +67,12 @@ pub(super) struct TempTableSource {
     pub(super) restricted: bool,
 }
 
-/// Compiled temporary tables shared by consecutive batches.
+/// Temporary tables shared by consecutive batches.
 ///
 /// A manager holds generated SQL and column metadata only; it performs no
 /// I/O and is bound to the dialect and metadata snapshot of its first
-/// definition.
+/// definition. [`crate::query::QueryCompiler::compile_batch`] retains CTE-only
+/// definitions; `compile_materialized_batch` captures host rows instead.
 ///
 /// ```no_run
 /// use open_sdbl::query::{CompileOptions, TempTablesManager};
@@ -155,6 +156,29 @@ impl TempTablesManager {
         self.entries.iter().find(|entry| entry.id == id)
     }
 
+    pub(super) fn entry_mut(&mut self, id: u32) -> Option<&mut TempTableEntry> {
+        self.entries.iter_mut().find(|entry| entry.id == id)
+    }
+
+    /// Bounds the SQL copy of all captured rows, including hidden entries
+    /// still referenced by later definitions.
+    pub(super) fn check_materialized_size(&self, token: &Token<'_>) -> Result<(), QueryDiagnostic> {
+        const MAX_SQL_BYTES: usize = 8 * 1024 * 1024;
+        let bytes = self
+            .entries
+            .iter()
+            .filter(|entry| entry.materialized)
+            .try_fold(0usize, |total, entry| total.checked_add(entry.sql.len()));
+        if bytes.is_none_or(|bytes| bytes > MAX_SQL_BYTES) {
+            return Err(QueryDiagnostic::at(
+                QueryDiagnosticKind::TemporaryTable,
+                Some(token),
+                "materialized temporary tables exceed the 8 MiB SQL budget",
+            ));
+        }
+        Ok(())
+    }
+
     /// Resolves a source name, or reports it as unknown at its token.
     pub(super) fn source(&self, token: &Token<'_>) -> Result<TempTableSource, QueryDiagnostic> {
         let entry = self.visible(token.lexeme).ok_or_else(|| {
@@ -195,7 +219,6 @@ impl TempTablesManager {
     }
 
     /// Registers a `ПОМЕСТИТЬ` definition and returns its CTE id.
-    #[allow(clippy::too_many_arguments)]
     #[allow(clippy::too_many_arguments)]
     pub(super) fn define(
         &mut self,
@@ -290,7 +313,6 @@ impl TempTablesManager {
     }
 
     #[allow(clippy::too_many_arguments)]
-    #[allow(clippy::too_many_arguments)]
     fn push(
         &mut self,
         name: String,
@@ -344,6 +366,7 @@ impl TempTablesManager {
             dependencies,
             ctes: renamed,
             visible: true,
+            materialized: false,
             restricted,
         });
         Ok(id)

@@ -22,10 +22,11 @@ use crate::metadata::{MetadataSnapshot, SnapshotFingerprint};
 
 pub use core::{
     AccessDecision, AccessRestriction, ColumnKind, ColumnOrigin, CompileOptions, CompiledColumn,
-    CompiledQuery, FieldUsage, FieldUsageRequest, FieldUse, InvalidParameterDate, ParameterColumn,
-    ParameterDate, ParameterValue, PresentationExpression, PresentationPlan, PresentationRequest,
-    PresentationTarget, QueryDiagnostic, QueryDiagnosticKind, QueryParameter, QueryableColumn,
-    QueryableField, QueryableFieldCatalog, RestrictionMode, RestrictionRequest, RestrictionTarget,
+    CompiledQuery, FieldUsage, FieldUsageRequest, FieldUse, InvalidParameterDate,
+    MaterializedBatchResult, ParameterColumn, ParameterDate, ParameterValue,
+    PresentationExpression, PresentationPlan, PresentationRequest, PresentationTarget,
+    QueryDiagnostic, QueryDiagnosticKind, QueryParameter, QueryableColumn, QueryableField,
+    QueryableFieldCatalog, RestrictionMode, RestrictionRequest, RestrictionTarget,
     SessionParameters, TempTable, TempTablesManager, TypeValue, constants_table_fields,
     find_metadata_object, object_query_name, queryable_field_catalog, queryable_fields,
 };
@@ -121,6 +122,42 @@ impl<B: Backend> QueryCompiler<'_, B> {
             self.backend.dialect(),
             manager,
             RestrictionMode::Statement,
+        )
+    }
+
+    /// Executes each placement selection through `on_placement` exactly once
+    /// and retains its typed rows for later statements and batches.
+    ///
+    /// The callback receives the SELECT SQL and projected column kinds. Its
+    /// rows use logical 1C values in column order; it should bound its result
+    /// size. The manager changes only after the entire batch succeeds. This
+    /// method does not start a database transaction or promise a cross-query
+    /// snapshot at READ COMMITTED isolation.
+    ///
+    /// # Errors
+    ///
+    /// Returns a query diagnostic converted to `E`, or the host callback's
+    /// error. Unsupported row kinds, mismatched rows, and excessive retained
+    /// SQL return a `TemporaryTable` diagnostic.
+    pub fn compile_materialized_batch<E, F>(
+        &self,
+        source: &str,
+        options: &CompileOptions<'_>,
+        manager: &mut TempTablesManager,
+        on_placement: F,
+    ) -> Result<MaterializedBatchResult, E>
+    where
+        E: From<QueryDiagnostic>,
+        F: FnMut(&CompiledQuery) -> Result<Vec<Vec<ParameterValue>>, E>,
+    {
+        core::compile_materialized_batch(
+            source,
+            self.snapshot,
+            options,
+            self.backend.dialect(),
+            manager,
+            RestrictionMode::Statement,
+            on_placement,
         )
     }
 
@@ -416,6 +453,38 @@ impl<B: Backend> Prepared<B> {
             self.backend.dialect(),
             options,
             self.mode,
+        )
+    }
+
+    /// Materializes placements using this prepared query's fixed restriction
+    /// mode and snapshot, with one host callback per placement selection.
+    ///
+    /// # Errors
+    ///
+    /// Returns a query diagnostic converted to `E`, or the host callback's
+    /// error. A different metadata snapshot is rejected before execution.
+    pub fn compile_materialized_batch<E, F>(
+        &self,
+        snapshot: &MetadataSnapshot,
+        options: &CompileOptions<'_>,
+        manager: &mut TempTablesManager,
+        on_placement: F,
+    ) -> Result<MaterializedBatchResult, E>
+    where
+        E: From<QueryDiagnostic>,
+        F: FnMut(&CompiledQuery) -> Result<Vec<Vec<ParameterValue>>, E>,
+    {
+        if snapshot.fingerprint() != self.snapshot_fingerprint {
+            return Err(QueryDiagnostic::snapshot_mismatch().into());
+        }
+        core::compile_materialized_batch(
+            &self.source,
+            snapshot,
+            options,
+            self.backend.dialect(),
+            manager,
+            self.mode,
+            on_placement,
         )
     }
 

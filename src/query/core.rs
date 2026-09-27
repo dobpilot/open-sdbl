@@ -28,10 +28,22 @@ pub use restrict::{
     AccessDecision, AccessRestriction, RestrictionMode, RestrictionRequest, RestrictionTarget,
 };
 pub use temp_tables::{TempTable, TempTablesManager};
+
+/// Result of sequentially materializing a query batch.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum MaterializedBatchResult {
+    /// SQL of the final selection for the host to execute.
+    Query(CompiledQuery),
+    /// Number of rows captured by the final placement or append.
+    Placed(usize),
+    /// The final statement dropped a temporary table and has no result.
+    Dropped,
+}
 pub use types::TypeValue;
 pub use usage::{FieldUsage, FieldUsageRequest, FieldUse};
 
 pub(super) use codegen::{
-    compile_batch, compile_presentation_lookup, compile_query, prepare_query_with,
+    compile_batch, compile_materialized_batch, compile_presentation_lookup, compile_query,
+    prepare_query_with,
 };
 pub(super) use dialect::SqlDialect;

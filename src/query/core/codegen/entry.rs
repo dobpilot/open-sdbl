@@ -1,6 +1,6 @@
 use std::collections::BTreeSet;
 
-use super::batch::compile_batch_ast;
+use super::batch::{compile_batch_ast, compile_materialized_batch_ast};
 use super::expression::single_column_at;
 use super::orchestrate::PresentationCompilation;
 use super::sources::{
@@ -11,7 +11,9 @@ use super::virtual_tables::compile_presentation_plan;
 use crate::metadata::MetadataSnapshot;
 use crate::query::core::dialect::SqlDialect;
 use crate::query::core::names::names_equal;
-use crate::query::core::params::{CompileOptions, Parameters, QueryParameter, parameter_name};
+use crate::query::core::params::{
+    CompileOptions, ParameterValue, Parameters, QueryParameter, parameter_name,
+};
 use crate::query::core::parser::Parser;
 use crate::query::core::resolve::{
     ColumnKind, CompilationCatalog, CompiledColumn, CompiledQuery, PresentationPlan,
@@ -22,7 +24,7 @@ use crate::query::core::restrict::{
 };
 use crate::query::core::temp_tables::TempTablesManager;
 use crate::query::core::usage::FieldUsageRequest;
-use crate::query::core::{QueryDiagnostic, QueryDiagnosticKind};
+use crate::query::core::{MaterializedBatchResult, QueryDiagnostic, QueryDiagnosticKind};
 use crate::{TokenKind, tokenize};
 
 /// The application callback requests collected by preparation.
@@ -286,6 +288,80 @@ pub(crate) fn compile_batch(
         ));
     }
     Ok(compiled)
+}
+
+/// Compiles and captures each placement in source order, while preserving
+/// the callback's error type for database failures.
+pub(crate) fn compile_materialized_batch<E, F>(
+    source: &str,
+    snapshot: &MetadataSnapshot,
+    options: &CompileOptions<'_>,
+    dialect: SqlDialect,
+    manager: &mut TempTablesManager,
+    mode: RestrictionMode,
+    mut on_placement: F,
+) -> Result<MaterializedBatchResult, E>
+where
+    E: From<QueryDiagnostic>,
+    F: FnMut(&CompiledQuery) -> Result<Vec<Vec<ParameterValue>>, E>,
+{
+    // Resolve the complete batch before any host read. In particular, a
+    // missing session parameter in a later statement must not cause a
+    // retry to execute an earlier placement twice.
+    let mut preflight = manager.clone();
+    let _ = compile_batch(source, snapshot, options, dialect, &mut preflight, mode)?;
+    let tokens = tokenize(source)
+        .map_err(QueryDiagnostic::from)?
+        .into_iter()
+        .filter(|token| token.kind != TokenKind::Comment)
+        .collect::<Vec<_>>();
+    let parameters = options.bound_parameters();
+    check_parameter_binding(&tokens, options.parameter_values(), parameters)?;
+    let restrictions = options.access_restrictions();
+    let decisions = options.access_decisions();
+    check_decision_uniqueness(snapshot, restrictions, decisions)?;
+    let ast = Parser::new(&tokens, source).parse()?;
+    let mut presentations =
+        PresentationCompilation::strict(options.presentation_plans(), parameters, dialect)
+            .with_restrictions(restrictions, decisions)
+            .with_mode(mode)
+            .with_totals_level(options.totals_level_enabled());
+    let mut working = manager.clone();
+    let result = compile_materialized_batch_ast(
+        &ast,
+        snapshot,
+        &mut presentations,
+        &mut working,
+        &mut on_placement,
+    )?;
+    if let Some(unused) = (0..restrictions.len())
+        .find(|index| !presentations.used_restrictions.contains(index))
+        .map(|index| &restrictions[index])
+    {
+        return Err(QueryDiagnostic::unpositioned(
+            QueryDiagnosticKind::Restriction,
+            format!(
+                "restriction of {} is supplied but no ALLOWED statement reads it",
+                restriction_label(snapshot, &restriction_target(unused))
+            ),
+        )
+        .into());
+    }
+    if let Some(unused) = (0..decisions.len())
+        .find(|index| !presentations.used_decisions.contains(index))
+        .map(|index| &decisions[index])
+    {
+        return Err(QueryDiagnostic::unpositioned(
+            QueryDiagnosticKind::Restriction,
+            format!(
+                "access decision for {} is supplied but no statement reads it",
+                restriction_label(snapshot, &decision_target(unused))
+            ),
+        )
+        .into());
+    }
+    *manager = working;
+    Ok(result)
 }
 
 fn decision_target(decision: &AccessDecision) -> RestrictionTarget {

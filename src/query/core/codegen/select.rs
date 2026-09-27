@@ -591,7 +591,7 @@ fn parameter_source_scope(
 /// to it, so the CTE column carries that type whatever the later rows or
 /// the emptiness of the table; every value must fit the kind, and a
 /// reference must point at one of the kind's targets.
-fn render_parameter_table(
+pub(super) fn render_parameter_table(
     columns: &[ParameterColumn],
     rows: &[Vec<ParameterValue>],
     token: &Token<'_>,
