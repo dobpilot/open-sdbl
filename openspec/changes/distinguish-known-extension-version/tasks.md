@@ -1,0 +1,4 @@
+- [ ] 1. Capture native empty-version evidence.
+- [ ] 2. Add reliable version API and tests for unknown and empty records.
+- [ ] 3. Verify extension UUID against native platform.
+- [ ] 4. Run required checks and archive.

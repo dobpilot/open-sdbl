@@ -13,3 +13,19 @@ Native scope infobase maps to SQL code 1. Attempting `--scope=data-separation` f
 Byte 24 is native unsafe-action protection: its generated 0xa1 variant is retained as `unsafe-protection-disabled.*`, produced by native `--unsafe-action-protection=no`. `legacy-a1-profile.*` is an earlier parser probe which temporarily changed that byte directly in the DISPOSABLE SQL row; it was restored in a finally block. This synthetic probe is distinguished from the later native-generated observation and is not the sole evidence for supporting 0xa1.
 
 Record completeness is required: header, counted synonym, absent/present version, final Boolean flags and terminator. Unknown/truncated variants retain None. The production parser does not interpret counters or unmeasured scope codes.
+
+## UUID и известное отсутствие версии
+
+`identity-empty-version` снят на новой PostgreSQL базе `sdbl_measure_095id`:
+`ibcmd infobase create --locale=ru_RU --create-database`,
+`extension create --name=Probe095ID --name-prefix=Probe095ID_ --purpose=add-on`.
+SQL читает `_ExtName`, hex `_IDRRef`, hex `_ExtensionZippedInfo`.
+Нативный `extension info` возвращает пустую `version`.
+Затем `ibcmd infobase dump` и `infobase create --restore` переносят базу
+в одноразовую FILE-базу. Нативный BSL выводит для каждого элемента
+`РасширенияКонфигурации.Получить()` имя, строку свойства
+`УникальныйИдентификатор` и свойство `Версия`.
+Результат сохранён рядом; GUID совпадает с перестановкой физического
+`_IDRRef` `[12..16] + [10..12] + [8..10] + [0..8]`.
+Новая `runtime_version` отличается от старой частичной `version`:
+измеренный маркер отсутствия даёт `Some("")`, неизвестная запись — `None`.

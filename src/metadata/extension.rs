@@ -306,8 +306,13 @@ pub struct ExtensionInfo {
     pub root_key: ContentKey,
     /// The localized synonym record, when the stream carried one.
     pub synonym: Option<String>,
-    /// The version of the extension, when the stream carried one.
+    /// Частично декодированная версия для совместимости; `None` не различает
+    /// отсутствие версии и неизвестную запись. Для полной проекции используйте
+    /// [`Self::runtime_version`].
     pub version: Option<String>,
+    /// Подтверждённая версия полной измеренной записи: `Some("")` означает
+    /// отсутствие версии, `None` — неизвестную или неполную форму.
+    pub runtime_version: Option<String>,
     /// Whether the base applies the extension, or `None` when the record
     /// is not in the shape the flag was measured in.
     ///
@@ -371,6 +376,7 @@ pub fn parse_extension_info(info: &[u8]) -> Option<ExtensionInfo> {
         root_key,
         synonym: None,
         version: None,
+        runtime_version: None,
         active: None,
         safe_mode: None,
         security_profile_name: None,
@@ -405,9 +411,11 @@ pub fn parse_extension_info(info: &[u8]) -> Option<ExtensionInfo> {
     // other stopping place means the decoder lost the structure, and a
     // flag read out of a record it did not follow says nothing.
     if offset + 1 == info.len() && info.get(offset) == Some(&EXTENSION_INFO_TERMINATOR) {
-        if let Some((safe_mode, profile, _)) = runtime
+        if let Some((safe_mode, profile, profile_end)) = runtime
             .filter(|(_, _, profile_end)| extension_runtime_record_complete(info, *profile_end))
         {
+            let version_at = extension_counted_end(info, profile_end).unwrap();
+            record.runtime_version = extension_version_text(info, version_at);
             record.safe_mode = Some(safe_mode);
             record.security_profile_name = Some(profile);
             record.hash_sum = Some(record.root_key.as_base64());
@@ -479,6 +487,22 @@ fn extension_runtime_record_complete(info: &[u8], profile_end: usize) -> bool {
         return false;
     }
     true
+}
+
+/// Читает версию только в позиции полностью проверенной записи.
+fn extension_version_text(info: &[u8], offset: usize) -> Option<String> {
+    match info.get(offset)? {
+        0x81 => Some(String::new()),
+        0x9a => {
+            let end = extension_counted_end(info, offset)?;
+            String::from_utf8(info.get(offset + 2..end)?.to_vec()).ok()
+        }
+        0x97 => {
+            let end = extension_counted_end(info, offset)?;
+            decode_utf16_le(info.get(offset + 2..end)?)
+        }
+        _ => None,
+    }
 }
 
 /// Находит конец измеренного счётного поля, не интерпретируя его содержимое.

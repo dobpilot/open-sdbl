@@ -113,3 +113,49 @@ fn unknown_header_flags_invalid_unicode_and_fake_complete_tails_do_not_grant_pro
     fake.extend_from_slice(&[0x81, 0x20]);
     assert_eq!(parse_extension_info(&fake).unwrap().safe_mode, None);
 }
+
+#[test]
+fn native_absent_version_is_known_but_truncation_is_unknown() {
+    let row = include_str!("fixtures/extension/runtime-095/identity-empty-version.row.tsv");
+    let hex = row.trim().split('|').nth(2).unwrap();
+    let bytes: Vec<u8> = (0..hex.len())
+        .step_by(2)
+        .map(|at| u8::from_str_radix(&hex[at..at + 2], 16).unwrap())
+        .collect();
+    assert_eq!(
+        parse_extension_info(&bytes)
+            .unwrap()
+            .runtime_version
+            .as_deref(),
+        Some("")
+    );
+    for end in 24..bytes.len() {
+        assert_eq!(
+            parse_extension_info(&bytes[..end]).unwrap().runtime_version,
+            None
+        );
+    }
+    let (versioned, _) = native("versioned-unicode-profile");
+    assert_eq!(
+        parse_extension_info(&versioned)
+            .unwrap()
+            .runtime_version
+            .as_deref(),
+        Some("0.9.5")
+    );
+}
+
+#[test]
+fn native_extension_uuid_matches_the_physical_reference_permutation() {
+    let row = include_str!("fixtures/extension/runtime-095/identity-empty-version.row.tsv");
+    let native = include_str!("fixtures/extension/runtime-095/identity-empty-version.platform.txt");
+    let physical = row.trim().split('|').nth(1).unwrap();
+    let canonical: open_sdbl::metadata::Guid =
+        native.trim().split('|').nth(1).unwrap().parse().unwrap();
+    let actual: String = canonical
+        .to_1c_bytes()
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect();
+    assert_eq!(actual, physical);
+}

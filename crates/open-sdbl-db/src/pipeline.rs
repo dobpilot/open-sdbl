@@ -228,8 +228,13 @@ pub struct ExtensionCatalogRow {
 #[non_exhaustive]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AcquiredExtension {
-    /// The reference identifying the extension, in lower-case
-    /// hexadecimal. It survives a rename, which the name does not.
+    /// Физический `_IDRRef` расширения в шестнадцатеричной записи.
+    /// Он сохраняется при переименовании и не является UUID в каноническом
+    /// порядке байтов. Для канонического UUID физические байты переставляются
+    /// как `[12..16] + [10..12] + [8..10] + [0..8]`; соответствие свойству
+    /// `РасширениеКонфигурации.УникальныйИдентификатор` измерено на 1С
+    /// 8.3.27.2342. Обратное преобразование предоставляет
+    /// [`open_sdbl::metadata::Guid::to_1c_bytes`].
     pub identity: String,
     /// The name of the extension.
     pub name: String,
@@ -247,9 +252,13 @@ pub struct AcquiredExtension {
     /// names them, with the bytes the store holds. Two extensions naming
     /// a resource identically keep one entry each.
     pub resources: Vec<ConfigResource>,
-    /// The version the extension record carries, or `None` when it
-    /// carries none.
+    /// Частично декодированная версия для совместимости; `None` не различает
+    /// отсутствие версии и неизвестную запись. Для полной проекции используйте
+    /// [`Self::runtime_version`].
     pub version: Option<String>,
+    /// Подтверждённая версия полной измеренной записи: `Some("")` означает
+    /// отсутствие версии, `None` — неизвестную или неполную форму.
+    pub runtime_version: Option<String>,
     /// Ключ корневого ресурса расширения в шестнадцатеричной записи.
     ///
     /// Хранилище адресует ресурс по SHA-1 его байтов; корень содержит ключи
@@ -599,6 +608,7 @@ fn group_extensions(
             active: info.active,
             order,
             version: info.version,
+            runtime_version: info.runtime_version,
             content_hash: info.root_key.as_hex(),
             safe_mode: info.safe_mode,
             security_profile_name: info.security_profile_name,

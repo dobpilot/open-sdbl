@@ -1,0 +1,2 @@
+# Decisions
+Preserve the existing `version` field, including partial legacy decoding. Add `runtime_version: Option<String>`: Some("") is measured absence; Some(text) is a version from a fully understood native record; None is unknown. This avoids silently treating old partial decoding as authoritative. Identity conversion remains the physical UUID field permutation already used by query code, subject to extension-specific native confirmation.
