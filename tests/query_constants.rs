@@ -72,6 +72,7 @@ fn with_second_constant(base: MetadataSnapshot) -> MetadataSnapshot {
     let db_names = parse_db_names(&stored_deflate(serialized.as_bytes())).unwrap();
     let mut descriptors = base.descriptors().to_vec();
     descriptors.push(ConfigDescriptor {
+        catalog_default_presentation: None,
         catalog_standard_attributes: None,
         resource_guid: guid(SECOND),
         object_guid: guid(SECOND),

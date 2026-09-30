@@ -199,6 +199,7 @@ fn live_table_from_pg_fixture(fixture_name: &str) -> LiveTable {
 
 fn descriptor(resource: &str, object: &str, name: &str) -> ConfigDescriptor {
     ConfigDescriptor {
+        catalog_default_presentation: None,
         catalog_standard_attributes: None,
         resource_guid: resource.parse().unwrap(),
         object_guid: object.parse().unwrap(),

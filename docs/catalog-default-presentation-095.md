@@ -1,0 +1,7 @@
+# Основное представление справочника из Config
+
+2026-09-30, нативная XML 1С 8.3.27.2342 УНФ. Повторно сопоставлены 296 UUID из `tests/fixtures/unf/config.pack` с XML той же конфигурации в `/tmp/open-bsl-unf-query-schema-xml/Catalogs`. Позиция 20 списка класса 57 совпала с DefaultPresentation у всех записей: 26 AsCode соответствуют 0, 270 AsDescription соответствуют 1. Матрица сохранена в `tests/fixtures/catalog-standard-attributes/unf-presentation-native.tsv`. По паре CodeType/DefaultPresentation: String/AsDescription — 265, String/AsCode — 25, Number/AsDescription — 5, Number/AsCode — 1. Тип кода не определяет настройку представления. Отдельная нативная XML и Config ВерсииРасширений подтверждают AsCode/0. Живые базы в этой работе не изменялись и повторно не читались.
+
+API: `ConfigDescriptor::catalog_default_presentation: Option<CatalogDefaultPresentation>` с вариантами `AsCode` и `AsDescription`. Результат принадлежит собственному описателю Config-ресурса, не вложенным атрибутам. Проверяется измеренный префикс класса и собственный заголовок. Неизвестное, строковое вместо числового или отсутствующее значение остаётся None, независимо от известных длин и типа кода. Начальные значения и объектное поведение BSL библиотека не вычисляет.
+
+В существующих struct literals добавлено только None; старые ожидания не изменены. Новые тесты проверяют полный UUID-сопоставленный корпус, независимость настроек и unknown без подстановки. XML иной конфигурации не используется как эталон по совпадению UUID. Версия остаётся 0.9.5.

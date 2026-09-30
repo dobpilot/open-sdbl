@@ -181,6 +181,17 @@ pub enum CatalogCodeType {
     String,
 }
 
+/// Основное представление справочника, приобретённое из Config.
+///
+/// Это настройка метаданных, а не готовое представление объекта BSL.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CatalogDefaultPresentation {
+    /// Представление по коду.
+    AsCode,
+    /// Представление по наименованию.
+    AsDescription,
+}
+
 /// Измеренные настройки стандартных реквизитов справочника из Config.
 ///
 /// Длина `0` сохраняется как настройка конфигурации. Она не означает,
@@ -199,6 +210,10 @@ pub struct CatalogStandardAttributes {
 /// Human-readable data extracted from a bare-GUID Config resource.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ConfigDescriptor {
+    /// Основное представление справочника из измеренной формы собственного
+    /// Config-ресурса; `None` для неизвестной формы, значения и других объектов.
+    /// Не вычисляется по типу или длине кода и наименования.
+    pub catalog_default_presentation: Option<CatalogDefaultPresentation>,
     /// Настройки `Код` и `Наименование` справочника из измеренной формы
     /// собственного Config-ресурса; `None` для неизвестной формы и других
     /// объектов. `None` не означает нулевые длины или отсутствие свойства BSL.
@@ -634,6 +649,7 @@ struct ConfigParser<'input, 'resource> {
     catalog_prefix: [bool; 8],
     catalog_owner_seen: bool,
     catalog_settings: [Option<u32>; 3],
+    catalog_presentation: Option<u32>,
     resource_version_known: bool,
 }
 
@@ -719,6 +735,7 @@ impl<'input, 'resource> ConfigParser<'input, 'resource> {
             catalog_prefix: [false; 8],
             catalog_owner_seen: false,
             catalog_settings: [None; 3],
+            catalog_presentation: None,
             resource_version_known: false,
         }
     }
@@ -765,10 +782,11 @@ impl<'input, 'resource> ConfigParser<'input, 'resource> {
         {
             owner.chart_of_accounts = Some(chart);
         }
-        if self.resource_version_known
+        let catalog_layout_known = self.resource_version_known
             && self.catalog_class_seen
             && self.catalog_prefix.iter().all(|known| *known)
-            && self.catalog_owner_seen
+            && self.catalog_owner_seen;
+        if catalog_layout_known
             && let [Some(code_length), Some(code_type), Some(description_length)] =
                 self.catalog_settings
             && let Some(code_type) = match code_type {
@@ -785,6 +803,18 @@ impl<'input, 'resource> ConfigParser<'input, 'resource> {
                 code_length,
                 description_length,
             });
+        }
+        if catalog_layout_known
+            && let Some(presentation) = match self.catalog_presentation {
+                Some(0) => Some(CatalogDefaultPresentation::AsCode),
+                Some(1) => Some(CatalogDefaultPresentation::AsDescription),
+                _ => None,
+            }
+            && let Some(owner) = descriptors
+                .iter_mut()
+                .find(|descriptor| &descriptor.object_guid == self.resource_guid)
+        {
+            owner.catalog_default_presentation = Some(presentation);
         }
         Ok(descriptors)
     }
@@ -949,6 +979,15 @@ impl<'input, 'resource> ConfigParser<'input, 'resource> {
                             }
                             17..=19 => {
                                 self.catalog_settings[value_count - 17] =
+                                    candidate.as_scalar().and_then(|value| match value {
+                                        SimpleValue::Atom(atom) => atom.parse().ok(),
+                                        SimpleValue::String(_) | SimpleValue::Null => None,
+                                    });
+                            }
+                            20 => {
+                                // Позиция и значения подтверждены UUID-сверкой
+                                // 296 Config-ресурсов с нативной XML УНФ.
+                                self.catalog_presentation =
                                     candidate.as_scalar().and_then(|value| match value {
                                         SimpleValue::Atom(atom) => atom.parse().ok(),
                                         SimpleValue::String(_) | SimpleValue::Null => None,
@@ -1215,6 +1254,7 @@ fn project_config_descriptor(
         .map(str::to_owned);
     descriptors.push(ProjectedConfigDescriptor {
         descriptor: ConfigDescriptor {
+            catalog_default_presentation: None,
             catalog_standard_attributes: None,
             resource_guid: resource_guid.clone(),
             object_guid,
@@ -1296,6 +1336,7 @@ fn collect_descriptors(
             .filter(|comment| !comment.is_empty())
             .map(str::to_owned);
         descriptors.push(ConfigDescriptor {
+            catalog_default_presentation: None,
             catalog_standard_attributes: None,
             resource_guid: resource_guid.clone(),
             object_guid,
