@@ -221,6 +221,11 @@ pub struct ConfigDescriptor {
     /// или неполную форму. Реквизиты табличных частей и общие реквизиты сюда
     /// не входят. Принадлежность не вычисляется по SQL или исходному коду.
     pub catalog_attributes: Option<Vec<Guid>>,
+    /// Полный список GUID собственных табличных частей в порядке конфигурации,
+    /// только у описателя справочника. Реквизиты табличных частей не входят.
+    /// `Some([])` означает известную пустую коллекцию; `None` — неизвестную
+    /// или неполную форму. Принадлежность не вычисляется по SQL или исходникам.
+    pub catalog_tabular_sections: Option<Vec<Guid>>,
     /// Основное представление справочника из измеренной формы собственного
     /// Config-ресурса; `None` для неизвестной формы, значения и других объектов.
     /// Не вычисляется по типу или длине кода и наименования.
@@ -664,6 +669,9 @@ struct ConfigParser<'input, 'resource> {
     catalog_hierarchical: Option<bool>,
     catalog_attributes: Option<Vec<Guid>>,
     catalog_attribute_collections: usize,
+    catalog_tabular_sections: Option<Vec<Guid>>,
+    catalog_tabular_collections: usize,
+    path: Vec<usize>,
     resource_version_known: bool,
 }
 
@@ -675,6 +683,7 @@ const ZERO_GUID: &str = "00000000-0000-0000-0000-000000000000";
 struct ProjectedConfigDescriptor {
     descriptor: ConfigDescriptor,
     purpose_depth: Option<usize>,
+    tabular_section_header: bool,
 }
 
 #[derive(Clone)]
@@ -770,6 +779,29 @@ impl CatalogAttributesTracker {
         }
     }
 
+    fn record_selected(
+        &mut self,
+        index: usize,
+        candidate: &ConfigCandidate<'_>,
+        descriptors: &[ProjectedConfigDescriptor],
+    ) {
+        if index < 2 {
+            self.record(index, candidate, &[]);
+            return;
+        }
+        let mut headers = descriptors.iter().filter(|d| d.tabular_section_header);
+        if let Some(header) = headers.next()
+            && headers.next().is_none()
+            && !header.descriptor.object_guid.is_nil()
+            && !header.descriptor.name.is_empty()
+            && !self.ids.contains(&header.descriptor.object_guid)
+        {
+            self.ids.push(header.descriptor.object_guid.clone());
+        } else {
+            self.invalid = true;
+        }
+    }
+
     fn finish(self, entries: usize) -> Option<Vec<Guid>> {
         let count = self.count?;
         (!self.invalid && count == entries && count == self.ids.len()).then_some(self.ids)
@@ -794,7 +826,10 @@ impl<'input, 'resource> ConfigParser<'input, 'resource> {
             catalog_presentation: None,
             catalog_hierarchical: None,
             catalog_attributes: None,
+            catalog_tabular_sections: None,
             catalog_attribute_collections: 0,
+            catalog_tabular_collections: 0,
+            path: Vec::new(),
             resource_version_known: false,
         }
     }
@@ -892,7 +927,22 @@ impl<'input, 'resource> ConfigParser<'input, 'resource> {
         {
             owner.catalog_attributes = Some(attributes);
         }
+        if catalog_layout_known
+            && self.catalog_tabular_collections == 1
+            && let Some(sections) = self.catalog_tabular_sections.take()
+            && let Some(owner) = descriptors
+                .iter_mut()
+                .find(|d| &d.object_guid == self.resource_guid)
+        {
+            owner.catalog_tabular_sections = Some(sections);
+        }
         Ok(descriptors)
+    }
+
+    fn is_tabular_section_header(&self) -> bool {
+        // Измеренный путь заголовка относительно записи коллекции исключает
+        // собственные реквизиты и вложенные поля табличной части.
+        self.path.len() == 6 && self.path[2..] == [0, 1, 5, 1]
     }
 
     fn value(
@@ -955,6 +1005,7 @@ impl<'input, 'resource> ConfigParser<'input, 'resource> {
         );
         let mut pending_balance: Option<usize> = None;
         let mut catalog_attributes: Option<CatalogAttributesTracker> = None;
+        let mut catalog_sections: Option<CatalogAttributesTracker> = None;
 
         loop {
             self.skip_whitespace();
@@ -976,6 +1027,7 @@ impl<'input, 'resource> ConfigParser<'input, 'resource> {
                             &mut local_purpose_found,
                             depth,
                             self.resource_guid,
+                            self.is_tabular_section_header(),
                             &mut local_descriptors,
                             &mut descendant_descriptors,
                         );
@@ -993,6 +1045,7 @@ impl<'input, 'resource> ConfigParser<'input, 'resource> {
                         &mut local_purpose_found,
                         depth,
                         self.resource_guid,
+                        self.is_tabular_section_header(),
                         &mut local_descriptors,
                         &mut descendant_descriptors,
                     );
@@ -1005,8 +1058,25 @@ impl<'input, 'resource> ConfigParser<'input, 'resource> {
                 }
                 Some(_) if expecting_value => {
                     let descendants_before = descendant_descriptors.len();
+                    self.path.push(value_count);
                     let candidate =
                         self.value(&mut descendant_descriptors, field_purpose, depth + 1)?;
+                    self.path.pop();
+                    if depth == 1
+                        && value_count == 0
+                        && candidate.as_str().is_some_and(|v| {
+                            v.eq_ignore_ascii_case("932159f9-95b2-4e76-a8dd-8849fe5c5ded")
+                        })
+                    {
+                        catalog_sections = Some(CatalogAttributesTracker::default());
+                    }
+                    if let Some(tracker) = &mut catalog_sections {
+                        tracker.record_selected(
+                            value_count,
+                            &candidate,
+                            &descendant_descriptors[descendants_before..],
+                        );
+                    }
                     if depth == 1
                         && value_count == 0
                         && candidate.as_str().is_some_and(|value| {
@@ -1149,6 +1219,7 @@ impl<'input, 'resource> ConfigParser<'input, 'resource> {
                         &mut local_purpose_found,
                         depth,
                         self.resource_guid,
+                        self.is_tabular_section_header(),
                         &mut local_descriptors,
                         &mut descendant_descriptors,
                     );
@@ -1172,8 +1243,13 @@ impl<'input, 'resource> ConfigParser<'input, 'resource> {
                 None,
                 field_purpose,
                 self.resource_guid,
+                self.is_tabular_section_header(),
                 &mut local_descriptors,
             );
+        }
+        if let Some(tracker) = catalog_sections {
+            self.catalog_tabular_collections += 1;
+            self.catalog_tabular_sections = tracker.finish(value_count.saturating_sub(2));
         }
         if let Some(tracker) = catalog_attributes {
             self.catalog_attribute_collections += 1;
@@ -1272,6 +1348,7 @@ fn record_config_candidate<'input>(
     local_purpose_found: &mut bool,
     depth: usize,
     resource_guid: &Guid,
+    tabular_section_header: bool,
     local_descriptors: &mut Vec<ProjectedConfigDescriptor>,
     descendant_descriptors: &mut [ProjectedConfigDescriptor],
 ) {
@@ -1316,12 +1393,14 @@ fn record_config_candidate<'input>(
             Some(&window[3]),
             *field_purpose,
             resource_guid,
+            tabular_section_header,
             local_descriptors,
         );
         window.remove(0);
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn project_config_descriptor(
     self_reference: &ConfigCandidate<'_>,
     name: &ConfigCandidate<'_>,
@@ -1329,6 +1408,7 @@ fn project_config_descriptor(
     comment: Option<&ConfigCandidate<'_>>,
     field_purpose: Option<(ConfigCollectionPurpose, usize)>,
     resource_guid: &Guid,
+    tabular_section_header: bool,
     descriptors: &mut Vec<ProjectedConfigDescriptor>,
 ) {
     let Some([marker, zero, guid]) = self_reference.as_list() else {
@@ -1361,6 +1441,7 @@ fn project_config_descriptor(
         descriptor: ConfigDescriptor {
             catalog_hierarchical: None,
             catalog_attributes: None,
+            catalog_tabular_sections: None,
             catalog_default_presentation: None,
             catalog_standard_attributes: None,
             resource_guid: resource_guid.clone(),
@@ -1382,6 +1463,7 @@ fn project_config_descriptor(
             chart_of_accounts: None,
         },
         purpose_depth: field_purpose.map(|(_, depth)| depth),
+        tabular_section_header,
     });
 }
 
@@ -1445,6 +1527,7 @@ fn collect_descriptors(
         descriptors.push(ConfigDescriptor {
             catalog_hierarchical: None,
             catalog_attributes: None,
+            catalog_tabular_sections: None,
             catalog_default_presentation: None,
             catalog_standard_attributes: None,
             resource_guid: resource_guid.clone(),

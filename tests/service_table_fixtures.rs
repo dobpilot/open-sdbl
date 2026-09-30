@@ -201,6 +201,7 @@ fn descriptor(resource: &str, object: &str, name: &str) -> ConfigDescriptor {
     ConfigDescriptor {
         catalog_hierarchical: None,
         catalog_attributes: None,
+        catalog_tabular_sections: None,
         catalog_default_presentation: None,
         catalog_standard_attributes: None,
         resource_guid: resource.parse().unwrap(),
