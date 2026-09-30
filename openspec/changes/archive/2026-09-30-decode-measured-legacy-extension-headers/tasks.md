@@ -1,0 +1,4 @@
+- [x] 1. Preserve paired SQL/native XML evidence.
+- [x] 2. Decode measured legacy headers and test unsupported shapes.
+- [x] 3. Verify live buh returns a complete object list.
+- [x] 4. Run gates and archive.
