@@ -9,4 +9,4 @@
 ## 3. Validation
 - [x] 3.1 Run formatting, Clippy, workspace tests, rustdoc and strict OpenSpec validation.
 - [x] 3.2 Verify live PostgreSQL authorization on UNF without writing data.
-- [ ] 3.3 Archive the change after successful verification.
+- [x] 3.3 Archive the change after successful verification.
