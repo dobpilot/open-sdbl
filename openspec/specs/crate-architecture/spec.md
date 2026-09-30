@@ -609,7 +609,7 @@ main-configuration object it adopts.
 
 A value the reader does not decode reliably SHALL be an `Option` and SHALL
 be `None` rather than a default: the version when the record carries none,
-safe mode until it is measured, the distributed-base flag and the scope
+safe mode for unsupported records, the distributed-base flag and the scope
 when the base lacks the column, the catalog when the configuration root is
 missing or not in the measured shape, and an object's link when it is
 nil. The link SHALL be read from the adopted object's own header; the name
@@ -651,7 +651,11 @@ and an adopted object recording the nil identifier keeps no link.
   against, and everything else as before
 
 #### Scenario: Safe mode
-- **WHEN** any extension is read
+- **WHEN** an extension is read in the measured complete runtime-property record shape
+- **THEN** safe mode is the decoded Boolean
+
+#### Scenario: Unsupported safe mode record
+- **WHEN** the extension's runtime-property record is truncated or unsupported
 - **THEN** safe mode is unknown
 
 #### Scenario: A base without the new columns
@@ -700,3 +704,30 @@ A blocking session SHALL offer user and role-right reads through the existing as
 - **THEN** it answers `SessionClosed`
 - **WHEN** the same read is called on an open blocking session inside an asynchronous runtime
 - **THEN** it answers `AsyncContext` and leaves the session open
+
+### Requirement: Answer measured native extension runtime properties
+Acquired extensions SHALL carry the native platform hash sum separately from the existing hexadecimal content hash, the decoded safe-mode Boolean, the security profile name and a typed known scope alongside the raw scope code. Known empty profile names SHALL remain distinguishable from unknown profiles. Unknown, truncated or structurally unsupported mode/profile records SHALL return unknown values rather than guessed defaults. Counted profile strings SHALL NOT be treated as extension versions.
+
+#### Scenario: Safe mode is explicitly disabled
+- **WHEN** a complete measured record encodes safe mode false and no profile
+- **THEN** its mode is false and its known profile name is empty
+
+#### Scenario: A named security profile
+- **WHEN** a complete measured record carries a security profile name
+- **THEN** the profile string is preserved separately from the mode Boolean and version
+
+#### Scenario: The native generation hash
+- **WHEN** a record is in the measured native generation-key shape
+- **THEN** the platform hash sum uses the measured Base64 generation key representation, independently of the hex CAS content hash
+
+#### Scenario: The measured InfoBase scope
+- **WHEN** the raw scope code is 1
+- **THEN** its known scope is InfoBase
+
+#### Scenario: An unmeasured scope
+- **WHEN** the raw scope code has not been mapped on the native platform
+- **THEN** its raw value remains available and its typed scope is unknown
+
+#### Scenario: A malformed property record
+- **WHEN** a mode/profile field or the record's structural walk is incomplete or unsupported
+- **THEN** mode and profile are unknown

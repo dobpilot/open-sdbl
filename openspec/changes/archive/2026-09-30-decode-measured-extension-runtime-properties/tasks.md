@@ -10,4 +10,4 @@
 ## 3. Validation
 - [x] 3.1 Run workspace fmt, Clippy, tests, rustdoc and strict OpenSpec validation.
 - [x] 3.2 Check live demo/buh projection values without modifying these bases.
-- [ ] 3.3 Archive after green verification.
+- [x] 3.3 Archive after green verification.
