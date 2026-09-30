@@ -3,4 +3,4 @@
 - [x] Add and document the optional presentation API.
 - [x] Test both native variants and unknown settings independently of code settings.
 - [x] Run workspace checks and strict validation.
-- [ ] Archive after green verification.
+- [x] Archive after green verification.
