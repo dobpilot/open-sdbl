@@ -210,6 +210,13 @@ pub struct CatalogStandardAttributes {
 /// Human-readable data extracted from a bare-GUID Config resource.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ConfigDescriptor {
+    /// Полный список GUID собственных реквизитов справочника в порядке
+    /// конфигурации, только у описателя самого справочника. Имена и ссылки
+    /// типов содержатся в существующих вложенных описателях этих GUID.
+    /// `Some([])` означает известную пустую коллекцию; `None` — неизвестную
+    /// или неполную форму. Реквизиты табличных частей и общие реквизиты сюда
+    /// не входят. Принадлежность не вычисляется по SQL или исходному коду.
+    pub catalog_attributes: Option<Vec<Guid>>,
     /// Основное представление справочника из измеренной формы собственного
     /// Config-ресурса; `None` для неизвестной формы, значения и других объектов.
     /// Не вычисляется по типу или длине кода и наименования.
@@ -650,6 +657,8 @@ struct ConfigParser<'input, 'resource> {
     catalog_owner_seen: bool,
     catalog_settings: [Option<u32>; 3],
     catalog_presentation: Option<u32>,
+    catalog_attributes: Option<Vec<Guid>>,
+    catalog_attribute_collections: usize,
     resource_version_known: bool,
 }
 
@@ -720,6 +729,48 @@ impl<'input> ConfigCandidate<'input> {
     }
 }
 
+// Нативная XML и Config 296 справочников УНФ подтверждают корневую
+// коллекцию собственных реквизитов. Коллекции табличных частей отличны.
+const CATALOG_ATTRIBUTES_COLLECTION_GUID: &str = "cf4abea7-37b2-11d4-940f-008048da11f9";
+
+#[derive(Default)]
+struct CatalogAttributesTracker {
+    count: Option<usize>,
+    ids: Vec<Guid>,
+    invalid: bool,
+}
+
+impl CatalogAttributesTracker {
+    fn record(
+        &mut self,
+        index: usize,
+        candidate: &ConfigCandidate<'_>,
+        descriptors: &[ProjectedConfigDescriptor],
+    ) {
+        if index == 1 {
+            self.count = candidate.as_scalar().and_then(|value| match value {
+                SimpleValue::Atom(atom) => atom.parse().ok(),
+                SimpleValue::String(_) | SimpleValue::Null => None,
+            });
+        } else if index >= 2 {
+            if let [descriptor] = descriptors
+                && !descriptor.descriptor.object_guid.is_nil()
+                && !descriptor.descriptor.name.is_empty()
+                && !self.ids.contains(&descriptor.descriptor.object_guid)
+            {
+                self.ids.push(descriptor.descriptor.object_guid.clone());
+            } else {
+                self.invalid = true;
+            }
+        }
+    }
+
+    fn finish(self, entries: usize) -> Option<Vec<Guid>> {
+        let count = self.count?;
+        (!self.invalid && count == entries && count == self.ids.len()).then_some(self.ids)
+    }
+}
+
 impl<'input, 'resource> ConfigParser<'input, 'resource> {
     const fn new(input: &'input str, resource_guid: &'resource Guid) -> Self {
         Self {
@@ -736,6 +787,8 @@ impl<'input, 'resource> ConfigParser<'input, 'resource> {
             catalog_owner_seen: false,
             catalog_settings: [None; 3],
             catalog_presentation: None,
+            catalog_attributes: None,
+            catalog_attribute_collections: 0,
             resource_version_known: false,
         }
     }
@@ -816,6 +869,15 @@ impl<'input, 'resource> ConfigParser<'input, 'resource> {
         {
             owner.catalog_default_presentation = Some(presentation);
         }
+        if catalog_layout_known
+            && self.catalog_attribute_collections == 1
+            && let Some(attributes) = self.catalog_attributes.take()
+            && let Some(owner) = descriptors
+                .iter_mut()
+                .find(|descriptor| &descriptor.object_guid == self.resource_guid)
+        {
+            owner.catalog_attributes = Some(attributes);
+        }
         Ok(descriptors)
     }
 
@@ -878,6 +940,7 @@ impl<'input, 'resource> ConfigParser<'input, 'resource> {
             )) if depth == collection_depth + 2
         );
         let mut pending_balance: Option<usize> = None;
+        let mut catalog_attributes: Option<CatalogAttributesTracker> = None;
 
         loop {
             self.skip_whitespace();
@@ -930,6 +993,21 @@ impl<'input, 'resource> ConfigParser<'input, 'resource> {
                     let descendants_before = descendant_descriptors.len();
                     let candidate =
                         self.value(&mut descendant_descriptors, field_purpose, depth + 1)?;
+                    if depth == 1
+                        && value_count == 0
+                        && candidate.as_str().is_some_and(|value| {
+                            value.eq_ignore_ascii_case(CATALOG_ATTRIBUTES_COLLECTION_GUID)
+                        })
+                    {
+                        catalog_attributes = Some(CatalogAttributesTracker::default());
+                    }
+                    if let Some(tracker) = &mut catalog_attributes {
+                        tracker.record(
+                            value_count,
+                            &candidate,
+                            &descendant_descriptors[descendants_before..],
+                        );
+                    }
                     if let Some(index) = pending_balance.take() {
                         if let Some(atom) = candidate.as_str()
                             && let Some(owner) = descendant_descriptors.get_mut(index)
@@ -1073,6 +1151,10 @@ impl<'input, 'resource> ConfigParser<'input, 'resource> {
                 self.resource_guid,
                 &mut local_descriptors,
             );
+        }
+        if let Some(tracker) = catalog_attributes {
+            self.catalog_attribute_collections += 1;
+            self.catalog_attributes = tracker.finish(value_count.saturating_sub(2));
         }
         descriptors.append(&mut local_descriptors);
         descriptors.append(&mut descendant_descriptors);
@@ -1254,6 +1336,7 @@ fn project_config_descriptor(
         .map(str::to_owned);
     descriptors.push(ProjectedConfigDescriptor {
         descriptor: ConfigDescriptor {
+            catalog_attributes: None,
             catalog_default_presentation: None,
             catalog_standard_attributes: None,
             resource_guid: resource_guid.clone(),
@@ -1336,6 +1419,7 @@ fn collect_descriptors(
             .filter(|comment| !comment.is_empty())
             .map(str::to_owned);
         descriptors.push(ConfigDescriptor {
+            catalog_attributes: None,
             catalog_default_presentation: None,
             catalog_standard_attributes: None,
             resource_guid: resource_guid.clone(),

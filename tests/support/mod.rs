@@ -303,6 +303,7 @@ pub(crate) fn guid(value: &str) -> Guid {
 
 pub(crate) fn descriptor(resource: &Guid, object: &Guid, name: &str) -> ConfigDescriptor {
     ConfigDescriptor {
+        catalog_attributes: None,
         catalog_default_presentation: None,
         catalog_standard_attributes: None,
         resource_guid: resource.clone(),
@@ -571,6 +572,7 @@ pub(crate) fn accumulation_register_snapshot() -> open_sdbl::metadata::MetadataS
     dimension.name = "Номенклатура".to_owned();
     dimension.field_purpose = Some(ConfigFieldPurpose::AccumulationRegisterDimension);
     descriptors.push(ConfigDescriptor {
+        catalog_attributes: None,
         catalog_default_presentation: None,
         catalog_standard_attributes: None,
         resource_guid: object_guid,
