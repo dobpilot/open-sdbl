@@ -210,6 +210,10 @@ pub struct CatalogStandardAttributes {
 /// Human-readable data extracted from a bare-GUID Config resource.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ConfigDescriptor {
+    /// Настроенный признак иерархичности справочника из измеренной формы
+    /// собственного Config-ресурса; `None` для неизвестной формы, значения
+    /// и других объектов. Не определяет правила присваивания BSL или записи.
+    pub catalog_hierarchical: Option<bool>,
     /// Полный список GUID собственных реквизитов справочника в порядке
     /// конфигурации, только у описателя самого справочника. Имена и ссылки
     /// типов содержатся в существующих вложенных описателях этих GUID.
@@ -657,6 +661,7 @@ struct ConfigParser<'input, 'resource> {
     catalog_owner_seen: bool,
     catalog_settings: [Option<u32>; 3],
     catalog_presentation: Option<u32>,
+    catalog_hierarchical: Option<bool>,
     catalog_attributes: Option<Vec<Guid>>,
     catalog_attribute_collections: usize,
     resource_version_known: bool,
@@ -787,6 +792,7 @@ impl<'input, 'resource> ConfigParser<'input, 'resource> {
             catalog_owner_seen: false,
             catalog_settings: [None; 3],
             catalog_presentation: None,
+            catalog_hierarchical: None,
             catalog_attributes: None,
             catalog_attribute_collections: 0,
             resource_version_known: false,
@@ -868,6 +874,14 @@ impl<'input, 'resource> ConfigParser<'input, 'resource> {
                 .find(|descriptor| &descriptor.object_guid == self.resource_guid)
         {
             owner.catalog_default_presentation = Some(presentation);
+        }
+        if catalog_layout_known
+            && let Some(hierarchical) = self.catalog_hierarchical
+            && let Some(owner) = descriptors
+                .iter_mut()
+                .find(|descriptor| &descriptor.object_guid == self.resource_guid)
+        {
+            owner.catalog_hierarchical = Some(hierarchical);
         }
         if catalog_layout_known
             && self.catalog_attribute_collections == 1
@@ -1070,6 +1084,15 @@ impl<'input, 'resource> ConfigParser<'input, 'resource> {
                                         SimpleValue::Atom(atom) => atom.parse().ok(),
                                         SimpleValue::String(_) | SimpleValue::Null => None,
                                     });
+                            }
+                            37 => {
+                                // Позиция и оба значения подтверждены XML/Config
+                                // сверкой 219 обычных и 77 иерархических каталогов.
+                                self.catalog_hierarchical = match candidate.as_scalar() {
+                                    Some(SimpleValue::Atom("0")) => Some(false),
+                                    Some(SimpleValue::Atom("1")) => Some(true),
+                                    _ => None,
+                                };
                             }
                             _ => {}
                         }
@@ -1336,6 +1359,7 @@ fn project_config_descriptor(
         .map(str::to_owned);
     descriptors.push(ProjectedConfigDescriptor {
         descriptor: ConfigDescriptor {
+            catalog_hierarchical: None,
             catalog_attributes: None,
             catalog_default_presentation: None,
             catalog_standard_attributes: None,
@@ -1419,6 +1443,7 @@ fn collect_descriptors(
             .filter(|comment| !comment.is_empty())
             .map(str::to_owned);
         descriptors.push(ConfigDescriptor {
+            catalog_hierarchical: None,
             catalog_attributes: None,
             catalog_default_presentation: None,
             catalog_standard_attributes: None,

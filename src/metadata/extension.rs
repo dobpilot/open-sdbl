@@ -74,6 +74,7 @@ pub fn extension_metadata_from_restructure(
             number: field.number,
         });
         descriptors.push(ConfigDescriptor {
+            catalog_hierarchical: None,
             catalog_attributes: None,
             catalog_default_presentation: None,
             catalog_standard_attributes: None,
