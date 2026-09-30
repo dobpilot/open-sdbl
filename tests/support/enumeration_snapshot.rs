@@ -15,6 +15,7 @@ pub(crate) fn enumeration_snapshot() -> MetadataSnapshot {
     ))
     .unwrap();
     let descriptor = |object_guid: Guid, name: &str, enumeration_value: bool| ConfigDescriptor {
+        catalog_standard_attributes: None,
         resource_guid: owner.clone(),
         object_guid,
         marker: "1".to_owned(),

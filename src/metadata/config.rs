@@ -172,9 +172,37 @@ pub struct Synonym {
     pub text: String,
 }
 
+/// Тип стандартного реквизита `Код`, приобретённый из Config справочника.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CatalogCodeType {
+    /// Числовой код.
+    Number,
+    /// Строковый код.
+    String,
+}
+
+/// Измеренные настройки стандартных реквизитов справочника из Config.
+///
+/// Длина `0` сохраняется как настройка конфигурации. Она не означает,
+/// что одноимённое свойство объекта BSL недоступно. Настройки
+/// не вычисляются по физическим колонкам и не задают начальные значения BSL.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CatalogStandardAttributes {
+    /// Настроенный тип кода, в том числе при отключённом реквизите.
+    pub code_type: CatalogCodeType,
+    /// Настроенная длина кода, включая значение `0`.
+    pub code_length: u32,
+    /// Настроенная длина наименования, включая значение `0`.
+    pub description_length: u32,
+}
+
 /// Human-readable data extracted from a bare-GUID Config resource.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ConfigDescriptor {
+    /// Настройки `Код` и `Наименование` справочника из измеренной формы
+    /// собственного Config-ресурса; `None` для неизвестной формы и других
+    /// объектов. `None` не означает нулевые длины или отсутствие свойства BSL.
+    pub catalog_standard_attributes: Option<CatalogStandardAttributes>,
     /// GUID used as the bare Config `FileName`.
     pub resource_guid: Guid,
     /// GUID found in the descriptor self-reference.
@@ -602,6 +630,11 @@ struct ConfigParser<'input, 'resource> {
     header_seen: bool,
     /// The chart of accounts of an accounting-register resource.
     chart_of_accounts: Option<Guid>,
+    catalog_class_seen: bool,
+    catalog_prefix: [bool; 8],
+    catalog_owner_seen: bool,
+    catalog_settings: [Option<u32>; 3],
+    resource_version_known: bool,
 }
 
 /// The class id an accounting-register resource opens with, measured on
@@ -682,6 +715,11 @@ impl<'input, 'resource> ConfigParser<'input, 'resource> {
             object_reference_type: None,
             header_seen: false,
             chart_of_accounts: None,
+            catalog_class_seen: false,
+            catalog_prefix: [false; 8],
+            catalog_owner_seen: false,
+            catalog_settings: [None; 3],
+            resource_version_known: false,
         }
     }
 
@@ -726,6 +764,27 @@ impl<'input, 'resource> ConfigParser<'input, 'resource> {
                 .find(|descriptor| &descriptor.object_guid == self.resource_guid)
         {
             owner.chart_of_accounts = Some(chart);
+        }
+        if self.resource_version_known
+            && self.catalog_class_seen
+            && self.catalog_prefix.iter().all(|known| *known)
+            && self.catalog_owner_seen
+            && let [Some(code_length), Some(code_type), Some(description_length)] =
+                self.catalog_settings
+            && let Some(code_type) = match code_type {
+                0 => Some(CatalogCodeType::Number),
+                1 => Some(CatalogCodeType::String),
+                _ => None,
+            }
+            && let Some(owner) = descriptors
+                .iter_mut()
+                .find(|descriptor| &descriptor.object_guid == self.resource_guid)
+        {
+            owner.catalog_standard_attributes = Some(CatalogStandardAttributes {
+                code_type,
+                code_length,
+                description_length,
+            });
         }
         Ok(descriptors)
     }
@@ -866,6 +925,38 @@ impl<'input, 'resource> ConfigParser<'input, 'resource> {
                             self.chart_of_accounts = Some(guid);
                         }
                     }
+                    // В нативных Config/XML УНФ класс `57` хранит длину
+                    // кода, его тип и длину наименования в позициях 17–19.
+                    // Префикс и собственный заголовок проверяются отдельно:
+                    // непонятую форму нельзя выдавать за отключённый реквизит.
+                    if depth == 0 && value_count == 0 {
+                        self.resource_version_known = candidate.as_str() == Some("1");
+                    }
+                    if depth == 1 && self.class_id == Some("57") {
+                        match value_count {
+                            1..=8 => {
+                                self.catalog_prefix[value_count - 1] = candidate
+                                    .as_str()
+                                    .is_some_and(|atom| Guid::from_str(atom).is_ok());
+                            }
+                            9 => {
+                                self.catalog_owner_seen = descendant_descriptors
+                                    [descendants_before..]
+                                    .iter()
+                                    .any(|projected| {
+                                        &projected.descriptor.object_guid == self.resource_guid
+                                    });
+                            }
+                            17..=19 => {
+                                self.catalog_settings[value_count - 17] =
+                                    candidate.as_scalar().and_then(|value| match value {
+                                        SimpleValue::Atom(atom) => atom.parse().ok(),
+                                        SimpleValue::String(_) | SimpleValue::Null => None,
+                                    });
+                            }
+                            _ => {}
+                        }
+                    }
                     // The class list opens with the class id and then the
                     // identifiers of the object; the third of them is the
                     // reference type an attribute of another object names.
@@ -879,6 +970,7 @@ impl<'input, 'resource> ConfigParser<'input, 'resource> {
                             SimpleValue::Atom(atom) => Some(*atom),
                             SimpleValue::String(_) | SimpleValue::Null => None,
                         });
+                        self.catalog_class_seen |= self.class_id == Some("57");
                         if self.class_id == Some(COMMON_ATTRIBUTE_CLASS_ID)
                             && self.separation.is_none()
                         {
@@ -1123,6 +1215,7 @@ fn project_config_descriptor(
         .map(str::to_owned);
     descriptors.push(ProjectedConfigDescriptor {
         descriptor: ConfigDescriptor {
+            catalog_standard_attributes: None,
             resource_guid: resource_guid.clone(),
             object_guid,
             marker: marker.to_owned(),
@@ -1203,6 +1296,7 @@ fn collect_descriptors(
             .filter(|comment| !comment.is_empty())
             .map(str::to_owned);
         descriptors.push(ConfigDescriptor {
+            catalog_standard_attributes: None,
             resource_guid: resource_guid.clone(),
             object_guid,
             marker: marker.to_owned(),

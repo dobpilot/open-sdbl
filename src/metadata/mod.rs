@@ -24,10 +24,10 @@ mod value;
 mod value_storage;
 
 pub use config::{
-    ConfigCriterion, ConfigDescriptor, ConfigFieldPurpose, ConfigPredefinedValue,
-    DataSeparationSettings, ParsedConfigResource, PredefinedSource, SeparatedDataUse, Synonym,
-    parse_config_criterion, parse_config_descriptor, parse_config_descriptors,
-    parse_config_predefined_values, parse_config_resource_bounded,
+    CatalogCodeType, CatalogStandardAttributes, ConfigCriterion, ConfigDescriptor,
+    ConfigFieldPurpose, ConfigPredefinedValue, DataSeparationSettings, ParsedConfigResource,
+    PredefinedSource, SeparatedDataUse, Synonym, parse_config_criterion, parse_config_descriptor,
+    parse_config_descriptors, parse_config_predefined_values, parse_config_resource_bounded,
 };
 pub use db_names::{DbNameEntry, DbNames, MetadataKind, parse_db_names};
 pub use deflate::{DEFAULT_OUTPUT_LIMIT, inflate_raw_deflate, inflate_raw_deflate_bounded};
