@@ -1,0 +1,4 @@
+CHECK|Array|1
+DIAGNOSTIC|ConfigurationExtensionApplicationIssueInformation
+DESCRIPTION|Object not found: StyleItem.ProbeA
+STYLE|ProbeA|Adopted|Undefined|

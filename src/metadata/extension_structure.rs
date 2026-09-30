@@ -58,13 +58,12 @@ pub struct ExtensionObject {
     /// Whether the object is the extension's own or adopted, or `None`
     /// when the header is not in the shape that was measured.
     pub belonging: Option<ObjectBelonging>,
-    /// The identifier of the main-configuration object an adopted object
-    /// extends, as its own header records it.
+    /// Явный UUID объекта основной конфигурации из собственного заголовка
+    /// заимствованного объекта.
     ///
-    /// `None` for an object of the extension's own, for a header not in the
-    /// measured shape, and for an adopted object that records the nil
-    /// identifier — an extension that maps its objects by name rather than
-    /// by identifier writes that, and a name is not an explicit link.
+    /// `None` возвращается для собственного объекта, неизвестной формы
+    /// заголовка, nil UUID и legacy-заголовка версии 1, в котором поля
+    /// target вообще нет. UUID не вычисляется по имени объекта.
     pub extends: Option<Guid>,
 }
 

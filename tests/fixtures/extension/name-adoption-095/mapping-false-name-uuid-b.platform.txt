@@ -1,0 +1,2 @@
+CHECK|Array|0
+STYLE|НадписьПоясняющаяГиперссылку|Adopted|Undefined|

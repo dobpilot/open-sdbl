@@ -1,0 +1,4 @@
+BUH_ROOT|ФормированиеТестовыхДанных|Undefined|
+BUH_STYLE|НадписьПоясняющаяГиперссылку|Adopted
+BUH_TARGET|Undefined|
+BUH_CANARY_TARGET|Undefined|
