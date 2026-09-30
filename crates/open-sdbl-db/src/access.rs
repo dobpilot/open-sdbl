@@ -12,7 +12,7 @@ use open_sdbl::access::{
     Access, RestrictionError, RestrictionScope, TemplateNode, parse_template, read_access,
 };
 use open_sdbl::metadata::{
-    FieldId, Guid, InfoBaseUser, MetadataSnapshot, MsSqlMetadataQueries, ObjectId,
+    FieldId, Guid, InfoBaseUser, MetadataKind, MetadataSnapshot, MsSqlMetadataQueries, ObjectId,
     PostgresMetadataQueries, RestrictionTemplate, Right, RoleCatalog, RoleEntry, RoleRights,
     StorageLayout, UserRow, parse_role_rights,
 };
@@ -154,6 +154,10 @@ impl AccessStore {
 /// read as permission. This is a proof boundary, not a claim of full 1C
 /// field-right compatibility.
 ///
+/// Значение константы проверяется по `Read` самой константы: его GUID
+/// совпадает с GUID владельца, а отдельного права реквизита у него нет.
+/// Это измерено на 1С 8.3.27.2342 независимо от default-прав реквизитов.
+///
 /// # Errors
 ///
 /// Returns [`DbError::Data`] if the user or any role rights are absent, a
@@ -256,6 +260,12 @@ pub fn check_user_field_access(
                         } else {
                             uncertain = true;
                         }
+                    } else if object.kind == Some(MetadataKind::Constant)
+                        && *field_guid == object.guid.to_bytes()
+                    {
+                        // Значение константы — это сама константа в DBNames,
+                        // а не дочерний реквизит. `Read` владельца уже проверен.
+                        allowed = true;
                     }
                 }
                 None => {

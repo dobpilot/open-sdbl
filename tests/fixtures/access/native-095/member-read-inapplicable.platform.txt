@@ -1,0 +1,14 @@
+file.begin rights-default-1
+DefaultGrant:object=Yes
+DefaultGrant:error={DataProcessor.Замеры.Form.Форма.Form(28)}: Error calling context method (AccessRight): Cannot apply the Чтение right to Catalog.ЗамерВременныхТаблиц.Attribute.ProbeAttribute
+DefaultRefuse:object=Yes
+DefaultRefuse:error={DataProcessor.Замеры.Form.Форма.Form(28)}: Error calling context method (AccessRight): Cannot apply the Чтение right to Catalog.ЗамерВременныхТаблиц.Attribute.ProbeAttribute
+ExplicitRefuse:object=Yes
+ExplicitRefuse:error={DataProcessor.Замеры.Form.Форма.Form(28)}: Error calling context method (AccessRight): Cannot apply the Чтение right to Catalog.ЗамерВременныхТаблиц.Attribute.ProbeAttribute
+ExplicitGrant:object=Yes
+ExplicitGrant:error={DataProcessor.Замеры.Form.Форма.Form(28)}: Error calling context method (AccessRight): Cannot apply the Чтение right to Catalog.ЗамерВременныхТаблиц.Attribute.ProbeAttribute
+FullProbe:object=Yes
+FullProbe:error={DataProcessor.Замеры.Form.Форма.Form(28)}: Error calling context method (AccessRight): Cannot apply the Чтение right to Catalog.ЗамерВременныхТаблиц.Attribute.ProbeAttribute
+ExplicitRefuse:object=Yes
+ExplicitRefuse:error={DataProcessor.Замеры.Form.Форма.Form(28)}: Error calling context method (AccessRight): Cannot apply the Чтение right to Catalog.ЗамерВременныхТаблиц.Attribute.ProbeAttribute
+file.end rights-default-1

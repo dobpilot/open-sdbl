@@ -1,0 +1,7 @@
+file.begin query-rights-1
+user=DefaultGrant
+custom=ok:0
+code=ok:0
+constant=error:{DataProcessor.Замеры.Form.Форма.Form(24)}: Error calling context method (Execute): Insufficient rights to use table "Constant.ProbeConstant"
+get.constant=error:{DataProcessor.Замеры.Form.Форма.Form(47)}: Error calling context method (Get): Access violation!
+file.end query-rights-1

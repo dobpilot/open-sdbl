@@ -624,3 +624,131 @@ fn missing_rls_parameter_keeps_its_name_through_both_database_apis() {
         assert!(matches!(error, DbError::MissingSessionParameter { .. }));
     }
 }
+
+fn constant_field_fixture() -> (MetadataSnapshot, Guid, RoleRights, FieldUse) {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../tests/fixtures/separators");
+    let db_names = parse_db_names(&std::fs::read(root.join("db_names.deflate")).unwrap()).unwrap();
+    let mut descriptors = Vec::new();
+    for entry in std::fs::read_dir(root.join("config")).unwrap() {
+        let path = entry.unwrap().path();
+        let name = path.file_stem().unwrap().to_str().unwrap();
+        descriptors.extend(parse_config_descriptors(name, &std::fs::read(&path).unwrap()).unwrap());
+    }
+    let schema =
+        parse_schema_storage(&std::fs::read(root.join("schema_storage.txt")).unwrap()).unwrap();
+    let snapshot = resolve_metadata(db_names, descriptors, schema, Vec::new()).snapshot;
+    let object = snapshot
+        .objects()
+        .iter()
+        .find(|object| object.kind == Some(MetadataKind::Constant))
+        .unwrap();
+    let object_id = ObjectId::from(&object.guid);
+    let field = snapshot
+        .field_id(object_id, object.name.as_deref().unwrap())
+        .unwrap();
+    let (_, role, mut rights, _, _) = field_fixture();
+    rights.objects[0].object = object.guid.clone();
+    (
+        snapshot,
+        role,
+        rights,
+        FieldUse {
+            object: object_id,
+            table_part: None,
+            field,
+            usage: FieldUsage::Projection,
+        },
+    )
+}
+
+#[test]
+fn the_constant_value_uses_object_read_independently_of_attribute_defaults() {
+    for default in [false, true] {
+        let (snapshot, role, mut rights, field) = constant_field_fixture();
+        rights.set_for_attributes_by_default = default;
+        let store = selected_store(&snapshot, &role, rights);
+        check_user_field_access(
+            &store,
+            &snapshot,
+            &FieldUsageRequest {
+                fields: vec![field],
+            },
+        )
+        .unwrap();
+    }
+}
+
+#[test]
+fn a_constant_value_does_not_bypass_an_object_read_refusal() {
+    let (snapshot, role, mut rights, field) = constant_field_fixture();
+    rights.objects[0].rights[0].allowed = false;
+    let store = selected_store(&snapshot, &role, rights);
+    assert!(
+        check_user_field_access(
+            &store,
+            &snapshot,
+            &FieldUsageRequest {
+                fields: vec![field]
+            }
+        )
+        .is_err()
+    );
+}
+
+#[test]
+fn another_role_can_grant_the_constant_value() {
+    let (snapshot, role, mut rights, field) = constant_field_fixture();
+    let second = Guid::from_str("12345678-1234-1234-1234-123456789abc").unwrap();
+    let grant = rights.clone();
+    rights.objects[0].rights[0].allowed = false;
+    let mut store = selected_store(&snapshot, &role, rights);
+    let mut user = store.current_user().unwrap().clone();
+    user.data.roles.push(second.clone());
+    store.set_current_user(Some(user));
+    store.insert_rights(second, grant);
+    check_user_field_access(
+        &store,
+        &snapshot,
+        &FieldUsageRequest {
+            fields: vec![field],
+        },
+    )
+    .unwrap();
+}
+
+#[test]
+fn constant_values_still_reject_unread_roles_and_mismatched_identifiers() {
+    let (snapshot, role, rights, mut field) = constant_field_fixture();
+    let mut store = selected_store(&snapshot, &role, rights);
+    let mut user = store.current_user().unwrap().clone();
+    user.data
+        .roles
+        .push(Guid::from_str("12345678-1234-1234-1234-123456789abc").unwrap());
+    store.set_current_user(Some(user));
+    assert!(
+        check_user_field_access(
+            &store,
+            &snapshot,
+            &FieldUsageRequest {
+                fields: vec![field.clone()]
+            }
+        )
+        .is_err()
+    );
+    user = store.current_user().unwrap().clone();
+    user.data.roles.truncate(1);
+    store.set_current_user(Some(user));
+    field.field = FieldId::Metadata(open_sdbl::metadata::AttributeId::from(
+        &Guid::from_str("12345678-1234-1234-1234-123456789abc").unwrap(),
+    ));
+    assert!(
+        check_user_field_access(
+            &store,
+            &snapshot,
+            &FieldUsageRequest {
+                fields: vec![field]
+            }
+        )
+        .is_err()
+    );
+}

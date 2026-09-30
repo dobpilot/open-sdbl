@@ -1,0 +1,7 @@
+file.begin query-rights-1
+user=ExplicitRefuse
+custom=ok:0
+code=ok:0
+constant=ok:1
+get.constant=No
+file.end query-rights-1

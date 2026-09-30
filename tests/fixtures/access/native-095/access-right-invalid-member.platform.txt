@@ -1,0 +1,20 @@
+file.begin rights-default-1
+DefaultGrant:object=Yes
+DefaultGrant:attribute=No
+DefaultGrant:error={DataProcessor.Замеры.Form.Форма.Form(29)}: Error calling context method (AccessRight): Type mismatch (parameter number '2')
+DefaultRefuse:object=Yes
+DefaultRefuse:attribute=No
+DefaultRefuse:error={DataProcessor.Замеры.Form.Форма.Form(29)}: Error calling context method (AccessRight): Type mismatch (parameter number '2')
+ExplicitRefuse:object=Yes
+ExplicitRefuse:attribute=No
+ExplicitRefuse:error={DataProcessor.Замеры.Form.Форма.Form(29)}: Error calling context method (AccessRight): Type mismatch (parameter number '2')
+ExplicitGrant:object=Yes
+ExplicitGrant:attribute=No
+ExplicitGrant:error={DataProcessor.Замеры.Form.Форма.Form(29)}: Error calling context method (AccessRight): Type mismatch (parameter number '2')
+FullProbe:object=Yes
+FullProbe:attribute=Yes
+FullProbe:error={DataProcessor.Замеры.Form.Форма.Form(29)}: Error calling context method (AccessRight): Type mismatch (parameter number '2')
+ExplicitRefuse:object=Yes
+ExplicitRefuse:attribute=No
+ExplicitRefuse:error={DataProcessor.Замеры.Form.Форма.Form(29)}: Error calling context method (AccessRight): Type mismatch (parameter number '2')
+file.end rights-default-1
