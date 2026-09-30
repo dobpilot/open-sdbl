@@ -143,16 +143,18 @@ pub fn parse_extension_catalog(resource: &[u8]) -> Result<ExtensionCatalog, Meta
     })
 }
 
-/// Reads every object header of one description resource.
+/// Читает заголовки объектов во всём дереве ресурса описания.
 ///
-/// A header is `{3,{1,0,<id>},<name>,<synonym>,<comment>,<belonging>,<n>,
-/// (<guid>,<tag>)×n,<extends>,<x>}`, found wherever it is nested: the
-/// object itself and each object inside it, such as an attribute. The
-/// pairs are not interpreted.
+/// Измеренный заголовок версии 3 имеет форму
+/// `{3,{1,0,<id>},<name>,<synonym>,<comment>,<belonging>,<n>,
+/// (<guid>,<tag>)×n,<extends>,<x>}`. Версия 1 хранит `{0,0,<id>}`
+/// и хвост `<belonging>,<n>,(<guid>,<tag>)×n` без явной связи
+/// заимствования. Идентификаторы пар не интерпретируются как такая связь.
+/// Неизвестный хвост сохраняет имя и UUID, но не принадлежность или связь.
 ///
 /// # Errors
 ///
-/// Returns [`MetadataError`] when the resource is not the serialization.
+/// Возвращает [`MetadataError`], если ресурс не является сериализацией.
 pub fn parse_extension_objects(resource: &[u8]) -> Result<Vec<ExtensionObject>, MetadataError> {
     let mut objects = Vec::new();
     for record in parse_serialized_sequence(resource)? {
@@ -174,20 +176,41 @@ fn collect_objects(value: &Value, objects: &mut Vec<ExtensionObject>) {
 }
 
 fn object_header(items: &[Value]) -> Option<ExtensionObject> {
-    if items.first()?.as_scalar()? != "3" {
-        return None;
-    }
+    let legacy = match items.first()?.as_scalar()? {
+        "1" => true,
+        "3" => false,
+        _ => return None,
+    };
     let [one, zero, id] = items.get(1)?.as_list()? else {
         return None;
     };
-    if one.as_scalar()? != "1" || zero.as_scalar()? != "0" {
+    if one.as_scalar()? != if legacy { "0" } else { "1" } || zero.as_scalar()? != "0" {
         return None;
     }
     let id = guid(id)?;
     let name = items.get(2)?.as_string()?.to_owned();
     items.get(3)?.as_list()?;
     items.get(4)?.as_string()?;
-    let (belonging, extends) = belonging(&items[5..]).unwrap_or((None, None));
+    let (belonging, extends) = if legacy {
+        // Заголовок версии 1 измерен по SQL и XML-выгрузке buh. Его пары
+        // содержат идентификаторы изменённых свойств, а не объект основной
+        // конфигурации; принимать такую пару за связь заимствования нельзя.
+        let tail = &items[5..];
+        let measured = tail.first().and_then(Value::as_scalar) == Some("1")
+            && tail.get(1).and_then(Value::as_u32).is_some_and(|count| {
+                usize::try_from(count)
+                    .ok()
+                    .and_then(|n| n.checked_mul(2))
+                    .and_then(|n| n.checked_add(2))
+                    == Some(tail.len())
+            })
+            && tail[2..]
+                .chunks_exact(2)
+                .all(|pair| guid(&pair[0]).is_some() && pair[1].as_scalar().is_some());
+        (measured.then_some(ObjectBelonging::Adopted), None)
+    } else {
+        belonging(&items[5..]).unwrap_or((None, None))
+    };
     Some(ExtensionObject {
         id,
         name,
