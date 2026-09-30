@@ -1,0 +1,47 @@
+[
+  {
+    "kind": "Language",
+    "folder": "Languages",
+    "name": "Русский",
+    "a": "4421d113-68c7-5b17-bba0-2452e7dec53f",
+    "b": "d8c7b46f-7ff2-572c-b2fb-736e669daeef",
+    "Aname": "Русский",
+    "Bname": "BatchLanguageB"
+  },
+  {
+    "kind": "DefinedType",
+    "folder": "DefinedTypes",
+    "name": "GLN",
+    "a": "a24ced71-b92b-5cae-806d-0843f83df538",
+    "b": "b69d30d8-69f6-5df7-86eb-50ac7a7909d7",
+    "Aname": "GLN",
+    "Bname": "BatchDefinedTypeB"
+  },
+  {
+    "kind": "CommonCommand",
+    "folder": "CommonCommands",
+    "name": "ИсторияИзменений",
+    "a": "b7b10ff4-464b-5ef5-9067-88d17b18bb95",
+    "b": "60cd2027-e8ea-569d-adaf-25ee4fa09a36",
+    "Aname": "ИсторияИзменений",
+    "Bname": "BatchCommonCommandB"
+  },
+  {
+    "kind": "Catalog",
+    "folder": "Catalogs",
+    "name": "Валюты",
+    "a": "f2402680-315b-59b1-98d7-bef9bd7eb412",
+    "b": "ffd14024-e495-5195-ae68-d604b8cad3a5",
+    "Aname": "Валюты",
+    "Bname": "BatchCatalogB"
+  },
+  {
+    "kind": "Enum",
+    "folder": "Enums",
+    "name": "ТипыКонтактнойИнформации",
+    "a": "05bd9f2c-c6e4-58d6-9b6c-1630fecbadb8",
+    "b": "f782cc17-6a3c-5564-8bd2-7b5b3cb0042a",
+    "Aname": "ТипыКонтактнойИнформации",
+    "Bname": "BatchEnumB"
+  }
+]

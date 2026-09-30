@@ -1,0 +1,6 @@
+<MetaDataObject xmlns="http://v8.1c.ru/8.3/MDClasses" xmlns:v8="http://v8.1c.ru/8.1/data/core" xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:xr="http://v8.1c.ru/8.3/xcf/readable" version="2.20"><DefinedType uuid="a24ced71-b92b-5cae-806d-0843f83df538"><InternalInfo>
+			<xr:GeneratedType name="DefinedType.BatchDefinedTypeA_R" category="DefinedType">
+				<xr:TypeId>8d80603d-4bf2-58f7-ae18-e5e2be3d0b61</xr:TypeId>
+				<xr:ValueId>cfcca865-ee9c-5b3f-b75b-63b9605ac8a5</xr:ValueId>
+			</xr:GeneratedType>
+		</InternalInfo><Properties><Name>BatchDefinedTypeA_R</Name><Synonym/><Comment/><Type><v8:Type>xs:string</v8:Type><v8:StringQualifiers><v8:Length>13</v8:Length><v8:AllowedLength>Variable</v8:AllowedLength></v8:StringQualifiers></Type></Properties></DefinedType></MetaDataObject>

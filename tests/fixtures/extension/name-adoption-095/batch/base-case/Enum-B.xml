@@ -1,0 +1,14 @@
+<MetaDataObject xmlns="http://v8.1c.ru/8.3/MDClasses" xmlns:v8="http://v8.1c.ru/8.1/data/core" xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:xr="http://v8.1c.ru/8.3/xcf/readable" version="2.20"><Enum uuid="f782cc17-6a3c-5564-8bd2-7b5b3cb0042a"><InternalInfo>
+			<xr:GeneratedType name="EnumRef.типыконтактнойинформации" category="Ref">
+				<xr:TypeId>ca51f986-6209-5e10-83b9-c88c455a3c14</xr:TypeId>
+				<xr:ValueId>12fd0789-912a-556c-87f3-00ea2b7d5922</xr:ValueId>
+			</xr:GeneratedType>
+			<xr:GeneratedType name="EnumManager.типыконтактнойинформации" category="Manager">
+				<xr:TypeId>48544b91-7bee-5455-905d-e7e2db125ce0</xr:TypeId>
+				<xr:ValueId>1cca5efd-1089-5411-868a-287fbf05ad9d</xr:ValueId>
+			</xr:GeneratedType>
+			<xr:GeneratedType name="EnumList.типыконтактнойинформации" category="List">
+				<xr:TypeId>06b1c366-13ec-548f-b114-0f72006e31d4</xr:TypeId>
+				<xr:ValueId>b5352949-aff0-541b-9cf4-d47109a16897</xr:ValueId>
+			</xr:GeneratedType>
+		</InternalInfo><Properties><Name>типыконтактнойинформации</Name><Synonym/><Comment/></Properties><ChildObjects/></Enum></MetaDataObject>

@@ -1,0 +1,22 @@
+<MetaDataObject xmlns="http://v8.1c.ru/8.3/MDClasses" xmlns:v8="http://v8.1c.ru/8.1/data/core" xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:xr="http://v8.1c.ru/8.3/xcf/readable" version="2.20"><Catalog uuid="f2402680-315b-59b1-98d7-bef9bd7eb412"><InternalInfo>
+			<xr:GeneratedType name="CatalogObject.BatchCatalogA_R" category="Object">
+				<xr:TypeId>b7803697-1377-56bb-8502-c11799e4d359</xr:TypeId>
+				<xr:ValueId>cf9d43a6-05a1-5e26-853f-a251b02370a2</xr:ValueId>
+			</xr:GeneratedType>
+			<xr:GeneratedType name="CatalogRef.BatchCatalogA_R" category="Ref">
+				<xr:TypeId>329c48ac-d48e-5fe2-b502-afa369fc80e2</xr:TypeId>
+				<xr:ValueId>8eb2abc5-5268-57a8-9a13-e855c690e83b</xr:ValueId>
+			</xr:GeneratedType>
+			<xr:GeneratedType name="CatalogSelection.BatchCatalogA_R" category="Selection">
+				<xr:TypeId>d03a45b2-4109-5942-9761-5a94e8b5f17f</xr:TypeId>
+				<xr:ValueId>5dac368d-6610-5245-b1fb-ca63eeb77941</xr:ValueId>
+			</xr:GeneratedType>
+			<xr:GeneratedType name="CatalogList.BatchCatalogA_R" category="List">
+				<xr:TypeId>1c70ddb1-aa91-51a5-b077-3432857e0349</xr:TypeId>
+				<xr:ValueId>295b104f-a4ff-5754-bd0a-339c7894d778</xr:ValueId>
+			</xr:GeneratedType>
+			<xr:GeneratedType name="CatalogManager.BatchCatalogA_R" category="Manager">
+				<xr:TypeId>fc066d47-72e0-5d44-94ee-42dcf5ddea69</xr:TypeId>
+				<xr:ValueId>4f25e952-db2b-5fde-a648-ebec0f15ba5d</xr:ValueId>
+			</xr:GeneratedType>
+		</InternalInfo><Properties><Name>BatchCatalogA_R</Name><Synonym/><Comment/></Properties><ChildObjects/></Catalog></MetaDataObject>

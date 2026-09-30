@@ -1,0 +1,22 @@
+<MetaDataObject xmlns="http://v8.1c.ru/8.3/MDClasses" xmlns:v8="http://v8.1c.ru/8.1/data/core" xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:xr="http://v8.1c.ru/8.3/xcf/readable" version="2.20"><Catalog uuid="ffd14024-e495-5195-ae68-d604b8cad3a5"><InternalInfo>
+			<xr:GeneratedType name="CatalogObject.валюты" category="Object">
+				<xr:TypeId>075ae8a4-c713-5ae0-93cc-7df4bbf96d19</xr:TypeId>
+				<xr:ValueId>fb5af6b2-ea60-5bf0-9a65-d6ff613a7fc7</xr:ValueId>
+			</xr:GeneratedType>
+			<xr:GeneratedType name="CatalogRef.валюты" category="Ref">
+				<xr:TypeId>ca3852c4-4af4-50e2-b662-cf99a16fb9d7</xr:TypeId>
+				<xr:ValueId>77fefe7f-02f1-567a-b906-a419e5c0ed2e</xr:ValueId>
+			</xr:GeneratedType>
+			<xr:GeneratedType name="CatalogSelection.валюты" category="Selection">
+				<xr:TypeId>5bcdf988-9a0e-563d-b781-455049c61c25</xr:TypeId>
+				<xr:ValueId>21b4cf31-28f6-5d23-8414-93c35bbfa8a4</xr:ValueId>
+			</xr:GeneratedType>
+			<xr:GeneratedType name="CatalogList.валюты" category="List">
+				<xr:TypeId>a0604831-1d88-5ea9-841e-08ac4ecddcef</xr:TypeId>
+				<xr:ValueId>d9564e30-bed6-5b56-acef-c68072577e02</xr:ValueId>
+			</xr:GeneratedType>
+			<xr:GeneratedType name="CatalogManager.валюты" category="Manager">
+				<xr:TypeId>cec3bbdd-aed0-53c4-a492-9059b32db559</xr:TypeId>
+				<xr:ValueId>4872c230-6833-54f0-9109-92f6480a35c6</xr:ValueId>
+			</xr:GeneratedType>
+		</InternalInfo><Properties><Name>валюты</Name><Synonym/><Comment/></Properties><ChildObjects/></Catalog></MetaDataObject>

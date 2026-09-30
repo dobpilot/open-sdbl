@@ -1,0 +1,6 @@
+<MetaDataObject xmlns="http://v8.1c.ru/8.3/MDClasses" xmlns:v8="http://v8.1c.ru/8.1/data/core" xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:xr="http://v8.1c.ru/8.3/xcf/readable" version="2.20"><DefinedType uuid="b69d30d8-69f6-5df7-86eb-50ac7a7909d7"><InternalInfo>
+			<xr:GeneratedType name="DefinedType.gln" category="DefinedType">
+				<xr:TypeId>6ee74109-aba3-54be-96ce-133db185abc0</xr:TypeId>
+				<xr:ValueId>8cdbdb9e-f8b8-53f6-aca3-8ce783fc4488</xr:ValueId>
+			</xr:GeneratedType>
+		</InternalInfo><Properties><Name>gln</Name><Synonym/><Comment/><Type><v8:Type>xs:string</v8:Type><v8:StringQualifiers><v8:Length>13</v8:Length><v8:AllowedLength>Variable</v8:AllowedLength></v8:StringQualifiers></Type></Properties></DefinedType></MetaDataObject>

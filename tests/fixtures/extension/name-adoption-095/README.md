@@ -29,3 +29,24 @@
 Текстовые артефакты нормализованы: UTF-8 без BOM, LF, без пробелов в конце строк.
 
 После KeepMapping=false и case mismatch UUID B переименован в ProbeB_R, UUID A получил точное русское имя. `mapping-false-different-uuid-a.platform.txt`: CheckCanApply минимального v3-nil — 0, target errors original v1 — 0 (55 других ошибок). Это подтверждает переключение на другой UUID по точному имени и при выключенном KeepMapping. Native поколения: original buh extension `efc85a95fd12b00737d88782e29d9a975342452d`, minimal extension mapping false `3b5d3de7a153f3cca3d891bd08bfe58b9c45dacd`, base case-change `c4b7b53b8b5fbf4ab23986c78afcd15900000000`, base final UUID A `951e7322791cf249a633ed82c8b932d600000000`.
+
+## CommonPicture и оставшиеся пять классов
+
+Продолжение того же native замера на 1С 8.3.27.2342, только одноразовая файловая база. Исходный бинарный CFE ФормированиеТестовыхДанных не пересобирается; SHA-256 и generation указаны выше. Существующие demo/buh/unf не изменялись. OpenSpec change не требуется: это фиксация измерений, публичный API и декодер не меняются.
+
+CommonPicture.Позвонить, local UUID `75b0bb1c-2d7c-4a33-a6ff-9cfb1f24c98f`: base UUID A `06392094-0c6d-4d98-977c-a7ce8826cc65`, B `6c187747-b2fc-4e61-ae2c-56c2c425e92c`. `picture/` содержит четыре полных native вывода. При точном имени A целевой ошибки нет; переименование A при прежнем UUID даёт Object not found; точное имя B с другим UUID снимает ошибку; нижний регистр B даёт Name checked-value mismatch. Число всех диагностик соответственно 54, 55, 54, 55. Фильтр ограничивает полный путь объекта, не захватывая ПозвонитьИлиОтправитьSMS.
+
+`batch/` содержит последовательные native выводы и manifest UUID/имён для представителей оставшихся классов: Language.Русский, DefinedType.GLN, CommonCommand.ИсторияИзменений, Catalog.Валюты, Enum.ТипыКонтактнойИнформации. Для каждого получена одна и та же матрица:
+
+| Состояние | missing | name mismatch | other property mismatch |
+| --- | --- | --- | --- |
+| exact: UUID A с точным исходным именем | 0 | 0 | 0 |
+| rename: UUID A сохранён, имя изменено | 1 | 0 | 0 |
+| different: другой UUID B с точным исходным именем | 0 | 0 | 0 |
+| case: UUID B сохранён, имя в нижнем регистре | 0 | 1 | 0 |
+
+Все посторонние диагностики сохранены как ALL_DIAGNOSTIC; этот замер не утверждает применимость исходного расширения целиком. Base generation: exact `e1d11b05ffb0324c8fc9a02c42598ba000000000`, rename `325991aef7eb6440a5d7a1be0dba99a200000000`, different `2361cb29ee36ba409b266e6df1c8339e00000000`, case `7d85b9407f181846a2d46e9b0f4879a400000000`.
+
+`batch-source.py` фиксирует scaffold. Для Catalog/Enum/DefinedType InternalInfo создаётся с независимыми стабильными TypeId/ValueId, чтобы не копировать типовые GUID расширения; base-case XML приложен. LanguageCode A/B равны ru/de на первых двух шагах, fr/ru на последних двух: это сохраняет уникальность кодов языков при передаче имени B. Name и UUID изменяются ровно согласно manifest. У остальных классов содержимое свойств между этапами сохраняется.
+
+Совокупность legacy-v1 Adopted без target в исходном CFE: StyleItem 10, CommonPicture 8, Language 1, DefinedType 1, CommonCommand 4, Catalog 9, Enum 4 (37). Измерены перечисленные представители всех семи классов; остальные объекты каждого класса индивидуально не проверялись. Отключение контроля Name, вложенные объекты, неизвестные формы и иные классы не измерены. GUID целей не угадываются и API не меняется.

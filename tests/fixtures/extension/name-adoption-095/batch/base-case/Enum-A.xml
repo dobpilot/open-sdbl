@@ -1,0 +1,14 @@
+<MetaDataObject xmlns="http://v8.1c.ru/8.3/MDClasses" xmlns:v8="http://v8.1c.ru/8.1/data/core" xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:xr="http://v8.1c.ru/8.3/xcf/readable" version="2.20"><Enum uuid="05bd9f2c-c6e4-58d6-9b6c-1630fecbadb8"><InternalInfo>
+			<xr:GeneratedType name="EnumRef.BatchEnumA_R" category="Ref">
+				<xr:TypeId>b3b35021-8eea-5ee2-ae42-87de9ec061d0</xr:TypeId>
+				<xr:ValueId>4dca00b8-7fd4-5aea-84dd-2132062b7bbe</xr:ValueId>
+			</xr:GeneratedType>
+			<xr:GeneratedType name="EnumManager.BatchEnumA_R" category="Manager">
+				<xr:TypeId>f795f7bb-eca0-579a-9852-fc2d465b07c7</xr:TypeId>
+				<xr:ValueId>f32fd8bd-27ae-5ca6-ac23-382a15ff1fbc</xr:ValueId>
+			</xr:GeneratedType>
+			<xr:GeneratedType name="EnumList.BatchEnumA_R" category="List">
+				<xr:TypeId>6c4692d2-3944-583b-919c-dd424622a10e</xr:TypeId>
+				<xr:ValueId>6eb22170-607a-5e18-8d23-61ffe6900335</xr:ValueId>
+			</xr:GeneratedType>
+		</InternalInfo><Properties><Name>BatchEnumA_R</Name><Synonym/><Comment/></Properties><ChildObjects/></Enum></MetaDataObject>
