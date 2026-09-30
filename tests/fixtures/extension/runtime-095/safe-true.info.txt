@@ -1,0 +1,10 @@
+name                         : "Probe095"
+version                      : "0.9.5"
+active                       : yes
+purpose                      : add-on
+safe-mode                    : yes
+security-profile-name        :
+unsafe-action-protection     : yes
+used-in-distributed-infobase : no
+scope                        : infobase
+hash-sum                     : "m8U/yTkcx2G67LLpVzg36smnDVs="

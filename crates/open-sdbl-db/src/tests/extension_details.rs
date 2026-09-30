@@ -116,7 +116,15 @@ fn what_the_extensions_table_records() {
             extension.name
         );
         // Not measured: never guessed.
-        assert_eq!(extension.safe_mode, None, "{}", extension.name);
+        assert_eq!(extension.safe_mode, Some(true), "{}", extension.name);
+        assert_eq!(extension.security_profile_name.as_deref(), Some(""));
+        assert_eq!(extension.scope_kind, Some(crate::ExtensionScope::InfoBase));
+        assert!(
+            extension
+                .hash_sum
+                .as_ref()
+                .is_some_and(|hash| hash.len() == 28)
+        );
     }
 }
 
@@ -357,4 +365,24 @@ fn a_damaged_resource_that_is_no_description_leaves_the_list_complete() {
     let extensions = read(source);
     assert!(complete.is_some());
     assert_eq!(extensions[0].objects, complete);
+}
+
+#[test]
+fn unmeasured_scope_codes_stay_raw_and_have_no_typed_mapping() {
+    let mut source = demo();
+    source.extensions[0].scope = Some(42);
+    let extensions = read(source);
+    assert_eq!(extensions[0].scope, Some(42));
+    assert_eq!(extensions[0].scope_kind, None);
+}
+
+#[test]
+fn an_unknown_runtime_property_header_answers_unknown_properties() {
+    let mut source = demo();
+    source.extensions[0].info[35] = 0x83;
+    let extensions = read(source);
+    assert_eq!(extensions[0].safe_mode, None);
+    assert_eq!(extensions[0].security_profile_name, None);
+    assert_eq!(extensions[0].hash_sum, None);
+    assert_eq!(extensions[1].safe_mode, Some(true));
 }

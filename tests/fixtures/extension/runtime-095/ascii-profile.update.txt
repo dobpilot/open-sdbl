@@ -1,0 +1,2 @@
+[INFO] Set the 'Probe095' extension properties
+[INFO] The 'Probe095' extension properties are set

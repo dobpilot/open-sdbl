@@ -251,6 +251,26 @@ impl ContentKey {
         self.0.iter().map(|byte| format!("{byte:02x}")).collect()
     }
 
+    /// Представляет ключ стандартной строкой Base64 с дополнением `=`.
+    #[must_use]
+    pub fn as_base64(&self) -> String {
+        const ALPHABET: &[u8; 64] =
+            b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+        let mut text = String::with_capacity(28);
+        for chunk in self.0.chunks(3) {
+            let mut block = [0_u8; 3];
+            block[..chunk.len()].copy_from_slice(chunk);
+            let value = u32::from_be_bytes([0, block[0], block[1], block[2]]);
+            for index in 0..=chunk.len() {
+                text.push(ALPHABET[(value >> (18 - 6 * index) & 0x3f) as usize] as char);
+            }
+        }
+        while text.len() % 4 != 0 {
+            text.push('=');
+        }
+        text
+    }
+
     /// The bytes of the key.
     #[must_use]
     pub const fn as_bytes(&self) -> &[u8; 20] {
@@ -272,16 +292,13 @@ pub fn extension_root_key(info: &[u8]) -> Option<ContentKey> {
     Some(ContentKey(key.try_into().ok()?))
 }
 
-/// What `_ExtensionsInfo.ExtensionZippedInfo` records about one
-/// configuration extension.
+/// Измеренные сведения из `_ExtensionsInfo.ExtensionZippedInfo`.
 ///
-/// After the four-byte marker and the twenty-byte root key the record is
-/// a tag-length-value stream: `0x97` introduces a UTF-16 string of *n*
-/// code units — the localized synonym — and `0x9a` a string of *n* bytes
-/// — the version. The decoder reads those two and stops at anything it
-/// does not know, because the format is only partly measured: the key is
-/// what reading an extension needs, and it is answered whatever follows
-/// it.
+/// После ключа поколения запись содержит счётные строки и отдельные
+/// флаги. `0x97` вводит UTF-16-строку, `0x9a` — строку байтов; профиль
+/// распознаётся по позиции в измеренном заголовке, отдельно от версии и
+/// локализованного синонима. Неизвестная или оборванная форма сохраняет
+/// ключ и разобранные поля, но не подтверждает runtime-свойства.
 #[non_exhaustive]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ExtensionInfo {
@@ -313,6 +330,15 @@ pub struct ExtensionInfo {
     /// decoder could not follow answers `None`, which a consumer must
     /// decide about rather than act on.
     pub active: Option<bool>,
+    /// Булево поле безопасного режима в измеренной записи платформы.
+    /// При именованном профиле платформа хранит его отдельно от этого поля.
+    pub safe_mode: Option<bool>,
+    /// Имя профиля безопасности; пустая строка означает известное отсутствие
+    /// профиля, `None` — неподтверждённую форму записи.
+    pub security_profile_name: Option<String>,
+    /// Платформенная `ХешСумма`: Base64 ключа поколения расширения в
+    /// измеренной записи 1С 8.3.27.2342, либо `None` для неизвестной формы.
+    pub hash_sum: Option<String>,
 }
 
 /// The byte a record ends with, in every record measured so far.
@@ -346,7 +372,11 @@ pub fn parse_extension_info(info: &[u8]) -> Option<ExtensionInfo> {
         synonym: None,
         version: None,
         active: None,
+        safe_mode: None,
+        security_profile_name: None,
+        hash_sum: None,
     };
+    let runtime = extension_runtime_fields(info);
     let flag_at = info.len().checked_sub(EXTENSION_INFO_FLAG_FROM_END);
     let mut flag = None;
     let mut offset = EXTENSION_INFO_MARKER + 20;
@@ -354,7 +384,13 @@ pub fn parse_extension_info(info: &[u8]) -> Option<ExtensionInfo> {
         // A field the decoder knows but cannot read whole ends the walk;
         // so does a tag it does not know, because its length is unknown
         // and skipping it would resume in the middle of its payload.
-        let Some(next) = read_field(info, offset, tag, &mut record) else {
+        let next = if let Some((_, _, profile_end)) = runtime.as_ref().filter(|_| offset == 36) {
+            // Профиль — отдельное поле заголовка. Его текст нельзя принимать
+            // за версию расширения или локализованный синоним.
+            *profile_end
+        } else if let Some(next) = read_field(info, offset, tag, &mut record) {
+            next
+        } else {
             break;
         };
         // Only a byte the walk itself reached as a standalone tag can be
@@ -369,6 +405,13 @@ pub fn parse_extension_info(info: &[u8]) -> Option<ExtensionInfo> {
     // other stopping place means the decoder lost the structure, and a
     // flag read out of a record it did not follow says nothing.
     if offset + 1 == info.len() && info.get(offset) == Some(&EXTENSION_INFO_TERMINATOR) {
+        if let Some((safe_mode, profile, _)) = runtime
+            .filter(|(_, _, profile_end)| extension_runtime_record_complete(info, *profile_end))
+        {
+            record.safe_mode = Some(safe_mode);
+            record.security_profile_name = Some(profile);
+            record.hash_sum = Some(record.root_key.as_base64());
+        }
         record.active = match flag {
             Some(EXTENSION_INFO_APPLIED) => Some(true),
             Some(EXTENSION_INFO_NOT_APPLIED) => Some(false),
@@ -376,6 +419,79 @@ pub fn parse_extension_info(info: &[u8]) -> Option<ExtensionInfo> {
         };
     }
     Some(record)
+}
+
+/// Читает измеренный заголовок: ключ поколения, восьмибайтовый счётчик,
+/// безопасный режим и профиль. Иные заголовки не интерпретируются.
+fn extension_runtime_fields(info: &[u8]) -> Option<(bool, String, usize)> {
+    if info.get(..4)? != [0x43, 0xc2, 0x9a, 0x14]
+        || !matches!(info.get(24), Some(0xa1 | 0xa2))
+        || info.get(25..27)? != [0x9a, 0x08]
+    {
+        return None;
+    }
+    let mode = match info.get(35)? {
+        0x81 => false,
+        0x82 => true,
+        _ => return None,
+    };
+    let tag = *info.get(36)?;
+    let (profile, profile_end) = if tag == 0x81 {
+        (String::new(), 37)
+    } else {
+        let count = usize::from(*info.get(37)?);
+        match tag {
+            0x9a => {
+                let end = 38_usize.checked_add(count)?;
+                (String::from_utf8(info.get(38..end)?.to_vec()).ok()?, end)
+            }
+            0x97 => {
+                let end = 38_usize.checked_add(count.checked_mul(2)?)?;
+                (decode_utf16_le(info.get(38..end)?)?, end)
+            }
+            _ => return None,
+        }
+    };
+    Some((mode, profile, profile_end))
+}
+
+/// Проверяет обязательный хвост записи после измеренного заголовка профиля.
+fn extension_runtime_record_complete(info: &[u8], profile_end: usize) -> bool {
+    // В измеренной записи после профиля обязательны строка локализованного
+    // синонима, версия (либо 0x81), два булевых флага и терминатор. Один
+    // корректный заголовок не подтверждает оборванный остаток записи.
+    let Some(synonym_end) = extension_counted_end(info, profile_end) else {
+        return false;
+    };
+    let tail = if info.get(synonym_end) == Some(&0x81) {
+        synonym_end + 1
+    } else {
+        let Some(end) = extension_counted_end(info, synonym_end) else {
+            return false;
+        };
+        end
+    };
+    if tail.checked_add(3) != Some(info.len())
+        || !matches!(info.get(tail), Some(0x81 | 0x82))
+        || !matches!(info.get(tail + 1), Some(0x81 | 0x82))
+        || info.get(tail + 2) != Some(&0x20)
+    {
+        return false;
+    }
+    true
+}
+
+/// Находит конец измеренного счётного поля, не интерпретируя его содержимое.
+fn extension_counted_end(info: &[u8], offset: usize) -> Option<usize> {
+    let multiplier = match info.get(offset)? {
+        0x9a => 1,
+        0x97 => 2,
+        _ => return None,
+    };
+    let count = usize::from(*info.get(offset + 1)?);
+    let end = (offset + 2).checked_add(count.checked_mul(multiplier)?)?;
+    info.get(offset + 2..end)?;
+    Some(end)
 }
 
 /// Reads one field, answering where the next begins, or `None` when the

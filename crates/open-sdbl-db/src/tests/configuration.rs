@@ -309,21 +309,7 @@ fn stored_deflate(data: &[u8]) -> Vec<u8> {
 
 /// The base64 the root index spells a key with.
 fn base64(key: &ContentKey) -> String {
-    const ALPHABET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-    let bytes = key.as_bytes();
-    let mut text = String::new();
-    for chunk in bytes.chunks(3) {
-        let mut block = [0_u8; 3];
-        block[..chunk.len()].copy_from_slice(chunk);
-        let value = u32::from_be_bytes([0, block[0], block[1], block[2]]);
-        for index in 0..=chunk.len() {
-            text.push(ALPHABET[(value >> (18 - 6 * index) & 0x3f) as usize] as char);
-        }
-    }
-    while text.len() % 4 != 0 {
-        text.push('=');
-    }
-    text
+    key.as_base64()
 }
 
 fn key(seed: u8) -> ContentKey {

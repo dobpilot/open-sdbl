@@ -250,22 +250,23 @@ pub struct AcquiredExtension {
     /// The version the extension record carries, or `None` when it
     /// carries none.
     pub version: Option<String>,
-    /// The lower-case hexadecimal of the key of the extension's root
-    /// resource.
+    /// Ключ корневого ресурса расширения в шестнадцатеричной записи.
     ///
-    /// The store names every row by the SHA-1 of the bytes it holds, and
-    /// the root lists the key of every other resource of the extension, so
-    /// the key changes whenever any resource of the extension does, and
-    /// two extensions with the same key carry the same content. It is not
-    /// the platform's own hash sum of the extension, which is not read.
+    /// Хранилище адресует ресурс по SHA-1 его байтов; корень содержит ключи
+    /// остальных ресурсов, поэтому изменение содержимого меняет этот ключ.
+    /// Платформенная `ХешСумма` возвращается отдельно в `hash_sum`, в
+    /// измеренной форме Base64 ключа поколения, а не в этой записи.
     pub content_hash: String,
-    /// Whether the extension runs in safe mode.
-    ///
-    /// Always `None` today: the record carries a few flags besides the
-    /// activity one, but which of them is safe mode has not been measured,
-    /// and reading the wrong one would tell a consumer an extension is
-    /// confined when it is not.
+    /// Булево поле безопасного режима из измеренной записи платформы.
+    /// Именованный профиль хранится отдельно в `security_profile_name`.
+    /// Неподтверждённая форма записи возвращает `None`.
     pub safe_mode: Option<bool>,
+    /// Имя профиля безопасности; `Some("")` — подтверждённое отсутствие
+    /// именованного профиля, `None` — неизвестная форма записи.
+    pub security_profile_name: Option<String>,
+    /// Платформенная `ХешСумма` в измеренной форме Base64 ключа поколения.
+    /// Это отдельное представление, а не переименование `content_hash`.
+    pub hash_sum: Option<String>,
     /// Whether the extension is used in a distributed information base,
     /// or `None` when the base does not record it.
     pub used_in_distributed_infobase: Option<bool>,
@@ -276,6 +277,8 @@ pub struct AcquiredExtension {
     /// unseparated base — stores `1`. The code is answered as stored rather
     /// than mapped, because the value of the other scope was not observed.
     pub scope: Option<u32>,
+    /// Измеренное соответствие кода области; `None` для неизвестного кода.
+    pub scope_kind: Option<ExtensionScope>,
     /// The classes and objects the extension's configuration declares, or
     /// `None` when its configuration root is missing or not in the shape
     /// that was measured. Never a partial catalog.
@@ -299,6 +302,14 @@ pub struct AcquiredExtension {
     /// data: a header outside the measured shape keeps its belonging and
     /// link unknown, and an object adopted by name keeps no link.
     pub objects: Option<Vec<AcquiredExtensionObject>>,
+}
+
+/// Подтверждённая платформенным замером область действия расширения.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum ExtensionScope {
+    /// Расширение действует для всей информационной базы (код хранения `1`).
+    InfoBase,
 }
 
 /// One object header of an acquired extension, with the resource it was
@@ -589,13 +600,16 @@ fn group_extensions(
             order,
             version: info.version,
             content_hash: info.root_key.as_hex(),
-            safe_mode: None,
+            safe_mode: info.safe_mode,
+            security_profile_name: info.security_profile_name,
+            hash_sum: info.hash_sum,
             used_in_distributed_infobase: match row.used_in_distributed_infobase {
                 Some(0) => Some(false),
                 Some(1) => Some(true),
                 _ => None,
             },
             scope: row.scope.and_then(|scope| u32::try_from(scope).ok()),
+            scope_kind: (row.scope == Some(1)).then_some(ExtensionScope::InfoBase),
             objects: catalog
                 .as_ref()
                 .and_then(|catalog| extension_objects(&resources, catalog)),

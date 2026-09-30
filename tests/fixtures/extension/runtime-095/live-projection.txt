@@ -1,0 +1,6 @@
+warning: skipped 2 unreadable Config resources: 172561c5-c3bf-4b95-850c-618fd89e947a.7: metadata offset 0: metadata is not valid UTF-8; 3ad08f4a-6202-4099-b6cc-bc116e6731a0.7: metadata offset 0: metadata is not valid UTF-8
+demo: Расширение1 safe=Some(true) profile=Some("") scope=Some(InfoBase) hash=Some("icDIE9O50FZS7IzvkeL/bxMT8+A=")
+demo: Расширение2 safe=Some(true) profile=Some("") scope=Some(InfoBase) hash=Some("/BDx70O4Qsq6wzykcpLR/nf3Ur8=")
+warning: skipped 3 unreadable Config resources: 3ad08f4a-6202-4099-b6cc-bc116e6731a0.7: metadata offset 126: unexpected trailing metadata; 7b248429-2107-4371-b371-a099028cd179.7: metadata offset 0: metadata is not valid UTF-8; f0ba0954-a66b-4085-9df1-b8a4283bdbd3.7: metadata offset 0: metadata is not valid UTF-8
+buh: ФормированиеТестовыхДанных safe=Some(false) profile=Some("") scope=Some(InfoBase) hash=Some("78half0SsAc32IeC4p2al1NCRS0=")
+buh: ПутеводительПоДемоБазеПроф safe=Some(false) profile=Some("") scope=Some(InfoBase) hash=Some("gECNL0/t80hRk9tbh4EDWG+jNJM=")
