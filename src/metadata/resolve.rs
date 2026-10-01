@@ -1093,6 +1093,7 @@ pub fn resolve_metadata_with_predefined_values_and_extensions(
                 .map(|detail| (extension.origin.clone(), detail)),
         );
     }
+    super::runtime_metadata::resolve_named_types(&mut descriptors);
     let live_table_by_name = index_live_tables(&live_tables);
     let indexes = compare_indexes(&schema, &live_tables, &live_table_by_name, &db_names);
     let mut separator_findings = Vec::new();

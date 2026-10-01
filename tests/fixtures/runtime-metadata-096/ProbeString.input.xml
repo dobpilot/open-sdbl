@@ -1,0 +1,44 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<MetaDataObject xmlns="http://v8.1c.ru/8.3/MDClasses" xmlns:v8="http://v8.1c.ru/8.1/data/core" xmlns:xr="http://v8.1c.ru/8.3/xcf/readable" version="2.20">
+	<Document uuid="4dbedad1-342b-54c1-9bcf-1d79091376ef">
+		<InternalInfo>
+			<xr:GeneratedType name="DocumentObject.ProbeString" category="Object">
+				<xr:TypeId>29d6eded-1765-54e9-b6eb-40cbf2a6d200</xr:TypeId>
+				<xr:ValueId>3a4b74ea-671f-548e-84da-3d4a2096bf47</xr:ValueId>
+			</xr:GeneratedType>
+			<xr:GeneratedType name="DocumentRef.ProbeString" category="Ref">
+				<xr:TypeId>f8fd8923-7d5a-5713-89eb-a4d4c3a313a5</xr:TypeId>
+				<xr:ValueId>3c93f62a-8fec-5b19-a581-9ce77ed06463</xr:ValueId>
+			</xr:GeneratedType>
+			<xr:GeneratedType name="DocumentSelection.ProbeString" category="Selection">
+				<xr:TypeId>3bc0cdc2-1933-54ce-a389-1d0fdcb554c7</xr:TypeId>
+				<xr:ValueId>2ee8ab6f-08a3-5bd9-b840-f0642261dc0e</xr:ValueId>
+			</xr:GeneratedType>
+			<xr:GeneratedType name="DocumentList.ProbeString" category="List">
+				<xr:TypeId>4c322695-87b0-51db-ae5e-8d4a6f61ad83</xr:TypeId>
+				<xr:ValueId>97831a0a-32c4-520b-b3cd-9335701ba865</xr:ValueId>
+			</xr:GeneratedType>
+			<xr:GeneratedType name="DocumentManager.ProbeString" category="Manager">
+				<xr:TypeId>a5096fe6-da26-5bcc-a45c-7ff7a8fa399a</xr:TypeId>
+				<xr:ValueId>49cad42d-afd3-5c48-aa50-42e78cf45ebb</xr:ValueId>
+			</xr:GeneratedType>
+		</InternalInfo>
+		<Properties>
+			<Name>ProbeString</Name>
+			<Synonym>
+				<v8:item>
+					<v8:lang>ru</v8:lang>
+					<v8:content>Проба документа</v8:content>
+				</v8:item>
+			</Synonym>
+			<Comment />
+			<NumberType>String</NumberType>
+			<NumberLength>9</NumberLength>
+			<NumberAllowedLength>Variable</NumberAllowedLength>
+			<NumberPeriodicity>Nonperiodical</NumberPeriodicity>
+			<CheckUnique>true</CheckUnique>
+			<Autonumbering>true</Autonumbering>
+		</Properties>
+		<ChildObjects />
+	</Document>
+</MetaDataObject>

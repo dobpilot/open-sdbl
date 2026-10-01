@@ -207,6 +207,62 @@ pub struct CatalogStandardAttributes {
     pub description_length: u32,
 }
 
+/// Индексирование реквизита в конфигурации, а не наличие индекса СУБД.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AttributeIndexing {
+    /// Индексирование отключено.
+    Disabled,
+    /// Индексирование включено.
+    Enabled,
+    /// Индексирование с дополнительным упорядочиванием.
+    WithAdditionalOrder,
+}
+
+/// Настройки номера документа из измеренной формы Config.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DocumentNumberSettings {
+    /// Тип номера; использует те же строковый и числовой варианты, что код.
+    pub number_type: CatalogCodeType,
+    /// Настроенная длина, включая отключённый номер длины ноль.
+    pub length: u32,
+    /// Признак переменной допустимой длины; `false` означает фиксированную.
+    pub variable_length: bool,
+}
+
+/// Объявленный тип Config с сохранением квалификаторов.
+///
+/// Ссылочный GUID может обозначать определяемый тип: его следует разрешать
+/// по приобретённым описателям, а не заменять первым физическим типом SQL.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ConfigDeclaredType {
+    /// Маркер нативного объявления: `S`, `N`, `D`, `B` или `#`.
+    pub tag: String,
+    /// GUID ссылочного либо именованного типа для маркера `#`.
+    pub reference: Option<Guid>,
+    /// Квалификаторы в порядке Config; пустой список — отсутствие квалификаторов.
+    pub qualifiers: Vec<Value>,
+}
+
+/// Известное типизированное значение заполнения реквизита.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ConfigFillingValue {
+    /// Явное неопределённое значение, отличное от неизвестного формата.
+    Undefined,
+    /// Строка.
+    String(String),
+    /// Булево значение.
+    Boolean(bool),
+    /// Число в нативном десятичном представлении, без преобразования в `f64`.
+    Number(String),
+    /// Ссылка с идентичностью типа и значения; нулевой GUID — пустая ссылка.
+    Reference {
+        /// GUID типа, который разрешается в приобретённой конфигурации.
+        type_id: Guid,
+        /// GUID значения, а не отображаемое имя.
+        value_id: Guid,
+    },
+}
+
 /// Human-readable data extracted from a bare-GUID Config resource.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ConfigDescriptor {
@@ -234,6 +290,26 @@ pub struct ConfigDescriptor {
     /// собственного Config-ресурса; `None` для неизвестной формы и других
     /// объектов. `None` не означает нулевые длины или отсутствие свойства BSL.
     pub catalog_standard_attributes: Option<CatalogStandardAttributes>,
+    /// Полные владельцы справочника в порядке конфигурации; `None` — неизвестно.
+    pub catalog_owners: Option<Vec<Guid>>,
+    /// Настройки номера только на собственном описателе документа.
+    pub document_number: Option<DocumentNumberSettings>,
+    /// Полные собственные реквизиты документа; `Some([])` — достоверно пусто.
+    pub document_attributes: Option<Vec<Guid>>,
+    /// Полные собственные табличные части документа; вложенные поля исключены.
+    pub document_tabular_sections: Option<Vec<Guid>>,
+    /// Настроенное индексирование собственного реквизита.
+    pub attribute_indexing: Option<AttributeIndexing>,
+    /// Полное объявление типов реквизита или определяемого типа. Прямой
+    /// разбор сохраняет именованные GUID; снимок разворачивает приобретённые
+    /// определения. Циклы и неизвестные определения остаются `None`.
+    pub declared_types: Option<Vec<ConfigDeclaredType>>,
+    /// Признак использования значения заполнения; неизвестная форма — `None`.
+    pub fill_from_filling_value: Option<bool>,
+    /// Типизированное значение заполнения; неизвестное не подменяется пустым.
+    pub filling_value: Option<ConfigFillingValue>,
+    /// GUID именованного типа только у собственного описателя определяемого типа.
+    pub defined_type_id: Option<Guid>,
     /// GUID used as the bare Config `FileName`.
     pub resource_guid: Guid,
     /// GUID found in the descriptor self-reference.
@@ -662,6 +738,7 @@ struct ConfigParser<'input, 'resource> {
     /// The chart of accounts of an accounting-register resource.
     chart_of_accounts: Option<Guid>,
     catalog_class_seen: bool,
+    runtime_class_seen: bool,
     catalog_prefix: [bool; 8],
     catalog_owner_seen: bool,
     catalog_settings: [Option<u32>; 3],
@@ -820,6 +897,7 @@ impl<'input, 'resource> ConfigParser<'input, 'resource> {
             header_seen: false,
             chart_of_accounts: None,
             catalog_class_seen: false,
+            runtime_class_seen: false,
             catalog_prefix: [false; 8],
             catalog_owner_seen: false,
             catalog_settings: [None; 3],
@@ -935,6 +1013,12 @@ impl<'input, 'resource> ConfigParser<'input, 'resource> {
                 .find(|d| &d.object_guid == self.resource_guid)
         {
             owner.catalog_tabular_sections = Some(sections);
+        }
+        // Материализуем только классы с измеренной дополнительной проекцией.
+        // Остальные сохраняют потоковый путь; отдельного парсера типов нет.
+        if self.runtime_class_seen {
+            let value = parse_serialized(self.input.as_bytes())?;
+            super::runtime_metadata::project(&value, self.resource_guid, &mut descriptors);
         }
         Ok(descriptors)
     }
@@ -1181,6 +1265,7 @@ impl<'input, 'resource> ConfigParser<'input, 'resource> {
                             SimpleValue::String(_) | SimpleValue::Null => None,
                         });
                         self.catalog_class_seen |= self.class_id == Some("57");
+                        self.runtime_class_seen |= matches!(self.class_id, Some("0" | "40" | "57"));
                         if self.class_id == Some(COMMON_ATTRIBUTE_CLASS_ID)
                             && self.separation.is_none()
                         {
@@ -1444,6 +1529,15 @@ fn project_config_descriptor(
             catalog_tabular_sections: None,
             catalog_default_presentation: None,
             catalog_standard_attributes: None,
+            catalog_owners: None,
+            document_number: None,
+            document_attributes: None,
+            document_tabular_sections: None,
+            attribute_indexing: None,
+            declared_types: None,
+            fill_from_filling_value: None,
+            filling_value: None,
+            defined_type_id: None,
             resource_guid: resource_guid.clone(),
             object_guid,
             marker: marker.to_owned(),
@@ -1530,6 +1624,15 @@ fn collect_descriptors(
             catalog_tabular_sections: None,
             catalog_default_presentation: None,
             catalog_standard_attributes: None,
+            catalog_owners: None,
+            document_number: None,
+            document_attributes: None,
+            document_tabular_sections: None,
+            attribute_indexing: None,
+            declared_types: None,
+            fill_from_filling_value: None,
+            filling_value: None,
+            defined_type_id: None,
             resource_guid: resource_guid.clone(),
             object_guid,
             marker: marker.to_owned(),
