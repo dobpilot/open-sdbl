@@ -1,0 +1,9 @@
+user=ObjectDenied
+ref=denied
+code=denied
+description=denied
+deletion=denied
+predefined=denied
+predefined.name=denied
+custom=denied
+rights.fields.end

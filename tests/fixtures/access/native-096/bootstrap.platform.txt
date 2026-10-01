@@ -1,0 +1,9 @@
+rights.bootstrap.begin
+created=FullProbe
+created=DefaultGrant
+created=DefaultRefuse
+created=ExplicitRefuse
+created=ExplicitGrant
+created=ObjectDenied
+row=created
+rights.bootstrap.end

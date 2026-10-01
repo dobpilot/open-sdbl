@@ -225,6 +225,8 @@ pub fn check_user_field_access(
                 used.field, used.object
             )));
         }
+        let native_catalog_read = object.kind == Some(MetadataKind::Catalog)
+            && verified_catalog_field(snapshot, &object.guid, used.field);
         let mut uncertain = false;
         let mut allowed = false;
         for role in &roles {
@@ -257,9 +259,13 @@ pub fn check_user_field_access(
                     } else if let Some(entry) = exact {
                         if let Some(read) = entry.right(&Right::Read) {
                             allowed = read.allowed;
+                        } else if native_catalog_read {
+                            allowed = true;
                         } else {
                             uncertain = true;
                         }
+                    } else if native_catalog_read {
+                        allowed = true;
                     } else if object.kind == Some(MetadataKind::Constant)
                         && *field_guid == object.guid.to_bytes()
                     {
@@ -269,7 +275,11 @@ pub fn check_user_field_access(
                     }
                 }
                 None => {
-                    uncertain = true;
+                    if native_catalog_read {
+                        allowed = true;
+                    } else {
+                        uncertain = true;
+                    }
                 }
             }
             if allowed {
@@ -289,6 +299,41 @@ pub fn check_user_field_access(
         }
     }
     Ok(())
+}
+
+// Нативные запросы пяти пользователей подтверждают программное чтение
+// реквизитов справочника через `Read` объекта: UI-права `View`/`Edit` и
+// флаг defaults его не заменяют. Неизвестные описатели сохраняют прежний отказ.
+fn verified_catalog_field(snapshot: &MetadataSnapshot, object: &Guid, field: FieldId) -> bool {
+    use open_sdbl::metadata::StandardFieldId;
+    let Some(owner) = snapshot
+        .descriptors()
+        .iter()
+        .find(|d| &d.object_guid == object && &d.resource_guid == object)
+    else {
+        return false;
+    };
+    if owner.catalog_standard_attributes.is_none() {
+        return false;
+    }
+    let Some(own) = owner.catalog_attributes.as_ref() else {
+        return false;
+    };
+    match field {
+        FieldId::Standard(
+            StandardFieldId::Id
+            | StandardFieldId::Code
+            | StandardFieldId::Description
+            | StandardFieldId::Marked,
+        ) => true,
+        FieldId::Metadata(id) => {
+            own.iter().any(|guid| guid.to_bytes() == id.as_bytes())
+                && snapshot.descriptors().iter().any(|d| {
+                    d.object_guid.to_bytes() == id.as_bytes() && d.declared_types.is_some()
+                })
+        }
+        _ => false,
+    }
 }
 
 /// Reads the users of the base once, if they are not read yet.

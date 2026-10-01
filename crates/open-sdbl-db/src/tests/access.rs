@@ -752,3 +752,146 @@ fn constant_values_still_reject_unread_roles_and_mismatched_identifiers() {
         .is_err()
     );
 }
+
+fn verified_catalog_snapshot() -> MetadataSnapshot {
+    use open_sdbl::metadata::{DbNameEntry, DbNames};
+    let owner: Guid = "92876c9e-52ff-480d-9878-5766f4f9d12c".parse().unwrap();
+    let attribute: Guid = "b729d739-5249-4765-85ee-fd792bb22911".parse().unwrap();
+    let db_names = DbNames::from_entries(vec![
+        DbNameEntry {
+            guid: owner.clone(),
+            alias: "Reference".into(),
+            number: 53,
+        },
+        DbNameEntry {
+            guid: attribute,
+            alias: "Fld".into(),
+            number: 54,
+        },
+    ]);
+    let descriptors =
+        parse_config_descriptors(owner.as_str(), &fixture("native-096/catalog.deflate")).unwrap();
+    let schema=parse_schema_storage(br#"{0,{1,{"Reference53","N",53,"",{6,{"ID",0,{1,{"R",0,0,"Reference53",2}},"",0},{"Code",0,{1,{"S",2147483657,0,"",0}},"",0},{"Description",0,{1,{"S",2147483657,0,"",0}},"",0},{"Marked",0,{1,{"B",16,0,"",0}},"",0},{"Fld54",0,{1,{"B",16,0,"",0}},"",0},{"Date_Time",0,{1,{"T",0,0,"",0}},"",0}},{0},{0},1,"R",{0},{0},"",0}}}"#).unwrap();
+    resolve_metadata(
+        db_names,
+        descriptors,
+        schema,
+        vec![LiveTable {
+            name: "_reference53".into(),
+            columns: [
+                "_idrref",
+                "_code",
+                "_description",
+                "_marked",
+                "_fld54",
+                "_date_time",
+            ]
+            .into_iter()
+            .map(|name| LiveColumn {
+                name: name.into(),
+                data_type: "bytea".into(),
+            })
+            .collect(),
+            indexes: Vec::new(),
+        }],
+    )
+    .snapshot
+}
+
+#[test]
+fn verified_catalog_programmatic_reads_follow_object_read_without_ui_defaults() {
+    let snapshot = verified_catalog_snapshot();
+    let (_, role, mut rights, _, _) = field_fixture();
+    let owner: Guid = "92876c9e-52ff-480d-9878-5766f4f9d12c".parse().unwrap();
+    rights.objects[0].object = owner.clone();
+    let fields = [
+        "Ссылка",
+        "Код",
+        "Наименование",
+        "ПометкаУдаления",
+        "Недействителен",
+    ]
+    .into_iter()
+    .map(|name| FieldUse {
+        object: ObjectId::from(&owner),
+        table_part: None,
+        field: snapshot
+            .field_id(ObjectId::from(&owner), name)
+            .unwrap_or_else(|error| panic!("{name}: {error:?}")),
+        usage: FieldUsage::Projection,
+    })
+    .collect::<Vec<_>>();
+    let request = FieldUsageRequest {
+        fields: fields.clone(),
+    };
+    for defaults in [false, true] {
+        rights.set_for_attributes_by_default = defaults;
+        check_user_field_access(
+            &selected_store(&snapshot, &role, rights.clone()),
+            &snapshot,
+            &request,
+        )
+        .unwrap();
+    }
+    let FieldId::Metadata(id) = fields[4].field else {
+        panic!()
+    };
+    let attr = snapshot.attribute_by_id(id).unwrap().guid.clone();
+    let mut view = denied_field_entry(&owner, &attr);
+    view.rights[0].right = Right::View;
+    rights.objects.push(view);
+    check_user_field_access(
+        &selected_store(&snapshot, &role, rights.clone()),
+        &snapshot,
+        &request,
+    )
+    .unwrap();
+    rights.objects[0].rights[0].allowed = false;
+    assert!(
+        check_user_field_access(
+            &selected_store(&snapshot, &role, rights.clone()),
+            &snapshot,
+            &request
+        )
+        .is_err()
+    );
+}
+
+#[test]
+fn verified_catalog_still_denies_explicit_member_read_and_unsupported_standard_fields() {
+    let snapshot = verified_catalog_snapshot();
+    let (_, role, mut rights, _, _) = field_fixture();
+    let owner: Guid = "92876c9e-52ff-480d-9878-5766f4f9d12c".parse().unwrap();
+    rights.objects[0].object = owner.clone();
+    let custom = snapshot
+        .field_id(ObjectId::from(&owner), "Недействителен")
+        .unwrap();
+    let FieldId::Metadata(id) = custom else {
+        panic!()
+    };
+    rights.objects.push(denied_field_entry(
+        &owner,
+        &snapshot.attribute_by_id(id).unwrap().guid,
+    ));
+    for field in [
+        custom,
+        FieldId::Standard(open_sdbl::metadata::StandardFieldId::Date),
+    ] {
+        let request = FieldUsageRequest {
+            fields: vec![FieldUse {
+                object: ObjectId::from(&owner),
+                table_part: None,
+                field,
+                usage: FieldUsage::Filter,
+            }],
+        };
+        assert!(
+            check_user_field_access(
+                &selected_store(&snapshot, &role, rights.clone()),
+                &snapshot,
+                &request
+            )
+            .is_err()
+        );
+    }
+}

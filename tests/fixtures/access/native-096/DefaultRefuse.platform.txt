@@ -1,0 +1,9 @@
+user=DefaultRefuse
+ref=ok:1
+code=ok:1
+description=ok:1
+deletion=ok:1
+predefined=ok:1
+predefined.name=ok:1
+custom=ok:1
+rights.fields.end
