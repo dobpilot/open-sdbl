@@ -189,6 +189,11 @@ pub(super) fn project(value: &Value, resource: &Guid, descriptors: &mut [ConfigD
         } else {
             d.document_attributes = ids.clone();
             d.document_tabular_sections = parts;
+            // Позиция коллекции и её объектные GUID сверены с нативной XML,
+            // включая смешанные классы регистров; чужие GUID не обходятся.
+            d.document_registers = (class.len() == 53)
+                .then(|| class.get(24).and_then(owners))
+                .flatten();
             // Строковый, числовой и отключённый номера проверены Config/XML
             // отдельной нативной базы; поле 44 — допустимая длина, не периодичность.
             d.document_number = (|| {
@@ -205,6 +210,30 @@ pub(super) fn project(value: &Value, resource: &Guid, descriptors: &mut [ConfigD
                     variable_length: flag(class.get(44)?)?,
                 })
             })();
+        }
+    }
+    if kind == "40"
+        && let Some(sections) = collection(root, "21c53e09-8950-4b5e-a6a0-1054f1bbc274")
+        && let Some(section_ids) = membership(sections, &[0, 1, 5, 1])
+    {
+        for (section, id) in sections.iter().zip(section_ids) {
+            let fields = (|| {
+                // Собственная коллекция части измерена отдельно от коллекции
+                // документа: соседние заголовки и рекурсивные GUID не подходят.
+                let row = list(section)?;
+                let body = at(section, &[0, 1]).and_then(list)?;
+                if row.len() != 3 || body.len() != 9 || atom(&body[0]) != Some("11") {
+                    return None;
+                }
+                let members = collection(row, "888744e1-b616-11d4-9436-004095e12fc7")?;
+                let ids = membership(members, &[0, 1, 1, 1])?;
+                ids.iter()
+                    .all(|id| descriptors.iter().any(|d| &d.object_guid == id))
+                    .then_some(ids)
+            })();
+            if let Some(d) = descriptors.iter_mut().find(|d| d.object_guid == id) {
+                d.tabular_section_attributes = fields;
+            }
         }
     }
     attribute_bodies(value, descriptors);

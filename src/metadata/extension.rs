@@ -83,6 +83,8 @@ pub fn extension_metadata_from_restructure(
             document_number: None,
             document_attributes: None,
             document_tabular_sections: None,
+            tabular_section_attributes: None,
+            document_registers: None,
             attribute_indexing: None,
             declared_types: None,
             fill_from_filling_value: None,

@@ -81,6 +81,8 @@ fn with_second_constant(base: MetadataSnapshot) -> MetadataSnapshot {
         document_number: None,
         document_attributes: None,
         document_tabular_sections: None,
+        tabular_section_attributes: None,
+        document_registers: None,
         attribute_indexing: None,
         declared_types: None,
         fill_from_filling_value: None,

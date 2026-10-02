@@ -1,0 +1,432 @@
+<?xml version='1.0' encoding='utf-8'?>
+<ns0:MetaDataObject xmlns:ns0="http://v8.1c.ru/8.3/MDClasses" xmlns:ns1="http://v8.1c.ru/8.3/xcf/readable" xmlns:ns2="http://v8.1c.ru/8.1/data/core" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" version="2.20" xmlns:xs="http://www.w3.org/2001/XMLSchema">
+	<ns0:Document uuid="4dbedad1-342b-54c1-9bcf-1d79091376ef">
+		<ns0:InternalInfo>
+			<ns1:GeneratedType name="DocumentObject.ProbeString" category="Object">
+				<ns1:TypeId>29d6eded-1765-54e9-b6eb-40cbf2a6d200</ns1:TypeId>
+				<ns1:ValueId>3a4b74ea-671f-548e-84da-3d4a2096bf47</ns1:ValueId>
+			</ns1:GeneratedType>
+			<ns1:GeneratedType name="DocumentRef.ProbeString" category="Ref">
+				<ns1:TypeId>f8fd8923-7d5a-5713-89eb-a4d4c3a313a5</ns1:TypeId>
+				<ns1:ValueId>3c93f62a-8fec-5b19-a581-9ce77ed06463</ns1:ValueId>
+			</ns1:GeneratedType>
+			<ns1:GeneratedType name="DocumentSelection.ProbeString" category="Selection">
+				<ns1:TypeId>3bc0cdc2-1933-54ce-a389-1d0fdcb554c7</ns1:TypeId>
+				<ns1:ValueId>2ee8ab6f-08a3-5bd9-b840-f0642261dc0e</ns1:ValueId>
+			</ns1:GeneratedType>
+			<ns1:GeneratedType name="DocumentList.ProbeString" category="List">
+				<ns1:TypeId>4c322695-87b0-51db-ae5e-8d4a6f61ad83</ns1:TypeId>
+				<ns1:ValueId>97831a0a-32c4-520b-b3cd-9335701ba865</ns1:ValueId>
+			</ns1:GeneratedType>
+			<ns1:GeneratedType name="DocumentManager.ProbeString" category="Manager">
+				<ns1:TypeId>a5096fe6-da26-5bcc-a45c-7ff7a8fa399a</ns1:TypeId>
+				<ns1:ValueId>49cad42d-afd3-5c48-aa50-42e78cf45ebb</ns1:ValueId>
+			</ns1:GeneratedType>
+		</ns0:InternalInfo>
+		<ns0:Properties>
+			<ns0:Name>ProbeString</ns0:Name>
+			<ns0:Synonym>
+				<ns2:item>
+					<ns2:lang>ru</ns2:lang>
+					<ns2:content>Проба документа</ns2:content>
+				</ns2:item>
+			</ns0:Synonym>
+			<ns0:Comment />
+			<ns0:UseStandardCommands>true</ns0:UseStandardCommands>
+			<ns0:Numerator />
+			<ns0:NumberType>String</ns0:NumberType>
+			<ns0:NumberLength>9</ns0:NumberLength>
+			<ns0:NumberAllowedLength>Variable</ns0:NumberAllowedLength>
+			<ns0:NumberPeriodicity>Nonperiodical</ns0:NumberPeriodicity>
+			<ns0:CheckUnique>true</ns0:CheckUnique>
+			<ns0:Autonumbering>true</ns0:Autonumbering>
+			<ns0:Characteristics />
+			<ns0:BasedOn />
+			<ns0:InputByString>
+				<ns1:Field>Document.ProbeString.StandardAttribute.Number</ns1:Field>
+			</ns0:InputByString>
+			<ns0:CreateOnInput>Use</ns0:CreateOnInput>
+			<ns0:SearchStringModeOnInputByString>Begin</ns0:SearchStringModeOnInputByString>
+			<ns0:FullTextSearchOnInputByString>DontUse</ns0:FullTextSearchOnInputByString>
+			<ns0:ChoiceDataGetModeOnInputByString>Directly</ns0:ChoiceDataGetModeOnInputByString>
+			<ns0:DefaultObjectForm />
+			<ns0:DefaultListForm />
+			<ns0:DefaultChoiceForm />
+			<ns0:AuxiliaryObjectForm />
+			<ns0:AuxiliaryListForm />
+			<ns0:AuxiliaryChoiceForm />
+			<ns0:Posting>Allow</ns0:Posting>
+			<ns0:RealTimePosting>Allow</ns0:RealTimePosting>
+			<ns0:RegisterRecordsDeletion>AutoDeleteOnUnpost</ns0:RegisterRecordsDeletion>
+			<ns0:RegisterRecordsWritingOnPost>WriteSelected</ns0:RegisterRecordsWritingOnPost>
+			<ns0:SequenceFilling>AutoFill</ns0:SequenceFilling>
+			<ns0:RegisterRecords />
+			<ns0:PostInPrivilegedMode>true</ns0:PostInPrivilegedMode>
+			<ns0:UnpostInPrivilegedMode>true</ns0:UnpostInPrivilegedMode>
+			<ns0:IncludeHelpInContents>false</ns0:IncludeHelpInContents>
+			<ns0:DataLockFields />
+			<ns0:DataLockControlMode>Managed</ns0:DataLockControlMode>
+			<ns0:FullTextSearch>Use</ns0:FullTextSearch>
+			<ns0:ObjectPresentation />
+			<ns0:ExtendedObjectPresentation />
+			<ns0:ListPresentation />
+			<ns0:ExtendedListPresentation />
+			<ns0:Explanation />
+			<ns0:ChoiceHistoryOnInput>Auto</ns0:ChoiceHistoryOnInput>
+			<ns0:DataHistory>DontUse</ns0:DataHistory>
+			<ns0:UpdateDataHistoryImmediatelyAfterWrite>false</ns0:UpdateDataHistoryImmediatelyAfterWrite>
+			<ns0:ExecuteAfterWriteDataHistoryVersionProcessing>false</ns0:ExecuteAfterWriteDataHistoryVersionProcessing>
+		</ns0:Properties>
+		<ns0:ChildObjects><ns0:TabularSection uuid="49885e4c-ab8d-5ab4-be1f-bbb330d8bf05">
+				<ns0:InternalInfo>
+					<ns1:GeneratedType name="DocumentTabularSection.ProbeString.Запасы" category="TabularSection">
+						<ns1:TypeId>982f775d-931c-57e0-bdbf-875d9df90b77</ns1:TypeId>
+						<ns1:ValueId>5194aa57-813d-5e93-baa1-287697e0154a</ns1:ValueId>
+					</ns1:GeneratedType>
+					<ns1:GeneratedType name="DocumentTabularSectionRow.ProbeString.Запасы" category="TabularSectionRow">
+						<ns1:TypeId>ad5a5c8e-c5fe-509b-aecc-a8d83ad97986</ns1:TypeId>
+						<ns1:ValueId>6aba7141-18be-578b-b7ce-05cb28488d57</ns1:ValueId>
+					</ns1:GeneratedType>
+				</ns0:InternalInfo>
+				<ns0:Properties>
+					<ns0:Name>First</ns0:Name>
+					<ns0:Synonym>
+						<ns2:item>
+							<ns2:lang>ru</ns2:lang>
+							<ns2:content>Товары, работы, услуги</ns2:content>
+						</ns2:item>
+					</ns0:Synonym>
+					<ns0:Comment />
+					<ns0:ToolTip>
+						<ns2:item>
+							<ns2:lang>ru</ns2:lang>
+							<ns2:content>Товары, работы, услуги, продукция</ns2:content>
+						</ns2:item>
+					</ns0:ToolTip>
+					<ns0:FillChecking>DontCheck</ns0:FillChecking>
+					<ns0:StandardAttributes>
+						<ns1:StandardAttribute name="LineNumber">
+							<ns1:LinkByType />
+							<ns1:FillChecking>DontCheck</ns1:FillChecking>
+							<ns1:MultiLine>false</ns1:MultiLine>
+							<ns1:FillFromFillingValue>false</ns1:FillFromFillingValue>
+							<ns1:CreateOnInput>Auto</ns1:CreateOnInput>
+							<ns1:TypeReductionMode>TransformValues</ns1:TypeReductionMode>
+							<ns1:MaxValue xsi:nil="true" />
+							<ns1:ToolTip />
+							<ns1:ExtendedEdit>false</ns1:ExtendedEdit>
+							<ns1:Format />
+							<ns1:ChoiceForm />
+							<ns1:QuickChoice>Auto</ns1:QuickChoice>
+							<ns1:ChoiceHistoryOnInput>Auto</ns1:ChoiceHistoryOnInput>
+							<ns1:EditFormat />
+							<ns1:PasswordMode>false</ns1:PasswordMode>
+							<ns1:DataHistory>Use</ns1:DataHistory>
+							<ns1:MarkNegatives>false</ns1:MarkNegatives>
+							<ns1:MinValue xsi:nil="true" />
+							<ns1:Synonym />
+							<ns1:Comment />
+							<ns1:FullTextSearch>Use</ns1:FullTextSearch>
+							<ns1:ChoiceParameterLinks />
+							<ns1:FillValue xsi:nil="true" />
+							<ns1:Mask />
+							<ns1:ChoiceParameters />
+						</ns1:StandardAttribute>
+					</ns0:StandardAttributes>
+					<ns0:LineNumberLength>5</ns0:LineNumberLength>
+				</ns0:Properties>
+				<ns0:ChildObjects>
+					<ns0:Attribute uuid="25be84ec-b85b-5586-b30f-7f69ffd93230">
+						<ns0:Properties>
+							<ns0:Name>ТипНоменклатурыЗапас</ns0:Name>
+							<ns0:Synonym>
+								<ns2:item>
+									<ns2:lang>ru</ns2:lang>
+									<ns2:content>Тип номенклатуры: запас</ns2:content>
+								</ns2:item>
+							</ns0:Synonym>
+							<ns0:Comment />
+							<ns0:Type>
+								<ns2:Type>xs:boolean</ns2:Type>
+							</ns0:Type>
+							<ns0:PasswordMode>false</ns0:PasswordMode>
+							<ns0:Format />
+							<ns0:EditFormat />
+							<ns0:ToolTip />
+							<ns0:MarkNegatives>false</ns0:MarkNegatives>
+							<ns0:Mask />
+							<ns0:MultiLine>false</ns0:MultiLine>
+							<ns0:ExtendedEdit>false</ns0:ExtendedEdit>
+							<ns0:MinValue xsi:nil="true" />
+							<ns0:MaxValue xsi:nil="true" />
+							<ns0:FillChecking>DontCheck</ns0:FillChecking>
+							<ns0:ChoiceFoldersAndItems>Items</ns0:ChoiceFoldersAndItems>
+							<ns0:ChoiceParameterLinks />
+							<ns0:ChoiceParameters />
+							<ns0:QuickChoice>Auto</ns0:QuickChoice>
+							<ns0:CreateOnInput>Auto</ns0:CreateOnInput>
+							<ns0:ChoiceForm />
+							<ns0:LinkByType />
+							<ns0:ChoiceHistoryOnInput>Auto</ns0:ChoiceHistoryOnInput>
+							<ns0:Indexing>DontIndex</ns0:Indexing>
+							<ns0:FullTextSearch>Use</ns0:FullTextSearch>
+							<ns0:DataHistory>Use</ns0:DataHistory>
+						</ns0:Properties>
+					</ns0:Attribute>
+					<ns0:Attribute uuid="f522a9f3-d25d-541e-8dc6-633613be62f2">
+						<ns0:Properties>
+							<ns0:Name>НомерВариантаКП</ns0:Name>
+							<ns0:Synonym>
+								<ns2:item>
+									<ns2:lang>ru</ns2:lang>
+									<ns2:content>Номер варианта КП</ns2:content>
+								</ns2:item>
+							</ns0:Synonym>
+							<ns0:Comment />
+							<ns0:Type>
+								<ns2:Type>xs:decimal</ns2:Type>
+								<ns2:NumberQualifiers>
+									<ns2:Digits>2</ns2:Digits>
+									<ns2:FractionDigits>0</ns2:FractionDigits>
+									<ns2:AllowedSign>Nonnegative</ns2:AllowedSign>
+								</ns2:NumberQualifiers>
+							</ns0:Type>
+							<ns0:PasswordMode>false</ns0:PasswordMode>
+							<ns0:Format />
+							<ns0:EditFormat />
+							<ns0:ToolTip>
+								<ns2:item>
+									<ns2:lang>ru</ns2:lang>
+									<ns2:content>Указывает отношение текущей строки к номеру варианта коммерческого предложения (см. Количество вариантов КП).
+[0, 1, 2,.. N]*
+* 0: нет вариантов</ns2:content>
+								</ns2:item>
+							</ns0:ToolTip>
+							<ns0:MarkNegatives>false</ns0:MarkNegatives>
+							<ns0:Mask />
+							<ns0:MultiLine>false</ns0:MultiLine>
+							<ns0:ExtendedEdit>false</ns0:ExtendedEdit>
+							<ns0:MinValue xsi:nil="true" />
+							<ns0:MaxValue xsi:nil="true" />
+							<ns0:FillChecking>DontCheck</ns0:FillChecking>
+							<ns0:ChoiceFoldersAndItems>Items</ns0:ChoiceFoldersAndItems>
+							<ns0:ChoiceParameterLinks />
+							<ns0:ChoiceParameters />
+							<ns0:QuickChoice>Auto</ns0:QuickChoice>
+							<ns0:CreateOnInput>Auto</ns0:CreateOnInput>
+							<ns0:ChoiceForm />
+							<ns0:LinkByType />
+							<ns0:ChoiceHistoryOnInput>Auto</ns0:ChoiceHistoryOnInput>
+							<ns0:Indexing>DontIndex</ns0:Indexing>
+							<ns0:FullTextSearch>Use</ns0:FullTextSearch>
+							<ns0:DataHistory>Use</ns0:DataHistory>
+						</ns0:Properties>
+					</ns0:Attribute>
+					</ns0:ChildObjects>
+			</ns0:TabularSection><ns0:TabularSection uuid="a0c55751-7c3a-5903-a5a5-729595855add">
+				<ns0:InternalInfo>
+					<ns1:GeneratedType name="DocumentTabularSection.ProbeString.Запасы" category="TabularSection">
+						<ns1:TypeId>55384f6b-87ad-5324-9a9c-41cce870c346</ns1:TypeId>
+						<ns1:ValueId>22c7a747-502b-5a34-be9d-4e72d70898de</ns1:ValueId>
+					</ns1:GeneratedType>
+					<ns1:GeneratedType name="DocumentTabularSectionRow.ProbeString.Запасы" category="TabularSectionRow">
+						<ns1:TypeId>cd8bbfbd-6e13-526e-a57c-d68d02c808d3</ns1:TypeId>
+						<ns1:ValueId>c3cef758-c0c5-502a-8e9a-0f058355be59</ns1:ValueId>
+					</ns1:GeneratedType>
+				</ns0:InternalInfo>
+				<ns0:Properties>
+					<ns0:Name>Second</ns0:Name>
+					<ns0:Synonym>
+						<ns2:item>
+							<ns2:lang>ru</ns2:lang>
+							<ns2:content>Товары, работы, услуги</ns2:content>
+						</ns2:item>
+					</ns0:Synonym>
+					<ns0:Comment />
+					<ns0:ToolTip>
+						<ns2:item>
+							<ns2:lang>ru</ns2:lang>
+							<ns2:content>Товары, работы, услуги, продукция</ns2:content>
+						</ns2:item>
+					</ns0:ToolTip>
+					<ns0:FillChecking>DontCheck</ns0:FillChecking>
+					<ns0:StandardAttributes>
+						<ns1:StandardAttribute name="LineNumber">
+							<ns1:LinkByType />
+							<ns1:FillChecking>DontCheck</ns1:FillChecking>
+							<ns1:MultiLine>false</ns1:MultiLine>
+							<ns1:FillFromFillingValue>false</ns1:FillFromFillingValue>
+							<ns1:CreateOnInput>Auto</ns1:CreateOnInput>
+							<ns1:TypeReductionMode>TransformValues</ns1:TypeReductionMode>
+							<ns1:MaxValue xsi:nil="true" />
+							<ns1:ToolTip />
+							<ns1:ExtendedEdit>false</ns1:ExtendedEdit>
+							<ns1:Format />
+							<ns1:ChoiceForm />
+							<ns1:QuickChoice>Auto</ns1:QuickChoice>
+							<ns1:ChoiceHistoryOnInput>Auto</ns1:ChoiceHistoryOnInput>
+							<ns1:EditFormat />
+							<ns1:PasswordMode>false</ns1:PasswordMode>
+							<ns1:DataHistory>Use</ns1:DataHistory>
+							<ns1:MarkNegatives>false</ns1:MarkNegatives>
+							<ns1:MinValue xsi:nil="true" />
+							<ns1:Synonym />
+							<ns1:Comment />
+							<ns1:FullTextSearch>Use</ns1:FullTextSearch>
+							<ns1:ChoiceParameterLinks />
+							<ns1:FillValue xsi:nil="true" />
+							<ns1:Mask />
+							<ns1:ChoiceParameters />
+						</ns1:StandardAttribute>
+					</ns0:StandardAttributes>
+					<ns0:LineNumberLength>5</ns0:LineNumberLength>
+				</ns0:Properties>
+				<ns0:ChildObjects>
+					<ns0:Attribute uuid="5123e6c0-a875-5dd6-b100-bd6f4b667f8a">
+						<ns0:Properties>
+							<ns0:Name>ТипНоменклатурыЗапас</ns0:Name>
+							<ns0:Synonym>
+								<ns2:item>
+									<ns2:lang>ru</ns2:lang>
+									<ns2:content>Тип номенклатуры: запас</ns2:content>
+								</ns2:item>
+							</ns0:Synonym>
+							<ns0:Comment />
+							<ns0:Type>
+								<ns2:Type>xs:boolean</ns2:Type>
+							</ns0:Type>
+							<ns0:PasswordMode>false</ns0:PasswordMode>
+							<ns0:Format />
+							<ns0:EditFormat />
+							<ns0:ToolTip />
+							<ns0:MarkNegatives>false</ns0:MarkNegatives>
+							<ns0:Mask />
+							<ns0:MultiLine>false</ns0:MultiLine>
+							<ns0:ExtendedEdit>false</ns0:ExtendedEdit>
+							<ns0:MinValue xsi:nil="true" />
+							<ns0:MaxValue xsi:nil="true" />
+							<ns0:FillChecking>DontCheck</ns0:FillChecking>
+							<ns0:ChoiceFoldersAndItems>Items</ns0:ChoiceFoldersAndItems>
+							<ns0:ChoiceParameterLinks />
+							<ns0:ChoiceParameters />
+							<ns0:QuickChoice>Auto</ns0:QuickChoice>
+							<ns0:CreateOnInput>Auto</ns0:CreateOnInput>
+							<ns0:ChoiceForm />
+							<ns0:LinkByType />
+							<ns0:ChoiceHistoryOnInput>Auto</ns0:ChoiceHistoryOnInput>
+							<ns0:Indexing>DontIndex</ns0:Indexing>
+							<ns0:FullTextSearch>Use</ns0:FullTextSearch>
+							<ns0:DataHistory>Use</ns0:DataHistory>
+						</ns0:Properties>
+					</ns0:Attribute>
+					<ns0:Attribute uuid="a7823ecc-916a-55c6-be6c-49e08b6f6f3f">
+						<ns0:Properties>
+							<ns0:Name>НомерВариантаКП</ns0:Name>
+							<ns0:Synonym>
+								<ns2:item>
+									<ns2:lang>ru</ns2:lang>
+									<ns2:content>Номер варианта КП</ns2:content>
+								</ns2:item>
+							</ns0:Synonym>
+							<ns0:Comment />
+							<ns0:Type>
+								<ns2:Type>xs:decimal</ns2:Type>
+								<ns2:NumberQualifiers>
+									<ns2:Digits>2</ns2:Digits>
+									<ns2:FractionDigits>0</ns2:FractionDigits>
+									<ns2:AllowedSign>Nonnegative</ns2:AllowedSign>
+								</ns2:NumberQualifiers>
+							</ns0:Type>
+							<ns0:PasswordMode>false</ns0:PasswordMode>
+							<ns0:Format />
+							<ns0:EditFormat />
+							<ns0:ToolTip>
+								<ns2:item>
+									<ns2:lang>ru</ns2:lang>
+									<ns2:content>Указывает отношение текущей строки к номеру варианта коммерческого предложения (см. Количество вариантов КП).
+[0, 1, 2,.. N]*
+* 0: нет вариантов</ns2:content>
+								</ns2:item>
+							</ns0:ToolTip>
+							<ns0:MarkNegatives>false</ns0:MarkNegatives>
+							<ns0:Mask />
+							<ns0:MultiLine>false</ns0:MultiLine>
+							<ns0:ExtendedEdit>false</ns0:ExtendedEdit>
+							<ns0:MinValue xsi:nil="true" />
+							<ns0:MaxValue xsi:nil="true" />
+							<ns0:FillChecking>DontCheck</ns0:FillChecking>
+							<ns0:ChoiceFoldersAndItems>Items</ns0:ChoiceFoldersAndItems>
+							<ns0:ChoiceParameterLinks />
+							<ns0:ChoiceParameters />
+							<ns0:QuickChoice>Auto</ns0:QuickChoice>
+							<ns0:CreateOnInput>Auto</ns0:CreateOnInput>
+							<ns0:ChoiceForm />
+							<ns0:LinkByType />
+							<ns0:ChoiceHistoryOnInput>Auto</ns0:ChoiceHistoryOnInput>
+							<ns0:Indexing>DontIndex</ns0:Indexing>
+							<ns0:FullTextSearch>Use</ns0:FullTextSearch>
+							<ns0:DataHistory>Use</ns0:DataHistory>
+						</ns0:Properties>
+					</ns0:Attribute>
+					</ns0:ChildObjects>
+			</ns0:TabularSection><ns0:TabularSection uuid="d7c79965-53a0-5135-8565-2e9036a5b637">
+				<ns0:InternalInfo>
+					<ns1:GeneratedType name="DocumentTabularSection.ProbeString.Запасы" category="TabularSection">
+						<ns1:TypeId>94b94eef-af31-5e06-80b2-2e727d051846</ns1:TypeId>
+						<ns1:ValueId>cc4b2c45-ef19-5efb-9f5e-a5f3b508f65a</ns1:ValueId>
+					</ns1:GeneratedType>
+					<ns1:GeneratedType name="DocumentTabularSectionRow.ProbeString.Запасы" category="TabularSectionRow">
+						<ns1:TypeId>5ea2d790-4746-506e-91a8-d0e08e86d496</ns1:TypeId>
+						<ns1:ValueId>4df6b295-7538-5b36-94e2-a0646ed25838</ns1:ValueId>
+					</ns1:GeneratedType>
+				</ns0:InternalInfo>
+				<ns0:Properties>
+					<ns0:Name>Empty</ns0:Name>
+					<ns0:Synonym>
+						<ns2:item>
+							<ns2:lang>ru</ns2:lang>
+							<ns2:content>Товары, работы, услуги</ns2:content>
+						</ns2:item>
+					</ns0:Synonym>
+					<ns0:Comment />
+					<ns0:ToolTip>
+						<ns2:item>
+							<ns2:lang>ru</ns2:lang>
+							<ns2:content>Товары, работы, услуги, продукция</ns2:content>
+						</ns2:item>
+					</ns0:ToolTip>
+					<ns0:FillChecking>DontCheck</ns0:FillChecking>
+					<ns0:StandardAttributes>
+						<ns1:StandardAttribute name="LineNumber">
+							<ns1:LinkByType />
+							<ns1:FillChecking>DontCheck</ns1:FillChecking>
+							<ns1:MultiLine>false</ns1:MultiLine>
+							<ns1:FillFromFillingValue>false</ns1:FillFromFillingValue>
+							<ns1:CreateOnInput>Auto</ns1:CreateOnInput>
+							<ns1:TypeReductionMode>TransformValues</ns1:TypeReductionMode>
+							<ns1:MaxValue xsi:nil="true" />
+							<ns1:ToolTip />
+							<ns1:ExtendedEdit>false</ns1:ExtendedEdit>
+							<ns1:Format />
+							<ns1:ChoiceForm />
+							<ns1:QuickChoice>Auto</ns1:QuickChoice>
+							<ns1:ChoiceHistoryOnInput>Auto</ns1:ChoiceHistoryOnInput>
+							<ns1:EditFormat />
+							<ns1:PasswordMode>false</ns1:PasswordMode>
+							<ns1:DataHistory>Use</ns1:DataHistory>
+							<ns1:MarkNegatives>false</ns1:MarkNegatives>
+							<ns1:MinValue xsi:nil="true" />
+							<ns1:Synonym />
+							<ns1:Comment />
+							<ns1:FullTextSearch>Use</ns1:FullTextSearch>
+							<ns1:ChoiceParameterLinks />
+							<ns1:FillValue xsi:nil="true" />
+							<ns1:Mask />
+							<ns1:ChoiceParameters />
+						</ns1:StandardAttribute>
+					</ns0:StandardAttributes>
+					<ns0:LineNumberLength>5</ns0:LineNumberLength>
+				</ns0:Properties>
+				<ns0:ChildObjects /></ns0:TabularSection></ns0:ChildObjects>
+	</ns0:Document>
+</ns0:MetaDataObject>

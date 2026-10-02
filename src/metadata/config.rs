@@ -298,6 +298,14 @@ pub struct ConfigDescriptor {
     pub document_attributes: Option<Vec<Guid>>,
     /// Полные собственные табличные части документа; вложенные поля исключены.
     pub document_tabular_sections: Option<Vec<Guid>>,
+    /// Полные собственные реквизиты строки табличной части документа в порядке
+    /// конфигурации. `Some([])` — достоверно пусто; `None` — неизвестная или
+    /// неполная форма. Реквизиты документа и соседних частей исключены.
+    pub tabular_section_attributes: Option<Vec<Guid>>,
+    /// Полные связи документа с регистрами из `RegisterRecords` в порядке
+    /// конфигурации. GUID принадлежат объектам, а не генерируемым типам.
+    /// `Some([])` — достоверно пусто; `None` — неизвестная или неполная форма.
+    pub document_registers: Option<Vec<Guid>>,
     /// Настроенное индексирование собственного реквизита.
     pub attribute_indexing: Option<AttributeIndexing>,
     /// Полное объявление типов реквизита или определяемого типа. Прямой
@@ -1533,6 +1541,8 @@ fn project_config_descriptor(
             document_number: None,
             document_attributes: None,
             document_tabular_sections: None,
+            tabular_section_attributes: None,
+            document_registers: None,
             attribute_indexing: None,
             declared_types: None,
             fill_from_filling_value: None,
@@ -1628,6 +1638,8 @@ fn collect_descriptors(
             document_number: None,
             document_attributes: None,
             document_tabular_sections: None,
+            tabular_section_attributes: None,
+            document_registers: None,
             attribute_indexing: None,
             declared_types: None,
             fill_from_filling_value: None,

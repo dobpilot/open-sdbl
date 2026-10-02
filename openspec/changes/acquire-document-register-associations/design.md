@@ -1,0 +1,3 @@
+# Design
+
+The measured document class 40 has 53 entries. RegisterRecords is its position 24, a counted reference collection with the same object-identity encoding already used for catalog owners. Require exact measured class length and collection shape, non-nil unique target GUIDs and complete count. Preserve all referenced register classes without filtering; the decoder does not infer register classes or membership from tables or generated types. Compare every identity and order to native UNF XML, including Event (one information register) and CustomerOrder (51 registers). Unknown forms produce None.
