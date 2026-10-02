@@ -2,4 +2,4 @@
 - [x] 2. Validate this change strictly before public API implementation.
 - [x] 3. Implement typed optional projection and new native/negative tests without changing existing assertions.
 - [x] 4. Run fmt, Clippy, workspace tests, rustdoc and strict validation.
-- [ ] 5. Merge and archive the delta after the green run.
+- [x] 5. Merge and archive the delta after the green run.
