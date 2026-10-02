@@ -163,7 +163,8 @@ pub(super) fn project(value: &Value, resource: &Guid, descriptors: &mut [ConfigD
         }
         return;
     }
-    if !matches!(kind, "40" | "57")
+    if !matches!(kind, "40" | "56" | "57")
+        || (kind == "56" && class.len() != 61)
         || class.len() < 10
         || !class[1..9].iter().all(|v| guid(v).is_some())
         || at(value, &[1, 9, 1]).and_then(header).as_ref() != Some(resource)
@@ -184,7 +185,7 @@ pub(super) fn project(value: &Value, resource: &Guid, descriptors: &mut [ConfigD
         None
     };
     if let Some(d) = descriptors.iter_mut().find(|d| &d.object_guid == resource) {
-        if kind == "57" {
+        if matches!(kind, "56" | "57") {
             d.catalog_owners = class.get(12).and_then(owners);
         } else {
             // Позиции настроек и все пять кодов сверены независимыми

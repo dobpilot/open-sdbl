@@ -1248,7 +1248,7 @@ impl<'input, 'resource> ConfigParser<'input, 'resource> {
                     if depth == 0 && value_count == 0 {
                         self.resource_version_known = candidate.as_str() == Some("1");
                     }
-                    if depth == 1 && self.class_id == Some("57") {
+                    if depth == 1 && matches!(self.class_id, Some("56" | "57")) {
                         match value_count {
                             1..=8 => {
                                 self.catalog_prefix[value_count - 1] = candidate
@@ -1305,7 +1305,8 @@ impl<'input, 'resource> ConfigParser<'input, 'resource> {
                             SimpleValue::String(_) | SimpleValue::Null => None,
                         });
                         self.catalog_class_seen |= self.class_id == Some("57");
-                        self.runtime_class_seen |= matches!(self.class_id, Some("0" | "40" | "57"));
+                        self.runtime_class_seen |=
+                            matches!(self.class_id, Some("0" | "40" | "56" | "57"));
                         if self.class_id == Some(COMMON_ATTRIBUTE_CLASS_ID)
                             && self.separation.is_none()
                         {
@@ -1358,6 +1359,11 @@ impl<'input, 'resource> ConfigParser<'input, 'resource> {
                     ));
                 }
             }
+        }
+
+        // Форма 56/61 сверена с нативной XML buh; иные длины неизвестны.
+        if depth == 1 && self.class_id == Some("56") && value_count == 61 {
+            self.catalog_class_seen = true;
         }
 
         if window.len() == 3 {
