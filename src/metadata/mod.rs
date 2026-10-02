@@ -26,10 +26,11 @@ mod value_storage;
 
 pub use config::{
     AttributeIndexing, CatalogCodeType, CatalogDefaultPresentation, CatalogHierarchyType,
-    CatalogStandardAttributes, CommonAttributeContentEntry, CommonAttributeUsage,
-    CommonAttributeUse, ConfigCriterion, ConfigDeclaredType, ConfigDescriptor, ConfigFieldPurpose,
-    ConfigFillingValue, ConfigPredefinedValue, DataSeparationSettings, DocumentNumberPeriodicity,
-    DocumentNumberSettings, DocumentNumberingSettings, ParsedConfigResource, PredefinedSource,
+    CatalogStandardAttributeFillChecking, CatalogStandardAttributes, CommonAttributeContentEntry,
+    CommonAttributeUsage, CommonAttributeUse, ConfigCriterion, ConfigDeclaredType,
+    ConfigDescriptor, ConfigFieldPurpose, ConfigFillingValue, ConfigPredefinedValue,
+    DataSeparationSettings, DocumentNumberPeriodicity, DocumentNumberSettings,
+    DocumentNumberingSettings, FillChecking, ParsedConfigResource, PredefinedSource,
     SeparatedDataUse, Synonym, parse_config_criterion, parse_config_descriptor,
     parse_config_descriptors, parse_config_predefined_values, parse_config_resource_bounded,
 };

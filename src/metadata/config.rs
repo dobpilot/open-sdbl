@@ -327,9 +327,34 @@ pub enum CatalogHierarchyType {
     Items,
 }
 
+/// Измеренная настройка проверки заполнения реквизита.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FillChecking {
+    /// Не проверять заполнение автоматически.
+    DontCheck,
+    /// Сообщать об ошибке заполнения.
+    ShowError,
+}
+
+/// Настройка стандартного реквизита справочника из полной нативной таблицы.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CatalogStandardAttributeFillChecking {
+    /// Каноническое имя стандартного реквизита из нативной XML.
+    pub name: String,
+    /// Измеренный режим проверки, без реализации самой проверки.
+    pub fill_checking: FillChecking,
+}
+
 /// Human-readable data extracted from a bare-GUID Config resource.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ConfigDescriptor {
+    /// Измеренный режим проверки собственного, табличного или общего реквизита.
+    /// `None` — неизвестная форма или код, а не отсутствие проверки.
+    pub fill_checking: Option<FillChecking>,
+    /// Полная таблица стандартных настроек в нативном порядке, только у
+    /// владельца-справочника. `None` — неполная, разреженная или неизвестная
+    /// форма; подразумеваемые настройки не подставляются.
+    pub catalog_standard_fill_checking: Option<Vec<CatalogStandardAttributeFillChecking>>,
     /// Полные настройки общего реквизита; `None` — неизвестная форма.
     /// Собственные реквизиты объектов не расширяются этим полем.
     pub common_attribute_usage: Option<CommonAttributeUsage>,
@@ -1619,6 +1644,8 @@ fn project_config_descriptor(
         descriptor: ConfigDescriptor {
             catalog_hierarchical: None,
             common_attribute_usage: None,
+            fill_checking: None,
+            catalog_standard_fill_checking: None,
             catalog_hierarchy_type: None,
             catalog_attributes: None,
             catalog_tabular_sections: None,
@@ -1719,6 +1746,8 @@ fn collect_descriptors(
         descriptors.push(ConfigDescriptor {
             catalog_hierarchical: None,
             common_attribute_usage: None,
+            fill_checking: None,
+            catalog_standard_fill_checking: None,
             catalog_hierarchy_type: None,
             catalog_attributes: None,
             catalog_tabular_sections: None,

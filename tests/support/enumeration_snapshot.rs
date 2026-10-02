@@ -17,6 +17,8 @@ pub(crate) fn enumeration_snapshot() -> MetadataSnapshot {
     let descriptor = |object_guid: Guid, name: &str, enumeration_value: bool| ConfigDescriptor {
         catalog_hierarchical: None,
         common_attribute_usage: None,
+        fill_checking: None,
+        catalog_standard_fill_checking: None,
         catalog_hierarchy_type: None,
         catalog_attributes: None,
         catalog_tabular_sections: None,

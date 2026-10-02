@@ -201,6 +201,8 @@ fn descriptor(resource: &str, object: &str, name: &str) -> ConfigDescriptor {
     ConfigDescriptor {
         catalog_hierarchical: None,
         common_attribute_usage: None,
+        fill_checking: None,
+        catalog_standard_fill_checking: None,
         catalog_hierarchy_type: None,
         catalog_attributes: None,
         catalog_tabular_sections: None,

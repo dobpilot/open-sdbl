@@ -305,6 +305,8 @@ pub(crate) fn descriptor(resource: &Guid, object: &Guid, name: &str) -> ConfigDe
     ConfigDescriptor {
         catalog_hierarchical: None,
         common_attribute_usage: None,
+        fill_checking: None,
+        catalog_standard_fill_checking: None,
         catalog_hierarchy_type: None,
         catalog_attributes: None,
         catalog_tabular_sections: None,
@@ -590,6 +592,8 @@ pub(crate) fn accumulation_register_snapshot() -> open_sdbl::metadata::MetadataS
     descriptors.push(ConfigDescriptor {
         catalog_hierarchical: None,
         common_attribute_usage: None,
+        fill_checking: None,
+        catalog_standard_fill_checking: None,
         catalog_hierarchy_type: None,
         catalog_attributes: None,
         catalog_tabular_sections: None,

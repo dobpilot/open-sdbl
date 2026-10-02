@@ -74,6 +74,8 @@ fn with_second_constant(base: MetadataSnapshot) -> MetadataSnapshot {
     descriptors.push(ConfigDescriptor {
         catalog_hierarchical: None,
         common_attribute_usage: None,
+        fill_checking: None,
+        catalog_standard_fill_checking: None,
         catalog_hierarchy_type: None,
         catalog_attributes: None,
         catalog_tabular_sections: None,

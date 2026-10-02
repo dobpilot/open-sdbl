@@ -76,6 +76,8 @@ pub fn extension_metadata_from_restructure(
         descriptors.push(ConfigDescriptor {
             catalog_hierarchical: None,
             common_attribute_usage: None,
+            fill_checking: None,
+            catalog_standard_fill_checking: None,
             catalog_hierarchy_type: None,
             catalog_attributes: None,
             catalog_tabular_sections: None,
