@@ -291,9 +291,51 @@ pub enum ConfigFillingValue {
     },
 }
 
+/// Измеренный режим использования общего реквизита.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CommonAttributeUse {
+    /// Использовать реквизит.
+    Use,
+    /// Не использовать реквизит.
+    DontUse,
+}
+
+/// Измеренная запись состава общего реквизита.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CommonAttributeContentEntry {
+    /// GUID объекта конфигурации, к которому относится настройка.
+    pub object: Guid,
+    /// Явное использование для объекта.
+    pub usage: CommonAttributeUse,
+}
+
+/// Полные измеренные настройки использования общего реквизита.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CommonAttributeUsage {
+    /// Автоматическое использование; не подменяет явно заданный состав.
+    pub auto_use: CommonAttributeUse,
+    /// Полный состав в порядке Config; пустой список — известное отсутствие.
+    pub content: Vec<CommonAttributeContentEntry>,
+}
+
+/// Вид иерархии справочника, независимый от признака иерархичности.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CatalogHierarchyType {
+    /// Иерархия групп и элементов.
+    FoldersAndItems,
+    /// Иерархия элементов.
+    Items,
+}
+
 /// Human-readable data extracted from a bare-GUID Config resource.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ConfigDescriptor {
+    /// Полные настройки общего реквизита; `None` — неизвестная форма.
+    /// Собственные реквизиты объектов не расширяются этим полем.
+    pub common_attribute_usage: Option<CommonAttributeUsage>,
+    /// Измеренный вид иерархии; `None` — неизвестная форма или код.
+    /// Значение сохраняется и при выключенном признаке иерархичности.
+    pub catalog_hierarchy_type: Option<CatalogHierarchyType>,
     /// Настроенный признак иерархичности справочника из измеренной формы
     /// собственного Config-ресурса; `None` для неизвестной формы, значения
     /// и других объектов. Не определяет правила присваивания BSL или записи.
@@ -1311,7 +1353,7 @@ impl<'input, 'resource> ConfigParser<'input, 'resource> {
                         });
                         self.catalog_class_seen |= self.class_id == Some("57");
                         self.runtime_class_seen |=
-                            matches!(self.class_id, Some("0" | "40" | "56" | "57"));
+                            matches!(self.class_id, Some("0" | "5" | "40" | "56" | "57"));
                         if self.class_id == Some(COMMON_ATTRIBUTE_CLASS_ID)
                             && self.separation.is_none()
                         {
@@ -1576,6 +1618,8 @@ fn project_config_descriptor(
     descriptors.push(ProjectedConfigDescriptor {
         descriptor: ConfigDescriptor {
             catalog_hierarchical: None,
+            common_attribute_usage: None,
+            catalog_hierarchy_type: None,
             catalog_attributes: None,
             catalog_tabular_sections: None,
             catalog_default_presentation: None,
@@ -1674,6 +1718,8 @@ fn collect_descriptors(
             .map(str::to_owned);
         descriptors.push(ConfigDescriptor {
             catalog_hierarchical: None,
+            common_attribute_usage: None,
+            catalog_hierarchy_type: None,
             catalog_attributes: None,
             catalog_tabular_sections: None,
             catalog_default_presentation: None,

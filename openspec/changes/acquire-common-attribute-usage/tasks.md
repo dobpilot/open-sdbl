@@ -1,0 +1,5 @@
+- [x] 1. Save native XML/Config evidence and verify the acquired fields.
+- [x] 2. Validate this change strictly before implementing the API.
+- [x] 3. Implement measured projection and external regressions without changing existing expectations.
+- [x] 4. Run formatting, Clippy, workspace tests, rustdoc and all strict validation.
+- [ ] 5. Merge and archive the delta after the green run.

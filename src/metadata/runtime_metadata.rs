@@ -1,8 +1,10 @@
 //! Проекция измеренных настроек Config, общая для обоих провайдеров.
 
 use super::{
-    AttributeIndexing, CatalogCodeType, ConfigDeclaredType, ConfigDescriptor, ConfigFillingValue,
-    DocumentNumberPeriodicity, DocumentNumberSettings, DocumentNumberingSettings, Guid, Value,
+    AttributeIndexing, CatalogCodeType, CatalogHierarchyType, CommonAttributeContentEntry,
+    CommonAttributeUsage, CommonAttributeUse, ConfigDeclaredType, ConfigDescriptor,
+    ConfigFillingValue, DocumentNumberPeriodicity, DocumentNumberSettings,
+    DocumentNumberingSettings, Guid, Value,
 };
 
 fn list(v: &Value) -> Option<&[Value]> {
@@ -42,6 +44,32 @@ fn header(v: &Value) -> Option<Guid> {
     let id = guid(&reference[2])?;
     (!id.is_nil()).then_some(id)
 }
+fn object_header(v: &Value) -> Option<Guid> {
+    let values = list(v)?;
+    if values.len() == 9
+        && values.first().and_then(atom) == Some("3")
+        && list(values.get(1)?)?.first().and_then(atom) == Some("1")
+    {
+        return header(v);
+    }
+    // Нативные XML подтверждают также заголовок версии 2 без
+    // завершающего поля версии 3, с восемью или десятью полями;
+    // прочие формы не расширяем.
+    if !matches!(values.len(), 8 | 10) || values.first().and_then(atom) != Some("2") {
+        return None;
+    }
+    let reference = list(values.get(1)?)?;
+    if reference.len() != 3
+        || atom(&reference[0]) != Some("1")
+        || atom(&reference[1]) != Some("0")
+        || values[2].as_string()?.is_empty()
+    {
+        return None;
+    }
+    let id = guid(&reference[2])?;
+    (!id.is_nil()).then_some(id)
+}
+
 fn declaration(v: &Value) -> Option<Vec<ConfigDeclaredType>> {
     let values = list(v)?;
     if values.first()?.as_string() != Some("Pattern") {
@@ -139,6 +167,42 @@ fn owners(v: &Value) -> Option<Vec<Guid>> {
     Some(ids)
 }
 
+fn common_usage(class: &[Value]) -> Option<CommonAttributeUsage> {
+    let auto_use = match class.get(6).and_then(atom)? {
+        "0" => CommonAttributeUse::Use,
+        "1" => CommonAttributeUse::DontUse,
+        _ => return None,
+    };
+    let rows = list(class.get(2)?)?;
+    if rows.first().and_then(atom) != Some("3")
+        || (rows.get(1)?.as_u32()? as usize).checked_mul(2)? != rows.len().checked_sub(2)?
+    {
+        return None;
+    }
+    let mut content = Vec::new();
+    for pair in rows[2..].chunks_exact(2) {
+        let object = guid(&pair[0])?;
+        if object.is_nil()
+            || content
+                .iter()
+                .any(|entry: &CommonAttributeContentEntry| entry.object == object)
+        {
+            return None;
+        }
+        let entry = list(&pair[1])?;
+        if entry.len() != 3 || atom(&entry[0]) != Some("2") || guid(&entry[2]).is_none() {
+            return None;
+        }
+        let usage = match atom(&entry[1])? {
+            "1" => CommonAttributeUse::Use,
+            "2" => CommonAttributeUse::DontUse,
+            _ => return None,
+        };
+        content.push(CommonAttributeContentEntry { object, usage });
+    }
+    Some(CommonAttributeUsage { auto_use, content })
+}
+
 pub(super) fn project(value: &Value, resource: &Guid, descriptors: &mut [ConfigDescriptor]) {
     let Some(root) = list(value) else {
         return;
@@ -152,6 +216,22 @@ pub(super) fn project(value: &Value, resource: &Guid, descriptors: &mut [ConfigD
     let Some(kind) = class.first().and_then(atom) else {
         return;
     };
+    if kind == "5" {
+        // Класс, вложенный заголовок, Pattern и состав сверены с целыми
+        // нативными XML. Список не публикуется частично при неизвестном коде.
+        if class.len() != 15
+            || at(value, &[1, 1, 0]).and_then(atom) != Some("27")
+            || at(value, &[1, 1]).and_then(list).map(<[Value]>::len) != Some(23)
+            || at(value, &[1, 1, 1, 1]).and_then(object_header).as_ref() != Some(resource)
+        {
+            return;
+        }
+        if let Some(d) = descriptors.iter_mut().find(|d| &d.object_guid == resource) {
+            d.common_attribute_usage = common_usage(class);
+            d.declared_types = at(value, &[1, 1, 1, 2]).and_then(declaration);
+        }
+        return;
+    }
     if kind == "0" {
         // Определяемый тип УНФ: GUID типа, GUID значения, заголовок, Pattern.
         if class.len() != 5 || at(value, &[1, 3]).and_then(header).as_ref() != Some(resource) {
@@ -162,6 +242,21 @@ pub(super) fn project(value: &Value, resource: &Guid, descriptors: &mut [ConfigD
             d.declared_types = declaration(&class[4]);
         }
         return;
+    }
+    // Владельцы и вид иерархии имеют независимое доказательство полноты;
+    // неизвестность собственных реквизитов не превращает их в неизвестные.
+    if matches!(kind, "56" | "57")
+        && class.len() == 61
+        && class[1..9].iter().all(|v| guid(v).is_some())
+        && at(value, &[1, 9, 1]).and_then(object_header).as_ref() == Some(resource)
+        && let Some(d) = descriptors.iter_mut().find(|d| &d.object_guid == resource)
+    {
+        d.catalog_owners = class.get(12).and_then(owners);
+        d.catalog_hierarchy_type = match class.get(36).and_then(atom) {
+            Some("0") => Some(CatalogHierarchyType::FoldersAndItems),
+            Some("1") => Some(CatalogHierarchyType::Items),
+            _ => None,
+        };
     }
     if !matches!(kind, "40" | "56" | "57")
         || (kind == "56" && class.len() != 61)
