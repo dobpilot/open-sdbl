@@ -22,6 +22,7 @@ pub(crate) fn enumeration_snapshot() -> MetadataSnapshot {
         catalog_standard_attributes: None,
         catalog_owners: None,
         document_number: None,
+        document_numbering: None,
         document_attributes: None,
         document_tabular_sections: None,
         tabular_section_attributes: None,

@@ -1,0 +1,82 @@
+<?xml version='1.0' encoding='utf-8'?>
+<ns0:MetaDataObject xmlns:ns0="http://v8.1c.ru/8.3/MDClasses" xmlns:ns1="http://v8.1c.ru/8.3/xcf/readable" xmlns:ns2="http://v8.1c.ru/8.1/data/core" version="2.20">
+	<ns0:Document uuid="46019b39-9391-532f-89f0-4fb8e122d02a">
+		<ns0:InternalInfo>
+			<ns1:GeneratedType name="DocumentObject.SharedA" category="Object">
+				<ns1:TypeId>2adea23c-2fd3-531a-98a9-45b43ef169dd</ns1:TypeId>
+				<ns1:ValueId>5f7d9b66-110f-56f0-a380-a8e40e1e78cd</ns1:ValueId>
+			</ns1:GeneratedType>
+			<ns1:GeneratedType name="DocumentRef.SharedA" category="Ref">
+				<ns1:TypeId>3e95bda5-2d33-5dd4-bf06-d34009dac6e0</ns1:TypeId>
+				<ns1:ValueId>d1f23bb4-0649-5f14-8c9c-e649d0f1dc0e</ns1:ValueId>
+			</ns1:GeneratedType>
+			<ns1:GeneratedType name="DocumentSelection.SharedA" category="Selection">
+				<ns1:TypeId>0af32300-98b5-51de-a4a4-7375de091efd</ns1:TypeId>
+				<ns1:ValueId>3ed9a6a0-d0a1-56a9-8fcb-44089b3c933c</ns1:ValueId>
+			</ns1:GeneratedType>
+			<ns1:GeneratedType name="DocumentList.SharedA" category="List">
+				<ns1:TypeId>e329aa1d-cdad-5235-9465-91a53a9dfc31</ns1:TypeId>
+				<ns1:ValueId>bea5b426-43fd-57d6-ba1b-5fb9af8f49a7</ns1:ValueId>
+			</ns1:GeneratedType>
+			<ns1:GeneratedType name="DocumentManager.SharedA" category="Manager">
+				<ns1:TypeId>9317e70c-1b4c-5ec3-8d95-780eaf22f4d0</ns1:TypeId>
+				<ns1:ValueId>caaccf8f-9515-5ca1-b0a4-f5db771521f4</ns1:ValueId>
+			</ns1:GeneratedType>
+		</ns0:InternalInfo>
+		<ns0:Properties>
+			<ns0:Name>SharedA</ns0:Name>
+			<ns0:Synonym>
+				<ns2:item>
+					<ns2:lang>ru</ns2:lang>
+					<ns2:content>Проба документа</ns2:content>
+				</ns2:item>
+			</ns0:Synonym>
+			<ns0:Comment />
+			<ns0:UseStandardCommands>true</ns0:UseStandardCommands>
+			<ns0:Numerator>DocumentNumerator.ProbeNumerator</ns0:Numerator>
+			<ns0:NumberType>String</ns0:NumberType>
+			<ns0:NumberLength>9</ns0:NumberLength>
+			<ns0:NumberAllowedLength>Variable</ns0:NumberAllowedLength>
+			<ns0:NumberPeriodicity>Year</ns0:NumberPeriodicity>
+			<ns0:CheckUnique>true</ns0:CheckUnique>
+			<ns0:Autonumbering>true</ns0:Autonumbering>
+			<ns0:Characteristics />
+			<ns0:BasedOn />
+			<ns0:InputByString>
+				<ns1:Field>Document.SharedA.StandardAttribute.Number</ns1:Field>
+			</ns0:InputByString>
+			<ns0:CreateOnInput>Use</ns0:CreateOnInput>
+			<ns0:SearchStringModeOnInputByString>Begin</ns0:SearchStringModeOnInputByString>
+			<ns0:FullTextSearchOnInputByString>DontUse</ns0:FullTextSearchOnInputByString>
+			<ns0:ChoiceDataGetModeOnInputByString>Directly</ns0:ChoiceDataGetModeOnInputByString>
+			<ns0:DefaultObjectForm />
+			<ns0:DefaultListForm />
+			<ns0:DefaultChoiceForm />
+			<ns0:AuxiliaryObjectForm />
+			<ns0:AuxiliaryListForm />
+			<ns0:AuxiliaryChoiceForm />
+			<ns0:Posting>Allow</ns0:Posting>
+			<ns0:RealTimePosting>Allow</ns0:RealTimePosting>
+			<ns0:RegisterRecordsDeletion>AutoDeleteOnUnpost</ns0:RegisterRecordsDeletion>
+			<ns0:RegisterRecordsWritingOnPost>WriteSelected</ns0:RegisterRecordsWritingOnPost>
+			<ns0:SequenceFilling>AutoFill</ns0:SequenceFilling>
+			<ns0:RegisterRecords />
+			<ns0:PostInPrivilegedMode>true</ns0:PostInPrivilegedMode>
+			<ns0:UnpostInPrivilegedMode>true</ns0:UnpostInPrivilegedMode>
+			<ns0:IncludeHelpInContents>false</ns0:IncludeHelpInContents>
+			<ns0:DataLockFields />
+			<ns0:DataLockControlMode>Managed</ns0:DataLockControlMode>
+			<ns0:FullTextSearch>Use</ns0:FullTextSearch>
+			<ns0:ObjectPresentation />
+			<ns0:ExtendedObjectPresentation />
+			<ns0:ListPresentation />
+			<ns0:ExtendedListPresentation />
+			<ns0:Explanation />
+			<ns0:ChoiceHistoryOnInput>Auto</ns0:ChoiceHistoryOnInput>
+			<ns0:DataHistory>DontUse</ns0:DataHistory>
+			<ns0:UpdateDataHistoryImmediatelyAfterWrite>false</ns0:UpdateDataHistoryImmediatelyAfterWrite>
+			<ns0:ExecuteAfterWriteDataHistoryVersionProcessing>false</ns0:ExecuteAfterWriteDataHistoryVersionProcessing>
+		</ns0:Properties>
+		<ns0:ChildObjects />
+	</ns0:Document>
+</ns0:MetaDataObject>

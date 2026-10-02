@@ -1,0 +1,82 @@
+<?xml version='1.0' encoding='utf-8'?>
+<ns0:MetaDataObject xmlns:ns0="http://v8.1c.ru/8.3/MDClasses" xmlns:ns1="http://v8.1c.ru/8.3/xcf/readable" xmlns:ns2="http://v8.1c.ru/8.1/data/core" version="2.20">
+	<ns0:Document uuid="5ba590b7-fb58-53d0-bd55-e0c3496f1a73">
+		<ns0:InternalInfo>
+			<ns1:GeneratedType name="DocumentObject.PeriodNone" category="Object">
+				<ns1:TypeId>7ac2485b-a775-5c8e-b06d-2c0eb724755a</ns1:TypeId>
+				<ns1:ValueId>406de7bf-2311-5af1-9892-f959eeeb2470</ns1:ValueId>
+			</ns1:GeneratedType>
+			<ns1:GeneratedType name="DocumentRef.PeriodNone" category="Ref">
+				<ns1:TypeId>e5f58578-8d00-5992-aac8-1eb03e336801</ns1:TypeId>
+				<ns1:ValueId>e3e3dda6-b3fe-5691-8c0a-ea0fdfacf6a8</ns1:ValueId>
+			</ns1:GeneratedType>
+			<ns1:GeneratedType name="DocumentSelection.PeriodNone" category="Selection">
+				<ns1:TypeId>2420c71d-848b-50f5-8be4-b713d8b0bd2e</ns1:TypeId>
+				<ns1:ValueId>e6649e3c-5be8-5230-9acc-94f6cef0e9a6</ns1:ValueId>
+			</ns1:GeneratedType>
+			<ns1:GeneratedType name="DocumentList.PeriodNone" category="List">
+				<ns1:TypeId>0273e202-97f6-53fe-b706-dfcf0423b5aa</ns1:TypeId>
+				<ns1:ValueId>a11c1e4e-ee07-5e81-b97a-0b11ba51a12e</ns1:ValueId>
+			</ns1:GeneratedType>
+			<ns1:GeneratedType name="DocumentManager.PeriodNone" category="Manager">
+				<ns1:TypeId>f6fe5d6c-c953-58aa-b58d-1886ef7ee460</ns1:TypeId>
+				<ns1:ValueId>bc332d3c-48ac-5f0b-bd43-3fed74d6435a</ns1:ValueId>
+			</ns1:GeneratedType>
+		</ns0:InternalInfo>
+		<ns0:Properties>
+			<ns0:Name>PeriodNone</ns0:Name>
+			<ns0:Synonym>
+				<ns2:item>
+					<ns2:lang>ru</ns2:lang>
+					<ns2:content>Проба документа</ns2:content>
+				</ns2:item>
+			</ns0:Synonym>
+			<ns0:Comment />
+			<ns0:UseStandardCommands>true</ns0:UseStandardCommands>
+			<ns0:Numerator />
+			<ns0:NumberType>String</ns0:NumberType>
+			<ns0:NumberLength>9</ns0:NumberLength>
+			<ns0:NumberAllowedLength>Variable</ns0:NumberAllowedLength>
+			<ns0:NumberPeriodicity>Nonperiodical</ns0:NumberPeriodicity>
+			<ns0:CheckUnique>true</ns0:CheckUnique>
+			<ns0:Autonumbering>true</ns0:Autonumbering>
+			<ns0:Characteristics />
+			<ns0:BasedOn />
+			<ns0:InputByString>
+				<ns1:Field>Document.PeriodNone.StandardAttribute.Number</ns1:Field>
+			</ns0:InputByString>
+			<ns0:CreateOnInput>Use</ns0:CreateOnInput>
+			<ns0:SearchStringModeOnInputByString>Begin</ns0:SearchStringModeOnInputByString>
+			<ns0:FullTextSearchOnInputByString>DontUse</ns0:FullTextSearchOnInputByString>
+			<ns0:ChoiceDataGetModeOnInputByString>Directly</ns0:ChoiceDataGetModeOnInputByString>
+			<ns0:DefaultObjectForm />
+			<ns0:DefaultListForm />
+			<ns0:DefaultChoiceForm />
+			<ns0:AuxiliaryObjectForm />
+			<ns0:AuxiliaryListForm />
+			<ns0:AuxiliaryChoiceForm />
+			<ns0:Posting>Allow</ns0:Posting>
+			<ns0:RealTimePosting>Allow</ns0:RealTimePosting>
+			<ns0:RegisterRecordsDeletion>AutoDeleteOnUnpost</ns0:RegisterRecordsDeletion>
+			<ns0:RegisterRecordsWritingOnPost>WriteSelected</ns0:RegisterRecordsWritingOnPost>
+			<ns0:SequenceFilling>AutoFill</ns0:SequenceFilling>
+			<ns0:RegisterRecords />
+			<ns0:PostInPrivilegedMode>true</ns0:PostInPrivilegedMode>
+			<ns0:UnpostInPrivilegedMode>true</ns0:UnpostInPrivilegedMode>
+			<ns0:IncludeHelpInContents>false</ns0:IncludeHelpInContents>
+			<ns0:DataLockFields />
+			<ns0:DataLockControlMode>Managed</ns0:DataLockControlMode>
+			<ns0:FullTextSearch>Use</ns0:FullTextSearch>
+			<ns0:ObjectPresentation />
+			<ns0:ExtendedObjectPresentation />
+			<ns0:ListPresentation />
+			<ns0:ExtendedListPresentation />
+			<ns0:Explanation />
+			<ns0:ChoiceHistoryOnInput>Auto</ns0:ChoiceHistoryOnInput>
+			<ns0:DataHistory>DontUse</ns0:DataHistory>
+			<ns0:UpdateDataHistoryImmediatelyAfterWrite>false</ns0:UpdateDataHistoryImmediatelyAfterWrite>
+			<ns0:ExecuteAfterWriteDataHistoryVersionProcessing>false</ns0:ExecuteAfterWriteDataHistoryVersionProcessing>
+		</ns0:Properties>
+		<ns0:ChildObjects />
+	</ns0:Document>
+</ns0:MetaDataObject>

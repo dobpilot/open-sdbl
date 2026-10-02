@@ -229,6 +229,34 @@ pub struct DocumentNumberSettings {
     pub variable_length: bool,
 }
 
+/// Периодичность нумерации документа, сверенная с нативными XML и Config.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DocumentNumberPeriodicity {
+    /// Непериодическая нумерация.
+    Nonperiodical,
+    /// Нумерация в пределах года.
+    Year,
+    /// Нумерация в пределах квартала.
+    Quarter,
+    /// Нумерация в пределах месяца.
+    Month,
+    /// Нумерация в пределах дня.
+    Day,
+}
+
+/// Полностью приобретённые свойства периодичности и ссылки на нумератор.
+///
+/// Это настройки конфигурации, а не контракт резервирования или выдачи номера.
+/// Значение доступно лишь когда обе настройки достоверно декодированы.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DocumentNumberingSettings {
+    /// Настроенная периодичность документа.
+    pub periodicity: DocumentNumberPeriodicity,
+    /// Собственный GUID объекта нумератора; `None` означает достоверно пустую
+    /// ссылку. Неизвестная ссылка делает неизвестными настройки целиком.
+    pub numerator: Option<Guid>,
+}
+
 /// Объявленный тип Config с сохранением квалификаторов.
 ///
 /// Ссылочный GUID может обозначать определяемый тип: его следует разрешать
@@ -294,6 +322,10 @@ pub struct ConfigDescriptor {
     pub catalog_owners: Option<Vec<Guid>>,
     /// Настройки номера только на собственном описателе документа.
     pub document_number: Option<DocumentNumberSettings>,
+    /// Полные настройки периодичности и нумератора собственного документа.
+    /// `None` — неизвестная или неполная форма; пустой нумератор представлен
+    /// внутри приобретённого значения. Выдачу номера эти свойства не обещают.
+    pub document_numbering: Option<DocumentNumberingSettings>,
     /// Полные собственные реквизиты документа; `Some([])` — достоверно пусто.
     pub document_attributes: Option<Vec<Guid>>,
     /// Полные собственные табличные части документа; вложенные поля исключены.
@@ -1539,6 +1571,7 @@ fn project_config_descriptor(
             catalog_standard_attributes: None,
             catalog_owners: None,
             document_number: None,
+            document_numbering: None,
             document_attributes: None,
             document_tabular_sections: None,
             tabular_section_attributes: None,
@@ -1636,6 +1669,7 @@ fn collect_descriptors(
             catalog_standard_attributes: None,
             catalog_owners: None,
             document_number: None,
+            document_numbering: None,
             document_attributes: None,
             document_tabular_sections: None,
             tabular_section_attributes: None,

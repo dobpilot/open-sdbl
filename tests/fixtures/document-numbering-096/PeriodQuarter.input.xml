@@ -1,0 +1,82 @@
+<?xml version='1.0' encoding='utf-8'?>
+<ns0:MetaDataObject xmlns:ns0="http://v8.1c.ru/8.3/MDClasses" xmlns:ns1="http://v8.1c.ru/8.3/xcf/readable" xmlns:ns2="http://v8.1c.ru/8.1/data/core" version="2.20">
+	<ns0:Document uuid="4316dad8-a023-5328-a635-0c3d90157e99">
+		<ns0:InternalInfo>
+			<ns1:GeneratedType name="DocumentObject.PeriodQuarter" category="Object">
+				<ns1:TypeId>b3527f90-f42e-574b-b238-2a200202d808</ns1:TypeId>
+				<ns1:ValueId>08d10ab9-74bf-5ffc-8e2e-715bcb1b4b4c</ns1:ValueId>
+			</ns1:GeneratedType>
+			<ns1:GeneratedType name="DocumentRef.PeriodQuarter" category="Ref">
+				<ns1:TypeId>9854af64-cf89-5159-8429-e9ebf06b55ec</ns1:TypeId>
+				<ns1:ValueId>d69afd0e-828d-523f-beee-df32b1e8d00b</ns1:ValueId>
+			</ns1:GeneratedType>
+			<ns1:GeneratedType name="DocumentSelection.PeriodQuarter" category="Selection">
+				<ns1:TypeId>92c40485-e1dd-59a6-9097-bb46d1155f7c</ns1:TypeId>
+				<ns1:ValueId>d84d205a-b493-5b5d-ba18-496da4330f07</ns1:ValueId>
+			</ns1:GeneratedType>
+			<ns1:GeneratedType name="DocumentList.PeriodQuarter" category="List">
+				<ns1:TypeId>b04aeb35-1b0e-56b6-b9be-24dbc18e5ec1</ns1:TypeId>
+				<ns1:ValueId>8a4122fd-3669-5e64-82ac-b779e1c2fbfb</ns1:ValueId>
+			</ns1:GeneratedType>
+			<ns1:GeneratedType name="DocumentManager.PeriodQuarter" category="Manager">
+				<ns1:TypeId>6e7a9297-ae24-5c00-9dd5-11a8ff1efbcf</ns1:TypeId>
+				<ns1:ValueId>5b9b0dfe-c82b-5372-9ae3-dad4bac16b41</ns1:ValueId>
+			</ns1:GeneratedType>
+		</ns0:InternalInfo>
+		<ns0:Properties>
+			<ns0:Name>PeriodQuarter</ns0:Name>
+			<ns0:Synonym>
+				<ns2:item>
+					<ns2:lang>ru</ns2:lang>
+					<ns2:content>Проба документа</ns2:content>
+				</ns2:item>
+			</ns0:Synonym>
+			<ns0:Comment />
+			<ns0:UseStandardCommands>true</ns0:UseStandardCommands>
+			<ns0:Numerator />
+			<ns0:NumberType>String</ns0:NumberType>
+			<ns0:NumberLength>9</ns0:NumberLength>
+			<ns0:NumberAllowedLength>Variable</ns0:NumberAllowedLength>
+			<ns0:NumberPeriodicity>Quarter</ns0:NumberPeriodicity>
+			<ns0:CheckUnique>true</ns0:CheckUnique>
+			<ns0:Autonumbering>true</ns0:Autonumbering>
+			<ns0:Characteristics />
+			<ns0:BasedOn />
+			<ns0:InputByString>
+				<ns1:Field>Document.PeriodQuarter.StandardAttribute.Number</ns1:Field>
+			</ns0:InputByString>
+			<ns0:CreateOnInput>Use</ns0:CreateOnInput>
+			<ns0:SearchStringModeOnInputByString>Begin</ns0:SearchStringModeOnInputByString>
+			<ns0:FullTextSearchOnInputByString>DontUse</ns0:FullTextSearchOnInputByString>
+			<ns0:ChoiceDataGetModeOnInputByString>Directly</ns0:ChoiceDataGetModeOnInputByString>
+			<ns0:DefaultObjectForm />
+			<ns0:DefaultListForm />
+			<ns0:DefaultChoiceForm />
+			<ns0:AuxiliaryObjectForm />
+			<ns0:AuxiliaryListForm />
+			<ns0:AuxiliaryChoiceForm />
+			<ns0:Posting>Allow</ns0:Posting>
+			<ns0:RealTimePosting>Allow</ns0:RealTimePosting>
+			<ns0:RegisterRecordsDeletion>AutoDeleteOnUnpost</ns0:RegisterRecordsDeletion>
+			<ns0:RegisterRecordsWritingOnPost>WriteSelected</ns0:RegisterRecordsWritingOnPost>
+			<ns0:SequenceFilling>AutoFill</ns0:SequenceFilling>
+			<ns0:RegisterRecords />
+			<ns0:PostInPrivilegedMode>true</ns0:PostInPrivilegedMode>
+			<ns0:UnpostInPrivilegedMode>true</ns0:UnpostInPrivilegedMode>
+			<ns0:IncludeHelpInContents>false</ns0:IncludeHelpInContents>
+			<ns0:DataLockFields />
+			<ns0:DataLockControlMode>Managed</ns0:DataLockControlMode>
+			<ns0:FullTextSearch>Use</ns0:FullTextSearch>
+			<ns0:ObjectPresentation />
+			<ns0:ExtendedObjectPresentation />
+			<ns0:ListPresentation />
+			<ns0:ExtendedListPresentation />
+			<ns0:Explanation />
+			<ns0:ChoiceHistoryOnInput>Auto</ns0:ChoiceHistoryOnInput>
+			<ns0:DataHistory>DontUse</ns0:DataHistory>
+			<ns0:UpdateDataHistoryImmediatelyAfterWrite>false</ns0:UpdateDataHistoryImmediatelyAfterWrite>
+			<ns0:ExecuteAfterWriteDataHistoryVersionProcessing>false</ns0:ExecuteAfterWriteDataHistoryVersionProcessing>
+		</ns0:Properties>
+		<ns0:ChildObjects />
+	</ns0:Document>
+</ns0:MetaDataObject>

@@ -2,7 +2,7 @@
 
 use super::{
     AttributeIndexing, CatalogCodeType, ConfigDeclaredType, ConfigDescriptor, ConfigFillingValue,
-    DocumentNumberSettings, Guid, Value,
+    DocumentNumberPeriodicity, DocumentNumberSettings, DocumentNumberingSettings, Guid, Value,
 };
 
 fn list(v: &Value) -> Option<&[Value]> {
@@ -187,6 +187,26 @@ pub(super) fn project(value: &Value, resource: &Guid, descriptors: &mut [ConfigD
         if kind == "57" {
             d.catalog_owners = class.get(12).and_then(owners);
         } else {
+            // Позиции настроек и все пять кодов сверены независимыми
+            // изменениями минимальной нативной конфигурации и полным УНФ.
+            d.document_numbering = (|| {
+                if class.len() != 53 {
+                    return None;
+                }
+                let periodicity = match class.get(13).and_then(atom)? {
+                    "0" => DocumentNumberPeriodicity::Nonperiodical,
+                    "1" => DocumentNumberPeriodicity::Year,
+                    "2" => DocumentNumberPeriodicity::Quarter,
+                    "3" => DocumentNumberPeriodicity::Month,
+                    "4" => DocumentNumberPeriodicity::Day,
+                    _ => return None,
+                };
+                let numerator = class.get(10).and_then(guid)?;
+                Some(DocumentNumberingSettings {
+                    periodicity,
+                    numerator: (!numerator.is_nil()).then_some(numerator),
+                })
+            })();
             d.document_attributes = ids.clone();
             d.document_tabular_sections = parts;
             // Позиция коллекции и её объектные GUID сверены с нативной XML,
