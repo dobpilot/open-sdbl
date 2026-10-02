@@ -182,8 +182,12 @@ impl PostgresMetadataQueries {
     /// matched by [`Self::CONFIG`] or [`Self::CONFIG_LEGACY`].
     pub const CONFIG_TOTALS: &'static str = "SELECT count(DISTINCT filename), COALESCE(sum(octet_length(binarydata)), 0) FROM config WHERE rtrim(filename::text) ~ '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}(\\.1c|\\.9|\\.7)?$'";
 
-    /// Summarizes the current content of every `Config` resource the
-    /// acquisition reads, computed on the server.
+    /// Сводка отфильтрованных строк `Config`: имя — GUID без суффикса либо
+    /// с суффиксом `.1c`, `.9` или `.7`, как при загрузке метаданных.
+    /// Остальные ресурсы `Config`, `ConfigCAS`, `_ExtensionsInfo` и
+    /// `_ExtensionsRestruct` исключены. Равенство сводок не доказывает
+    /// неизменность полного или выборочного приобретения конфигурации
+    /// либо разрешённого снимка с расширениями.
     ///
     /// Answers `(resource count, compressed bytes, digest sum)`. Each row
     /// is hashed on its own and the digests are summed, so the value does
@@ -491,8 +495,12 @@ impl MsSqlMetadataQueries {
     /// matched by [`Self::CONFIG`] or [`Self::CONFIG_LEGACY`].
     pub const CONFIG_TOTALS: &'static str = "SELECT COUNT_BIG(DISTINCT [FileName]), COALESCE(SUM(CONVERT(bigint, DATALENGTH([BinaryData]))), CONVERT(bigint, 0)) FROM [dbo].[Config] WHERE ([FileName] LIKE N'[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]-[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]-[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]-[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]-[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]' OR [FileName] LIKE N'[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]-[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]-[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]-[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]-[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f].1c' OR [FileName] LIKE N'[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]-[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]-[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]-[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]-[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f].9' OR [FileName] LIKE N'[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]-[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]-[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]-[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]-[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f].7')";
 
-    /// Summarizes the current content of every `Config` resource the
-    /// acquisition reads, computed on the server.
+    /// Сводка отфильтрованных строк `Config`: имя — GUID без суффикса либо
+    /// с суффиксом `.1c`, `.9` или `.7`, как при загрузке метаданных.
+    /// Остальные ресурсы `Config`, `ConfigCAS`, `_ExtensionsInfo` и
+    /// `_ExtensionsRestruct` исключены. Равенство сводок не доказывает
+    /// неизменность полного или выборочного приобретения конфигурации
+    /// либо разрешённого снимка с расширениями.
     ///
     /// Answers `(resource count, compressed bytes, digest sum)`. Each
     /// row is hashed on its own and the digests are summed into a decimal

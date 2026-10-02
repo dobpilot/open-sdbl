@@ -344,10 +344,12 @@ pub struct AcquiredExtensionObject {
 /// to while it is being read can answer one statement from before that
 /// write and the next from after it.
 ///
-/// A consumer that must know whether the configuration moved compares
-/// the fingerprint statement
-/// ([`open_sdbl::metadata::PostgresMetadataQueries::CONFIG_FINGERPRINT`]
-/// and its SQL Server counterpart) before and after.
+/// [`open_sdbl::metadata::PostgresMetadataQueries::CONFIG_FINGERPRINT`]
+/// и аналог SQL Server охватывают только строки `Config` с именами GUID,
+/// GUID`.1c`, GUID`.9` и GUID`.7`. Прочие ресурсы и таблицы расширений
+/// (`ConfigCAS`, `_ExtensionsInfo`, `_ExtensionsRestruct`) исключены.
+/// Равенство сводок до и после чтения не подтверждает неизменность всего
+/// результата полного или выборочного приобретения либо разрешённого снимка.
 ///
 /// The value exists only when the requested read succeeded.
 #[non_exhaustive]
