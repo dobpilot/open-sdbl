@@ -1291,10 +1291,15 @@ impl<'input, 'resource> ConfigParser<'input, 'resource> {
                             _ => {}
                         }
                     }
-                    // The class list opens with the class id and then the
-                    // identifiers of the object; the third of them is the
-                    // reference type an attribute of another object names.
-                    if depth == 1 && value_count == 3 && self.object_reference_type.is_none() {
+                    // Нативные XML и Config всех 426 перечислений УНФ
+                    // подтверждают: в классе 20 первый GUID — EnumRef,
+                    // а третий — EnumManager. У прочих классов сохраняется
+                    // существующая позиция ссылочного типа.
+                    let reference_position = if self.class_id == Some("20") { 1 } else { 3 };
+                    if depth == 1
+                        && value_count == reference_position
+                        && self.object_reference_type.is_none()
+                    {
                         self.object_reference_type = candidate
                             .as_str()
                             .and_then(|atom| Guid::from_str(atom).ok());
