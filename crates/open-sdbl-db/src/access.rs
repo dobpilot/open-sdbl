@@ -146,13 +146,18 @@ impl AccessStore {
 ///
 /// This checks field access only. The caller must also apply the row-level
 /// decisions of [`user_decisions`] and reject their errors before execution.
-/// Standard fields have no Config GUID by which to map a member right, so
-/// they fail closed. Tabular-section fields currently fail closed too.
+/// Для подтверждённой формы справочника `Ссылка`, `Код`, `Наименование`,
+/// `ПометкаУдаления` и собственные реквизиты с известным объявлением типов
+/// проверяются по `Read` владельца с учётом явных прав реквизита и объединения
+/// ролей. Для этого необходимы полные собственные реквизиты и стандартные
+/// настройки из Config; отсутствие отдельной записи не означает отказ
+/// для измеренного программного чтения. Права UI и флаги defaults не заменяют
+/// эту проверку.
 ///
-/// Custom attributes require an exact member GUID and explicit `Read` grant
-/// in a role that also grants object `Read`. An absent member entry is never
-/// read as permission. This is a proof boundary, not a claim of full 1C
-/// field-right compatibility.
+/// Без измеренного сопоставления стандартное поле отклоняется, а собственный
+/// реквизит требует точного GUID и явного разрешения `Read` реквизита в роли,
+/// разрешающей `Read` владельца. Неизвестные пути и поля табличных частей
+/// отклоняются. Это граница доказательства, а не полная совместимость прав 1С.
 ///
 /// Значение константы проверяется по `Read` самой константы: его GUID
 /// совпадает с GUID владельца, а отдельного права реквизита у него нет.
