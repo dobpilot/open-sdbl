@@ -4,4 +4,4 @@
 ## 2. Verification
 - [x] 2.1 Add an external boundary regression and verify eligible/ineligible resources.
 - [x] 2.2 Run formatting, Clippy, workspace tests, rustdoc and strict validation.
-- [ ] 2.3 Merge and archive after green checks.
+- [x] 2.3 Merge and archive after green checks.
