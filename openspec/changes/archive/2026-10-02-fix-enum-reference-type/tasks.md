@@ -2,4 +2,4 @@
 - [x] 2. Reproduce the wrong manager identity with a new regression.
 - [x] 3. Correct the enum projection without changing existing expectations.
 - [x] 4. Run formatting, Clippy, workspace tests, rustdoc and strict validation.
-- [ ] 5. Merge and archive the delta after the green run.
+- [x] 5. Merge and archive the delta after the green run.
