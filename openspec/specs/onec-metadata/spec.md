@@ -1451,3 +1451,33 @@ The SDK SHALL acquire the measured EnumRef TypeId as the enumeration object refe
 #### Scenario: Native enumeration corpus
 - **WHEN** recognized enumeration resources are compared with native Designer XML
 - **THEN** every acquired reference TypeId matches its native EnumRef TypeId
+
+### Requirement: Common attribute usage
+The SDK SHALL acquire measured common-attribute AutoUse and complete Content entries separately from own attribute membership. Every entry SHALL retain its object GUID and explicit usage. Declared types and qualifiers SHALL use the existing descriptor representation. Unknown or incomplete forms SHALL remain None; a verified empty Content SHALL remain an empty vector.
+
+#### Scenario: Explicitly included common attribute
+- **WHEN** a measured DontUse attribute explicitly includes a catalog
+- **THEN** its Content entry and declared string qualifiers are available without adding it to catalog_attributes
+
+#### Scenario: Automatic use with exclusions
+- **WHEN** a measured Use attribute explicitly excludes objects
+- **THEN** AutoUse and all exclusions are preserved without guessed defaults
+
+#### Scenario: Incomplete content
+- **WHEN** a Content count, entry or usage code is unsupported
+- **THEN** the entire usage is unknown rather than a partial list
+
+### Requirement: Catalog hierarchy type
+The SDK SHALL acquire the measured typed catalog hierarchy mode independently from its existing hierarchical flag. The measured folders-and-items and items-only modes SHALL be distinguishable. Unknown forms or codes SHALL remain None. Existing complete catalog owner GUIDs SHALL retain their order and distinguish unknown from verified empty membership.
+
+#### Scenario: Both native hierarchy modes
+- **WHEN** recognized native catalogs use folders-and-items and items-only hierarchies
+- **THEN** the corresponding distinct typed modes survive acquisition through MetadataSnapshot
+
+#### Scenario: Nonhierarchical catalog
+- **WHEN** a recognized catalog disables its hierarchical flag
+- **THEN** its configured hierarchy mode remains independently acquired
+
+#### Scenario: Catalog owners
+- **WHEN** a recognized catalog has zero, one or multiple owners
+- **THEN** the complete ordered owner GUID list survives acquisition
