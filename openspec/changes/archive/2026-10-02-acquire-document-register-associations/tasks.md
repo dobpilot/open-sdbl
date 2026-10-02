@@ -5,4 +5,4 @@
 - [x] 2.2 Compare native XML/Config and test empty, mixed, malformed and unrelated GUID cases.
 ## 3. Verification
 - [x] 3.1 Run formatting, Clippy, workspace tests, rustdoc and strict validation.
-- [ ] 3.2 Merge specification and archive after green verification.
+- [x] 3.2 Merge specification and archive after green verification.

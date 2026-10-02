@@ -1372,3 +1372,37 @@ Metadata snapshot resolution SHALL expand known acquired named type declarations
 #### Scenario: Cyclic named types
 - **WHEN** named declarations form a cycle
 - **THEN** the affected complete declaration is absent rather than recursively overflowing or dropping members
+
+### Requirement: Acquire own tabular-section attributes
+The metadata API SHALL expose `tabular_section_attributes: Option<Vec<Guid>>` on a tabular-section descriptor. A known list SHALL contain every directly owned attribute identity in configuration order, excluding document attributes and other sections. `Some([])` SHALL mean verified empty membership; unknown, duplicate or incomplete collection shapes SHALL produce `None`, without partial success. Attribute declarations and filling settings SHALL use the existing acquisition path and preserve unknown declarations.
+
+#### Scenario: Independent ordered section fields
+- **WHEN** a native document contains two sections with different attributes and one empty section
+- **THEN** each section exposes exactly its own ordered identities and the empty section exposes `Some([])`
+
+#### Scenario: Incomplete or unknown collection
+- **WHEN** the count, header identities or collection shape cannot be completely verified
+- **THEN** the section membership is `None` and no shortened list is returned
+
+#### Scenario: Unknown declaration
+- **WHEN** a known member has an unknown type declaration
+- **THEN** membership remains known and the declaration remains `None`, rather than a fabricated empty type list
+
+### Requirement: Acquire document register associations
+The metadata API SHALL expose `document_registers: Option<Vec<Guid>>` on the own document descriptor, containing all register object identities from native RegisterRecords in configuration order. It SHALL preserve mixed register classes, SHALL NOT derive membership from SQL, resource names, generated types or incidental GUIDs, and SHALL NOT filter unsupported entries into a partial list. `Some([])` SHALL mean verified empty membership; unknown or incomplete measured shapes SHALL produce `None`.
+
+#### Scenario: Native mixed register collection
+- **WHEN** the measured document collection refers to multiple register classes
+- **THEN** all own register identities are exposed in native configuration order
+
+#### Scenario: Empty collection
+- **WHEN** the measured collection has an exact zero count
+- **THEN** the document exposes `Some([])`
+
+#### Scenario: Unknown or incomplete collection
+- **WHEN** the class or reference collection is unknown, truncated, duplicated or count-inconsistent
+- **THEN** the document exposes `None`, without shortened membership
+
+#### Scenario: Unrelated identities
+- **WHEN** unrelated GUIDs occur outside the RegisterRecords collection
+- **THEN** they do not enter the register membership
