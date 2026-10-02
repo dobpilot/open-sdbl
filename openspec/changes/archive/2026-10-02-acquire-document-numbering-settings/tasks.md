@@ -9,4 +9,4 @@
 ## 4. Verification
 - [x] 4.1 Run formatting, Clippy, workspace tests, rustdoc and strict validation.
 - [x] 4.2 Document evidence, scope limits and unchanged version0.9.6.
-- [ ] 4.3 Merge the delta and archive after green checks.
+- [x] 4.3 Merge the delta and archive after green checks.
