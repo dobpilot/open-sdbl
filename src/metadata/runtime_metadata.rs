@@ -2,9 +2,9 @@
 
 use super::{
     AttributeIndexing, CatalogCodeType, CatalogHierarchyType, CatalogStandardAttributeFillChecking,
-    CommonAttributeContentEntry, CommonAttributeUsage, CommonAttributeUse, ConfigDeclaredType,
-    ConfigDescriptor, ConfigFillingValue, DocumentNumberPeriodicity, DocumentNumberSettings,
-    DocumentNumberingSettings, FillChecking, Guid, Value,
+    CharacteristicSettings, CommonAttributeContentEntry, CommonAttributeUsage, CommonAttributeUse,
+    ConfigDeclaredType, ConfigDescriptor, ConfigFillingValue, DocumentNumberPeriodicity,
+    DocumentNumberSettings, DocumentNumberingSettings, FillChecking, Guid, Value,
 };
 
 fn list(v: &Value) -> Option<&[Value]> {
@@ -343,6 +343,50 @@ pub(super) fn project(value: &Value, resource: &Guid, descriptors: &mut [ConfigD
         }
         return;
     }
+    if kind == "34" {
+        // Класс 34/59, заголовок 13/1, Pattern 18 и длины 21/23
+        // сверены с нативной XML двух контрольных ресурсов 8.3.27.
+        if class.len() != 59
+            || !class[1..13].iter().all(|v| guid(v).is_some())
+            || at(value, &[1, 13, 1]).and_then(header).as_ref() != Some(resource)
+        {
+            return;
+        }
+        let settings = (|| {
+            Some(CharacteristicSettings {
+                code_length: class[21].as_u32()?,
+                description_length: class[23].as_u32()?,
+                value_types: declaration(&class[18])?,
+            })
+        })();
+        let rows = collection(root, "31182525-9346-4595-81f8-6f91a72ebe06");
+        attribute_bodies(value, descriptors);
+        let ids = rows
+            .filter(|rows| {
+                rows.iter().all(|row| {
+                    list(row).is_some_and(|row| row.len() == 2)
+                        && at(row, &[0]).and_then(list).is_some_and(|body| {
+                            body.len() == 8 && body.first().and_then(atom) == Some("3")
+                        })
+                        && at(row, &[0, 1]).and_then(list).is_some_and(|body| {
+                            body.len() == 23 && body.first().and_then(atom) == Some("27")
+                        })
+                })
+            })
+            .and_then(|rows| membership(rows, &[0, 1, 1, 1]))
+            .filter(|ids| {
+                ids.iter().all(|id| {
+                    descriptors
+                        .iter()
+                        .any(|d| &d.object_guid == id && d.declared_types.is_some())
+                })
+            });
+        if let Some(d) = descriptors.iter_mut().find(|d| &d.object_guid == resource) {
+            d.characteristic_settings = settings;
+            d.characteristic_attributes = ids;
+        }
+        return;
+    }
     // Владельцы и вид иерархии имеют независимое доказательство полноты;
     // неизвестность собственных реквизитов не превращает их в неизвестные.
     if matches!(kind, "56" | "57")
@@ -553,34 +597,55 @@ pub(super) fn resolve_named_types(descriptors: &mut [ConfigDescriptor]) {
             )
         })
         .collect::<HashMap<_, _>>();
-    for d in descriptors {
-        if let Some(types) = &d.declared_types {
-            let mut output = Vec::new();
-            let mut complete = true;
-            for ty in types {
-                if let Some(id) = &ty.reference
-                    && let Some(definition) = resolved.get(id)
-                {
-                    if let Some(members) = definition {
-                        output.extend(members.iter().cloned());
-                    } else {
-                        complete = false;
-                        break;
-                    }
-                } else {
-                    output.push(ty.clone());
-                }
-                if output.len() > 1_000_000 {
-                    complete = false;
-                    break;
-                }
+    fn resolved_types(
+        types: &[ConfigDeclaredType],
+        resolved: &HashMap<Guid, Option<Vec<ConfigDeclaredType>>>,
+    ) -> Option<Vec<ConfigDeclaredType>> {
+        let mut output = Vec::new();
+        for ty in types {
+            if let Some(id) = &ty.reference
+                && let Some(definition) = resolved.get(id)
+            {
+                output.extend(definition.as_ref()?.iter().cloned());
+            } else {
+                output.push(ty.clone());
             }
-            d.declared_types = complete.then_some(output);
+            if output.len() > 1_000_000 {
+                return None;
+            }
+        }
+        Some(output)
+    }
+    for d in descriptors.iter_mut() {
+        if let Some(types) = &d.declared_types {
+            d.declared_types = resolved_types(types, &resolved);
             d.reference_types = d
                 .declared_types
                 .as_ref()
                 .map(|types| types.iter().filter_map(|ty| ty.reference.clone()).collect())
                 .unwrap_or_default();
+        }
+        if let Some(settings) = &mut d.characteristic_settings {
+            if let Some(types) = resolved_types(&settings.value_types, &resolved) {
+                settings.value_types = types;
+            } else {
+                d.characteristic_settings = None;
+            }
+        }
+    }
+    // Неудачное разворачивание типа реквизита не оставляет обещание
+    // полного типизированного состава у владельца.
+    let unknown = descriptors
+        .iter()
+        .filter(|d| d.declared_types.is_none())
+        .map(|d| d.object_guid.clone())
+        .collect::<std::collections::HashSet<_>>();
+    for d in descriptors {
+        if d.characteristic_attributes
+            .as_ref()
+            .is_some_and(|ids| ids.iter().any(|id| unknown.contains(id)))
+        {
+            d.characteristic_attributes = None;
         }
     }
 }

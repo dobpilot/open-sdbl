@@ -192,6 +192,17 @@ pub enum CatalogDefaultPresentation {
     AsDescription,
 }
 
+/// Измеренные настройки объекта плана видов характеристик.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CharacteristicSettings {
+    /// Длина стандартного кода.
+    pub code_length: u32,
+    /// Длина стандартного наименования.
+    pub description_length: u32,
+    /// Полное объявление типа значения с квалификаторами.
+    pub value_types: Vec<ConfigDeclaredType>,
+}
+
 /// Измеренные настройки стандартных реквизитов справочника из Config.
 ///
 /// Длина `0` сохраняется как настройка конфигурации. Она не означает,
@@ -372,6 +383,12 @@ pub struct ConfigDescriptor {
     /// или неполную форму. Реквизиты табличных частей и общие реквизиты сюда
     /// не входят. Принадлежность не вычисляется по SQL или исходному коду.
     pub catalog_attributes: Option<Vec<Guid>>,
+    /// Настройки измеренной формы плана видов характеристик; `None` — неизвестная форма.
+    pub characteristic_settings: Option<CharacteristicSettings>,
+    /// Полный упорядоченный состав собственных реквизитов плана.
+    /// `Some([])` — проверенная пустая коллекция, `None` — неизвестная или неполная.
+    pub characteristic_attributes: Option<Vec<Guid>>,
+
     /// Полный список GUID собственных табличных частей в порядке конфигурации,
     /// только у описателя справочника. Реквизиты табличных частей не входят.
     /// `Some([])` означает известную пустую коллекцию; `None` — неизвестную
@@ -1378,7 +1395,7 @@ impl<'input, 'resource> ConfigParser<'input, 'resource> {
                         });
                         self.catalog_class_seen |= self.class_id == Some("57");
                         self.runtime_class_seen |=
-                            matches!(self.class_id, Some("0" | "5" | "40" | "56" | "57"));
+                            matches!(self.class_id, Some("0" | "5" | "34" | "40" | "56" | "57"));
                         if self.class_id == Some(COMMON_ATTRIBUTE_CLASS_ID)
                             && self.separation.is_none()
                         {
@@ -1650,6 +1667,8 @@ fn project_config_descriptor(
             catalog_attributes: None,
             catalog_tabular_sections: None,
             catalog_default_presentation: None,
+            characteristic_settings: None,
+            characteristic_attributes: None,
             catalog_standard_attributes: None,
             catalog_owners: None,
             document_number: None,
@@ -1752,6 +1771,8 @@ fn collect_descriptors(
             catalog_attributes: None,
             catalog_tabular_sections: None,
             catalog_default_presentation: None,
+            characteristic_settings: None,
+            characteristic_attributes: None,
             catalog_standard_attributes: None,
             catalog_owners: None,
             document_number: None,

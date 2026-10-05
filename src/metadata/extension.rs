@@ -80,6 +80,8 @@ pub fn extension_metadata_from_restructure(
             catalog_standard_fill_checking: None,
             catalog_hierarchy_type: None,
             catalog_attributes: None,
+            characteristic_settings: None,
+            characteristic_attributes: None,
             catalog_tabular_sections: None,
             catalog_default_presentation: None,
             catalog_standard_attributes: None,
