@@ -9,4 +9,4 @@
 ## 3. Verification
 - [x] 3.1 Run formatting, Clippy, workspace tests, rustdoc and strict OpenSpec validation.
 - [x] 3.2 Verify the original demo characteristic own attributes read-only.
-- [ ] 3.3 Archive after successful verification and commit focused changes.
+- [x] 3.3 Archive after successful verification and commit focused changes.
