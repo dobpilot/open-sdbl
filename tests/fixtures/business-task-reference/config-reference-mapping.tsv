@@ -1,0 +1,12 @@
+resource	name	class	class_length	configured_guid_at_5	sdk_object_reference_type_at_3
+28f131c2-f971-4a8c-bfc4-23f8606a7536	Приглашение	30	49	54128a0d-f2b8-4ea9-a0e4-51b331e31032	f57fa96b-4008-4a07-95a1-457733f4e8f7
+36a6810c-733e-490c-bae7-1271266f0d95	Регистрация	30	49	fdd442ab-69fe-44ac-84e8-7fdce830bac7	fdbf390a-ecfd-4a96-b6a7-05ae3aff97f4
+3ad08f4a-6202-4099-b6cc-bc116e6731a0	ЗадачаИсполнителя	33	52	526f0ebe-d70d-4909-8ae9-86bbabfa55da	edccd440-4634-484c-b31d-443ba8674912
+3b9d376f-cd28-4f84-b8a8-686da09f0e46	Ознакомление	30	49	fb09e7c3-9fb0-4185-b49b-6e938ea5ff7d	ed20c0a9-2087-4871-8dcc-b2d30599ec35
+53d146b8-d85f-4cfe-b5ee-af78f4e09445	Рассмотрение	30	49	dc7b5d44-9aad-41e8-95c1-09c9479321e6	ee6276fc-d60d-4abe-86af-4d6eef11519b
+679bd72a-4cf8-4c2e-ae00-3f01f48050c4	Исполнение	30	49	1476da11-dfca-419d-bdb2-f84142e9791f	e3bd3a06-a868-49d7-bdb4-689db4638810
+8ae3feaf-0038-4967-bd3e-881b5e2edfc1	Подписание	30	49	db1378e1-9f10-4104-a445-aa356009eb51	2f811a15-1fe1-4fd0-ad83-6f516c53b10b
+be5e2d83-70ce-4bd9-97af-eb0d365df63e	РешениеВопросовВыполненияЗадач	30	49	13f6cd43-7142-416d-8a56-f92372fd1bbe	c2112c05-a5ce-4ef1-b752-a664528307d5
+da3c04c7-1d24-4d54-9686-2c404b8ed4e8	Утверждение	30	49	9e00fcd0-55a5-4e0a-8171-a22d0fe700e2	3653555a-22ab-4a87-8599-dc9e857ca87b
+dab6706c-e0f7-4dc9-8fac-95b1dfcbf05c	КомплексныйПроцесс	30	49	b4e0f958-d6f7-4d6a-b36a-aed6ba922ab8	f28a4e23-f98e-4cff-a3c7-bb0da80d7013
+efd06081-12d1-4734-9015-bff31c9f7966	Согласование	30	49	ee2c7bb4-7e27-4297-ade4-0494e07c2147	e62991e8-2008-445b-a876-630a0be407ab

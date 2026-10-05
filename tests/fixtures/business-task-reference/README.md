@@ -1,0 +1,11 @@
+# Ссылочные GUID бизнес-процесса и задачи
+
+Bugfix существующего контракта ConfigDescriptor.object_reference_type: поле должно содержать GUID ссылки, а не другого порождённого типа. Публичный API, формат и версия 0.9.7 не меняются; новый OpenSpec change не требуется. Существующий onec-metadata требует native reference TypeId; архивы не переписываются.
+
+Контроль 1С 8.3.27.2342 создан через публичный Unica runtime: init, build, make успешны. Config-ресурсы извлечены из независимо скомпилированного платформой CF. XML — входные исходники, загруженные в платформу, не обратная нативная выгрузка. Обратный dump отказал на требовании immutable trusted executable для DISPLAY wrapper; отказ не обходился. Исходное доказательство: open-bsl/docs/research/fixtures/demo-business-task-reference-types и .build/business-task-reference-097/control-native.cf.
+
+Измеренные формы: 30/49 и 33/52, собственный заголовок1, scalar 2=1 в контроле и 0 в demo. Значение scalar не интерпретируется. GUID-блок: Object 3/4, Ref 5/6, Selection 7/8, List 9/10, Manager 11/12; для бизнес-процесса RoutePointRef 13/14. Целые блоки проверяются перед публикацией Ref. Неизвестная header-first форма не возвращается к позиции3; GUID-prefix формы сохраняют прежний путь. TSV — структурная карта оригинальной demo, не независимая XML-выгрузка её объектов.
+
+Дополнительный независимый компиляторный контроль: только UseStandardCommands true→false у обоих объектов, затем native build/make. CF control-native-no-standard-commands.cf. Сохранены второй XML-вход и нативные Config/deflate. Byte-for-byte сравнение и полный Value SDK подтверждают ровно изменение scalar 2:1→0; размеры 15981/18163 прежние, все GeneratedType GUID неизменны. Таким образом оба допустимых значения имеют нативный контроль. Нового API этого свойства не добавляется.
+
+Проверки исправления в изолированном target: fmt, workspace all-target Clippy с -D warnings, workspace test --offline --locked (837 прошли, 13 ignored, 0 ошибок), rustdoc с -D warnings, openspec validate --all --strict (7/7) — код 0. После получения дополнительного no-standard контроля повторены fmt/Clippy и все пять тестов business_task_reference; они прошли. Производственный код между полным прогоном и дополнительной проверкой не менялся. Существующие ожидания не редактировались.

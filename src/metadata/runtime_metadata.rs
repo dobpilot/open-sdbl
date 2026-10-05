@@ -315,6 +315,27 @@ pub(super) fn project(value: &Value, resource: &Guid, descriptors: &mut [ConfigD
     let Some(kind) = class.first().and_then(atom) else {
         return;
     };
+    if matches!(kind, "30" | "33") && class.get(1).and_then(list).is_some() {
+        // XML-вход и Config, скомпилированный настоящей 1С, подтверждают
+        // Object на 3/4 и Ref на 5/6. Полный блок и длины сверены отдельно;
+        // неизвестная форма не возвращается к GUID типа объекта.
+        let (length, guid_end) = if kind == "30" { (49, 15) } else { (52, 13) };
+        let reference = (|| {
+            if class.len() != length
+                || list(&class[1])?.len() != 9
+                || header(&class[1]).as_ref() != Some(resource)
+                || !matches!(atom(&class[2]), Some("0" | "1"))
+                || !class[3..guid_end].iter().all(|v| guid(v).is_some())
+            {
+                return None;
+            }
+            guid(&class[5]).filter(|id| !id.is_nil())
+        })();
+        if let Some(d) = descriptors.iter_mut().find(|d| &d.object_guid == resource) {
+            d.object_reference_type = reference;
+        }
+        return;
+    }
     attribute_fill_checking(value, descriptors);
     if kind == "5" {
         // Класс, вложенный заголовок, Pattern и состав сверены с целыми

@@ -859,6 +859,7 @@ struct ConfigParser<'input, 'resource> {
     /// which the class list of an accounting register names its chart of
     /// accounts.
     header_seen: bool,
+    header_first_reference: bool,
     /// The chart of accounts of an accounting-register resource.
     chart_of_accounts: Option<Guid>,
     catalog_class_seen: bool,
@@ -1019,6 +1020,7 @@ impl<'input, 'resource> ConfigParser<'input, 'resource> {
             separation: None,
             object_reference_type: None,
             header_seen: false,
+            header_first_reference: false,
             chart_of_accounts: None,
             catalog_class_seen: false,
             runtime_class_seen: false,
@@ -1375,13 +1377,25 @@ impl<'input, 'resource> ConfigParser<'input, 'resource> {
                             _ => {}
                         }
                     }
+                    // У измеренных бизнес-процесса и задачи заголовок
+                    // предшествует GUID-блоку. Ссылку публикует общая проекция
+                    // после проверки целой формы; позиция 3 здесь — тип объекта.
+                    if depth == 1
+                        && value_count == 1
+                        && matches!(self.class_id, Some("30" | "33"))
+                        && candidate.as_scalar().is_none()
+                    {
+                        self.header_first_reference = true;
+                        self.runtime_class_seen = true;
+                    }
                     // Нативные XML и Config всех 426 перечислений УНФ
                     // подтверждают: в классе 20 первый GUID — EnumRef,
-                    // а третий — EnumManager. У прочих классов сохраняется
-                    // существующая позиция ссылочного типа.
+                    // а третий — EnumManager. У остальных форм с GUID-префиксом
+                    // сохраняется существующая позиция ссылочного типа.
                     let reference_position = if self.class_id == Some("20") { 1 } else { 3 };
                     if depth == 1
                         && value_count == reference_position
+                        && !self.header_first_reference
                         && self.object_reference_type.is_none()
                     {
                         self.object_reference_type = candidate
