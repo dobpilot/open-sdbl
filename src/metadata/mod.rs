@@ -25,10 +25,10 @@ mod value;
 mod value_storage;
 
 pub use config::{
-    AttributeIndexing, CatalogCodeType, CatalogDefaultPresentation, CatalogHierarchyType,
-    CatalogStandardAttributeFillChecking, CatalogStandardAttributes, CharacteristicSettings,
-    CommonAttributeContentEntry, CommonAttributeUsage, CommonAttributeUse, ConfigCriterion,
-    ConfigDeclaredType, ConfigDescriptor, ConfigFieldPurpose, ConfigFillingValue,
+    AttributeIndexing, BusinessProcessRoutePoint, CatalogCodeType, CatalogDefaultPresentation,
+    CatalogHierarchyType, CatalogStandardAttributeFillChecking, CatalogStandardAttributes,
+    CharacteristicSettings, CommonAttributeContentEntry, CommonAttributeUsage, CommonAttributeUse,
+    ConfigCriterion, ConfigDeclaredType, ConfigDescriptor, ConfigFieldPurpose, ConfigFillingValue,
     ConfigPredefinedValue, DataSeparationSettings, DocumentNumberPeriodicity,
     DocumentNumberSettings, DocumentNumberingSettings, FillChecking, ParsedConfigResource,
     PredefinedSource, SeparatedDataUse, Synonym, parse_config_criterion, parse_config_descriptor,
@@ -220,3 +220,5 @@ mod tests {
         assert!(serialized.offset().is_some());
     }
 }
+
+mod route_points;

@@ -23,6 +23,8 @@ pub(crate) fn enumeration_snapshot() -> MetadataSnapshot {
         catalog_attributes: None,
         characteristic_settings: None,
         characteristic_attributes: None,
+        business_process_route_points: None,
+        business_process_route_point_reference_type: None,
         catalog_tabular_sections: None,
         catalog_default_presentation: None,
         catalog_standard_attributes: None,

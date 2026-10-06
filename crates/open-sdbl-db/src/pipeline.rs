@@ -852,6 +852,10 @@ impl Default for ConfigDecodeLimits {
 }
 
 struct DecodedConfigBatch {
+    route_points: Vec<(
+        open_sdbl::metadata::Guid,
+        Vec<open_sdbl::metadata::BusinessProcessRoutePoint>,
+    )>,
     resource_count: usize,
     compressed_bytes: usize,
     decoded_bytes: usize,
@@ -904,6 +908,7 @@ where
                     .map_err(|_| DbError::Data("Config decoder semaphore closed".to_owned()))?;
                 tokio::task::spawn_blocking(move || {
                     let mut result = DecodedConfigBatch {
+                        route_points: Vec::new(),
                         resource_count: batch.len(),
                         compressed_bytes: batch
                             .iter()
@@ -953,6 +958,9 @@ where
                             .ok_or_else(|| {
                                 DbError::Data("Config decoded byte count overflowed".to_owned())
                             })?;
+                        if let Some(points) = parsed.route_points.take() {
+                            result.route_points.push(points);
+                        }
                         result.descriptors.append(&mut parsed.descriptors);
                         result
                             .predefined_values
@@ -976,6 +984,7 @@ where
     let mut criteria = Vec::new();
     let mut roles = Vec::new();
     let mut skipped = Vec::new();
+    let mut route_points = Vec::new();
     loop {
         let next =
             timeout(progress_timeout, jobs.next())
@@ -1003,6 +1012,7 @@ where
         criteria.append(&mut batch.criteria);
         roles.append(&mut batch.roles);
         skipped.append(&mut batch.skipped);
+        route_points.append(&mut batch.route_points);
     }
     if !skipped.is_empty() {
         eprintln!(
@@ -1015,6 +1025,13 @@ where
                 .collect::<Vec<_>>()
                 .join("; ")
         );
+    }
+    for (owner, points) in route_points {
+        if let Some(descriptor) = descriptors.iter_mut().find(|d| {
+            d.object_guid == owner && d.business_process_route_point_reference_type.is_some()
+        }) {
+            descriptor.business_process_route_points = Some(points);
+        }
     }
     descriptors.sort_by(|left, right| {
         left.resource_guid

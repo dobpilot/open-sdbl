@@ -333,6 +333,10 @@ pub(super) fn project(value: &Value, resource: &Guid, descriptors: &mut [ConfigD
         })();
         if let Some(d) = descriptors.iter_mut().find(|d| &d.object_guid == resource) {
             d.object_reference_type = reference;
+            if kind == "30" && d.object_reference_type.is_some() {
+                d.business_process_route_point_reference_type =
+                    guid(&class[13]).filter(|id| !id.is_nil());
+            }
         }
         return;
     }

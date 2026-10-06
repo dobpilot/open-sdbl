@@ -356,6 +356,21 @@ pub struct CatalogStandardAttributeFillChecking {
     pub fill_checking: FillChecking,
 }
 
+/// Собственная точка маршрута; идентичность — пара владельца и GUID точки.
+/// Нативные копии процессов могут сохранять GUID точек, поэтому эти члены
+/// не помещаются в глобальный индекс `ConfigDescriptor::object_guid`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BusinessProcessRoutePoint {
+    /// GUID бизнес-процесса — владельца карты.
+    pub owner_guid: Guid,
+    /// GUID точки из карты; уникален в пределах владельца.
+    pub point_guid: Guid,
+    /// Нативное имя для доступа к точке.
+    pub name: String,
+    /// Нативные локализованные представления в порядке карты.
+    pub synonyms: Vec<Synonym>,
+}
+
 /// Human-readable data extracted from a bare-GUID Config resource.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ConfigDescriptor {
@@ -388,6 +403,13 @@ pub struct ConfigDescriptor {
     /// Полный упорядоченный состав собственных реквизитов плана.
     /// `Some([])` — проверенная пустая коллекция, `None` — неизвестная или неполная.
     pub characteristic_attributes: Option<Vec<Guid>>,
+    /// Полный состав собственных точек маршрута из нативного ресурса `.7`.
+    /// `Some([])` — проверенная пустота; `None` — неизвестная или неполная форма.
+    /// Идентичность точки включает владельца: GUID точки может повторяться у разных процессов.
+    /// Порядок метаданных не обещает порядок обхода BSL.
+    pub business_process_route_points: Option<Vec<BusinessProcessRoutePoint>>,
+    /// GUID порождённого типа ссылки точки маршрута, отдельно от GUID владельца и членов.
+    pub business_process_route_point_reference_type: Option<Guid>,
 
     /// Полный список GUID собственных табличных частей в порядке конфигурации,
     /// только у описателя справочника. Реквизиты табличных частей не входят.
@@ -530,6 +552,9 @@ pub struct ParsedConfigResource {
     pub roles: Vec<Guid>,
     /// Number of inflated bytes charged to the caller's total budget.
     pub decoded_bytes: usize,
+    /// Полностью распознанная карта: GUID владельца и все собственные точки.
+    /// `Some((owner, vec![]))` — проверенная пустота, `None` — неизвестная форма.
+    pub route_points: Option<(Guid, Vec<BusinessProcessRoutePoint>)>,
 }
 
 /// Parses a bare-GUID, part-zero Config resource.
@@ -649,6 +674,7 @@ pub fn parse_config_resource_bounded(
             criterion: None,
             roles: Vec::new(),
             decoded_bytes: 0,
+            route_points: None,
         });
     };
     let decoded = inflate_raw_deflate_bounded(compressed, decoded_limit)?;
@@ -660,9 +686,22 @@ pub fn parse_config_resource_bounded(
             criterion: parse_criterion(&decoded, &resource),
             roles: super::roles::roles_collection(&decoded),
             decoded_bytes,
+            route_points: None,
         }),
         ResourceKind::Predefined(owner, source) => {
             let value = parse_serialized(&decoded)?;
+            if source == PredefinedSource::ChartOfCharacteristicTypes
+                && let Some(points) = super::route_points::parse(&value, &owner)
+            {
+                return Ok(ParsedConfigResource {
+                    descriptors: Vec::new(),
+                    predefined_values: Vec::new(),
+                    criterion: None,
+                    roles: Vec::new(),
+                    decoded_bytes,
+                    route_points: Some((owner, points)),
+                });
+            }
             let mut predefined_values = Vec::new();
             collect_predefined_values(&value, &owner, source, &mut predefined_values);
             Ok(ParsedConfigResource {
@@ -671,6 +710,7 @@ pub fn parse_config_resource_bounded(
                 criterion: None,
                 roles: Vec::new(),
                 decoded_bytes,
+                route_points: None,
             })
         }
     }
@@ -1683,6 +1723,8 @@ fn project_config_descriptor(
             catalog_default_presentation: None,
             characteristic_settings: None,
             characteristic_attributes: None,
+            business_process_route_points: None,
+            business_process_route_point_reference_type: None,
             catalog_standard_attributes: None,
             catalog_owners: None,
             document_number: None,
@@ -1787,6 +1829,8 @@ fn collect_descriptors(
             catalog_default_presentation: None,
             characteristic_settings: None,
             characteristic_attributes: None,
+            business_process_route_points: None,
+            business_process_route_point_reference_type: None,
             catalog_standard_attributes: None,
             catalog_owners: None,
             document_number: None,

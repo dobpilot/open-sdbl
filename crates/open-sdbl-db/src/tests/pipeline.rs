@@ -219,3 +219,137 @@ async fn times_out_only_when_the_config_pipeline_stops_making_progress() {
     assert!(error.is_database_timeout());
     assert!(error.to_string().contains("Config stream progress"));
 }
+
+#[tokio::test]
+async fn route_point_graph_is_attached_to_its_owner_across_batch_order() {
+    const OWNER: &str = "6db4bbe0-ce4c-4389-ad25-9a10c1857192";
+    for empty in [false, true] {
+        for reverse in [false, true] {
+            let graph: &[u8] = if empty {
+                include_bytes!("../../../../tests/fixtures/native-098/empty-route-points.deflate")
+            } else {
+                include_bytes!("../../../../tests/fixtures/native-098/route-points.deflate")
+            };
+            let mut resources = vec![
+                Ok(ConfigResource {
+                    file_name: OWNER.into(),
+                    compressed: include_bytes!(
+                        "../../../../tests/fixtures/native-098/business-process.deflate"
+                    )
+                    .as_slice()
+                    .into(),
+                }),
+                Ok(ConfigResource {
+                    file_name: format!("{OWNER}.7"),
+                    compressed: graph.into(),
+                }),
+            ];
+            if reverse {
+                resources.reverse();
+            }
+            let (descriptors, _, _, _) = decode_config_stream(
+                stream::iter(resources),
+                1,
+                2,
+                ConfigDecodeLimits::default(),
+                &mut NoProgress,
+                Duration::from_secs(5),
+            )
+            .await
+            .unwrap();
+            let owner = descriptors
+                .iter()
+                .find(|d| d.object_guid.as_str() == OWNER)
+                .unwrap();
+            let ids = owner.business_process_route_points.as_ref().unwrap();
+            assert_eq!(ids.len(), if empty { 0 } else { 10 });
+            for point in ids {
+                assert_eq!(point.owner_guid.as_str(), OWNER);
+                assert_ne!(point.point_guid.as_str(), OWNER);
+            }
+        }
+    }
+}
+
+#[tokio::test]
+async fn copied_native_point_guids_never_mix_process_owners_or_names() {
+    const INVITATION: &str = "28f131c2-f971-4a8c-bfc4-23f8606a7536";
+    const APPROVAL: &str = "efd06081-12d1-4734-9015-bff31c9f7966";
+    let resources = [
+        (
+            INVITATION,
+            include_bytes!("../../../../tests/fixtures/native-098/demo-invitation.deflate")
+                .as_slice(),
+        ),
+        (
+            "28f131c2-f971-4a8c-bfc4-23f8606a7536.7",
+            include_bytes!(
+                "../../../../tests/fixtures/native-098/demo-invitation-route-points.deflate"
+            )
+            .as_slice(),
+        ),
+        (
+            APPROVAL,
+            include_bytes!("../../../../tests/fixtures/native-098/demo-approval.deflate")
+                .as_slice(),
+        ),
+        (
+            "efd06081-12d1-4734-9015-bff31c9f7966.7",
+            include_bytes!(
+                "../../../../tests/fixtures/native-098/demo-approval-route-points.deflate"
+            )
+            .as_slice(),
+        ),
+    ]
+    .map(|(file_name, compressed)| {
+        Ok(ConfigResource {
+            file_name: file_name.into(),
+            compressed: compressed.into(),
+        })
+    });
+    let (descriptors, _, _, _) = decode_config_stream(
+        stream::iter(resources),
+        1,
+        2,
+        ConfigDecodeLimits::default(),
+        &mut NoProgress,
+        Duration::from_secs(5),
+    )
+    .await
+    .unwrap();
+    let invitation = descriptors
+        .iter()
+        .find(|d| d.object_guid.as_str() == INVITATION)
+        .unwrap();
+    let approval = descriptors
+        .iter()
+        .find(|d| d.object_guid.as_str() == APPROVAL)
+        .unwrap();
+    let invited = invitation.business_process_route_points.as_ref().unwrap();
+    let approved = approval.business_process_route_points.as_ref().unwrap();
+    assert_eq!(invited.len(), 8);
+    assert_eq!(approved.len(), 8);
+    assert!(
+        invited
+            .iter()
+            .all(|p| p.owner_guid == invitation.object_guid)
+    );
+    assert!(
+        approved
+            .iter()
+            .all(|p| p.owner_guid == approval.object_guid)
+    );
+    assert_eq!(invited[0].point_guid, approved[0].point_guid);
+    assert_eq!(invited[2].point_guid, approved[2].point_guid);
+    assert_eq!(invited[2].name, "Пригласить");
+    assert_eq!(approved[2].name, "Согласовать");
+    assert_ne!(
+        invitation.business_process_route_point_reference_type,
+        approval.business_process_route_point_reference_type
+    );
+    assert!(
+        !descriptors
+            .iter()
+            .any(|d| d.object_guid == invited[0].point_guid)
+    );
+}
