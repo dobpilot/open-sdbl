@@ -9,4 +9,4 @@
 
 ## 3. Validation
 - [x] 3.1 Run formatting, warning-free Clippy, workspace tests and warning-free rustdoc.
-- [ ] 3.2 Validate strict OpenSpec and archive after passing checks.
+- [x] 3.2 Validate strict OpenSpec and archive after passing checks.
