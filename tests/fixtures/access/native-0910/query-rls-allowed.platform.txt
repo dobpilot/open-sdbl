@@ -1,0 +1,10 @@
+principal	ControlRead
+owner.read	true
+dimension.view	false
+resource.view	false
+query.dimension	ok:1
+query.resource	ok:1
+query.allowed	ok:1
+manager.balance	ok:1
+manager.filter.a	ok:1
+manager.filter.b	ok:0

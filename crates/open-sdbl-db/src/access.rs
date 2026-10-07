@@ -163,6 +163,10 @@ impl AccessStore {
 /// совпадает с GUID владельца, а отдельного права реквизита у него нет.
 /// Это измерено на 1С 8.3.27.2342 независимо от default-прав реквизитов.
 ///
+/// Нативные измерения и ресурсы регистра накопления остатков с полными коллекциями
+/// и известными типами читаются через `Read` регистра независимо от `View`
+/// и default-флагов. Это не разрешает стандартные поля и не отменяет RLS.
+///
 /// # Errors
 ///
 /// Returns [`DbError::Data`] if the user or any role rights are absent, a
@@ -230,8 +234,15 @@ pub fn check_user_field_access(
                 used.field, used.object
             )));
         }
-        let native_catalog_read = object.kind == Some(MetadataKind::Catalog)
-            && verified_catalog_field(snapshot, &object.guid, used.field);
+        let native_programmatic_read = match object.kind {
+            Some(MetadataKind::Catalog) => {
+                verified_catalog_field(snapshot, &object.guid, used.field)
+            }
+            Some(MetadataKind::AccumulationRegister) => {
+                verified_accumulation_field(snapshot, &object.guid, used.field)
+            }
+            _ => false,
+        };
         let mut uncertain = false;
         let mut allowed = false;
         for role in &roles {
@@ -264,12 +275,12 @@ pub fn check_user_field_access(
                     } else if let Some(entry) = exact {
                         if let Some(read) = entry.right(&Right::Read) {
                             allowed = read.allowed;
-                        } else if native_catalog_read {
+                        } else if native_programmatic_read {
                             allowed = true;
                         } else {
                             uncertain = true;
                         }
-                    } else if native_catalog_read {
+                    } else if native_programmatic_read {
                         allowed = true;
                     } else if object.kind == Some(MetadataKind::Constant)
                         && *field_guid == object.guid.to_bytes()
@@ -280,7 +291,7 @@ pub fn check_user_field_access(
                     }
                 }
                 None => {
-                    if native_catalog_read {
+                    if native_programmatic_read {
                         allowed = true;
                     } else {
                         uncertain = true;
@@ -339,6 +350,46 @@ fn verified_catalog_field(snapshot: &MetadataSnapshot, object: &Guid, field: Fie
         }
         _ => false,
     }
+}
+
+// Нативные измерения `native-0910` подтверждают чтение измерений и ресурсов
+// через `Read` регистра остатков независимо от UI-права `View` и defaults. Поля других
+// коллекций и неполные описатели этим правилом не разрешаются; RLS проверяется
+// отдельно существующим `user_decisions` при компиляции запроса.
+fn verified_accumulation_field(snapshot: &MetadataSnapshot, object: &Guid, field: FieldId) -> bool {
+    let FieldId::Metadata(id) = field else {
+        return false;
+    };
+    let Some(owner) = snapshot
+        .descriptors()
+        .iter()
+        .find(|d| &d.object_guid == object && &d.resource_guid == object)
+    else {
+        return false;
+    };
+    let (
+        Some(dimensions),
+        Some(resources),
+        Some(open_sdbl::metadata::AccumulationRegisterKind::Balance),
+    ) = (
+        &owner.accumulation_register_dimensions,
+        &owner.accumulation_register_resources,
+        owner.accumulation_register_kind,
+    )
+    else {
+        return false;
+    };
+    dimensions
+        .iter()
+        .chain(resources)
+        .any(|guid| guid.to_bytes() == id.as_bytes())
+        && snapshot.descriptors().iter().any(|d| {
+            d.object_guid.to_bytes() == id.as_bytes()
+                && &d.resource_guid == object
+                && d.declared_types
+                    .as_ref()
+                    .is_some_and(|types| !types.is_empty())
+        })
 }
 
 /// Reads the users of the base once, if they are not read yet.

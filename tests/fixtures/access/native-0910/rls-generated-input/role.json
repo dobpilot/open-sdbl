@@ -1,0 +1,1 @@
+{"name": "ControlRls", "setForNewObjects": false, "setForAttributesByDefault": false, "objects": [{"name": "AccumulationRegister.ЗамерОстатков", "rights": {"Read": true}, "rls": {"Read": "ГДЕ Категория = \"b\""}}]}
