@@ -12,4 +12,4 @@
 - [x] cargo test --workspace --locked
 - [x] RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps --locked
 - [x] openspec validate --all --strict
-- [ ] Archive separately after green checks.
+- [x] Archive separately after green checks.
