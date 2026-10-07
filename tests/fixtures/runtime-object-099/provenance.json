@@ -1,0 +1,22 @@
+{
+  "platform": "8.3.27.2342",
+  "date": "2026-10-07",
+  "workspace": "/tmp/open-sdbl-099-native",
+  "infobase": "/tmp/open-sdbl-099-native-ib",
+  "operations": [
+    "unica.runtime.execute init",
+    "unica.runtime.execute build",
+    "unica.runtime.execute make"
+  ],
+  "cf_sha256": {
+    "standard-required.cf": "a32fa7439a76ab9cb188d358cb42d8e22d4509836c4c7bc9a74d4df4a69701b5",
+    "standard.cf": "eda9ec3e42f42164e6a6091d689602c573ad40040ce4a335493b22cef797f84e",
+    "fixed.cf": "10030f6b632b96406362d8e6a4fe66e2ed1e701e2a37e5765e545b5229e27788",
+    "number.cf": "7625f44f07203da0491a6ef02bc542469dbefe59806894ece739ecb99e4636d1",
+    "control.cf": "1b6a808795ca0f0caa2d0a67b77634fd2965c88105f1b5337df4991e7fccacbd",
+    "membership.cf": "1cbaf55d3fb3f212030fe5777eb1b686437bfa164e984eb1b479bfe338c315cd"
+  },
+  "reader_commit": "51473807dc8f874e9b06d84f466fff0861f3c4ac",
+  "xml_kind": "compiler-input, not native reverse dump",
+  "original_databases_modified": false
+}

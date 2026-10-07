@@ -1,0 +1,33 @@
+{
+  "platform": "8.3.27.2342",
+  "measured_date": "2026-10-07",
+  "configuration": "own isolated native business-process control",
+  "infobase": "/tmp/open-bsl-business-process-fill-enabled-1007-ib",
+  "owner": "6db4bbe0-ce4c-4389-ad25-9a10c1857192",
+  "operation": "Designer GUI enables Autofill on ТекстПробы and ФлагПробы; Save configuration and UpdateDBCfg; DumpConfigToFiles confirms both FillFromFillingValue=true; native runner restores an empty object module",
+  "baseline": "own-fields.source.xml and own-fields.native.config",
+  "native_difference": "Only the two owned attribute fill flags change 0 to 1; decompressed resource length remains 16764 bytes",
+  "container_reader_commit": "51473807dc8f874e9b06d84f466fff0861f3c4ac",
+  "files": {
+    "fill-enabled.bsl": {
+      "bytes": 6585,
+      "sha256": "a757c466e54c1eb521ec72cd195e23c5f0bc0ce051f3354518207b81228c85c1"
+    },
+    "fill-enabled.platform.txt": {
+      "bytes": 885,
+      "sha256": "492eb5141ea22f6c52fb255c5a81fb5d4419e0b2b64ad3d0465c412735c7f2b9"
+    },
+    "fill-enabled.source.xml": {
+      "bytes": 14403,
+      "sha256": "d9ff2d986fe15e2e57e3945f9fab93d6429372cad09e9319a91be3265706fb12"
+    },
+    "fill-enabled.native.deflate": {
+      "bytes": 1828,
+      "sha256": "9e7a8bc664014deb03e2046c973fee386d623a3530ebb9ac901d838a0ee7f3fe"
+    },
+    "fill-enabled.native.config": {
+      "bytes": 16764,
+      "sha256": "b28f54b6396c482e214566c9cfcc84118f5b0031d26018bfdb1545d3274d6736"
+    }
+  }
+}

@@ -1,0 +1,28 @@
+{
+  "platform": "8.3.27.2342",
+  "configuration_source": ".build/business-process-check-1006/src",
+  "native_owner": "6db4bbe0-ce4c-4389-ad25-9a10c1857192",
+  "container_reader_commit": "51473807dc8f874e9b06d84f466fff0861f3c4ac",
+  "files": {
+    "check-filling-required.source.xml": {
+      "bytes": 14053,
+      "sha256": "a669e6935af579bd5eae095cc1f7b0c0af2b3708105975ba7e894b992425cc40"
+    },
+    "check-filling-required.native.deflate": {
+      "bytes": 1830,
+      "sha256": "b048ce9790209d0f5481e72e922cb7d462ea89eeea73827138c0731b598743b9"
+    },
+    "check-filling-required.native.config": {
+      "bytes": 16764,
+      "sha256": "f2aa093e8af4dd7190c62efc40c29746c98efb14df858220f40c9591b8077a76"
+    },
+    "check-filling-required.bsl": {
+      "bytes": 1968,
+      "sha256": "62632d9e656ddf39dc8993a7b6f4120986b1a377b306ef4af3b49c085d0a9884"
+    },
+    "check-filling-required.platform.txt": {
+      "bytes": 216,
+      "sha256": "47596ba686d7fe33fc81d19ecd5def978d1699b068322bdda42b954a440d8dc5"
+    }
+  }
+}

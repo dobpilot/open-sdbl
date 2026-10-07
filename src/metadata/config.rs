@@ -240,6 +240,35 @@ pub struct DocumentNumberSettings {
     pub variable_length: bool,
 }
 
+/// Настройки номера бизнес-процесса из измеренной формы Config.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BusinessProcessNumberSettings {
+    /// Строковый либо числовой тип номера.
+    pub number_type: CatalogCodeType,
+    /// Настроенная длина номера.
+    pub length: u32,
+    /// Переменная допустимая длина; `false` означает фиксированную.
+    pub variable_length: bool,
+}
+
+/// Вид регистра накопления, приобретённый из Config, независимо от таблиц СУБД.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AccumulationRegisterKind {
+    /// Регистр остатков.
+    Balance,
+    /// Регистр оборотов.
+    Turnovers,
+}
+
+/// Настройка стандартного реквизита бизнес-процесса из полной нативной таблицы.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BusinessProcessStandardAttributeFillChecking {
+    /// Каноническое имя стандартного реквизита из XML платформы.
+    pub name: String,
+    /// Измеренный режим проверки заполнения.
+    pub fill_checking: FillChecking,
+}
+
 /// Периодичность нумерации документа, сверенная с нативными XML и Config.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DocumentNumberPeriodicity {
@@ -374,6 +403,29 @@ pub struct BusinessProcessRoutePoint {
 /// Human-readable data extracted from a bare-GUID Config resource.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ConfigDescriptor {
+    /// Настройки номера собственного бизнес-процесса; неизвестная форма — `None`.
+    pub business_process_number: Option<BusinessProcessNumberSettings>,
+    /// Полные собственные реквизиты в порядке конфигурации; `Some([])` — пусто,
+    /// `None` — неизвестная или неполная форма. Поля частей исключены.
+    pub business_process_attributes: Option<Vec<Guid>>,
+    /// Полные собственные табличные части; `Some([])` — проверенная пустота.
+    /// Неизвестная или неполная форма — `None`.
+    pub business_process_tabular_sections: Option<Vec<Guid>>,
+    /// Полная упорядоченная политика стандартных реквизитов бизнес-процесса;
+    /// неизвестная или неполная таблица — `None`, без подстановки умолчаний.
+    pub business_process_standard_fill_checking:
+        Option<Vec<BusinessProcessStandardAttributeFillChecking>>,
+    /// GUID порождённого типа объекта, отдельно от ссылки, менеджера и точки.
+    pub business_process_object_type: Option<Guid>,
+    /// Вид собственного регистра накопления; неизвестный код — `None`.
+    pub accumulation_register_kind: Option<AccumulationRegisterKind>,
+    /// Полные собственные измерения в порядке конфигурации; `Some([])` — пусто,
+    /// `None` — неизвестная или неполная форма. Ресурсы и реквизиты исключены.
+    pub accumulation_register_dimensions: Option<Vec<Guid>>,
+    /// Полные собственные ресурсы в порядке конфигурации; `Some([])` — пусто,
+    /// `None` — неизвестная или неполная форма. Измерения и реквизиты исключены.
+    pub accumulation_register_resources: Option<Vec<Guid>>,
+
     /// Измеренный режим проверки собственного, табличного или общего реквизита.
     /// `None` — неизвестная форма или код, а не отсутствие проверки.
     pub fill_checking: Option<FillChecking>,
@@ -1448,8 +1500,10 @@ impl<'input, 'resource> ConfigParser<'input, 'resource> {
                             SimpleValue::String(_) | SimpleValue::Null => None,
                         });
                         self.catalog_class_seen |= self.class_id == Some("57");
-                        self.runtime_class_seen |=
-                            matches!(self.class_id, Some("0" | "5" | "34" | "40" | "56" | "57"));
+                        self.runtime_class_seen |= matches!(
+                            self.class_id,
+                            Some("0" | "5" | "28" | "34" | "40" | "56" | "57")
+                        );
                         if self.class_id == Some(COMMON_ATTRIBUTE_CLASS_ID)
                             && self.separation.is_none()
                         {
@@ -1727,6 +1781,14 @@ fn project_config_descriptor(
             business_process_route_point_reference_type: None,
             catalog_standard_attributes: None,
             catalog_owners: None,
+            business_process_number: None,
+            business_process_attributes: None,
+            business_process_tabular_sections: None,
+            business_process_standard_fill_checking: None,
+            business_process_object_type: None,
+            accumulation_register_kind: None,
+            accumulation_register_dimensions: None,
+            accumulation_register_resources: None,
             document_number: None,
             document_numbering: None,
             document_attributes: None,
@@ -1833,6 +1895,14 @@ fn collect_descriptors(
             business_process_route_point_reference_type: None,
             catalog_standard_attributes: None,
             catalog_owners: None,
+            business_process_number: None,
+            business_process_attributes: None,
+            business_process_tabular_sections: None,
+            business_process_standard_fill_checking: None,
+            business_process_object_type: None,
+            accumulation_register_kind: None,
+            accumulation_register_dimensions: None,
+            accumulation_register_resources: None,
             document_number: None,
             document_numbering: None,
             document_attributes: None,

@@ -1261,3 +1261,7 @@ pub(crate) mod configuration_tests;
 #[cfg(test)]
 #[path = "tests/extension_details.rs"]
 mod extension_details_tests;
+
+#[cfg(test)]
+#[path = "tests/runtime_object_099.rs"]
+mod runtime_object_099_tests;

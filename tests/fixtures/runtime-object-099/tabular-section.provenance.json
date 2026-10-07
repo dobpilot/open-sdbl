@@ -1,0 +1,33 @@
+{
+  "platform": "8.3.27.2342",
+  "configuration_source": ".build/business-process-sections-1006/src",
+  "native_owner": "6db4bbe0-ce4c-4389-ad25-9a10c1857192",
+  "section": "5d690d4e-6362-4608-9b7a-09a8aab85b40",
+  "columns": [
+    "0ab06e1d-e9e2-460a-b8db-25e93ba0f8c7",
+    "cce47f04-b8ba-411b-ba13-113c71f447b2"
+  ],
+  "container_reader_commit": "51473807dc8f874e9b06d84f466fff0861f3c4ac",
+  "files": {
+    "tabular-section.source.xml": {
+      "bytes": 18781,
+      "sha256": "fabffa7adc956d5ea2f1469ae4b09c88a70ae05cf03b471b1352faf08c82c85d"
+    },
+    "tabular-section.native.deflate": {
+      "bytes": 2113,
+      "sha256": "026431fb96aee0bf760c840497e1061b2966504a4a3dcd4677f0251df79452bb"
+    },
+    "tabular-section.native.config": {
+      "bytes": 19972,
+      "sha256": "7dfab3eaee0c711fce4bbc19156fd9e55b0c52441dc958a47b19f71b8a154597"
+    },
+    "tabular-section.bsl": {
+      "bytes": 2823,
+      "sha256": "4ec3e052313d82518b2bcfc40b5b2875aad742987f722bb241a8a791985aa9e2"
+    },
+    "tabular-section.platform.txt": {
+      "bytes": 379,
+      "sha256": "5bcd0d6494c8fec02f66cba39c8179ec15b13b4eff4c7e4dcba24d72e666926c"
+    }
+  }
+}

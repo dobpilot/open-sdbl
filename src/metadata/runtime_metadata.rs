@@ -1,10 +1,12 @@
 //! Проекция измеренных настроек Config, общая для обоих провайдеров.
 
 use super::{
-    AttributeIndexing, CatalogCodeType, CatalogHierarchyType, CatalogStandardAttributeFillChecking,
-    CharacteristicSettings, CommonAttributeContentEntry, CommonAttributeUsage, CommonAttributeUse,
-    ConfigDeclaredType, ConfigDescriptor, ConfigFillingValue, DocumentNumberPeriodicity,
-    DocumentNumberSettings, DocumentNumberingSettings, FillChecking, Guid, Value,
+    AccumulationRegisterKind, AttributeIndexing, BusinessProcessNumberSettings,
+    BusinessProcessStandardAttributeFillChecking, CatalogCodeType, CatalogHierarchyType,
+    CatalogStandardAttributeFillChecking, CharacteristicSettings, CommonAttributeContentEntry,
+    CommonAttributeUsage, CommonAttributeUse, ConfigDeclaredType, ConfigDescriptor,
+    ConfigFillingValue, DocumentNumberPeriodicity, DocumentNumberSettings,
+    DocumentNumberingSettings, FillChecking, Guid, Value,
 };
 
 fn list(v: &Value) -> Option<&[Value]> {
@@ -176,16 +178,26 @@ fn fill_checking(value: &Value) -> Option<FillChecking> {
 }
 
 fn standard_fill_checking(class: &[Value]) -> Option<Vec<CatalogStandardAttributeFillChecking>> {
-    let outer = list(class.get(45)?)?;
+    standard_fill_checking_at(class, 45, 9, false)
+}
+
+fn standard_fill_checking_at(
+    class: &[Value],
+    index: usize,
+    count: usize,
+    process: bool,
+) -> Option<Vec<CatalogStandardAttributeFillChecking>> {
+    let outer = list(class.get(index)?)?;
     if outer.len() != 2 || outer.first().and_then(atom) != Some("1") {
         return None;
     }
     let rows = list(&outer[1])?;
-    // Девять записей и их порядок независимо сверены с нативными XML.
+    // Полные таблицы из девяти записей справочника и семи бизнес-процесса
+    // независимо сверены с нативными XML; ключи двух классов различаются.
     // Неполную или разреженную форму не выдаём как полный набор.
-    if rows.len() != 29
+    if rows.len() != 2 + count * 3
         || rows.first().and_then(atom) != Some("1")
-        || rows.get(1).and_then(atom) != Some("9")
+        || rows.get(1)?.as_u32()? as usize != count
     {
         return None;
     }
@@ -196,14 +208,21 @@ fn standard_fill_checking(class: &[Value]) -> Option<Vec<CatalogStandardAttribut
             return None;
         }
         let name = match atom(&key[0])? {
-            "-13" => "PredefinedDataName",
-            "-10" => "Predefined",
+            "-9" if process => "Started",
+            "-13" if !process => "PredefinedDataName",
+            "-10" if !process => "Predefined",
+            "-8" if process => "HeadTask",
             "-8" => "Ref",
+            "-7" if process => "Completed",
             "-7" => "DeletionMark",
-            "-6" => "IsFolder",
+            "-6" if !process => "IsFolder",
+            "-5" if process => "Ref",
             "-5" => "Owner",
+            "-4" if process => "DeletionMark",
             "-4" => "Parent",
+            "-3" if process => "Date",
             "-3" => "Description",
+            "-2" if process => "Number",
             "-2" => "Code",
             _ => return None,
         };
@@ -338,6 +357,13 @@ pub(super) fn project(value: &Value, resource: &Guid, descriptors: &mut [ConfigD
                     guid(&class[13]).filter(|id| !id.is_nil());
             }
         }
+        if kind == "30" {
+            project_business_process(value, resource, descriptors);
+        }
+        return;
+    }
+    if kind == "28" {
+        project_accumulation_register(value, resource, descriptors);
         return;
     }
     attribute_fill_checking(value, descriptors);
@@ -665,7 +691,32 @@ pub(super) fn resolve_named_types(descriptors: &mut [ConfigDescriptor]) {
         .filter(|d| d.declared_types.is_none())
         .map(|d| d.object_guid.clone())
         .collect::<std::collections::HashSet<_>>();
+    let process_sections = descriptors
+        .iter()
+        .filter_map(|d| d.business_process_tabular_sections.as_ref())
+        .flatten()
+        .cloned()
+        .collect::<std::collections::HashSet<_>>();
     for d in descriptors {
+        if process_sections.contains(&d.object_guid)
+            && d.tabular_section_attributes
+                .as_ref()
+                .is_some_and(|ids| ids.iter().any(|id| unknown.contains(id)))
+        {
+            d.tabular_section_attributes = None;
+        }
+        for ids in [
+            &mut d.business_process_attributes,
+            &mut d.accumulation_register_dimensions,
+            &mut d.accumulation_register_resources,
+        ] {
+            if ids
+                .as_ref()
+                .is_some_and(|ids| ids.iter().any(|id| unknown.contains(id)))
+            {
+                *ids = None;
+            }
+        }
         if d.characteristic_attributes
             .as_ref()
             .is_some_and(|ids| ids.iter().any(|id| unknown.contains(id)))
@@ -674,3 +725,160 @@ pub(super) fn resolve_named_types(descriptors: &mut [ConfigDescriptor]) {
         }
     }
 }
+
+/// Членство подтверждается заголовками и уже разобранными типами каждого члена.
+fn complete_attributes(
+    root: &[Value],
+    collection_id: &str,
+    descriptors: &[ConfigDescriptor],
+) -> Option<Vec<Guid>> {
+    let rows = collection(root, collection_id)?;
+    let wrapper = match collection_id {
+        "87c988de-ecbf-413b-87b0-b9516df05e28" => ("3", 7),
+        "888744e1-b616-11d4-9436-004095e12fc7" => ("8", 5),
+        "b64d9a43-1642-11d6-a3c7-0050bae0a776" => ("8", 6),
+        "b64d9a41-1642-11d6-a3c7-0050bae0a776" => ("5", 3),
+        _ => return None,
+    };
+    if !rows.iter().all(|row| {
+        list(row).is_some_and(|row| row.len() == 2)
+            && at(row, &[0]).and_then(list).is_some_and(|body| {
+                body.len() == wrapper.1 && body.first().and_then(atom) == Some(wrapper.0)
+            })
+            && at(row, &[0, 1])
+                .and_then(list)
+                .is_some_and(|body| body.len() == 23 && body.first().and_then(atom) == Some("27"))
+    }) {
+        return None;
+    }
+    let ids = membership(rows, &[0, 1, 1, 1])?;
+    ids.iter()
+        .all(|id| {
+            descriptors
+                .iter()
+                .filter(|d| &d.object_guid == id && d.declared_types.is_some())
+                .count()
+                == 1
+        })
+        .then_some(ids)
+}
+
+fn project_business_process(value: &Value, resource: &Guid, descriptors: &mut [ConfigDescriptor]) {
+    let Some(root) = list(value) else {
+        return;
+    };
+    let Some(class) = root.get(1).and_then(list) else {
+        return;
+    };
+    if class.len() != 49
+        || !matches!(atom(&class[2]), Some("0" | "1"))
+        || header(&class[1]).as_ref() != Some(resource)
+        || !class[3..15].iter().all(|v| guid(v).is_some())
+    {
+        return;
+    }
+    // Собственные XML/Config подтверждают класс 30, позиции 16/18/40,
+    // коллекции владельца и ту же форму реквизита 27, что у документа.
+    attribute_bodies(value, descriptors);
+    attribute_fill_checking(value, descriptors);
+    let attributes = complete_attributes(root, "87c988de-ecbf-413b-87b0-b9516df05e28", descriptors);
+    let section_rows = collection(root, "a3fe6537-d787-40f7-8a06-419d2f0c1cfd").filter(|rows| {
+        rows.iter().all(|row| {
+            list(row).is_some_and(|row| row.len() == 3)
+                && at(row, &[0]).and_then(list).is_some_and(|wrapper| {
+                    wrapper.len() == 3 && wrapper.first().and_then(atom) == Some("1")
+                })
+                && at(row, &[0, 1]).and_then(list).is_some_and(|body| {
+                    body.len() == 9
+                        && body.first().and_then(atom) == Some("11")
+                        && body[1..5].iter().all(|v| guid(v).is_some())
+                })
+        })
+    });
+    let sections = section_rows
+        .and_then(|rows| membership(rows, &[0, 1, 5, 1]))
+        .filter(|ids| {
+            ids.iter()
+                .all(|id| descriptors.iter().filter(|d| &d.object_guid == id).count() == 1)
+        });
+    if let Some(rows) = section_rows {
+        for row in rows {
+            let Some(id) = at(row, &[0, 1, 5, 1]).and_then(header) else {
+                continue;
+            };
+            let fields = list(row).filter(|r| r.len() == 3).and_then(|r| {
+                let body = at(row, &[0, 1]).and_then(list)?;
+                if body.len() != 9 || atom(&body[0]) != Some("11") {
+                    return None;
+                }
+                complete_attributes(r, "888744e1-b616-11d4-9436-004095e12fc7", descriptors)
+            });
+            if let Some(d) = descriptors.iter_mut().find(|d| d.object_guid == id) {
+                d.tabular_section_attributes = fields;
+            }
+        }
+    }
+    if let Some(d) = descriptors.iter_mut().find(|d| &d.object_guid == resource) {
+        d.business_process_object_type = guid(&class[3]).filter(|id| !id.is_nil());
+        d.business_process_number = (|| {
+            Some(BusinessProcessNumberSettings {
+                number_type: match atom(&class[16])? {
+                    "0" => CatalogCodeType::Number,
+                    "1" => CatalogCodeType::String,
+                    _ => return None,
+                },
+                length: class[18].as_u32()?,
+                variable_length: flag(&class[40])?,
+            })
+        })();
+        d.business_process_attributes = attributes;
+        d.business_process_tabular_sections = sections;
+        d.business_process_standard_fill_checking = standard_fill_checking_at(class, 30, 7, true)
+            .map(|rows| {
+                rows.into_iter()
+                    .map(|r| BusinessProcessStandardAttributeFillChecking {
+                        name: r.name,
+                        fill_checking: r.fill_checking,
+                    })
+                    .collect()
+            });
+    }
+}
+
+fn project_accumulation_register(
+    value: &Value,
+    resource: &Guid,
+    descriptors: &mut [ConfigDescriptor],
+) {
+    let Some(root) = list(value) else {
+        return;
+    };
+    let Some(class) = root.get(1).and_then(list) else {
+        return;
+    };
+    // Нативные регистры обоих видов подтверждают класс 28/26,
+    // собственный заголовок 13/1 и RegisterType в позиции 15.
+    if class.len() != 26
+        || !class[1..13].iter().all(|v| guid(v).is_some())
+        || at(value, &[1, 13, 1]).and_then(header).as_ref() != Some(resource)
+    {
+        return;
+    }
+    attribute_bodies(value, descriptors);
+    attribute_fill_checking(value, descriptors);
+    let dimensions = complete_attributes(root, "b64d9a43-1642-11d6-a3c7-0050bae0a776", descriptors);
+    let resources = complete_attributes(root, "b64d9a41-1642-11d6-a3c7-0050bae0a776", descriptors);
+    if let Some(d) = descriptors.iter_mut().find(|d| &d.object_guid == resource) {
+        d.accumulation_register_kind = match atom(&class[15]) {
+            Some("0") => Some(AccumulationRegisterKind::Balance),
+            Some("1") => Some(AccumulationRegisterKind::Turnovers),
+            _ => None,
+        };
+        d.accumulation_register_dimensions = dimensions;
+        d.accumulation_register_resources = resources;
+    }
+}
+
+#[cfg(test)]
+#[path = "runtime_metadata_tests.rs"]
+mod tests;
