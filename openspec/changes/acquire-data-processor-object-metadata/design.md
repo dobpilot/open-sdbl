@@ -1,0 +1,11 @@
+# Design
+
+Reuse runtime metadata projection and nested descriptors. Recognize only independently measured native layouts from paired Designer XML and CF. None means unknown; Some(empty) means a verified empty collection. Reject incomplete, malformed and duplicate membership rather than publishing a shortened list. Keep generated object and manager types distinct. Selective acquisition retains descriptors after resource bytes are discarded. Existing descriptor literals gain only mandatory None fields.
+
+## Native evidence and projection
+
+A copied own file infobase was compiled by 1C 8.3.27.2342, then exported independently with Designer DumpCfg and DumpConfigToFiles. The primary stable control has reversed own attribute order, two populated sections, one empty section, and a second empty processor. A separate second CF/XML pair reverses fields within the second section. The checked-in membership TSV files are derived from native XML, not decoder output. Provenance contains hashes of both native containers and extracted raw-DEFLATE resources. No application BSL was executed and no working infobase was changed.
+
+The measured class is 17 with twelve elements, generated object GUID at index 1, manager GUID at 7 and owner header at 3/1. Attribute and section-field wrappers are 0/2 with the existing 27/23 body. Section wrappers are 0/2 with an 11/9 body. The processor's section-field collection is distinct from the document collection; it must not be substituted by analogy. The existing streaming decoder enables its existing materialized projection only for this newly measured class. There is no second type decoder.
+
+Completeness is tracked independently for own attributes, section identities and each section's fields. Known section identities remain available if one section has unknown fields. Missing, duplicate, malformed or unresolvable typed members invalidate their whole affected list. Existing named-type expansion additionally invalidates processor and section membership if expansion cannot complete. Type coverage of these new controls is Boolean and String/12/Variable; this does not restrict preservation through the already existing common qualified-type decoder.

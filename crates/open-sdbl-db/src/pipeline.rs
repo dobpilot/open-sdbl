@@ -1265,3 +1265,7 @@ mod extension_details_tests;
 #[cfg(test)]
 #[path = "tests/runtime_object_099.rs"]
 mod runtime_object_099_tests;
+
+#[cfg(test)]
+#[path = "tests/data_processor_0911.rs"]
+mod data_processor_0911_tests;

@@ -1,0 +1,24 @@
+{
+  "platform": "8.3.27.2342",
+  "date": "2026-10-08",
+  "infobase": "/tmp/sdbl0911-native-ib",
+  "cf": "Designer /DumpCfg",
+  "xml": "Designer /DumpConfigToFiles",
+  "extraction": "saby v8unpack 51473807dc8f874e9b06d84f466fff0861f3c4ac container_reader.extract(deflate=False, recursive=False), container 1",
+  "sha256": {
+    "Замеры.deflate": "b3497cabbf73c2fab59d0ebd2b05c836094e532955dbf84d60188bca937f9fcc",
+    "Замеры.xml": "8bfb2dcdbc7a6a266a514556d38188ca7fb68fe5fce851a19c8bc2cb1dc22ea9",
+    "Замеры.config": "aa31e02fc65da90c9c5920d976739fd7afe87bd3a60d54a8d150ce6ef819c0a7",
+    "ПустаяОбработка.deflate": "1586b798e1b02139ec988413cef87364ea3fcabff31f520e647a94a9655f8a16",
+    "ПустаяОбработка.xml": "c5c38fbaaa104215af046c1c89165289af2c3180200954fa57e9d005e8d618ca",
+    "ПустаяОбработка.config": "a98ec8d1579cd96f636eab335f5742ba0fc896b96cfdc09195d87fe84b507d31",
+    "members.tsv": "6395ec89529511840f0675ccde3176bb030832f625b3053ca4b944f66aaa4ed5",
+    "control.cf": "53815166b57109ef943eaf9a5f2704d823df9a3559e5b8401d24c0c9a9729821",
+    "order.cf": "2893da92e8369c05ac27d65e16ed46dfe6f63f0bf71214349b43e734918ebdff",
+    "order.deflate": "184e0c4070f8f6dc2e5deb792020a6ca26b1b1016ae775ac83d7902a67e29ded",
+    "order.xml": "7fcd78aa4f14cf47d7719b7732f83abaf15a5e9f8f84d26750e7bd279585eca3",
+    "order.config": "0b0dcd8fb47227a42f17c011003876ec94aefa02afe663e18136dd2593f7453a",
+    "order.tsv": "f701e15d79caaf2793d4af5679becf05d721041054484220476cafd6782275c6"
+  },
+  "order_control": "Second native CF/XML export after reversing only fields of ДругаяЧасть; original stable control unchanged."
+}

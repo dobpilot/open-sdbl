@@ -1,0 +1,11 @@
+owner	ff92317d-71e7-4664-a13a-18bd31fd3701	Замеры	7992a8c3-af89-4b9f-ba1a-836068499055	2a96114f-94f1-404e-abaf-96de3784bc25
+attribute	ff92317d-71e7-4664-a13a-18bd31fd3701	019163ac-4ca7-58a3-b494-1424ff37dcac	ФлагПробы
+attribute	ff92317d-71e7-4664-a13a-18bd31fd3701	4094ef40-0451-52d7-9bd7-72697aa6c353	ТекстПробы
+section	ff92317d-71e7-4664-a13a-18bd31fd3701	6a19c0b3-7a97-5c41-9733-0673a8386cc7	СтрокиПробы
+field	6a19c0b3-7a97-5c41-9733-0673a8386cc7	30ca5ee3-312f-5ee0-880a-6f204d38a7b3	ТекстСтроки
+field	6a19c0b3-7a97-5c41-9733-0673a8386cc7	7d05d782-9e79-54bd-9a0d-86d01f2443aa	ФлагСтроки
+section	ff92317d-71e7-4664-a13a-18bd31fd3701	dbc36ece-60ec-4c57-b7c9-fab0ceb68b39	ДругаяЧасть
+field	dbc36ece-60ec-4c57-b7c9-fab0ceb68b39	f69c8f54-e933-4472-b889-db65ef341cf5	ДругойТекстСтроки
+field	dbc36ece-60ec-4c57-b7c9-fab0ceb68b39	311b8a21-f981-4557-b932-9a50eed12929	ДругойФлагСтроки
+section	ff92317d-71e7-4664-a13a-18bd31fd3701	bf53247a-fc1d-4782-83d2-e579d8f3c010	ПустаяЧасть
+owner	4722aab2-abc1-40ce-80b4-6f540dfa1891	ПустаяОбработка	4c809e7f-a1a6-4ce1-8228-c1a744e99f72	65d35765-4eb9-4862-9d87-4d89182a5d50

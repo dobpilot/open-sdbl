@@ -403,6 +403,14 @@ pub struct BusinessProcessRoutePoint {
 /// Human-readable data extracted from a bare-GUID Config resource.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ConfigDescriptor {
+    /// Полные собственные реквизиты обработки в порядке конфигурации.
+    /// `Some([])` — проверенная пустота, `None` — неизвестный или неполный состав.
+    pub data_processor_attributes: Option<Vec<Guid>>,
+    /// Полные собственные части обработки; поля частей перечислены отдельно.
+    /// `Some([])` — проверенная пустота, `None` — неизвестный или неполный состав.
+    pub data_processor_tabular_sections: Option<Vec<Guid>>,
+    /// GUID порождённого типа объекта обработки, отдельно от типа менеджера.
+    pub data_processor_object_type: Option<Guid>,
     /// Настройки номера собственного бизнес-процесса; неизвестная форма — `None`.
     pub business_process_number: Option<BusinessProcessNumberSettings>,
     /// Полные собственные реквизиты в порядке конфигурации; `Some([])` — пусто,
@@ -1502,7 +1510,7 @@ impl<'input, 'resource> ConfigParser<'input, 'resource> {
                         self.catalog_class_seen |= self.class_id == Some("57");
                         self.runtime_class_seen |= matches!(
                             self.class_id,
-                            Some("0" | "5" | "28" | "34" | "40" | "56" | "57")
+                            Some("0" | "5" | "17" | "28" | "34" | "40" | "56" | "57")
                         );
                         if self.class_id == Some(COMMON_ATTRIBUTE_CLASS_ID)
                             && self.separation.is_none()
@@ -1783,6 +1791,9 @@ fn project_config_descriptor(
             catalog_owners: None,
             business_process_number: None,
             business_process_attributes: None,
+            data_processor_attributes: None,
+            data_processor_tabular_sections: None,
+            data_processor_object_type: None,
             business_process_tabular_sections: None,
             business_process_standard_fill_checking: None,
             business_process_object_type: None,
@@ -1897,6 +1908,9 @@ fn collect_descriptors(
             catalog_owners: None,
             business_process_number: None,
             business_process_attributes: None,
+            data_processor_attributes: None,
+            data_processor_tabular_sections: None,
+            data_processor_object_type: None,
             business_process_tabular_sections: None,
             business_process_standard_fill_checking: None,
             business_process_object_type: None,

@@ -362,6 +362,10 @@ pub(super) fn project(value: &Value, resource: &Guid, descriptors: &mut [ConfigD
         }
         return;
     }
+    if kind == "17" {
+        project_data_processor(value, resource, descriptors);
+        return;
+    }
     if kind == "28" {
         project_accumulation_register(value, resource, descriptors);
         return;
@@ -693,7 +697,13 @@ pub(super) fn resolve_named_types(descriptors: &mut [ConfigDescriptor]) {
         .collect::<std::collections::HashSet<_>>();
     let process_sections = descriptors
         .iter()
-        .filter_map(|d| d.business_process_tabular_sections.as_ref())
+        .flat_map(|d| {
+            [
+                d.business_process_tabular_sections.as_ref(),
+                d.data_processor_tabular_sections.as_ref(),
+            ]
+        })
+        .flatten()
         .flatten()
         .cloned()
         .collect::<std::collections::HashSet<_>>();
@@ -707,6 +717,7 @@ pub(super) fn resolve_named_types(descriptors: &mut [ConfigDescriptor]) {
         }
         for ids in [
             &mut d.business_process_attributes,
+            &mut d.data_processor_attributes,
             &mut d.accumulation_register_dimensions,
             &mut d.accumulation_register_resources,
         ] {
@@ -735,6 +746,7 @@ fn complete_attributes(
     let rows = collection(root, collection_id)?;
     let wrapper = match collection_id {
         "87c988de-ecbf-413b-87b0-b9516df05e28" => ("3", 7),
+        "ec6bb5e5-b7a8-4d75-bec9-658107a699cf" | "5d24a9d1-098e-11d6-b9b8-0050bae0a95d" => ("0", 2),
         "888744e1-b616-11d4-9436-004095e12fc7" => ("8", 5),
         "b64d9a43-1642-11d6-a3c7-0050bae0a776" => ("8", 6),
         "b64d9a41-1642-11d6-a3c7-0050bae0a776" => ("5", 3),
@@ -761,6 +773,64 @@ fn complete_attributes(
                 == 1
         })
         .then_some(ids)
+}
+
+fn project_data_processor(value: &Value, resource: &Guid, descriptors: &mut [ConfigDescriptor]) {
+    let Some(root) = list(value) else {
+        return;
+    };
+    let Some(class) = root.get(1).and_then(list) else {
+        return;
+    };
+    // Парные нативные CF/XML подтверждают класс 17/12, объект на позиции 1,
+    // менеджер на 7 и отдельные коллекции собственных реквизитов и частей.
+    if class.len() != 12
+        || !list(&class[3]).is_some_and(|w| w.len() == 2 && atom(&w[0]) == Some("0"))
+        || at(value, &[1, 3, 1]).and_then(object_header).as_ref() != Some(resource)
+        || ![1, 2, 7, 8, 9].iter().all(|i| guid(&class[*i]).is_some())
+    {
+        return;
+    }
+    attribute_bodies(value, descriptors);
+    attribute_fill_checking(value, descriptors);
+    let attributes = complete_attributes(root, "ec6bb5e5-b7a8-4d75-bec9-658107a699cf", descriptors);
+    let rows = collection(root, "2bcef0d1-0981-11d6-b9b8-0050bae0a95d").filter(|rows| {
+        rows.iter().all(|row| {
+            list(row).is_some_and(|r| r.len() == 3)
+                && at(row, &[0])
+                    .and_then(list)
+                    .is_some_and(|w| w.len() == 2 && atom(&w[0]) == Some("0"))
+                && at(row, &[0, 1]).and_then(list).is_some_and(|b| {
+                    b.len() == 9
+                        && atom(&b[0]) == Some("11")
+                        && b[1..5].iter().all(|v| guid(v).is_some())
+                })
+        })
+    });
+    let sections = rows
+        .and_then(|r| membership(r, &[0, 1, 5, 1]))
+        .filter(|ids| {
+            ids.iter()
+                .all(|id| descriptors.iter().filter(|d| &d.object_guid == id).count() == 1)
+        });
+    if let Some(rows) = rows {
+        for row in rows {
+            let Some(id) = at(row, &[0, 1, 5, 1]).and_then(header) else {
+                continue;
+            };
+            let fields = list(row).and_then(|r| {
+                complete_attributes(r, "5d24a9d1-098e-11d6-b9b8-0050bae0a95d", descriptors)
+            });
+            if let Some(d) = descriptors.iter_mut().find(|d| d.object_guid == id) {
+                d.tabular_section_attributes = fields;
+            }
+        }
+    }
+    if let Some(d) = descriptors.iter_mut().find(|d| &d.object_guid == resource) {
+        d.data_processor_attributes = attributes;
+        d.data_processor_tabular_sections = sections;
+        d.data_processor_object_type = guid(&class[1]).filter(|id| !id.is_nil());
+    }
 }
 
 fn project_business_process(value: &Value, resource: &Guid, descriptors: &mut [ConfigDescriptor]) {
@@ -882,3 +952,7 @@ fn project_accumulation_register(
 #[cfg(test)]
 #[path = "runtime_metadata_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "data_processor_metadata_tests.rs"]
+mod data_processor_tests;
