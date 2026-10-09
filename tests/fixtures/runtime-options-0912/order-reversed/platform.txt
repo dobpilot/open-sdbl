@@ -1,0 +1,4 @@
+file.begin	common-attribute-condition-ORDER_REVERSED-1
+COMMON_ATTRIBUTE_CONDITION_ORDER.ORDER_REVERSED_COUNT	5
+COMMON_ATTRIBUTE_CONDITION_ORDER.ORDER_REVERSED_CONTENT	Catalog.ВладелецПробы:Auto:undefined;Constant.ЗначениеОпцииПробы:Auto:undefined;Catalog.ЗамерВременныхТаблиц:Use:Constant.ЗначениеОпцииПробы;Catalog.БСправочник:Auto:undefined;Constant.АКонстанта:DontUse:undefined;
+file.end	common-attribute-condition-ORDER_REVERSED-1

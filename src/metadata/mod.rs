@@ -26,14 +26,17 @@ mod value_storage;
 
 pub use config::{
     AccumulationRegisterKind, AttributeIndexing, BusinessProcessNumberSettings,
-    BusinessProcessRoutePoint, BusinessProcessStandardAttributeFillChecking, CatalogCodeType,
-    CatalogDefaultPresentation, CatalogHierarchyType, CatalogStandardAttributeFillChecking,
-    CatalogStandardAttributes, CharacteristicSettings, CommonAttributeContentEntry,
+    BusinessProcessRoutePoint, BusinessProcessStandardAttributeFillChecking, CatalogAttributeUse,
+    CatalogCodeType, CatalogDefaultPresentation, CatalogHierarchyType,
+    CatalogStandardAttributeFillChecking, CatalogStandardAttributes, CharacteristicSettings,
+    CommonAttributeCandidate, CommonAttributeConditionalSeparation, CommonAttributeContentEntry,
+    CommonAttributeContentUse, CommonAttributeRuntimeContentEntry, CommonAttributeSeparation,
     CommonAttributeUsage, CommonAttributeUse, ConfigCriterion, ConfigDeclaredType,
     ConfigDescriptor, ConfigFieldPurpose, ConfigFillingValue, ConfigPredefinedValue,
     DataSeparationSettings, DocumentNumberPeriodicity, DocumentNumberSettings,
-    DocumentNumberingSettings, FillChecking, ParsedConfigResource, PredefinedSource,
-    SeparatedDataUse, Synonym, parse_config_criterion, parse_config_descriptor,
+    DocumentNumberingSettings, FillChecking, FunctionalOptionLocation,
+    InformationRegisterPeriodicity, InformationRegisterWriteMode, ParsedConfigResource,
+    PredefinedSource, SeparatedDataUse, Synonym, parse_config_criterion, parse_config_descriptor,
     parse_config_descriptors, parse_config_predefined_values, parse_config_resource_bounded,
 };
 pub use db_names::{DbNameEntry, DbNames, MetadataKind, parse_db_names};

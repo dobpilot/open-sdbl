@@ -1,0 +1,16 @@
+﻿canary	CommonAttribute.НаименованиеЯзык1
+content	AccumulationRegister.ОстаткиПусто:Auto
+content	Catalog.ВладелецПробы:Auto
+content	Task.ЗамерЗадачи:Auto
+content	Sequence.ЗамерПоследовательности:Auto
+content	CalculationRegister.ЗамерРегистраРасчетов:Auto
+content	ExchangePlan.ЗамерОбмена:Auto
+content	Document.PeriodNone:Auto
+content	BusinessProcess.ЗамерБизнесПроцесса:Auto
+content	AccountingRegister.ЗамерБухгалтерии:Auto
+content	Catalog.ЗамерВременныхТаблиц:Use
+content	ChartOfCalculationTypes.ЗамерРасчетов:Auto
+content	InformationRegister.ОпцииПробы:Auto
+content	ChartOfAccounts.ЗамерСчетов:Auto
+content	DocumentJournal.ЗамерЖурнала:Auto
+content	ChartOfCharacteristicTypes.ЗамерХарактеристик:Auto

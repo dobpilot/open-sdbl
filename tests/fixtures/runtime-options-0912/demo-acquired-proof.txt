@@ -1,0 +1,8 @@
+2026-10-09 actual demo, SDK 0.9.12
+Read-only acquired metadata; terminal exit 0.
+configuration_common_attribute_candidates=Some(1715)
+common_attribute_content.complete=13
+common_attribute_content.unknown=[]
+ScheduledJob metadata identities in complete inventory=157
+No BSL startup; no database writes. Selected principal rights acquired before metadata projection.
+Evidence source: /tmp/open-bsl-demo-readonly-common-complete-sdk0912-1009.log (parent integration probe).

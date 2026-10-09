@@ -1,0 +1,4 @@
+file.begin	common-attribute-condition-ORDER-1
+COMMON_ATTRIBUTE_CONDITION_ORDER.ORDER_COUNT	5
+COMMON_ATTRIBUTE_CONDITION_ORDER.ORDER_CONTENT	Catalog.ВладелецПробы:Auto:undefined;Constant.ЗначениеОпцииПробы:Auto:undefined;Catalog.ЗамерВременныхТаблиц:Use:Constant.ЗначениеОпцииПробы;Catalog.БСправочник:Auto:undefined;Constant.АКонстанта:DontUse:undefined;
+file.end	common-attribute-condition-ORDER-1

@@ -1,0 +1,7 @@
+# Design
+
+Use acquired ConfigDescriptor fields and GUID links. Validate complete native structures before publishing lists. Native XML/CF controls from open-bsl define supported encodings. None means unknown; explicit absence uses a separate variant. CommonAttributeUsage.content remains the explicit Config settings list and does not claim full platform membership. Additional classes and nonempty conditional settings require independent native controls; no defaults inferred from storage or names. Retain descriptors through selective acquisition.
+
+Native paired controls confirm root applicability across persistent application classes, ascending canonical object GUID iteration independent of XML explicit ordering, constants only in Separate and journals/sequences only in DontUse. Preserve explicit Auto with a three-valued content-use enum while auto_use retains its two-valued enum. Boolean constant conditional references are resolved independently; other nonzero forms remain unknown. Extra source controls retain catalog Use and information-register mode/periodicity, without implementing their runtime evaluation.
+
+Independent scheduled-job probes (Use=false) confirm root category 11bdaf85-d5ad-4d91-bb24-aa0eee139052 participates only in Separate. Keep separate-only applicability distinct from the Constant kind used for source and condition resolution. Two unknown demo common attributes were traced to this class by acquired GUID classification; actual demo acquisition must confirm completion before archive.

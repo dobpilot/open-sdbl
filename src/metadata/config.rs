@@ -79,8 +79,9 @@ pub enum SeparatedDataUse {
     IndependentAndShared,
 }
 
-/// Separation settings of a common attribute in `Разделять` mode, as
-/// stored after the attribute's content list in its Config resource.
+/// Настройки после явного состава общего реквизита в Config.
+/// Их наличие не определяет режим; режим приобретён независимо в
+/// `ConfigDescriptor::common_attribute_separation`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DataSeparationSettings {
     /// Separated-data-use mode.
@@ -331,6 +332,76 @@ pub enum ConfigFillingValue {
     },
 }
 
+/// Измеренное использование реквизита справочника.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CatalogAttributeUse {
+    /// Только элементы.
+    ForItem,
+    /// Только группы.
+    ForFolder,
+    /// Группы и элементы.
+    ForFolderAndItem,
+}
+
+/// Измеренный режим записи регистра сведений.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum InformationRegisterWriteMode {
+    /// Независимый регистр.
+    Independent,
+    /// Подчинение регистратору.
+    RecorderSubordinate,
+}
+
+/// Измеренная периодичность регистра сведений.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum InformationRegisterPeriodicity {
+    /// Непериодический регистр.
+    Nonperiodical,
+    /// Периодичность в пределах дня.
+    Day,
+}
+
+/// Измеренный режим разделения общего реквизита.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CommonAttributeSeparation {
+    /// Не разделять данные.
+    DontUse,
+    /// Разделять данные.
+    Separate,
+}
+
+/// Известное условие разделения явной записи состава.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CommonAttributeConditionalSeparation {
+    /// Нативное отсутствие условия (`Неопределено`).
+    Undefined,
+    /// Измеренная ссылка на булеву константу.
+    Constant(Guid),
+}
+
+/// Приобретённый источник функциональной опции.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum FunctionalOptionLocation {
+    /// Константа конфигурации.
+    Constant(Guid),
+    /// Собственный реквизит справочника.
+    CatalogAttribute {
+        /// GUID справочника-владельца.
+        owner: Guid,
+        /// GUID собственного реквизита.
+        attribute: Guid,
+    },
+    /// Ресурс регистра сведений.
+    InformationRegisterResource {
+        /// GUID регистра-владельца.
+        owner: Guid,
+        /// GUID ресурса регистра.
+        resource: Guid,
+    },
+    /// Известное отсутствие источника.
+    Absent,
+}
+
 /// Измеренный режим использования общего реквизита.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CommonAttributeUse {
@@ -340,13 +411,52 @@ pub enum CommonAttributeUse {
     DontUse,
 }
 
-/// Измеренная запись состава общего реквизита.
+/// Явная запись настроек состава общего реквизита в Config.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CommonAttributeContentEntry {
     /// GUID объекта конфигурации, к которому относится настройка.
     pub object: Guid,
     /// Явное использование для объекта.
-    pub usage: CommonAttributeUse,
+    pub usage: CommonAttributeContentUse,
+    /// Известное отсутствие условия; `None` — неподдержанная форма.
+    pub conditional_separation: Option<CommonAttributeConditionalSeparation>,
+    /// Нативный GUID условия, включая нулевой; тип разрешается в снимке.
+    pub conditional_separation_guid: Guid,
+}
+
+/// Использование элемента полной платформенной коллекции состава.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CommonAttributeContentUse {
+    /// Автоматическое использование: явный Auto или отсутствие настройки.
+    Auto,
+    /// Явно использовать реквизит.
+    Use,
+    /// Явно не использовать реквизит.
+    DontUse,
+}
+
+/// Элемент полного состава, отдельный от явной настройки Config.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CommonAttributeRuntimeContentEntry {
+    /// GUID объекта конфигурации.
+    pub object: Guid,
+    /// Измеренный режим элемента.
+    pub usage: CommonAttributeContentUse,
+    /// Известное условие или `None` для неподдержанного типа.
+    pub conditional_separation: Option<CommonAttributeConditionalSeparation>,
+}
+
+/// Приобретённый применимый объект корневой конфигурации.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CommonAttributeCandidate {
+    /// GUID объекта конфигурации.
+    pub object: Guid,
+    /// Константа имеет отдельно измеренную применимость режимов.
+    pub constant: bool,
+    /// Константа или регламентное задание участвует только при разделении.
+    pub separated_only: bool,
+    /// Последовательность или журнал участвует только без разделения.
+    pub unseparated_only: bool,
 }
 
 /// Полные измеренные настройки использования общего реквизита.
@@ -354,7 +464,8 @@ pub struct CommonAttributeContentEntry {
 pub struct CommonAttributeUsage {
     /// Автоматическое использование; не подменяет явно заданный состав.
     pub auto_use: CommonAttributeUse,
-    /// Полный состав в порядке Config; пустой список — известное отсутствие.
+    /// Полный список явных настроек в порядке Config; это не коллекция BSL
+    /// `Состав`. Пустота означает отсутствие явных настроек, а не объектов.
     pub content: Vec<CommonAttributeContentEntry>,
 }
 
@@ -403,6 +514,34 @@ pub struct BusinessProcessRoutePoint {
 /// Human-readable data extracted from a bare-GUID Config resource.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ConfigDescriptor {
+    /// Использование собственного реквизита справочника; `None` — неизвестно.
+    pub catalog_attribute_use: Option<CatalogAttributeUse>,
+    /// Независимо приобретённый режим записи регистра; `None` — неизвестно.
+    pub information_register_write_mode: Option<InformationRegisterWriteMode>,
+    /// Поддержанная периодичность регистра; неизвестные коды — `None`.
+    pub information_register_periodicity: Option<InformationRegisterPeriodicity>,
+    /// Полный измеренный состав измерений; неизвестный или неполный — `None`.
+    pub information_register_dimensions: Option<Vec<Guid>>,
+    /// Полный измеренный состав ресурсов; проверенная пустота — `Some(vec![])`.
+    pub information_register_resources: Option<Vec<Guid>>,
+    /// Полный платформенный состав измеренной формы; `None` — неизвестный
+    /// класс, неполный корень или отсутствующий член. Не явные настройки.
+    pub common_attribute_content: Option<Vec<CommonAttributeRuntimeContentEntry>>,
+    /// Полный приобретённый набор применимых классов корневой конфигурации.
+    /// Непустой неподдержанный класс делает весь набор неизвестным.
+    pub configuration_common_attribute_candidates: Option<Vec<CommonAttributeCandidate>>,
+    /// Нативный GUID источника до межресурсного разрешения; `None` — неизвестно.
+    pub functional_option_location_guid: Option<Guid>,
+    /// Разрешённый источник; `None` — неизвестная форма или оборванная связь.
+    pub functional_option_location: Option<FunctionalOptionLocation>,
+    /// Явный привилегированный режим; `None` не означает `false`.
+    pub functional_option_privileged_get_mode: Option<bool>,
+    /// Полный `Use` параметра опций; `Some([])` — проверенная пустота.
+    pub functional_option_parameter_use: Option<Vec<Guid>>,
+    /// Полный корневой список параметров, отдельно от связей конкретной опции.
+    pub configuration_functional_option_parameters: Option<Vec<Guid>>,
+    /// Независимый режим общего реквизита; `None` — неизвестная форма.
+    pub common_attribute_separation: Option<CommonAttributeSeparation>,
     /// Полные собственные реквизиты обработки в порядке конфигурации.
     /// `Some([])` — проверенная пустота, `None` — неизвестный или неполный состав.
     pub data_processor_attributes: Option<Vec<Guid>>,
@@ -532,9 +671,9 @@ pub struct ConfigDescriptor {
     pub field_purpose: Option<ConfigFieldPurpose>,
     /// Whether the descriptor belongs to the authoritative enum-values collection.
     pub enumeration_value: bool,
-    /// Separation settings of a common attribute in `Разделять` mode; `None`
-    /// for every other descriptor and for a resource whose tail does not
-    /// match the known layout.
+    /// Настройки общего реквизита из распознанного хвоста Config.
+    /// Наличие настроек не устанавливает режим разделения; см.
+    /// `common_attribute_separation`. `None` — неизвестный хвост или иной объект.
     pub separation: Option<DataSeparationSettings>,
     /// Reference type identifiers the type description of this field names,
     /// in source order. SchemaStorage leaves the target of a reference that
@@ -1242,7 +1381,13 @@ impl<'input, 'resource> ConfigParser<'input, 'resource> {
         }
         // Материализуем только классы с измеренной дополнительной проекцией.
         // Остальные сохраняют потоковый путь; отдельного парсера типов нет.
-        if self.runtime_class_seen {
+        if self.runtime_class_seen
+            || self
+                .input
+                .trim_start_matches('\u{feff}')
+                .trim_start()
+                .starts_with("{2,")
+        {
             let value = parse_serialized(self.input.as_bytes())?;
             super::runtime_metadata::project(&value, self.resource_guid, &mut descriptors);
         }
@@ -1510,7 +1655,18 @@ impl<'input, 'resource> ConfigParser<'input, 'resource> {
                         self.catalog_class_seen |= self.class_id == Some("57");
                         self.runtime_class_seen |= matches!(
                             self.class_id,
-                            Some("0" | "5" | "17" | "28" | "34" | "40" | "56" | "57")
+                            Some(
+                                "0" | "2"
+                                    | "5"
+                                    | "16"
+                                    | "17"
+                                    | "28"
+                                    | "33"
+                                    | "34"
+                                    | "40"
+                                    | "56"
+                                    | "57"
+                            )
                         );
                         if self.class_id == Some(COMMON_ATTRIBUTE_CLASS_ID)
                             && self.separation.is_none()
@@ -1776,6 +1932,19 @@ fn project_config_descriptor(
     descriptors.push(ProjectedConfigDescriptor {
         descriptor: ConfigDescriptor {
             catalog_hierarchical: None,
+            functional_option_location_guid: None,
+            functional_option_location: None,
+            functional_option_privileged_get_mode: None,
+            functional_option_parameter_use: None,
+            configuration_functional_option_parameters: None,
+            common_attribute_separation: None,
+            common_attribute_content: None,
+            configuration_common_attribute_candidates: None,
+            catalog_attribute_use: None,
+            information_register_write_mode: None,
+            information_register_periodicity: None,
+            information_register_dimensions: None,
+            information_register_resources: None,
             common_attribute_usage: None,
             fill_checking: None,
             catalog_standard_fill_checking: None,
@@ -1893,6 +2062,19 @@ fn collect_descriptors(
             .map(str::to_owned);
         descriptors.push(ConfigDescriptor {
             catalog_hierarchical: None,
+            functional_option_location_guid: None,
+            functional_option_location: None,
+            functional_option_privileged_get_mode: None,
+            functional_option_parameter_use: None,
+            configuration_functional_option_parameters: None,
+            common_attribute_separation: None,
+            common_attribute_content: None,
+            configuration_common_attribute_candidates: None,
+            catalog_attribute_use: None,
+            information_register_write_mode: None,
+            information_register_periodicity: None,
+            information_register_dimensions: None,
+            information_register_resources: None,
             common_attribute_usage: None,
             fill_checking: None,
             catalog_standard_fill_checking: None,

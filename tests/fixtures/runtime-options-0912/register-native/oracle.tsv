@@ -1,0 +1,4 @@
+option	e96435f0-5710-4af3-ab74-d9ffa8359456	ОпцияРегистра	InformationRegister.ОпцииПробы.Resource.ПризнакОпции	true
+option	4bce86c6-a952-4d95-a9a0-9f73616c8ce3	ЧисловаяОпцияРегистра	InformationRegister.ОпцииПробы.Resource.ЧислоОпции	true
+parameter	16670938-c0e7-4391-a109-7c6c5f7dd736	ПараметрПервый	InformationRegister.ОпцииПробы.Dimension.ПервыйКлюч
+parameter	c39d0c75-e346-419c-86d8-c0586e51d328	ПараметрВторой	InformationRegister.ОпцииПробы.Dimension.ВторойКлюч

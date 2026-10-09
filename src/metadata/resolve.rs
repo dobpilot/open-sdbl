@@ -1094,6 +1094,8 @@ pub fn resolve_metadata_with_predefined_values_and_extensions(
         );
     }
     super::runtime_metadata::resolve_named_types(&mut descriptors);
+    super::runtime_metadata::resolve_functional_options(&mut descriptors, &db_names);
+    super::runtime_metadata::resolve_common_attributes(&mut descriptors, &db_names);
     let live_table_by_name = index_live_tables(&live_tables);
     let indexes = compare_indexes(&schema, &live_tables, &live_table_by_name, &db_names);
     let mut separator_findings = Vec::new();

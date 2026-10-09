@@ -1,6 +1,6 @@
 use open_sdbl::metadata::{
-    CatalogHierarchyType, CommonAttributeUse, ConfigDescriptor, DbNames, Guid, MetadataSnapshot,
-    SchemaStorage, Value, parse_config_descriptors, resolve_metadata,
+    CatalogHierarchyType, CommonAttributeContentUse, CommonAttributeUse, ConfigDescriptor, DbNames,
+    Guid, MetadataSnapshot, SchemaStorage, Value, parse_config_descriptors, resolve_metadata,
 };
 
 fn snapshot(descriptors: Vec<ConfigDescriptor>) -> MetadataSnapshot {
@@ -115,7 +115,13 @@ fn native_common_attributes_preserve_complete_explicit_content_and_auto_use() {
             .filter(|value| !value.is_empty())
             .map(|value| {
                 let (id, usage) = value.split_once(':').unwrap();
-                (id.parse::<Guid>().unwrap(), parse_use(usage))
+                (
+                    id.parse::<Guid>().unwrap(),
+                    match parse_use(usage) {
+                        CommonAttributeUse::Use => CommonAttributeContentUse::Use,
+                        CommonAttributeUse::DontUse => CommonAttributeContentUse::DontUse,
+                    },
+                )
             })
             .collect();
         let actual: Vec<_> = usage
@@ -149,7 +155,7 @@ fn demo_common_name_and_string_qualifiers_are_acquired_for_its_explicit_catalog(
             .find(|entry| entry.object.as_str() == "9e9e2a57-8536-4983-a5c0-7841ead585e8")
             .unwrap()
             .usage,
-        CommonAttributeUse::Use
+        CommonAttributeContentUse::Use
     );
     assert!(
         !usage

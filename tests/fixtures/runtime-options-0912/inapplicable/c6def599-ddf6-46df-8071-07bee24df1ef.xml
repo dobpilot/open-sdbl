@@ -1,0 +1,35 @@
+﻿<?xml version="1.0" encoding="UTF-8"?>
+<MetaDataObject xmlns="http://v8.1c.ru/8.3/MDClasses" xmlns:app="http://v8.1c.ru/8.2/managed-application/core" xmlns:cfg="http://v8.1c.ru/8.1/data/enterprise/current-config" xmlns:cmi="http://v8.1c.ru/8.2/managed-application/cmi" xmlns:ent="http://v8.1c.ru/8.1/data/enterprise" xmlns:lf="http://v8.1c.ru/8.2/managed-application/logform" xmlns:style="http://v8.1c.ru/8.1/data/ui/style" xmlns:sys="http://v8.1c.ru/8.1/data/ui/fonts/system" xmlns:v8="http://v8.1c.ru/8.1/data/core" xmlns:v8ui="http://v8.1c.ru/8.1/data/ui" xmlns:web="http://v8.1c.ru/8.1/data/ui/colors/web" xmlns:win="http://v8.1c.ru/8.1/data/ui/colors/windows" xmlns:xen="http://v8.1c.ru/8.3/xcf/enums" xmlns:xpr="http://v8.1c.ru/8.3/xcf/predef" xmlns:xr="http://v8.1c.ru/8.3/xcf/readable" xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" version="2.20">
+	<DocumentJournal uuid="c6def599-ddf6-46df-8071-07bee24df1ef">
+		<InternalInfo>
+			<xr:GeneratedType name="DocumentJournalSelection.ЗамерЖурнала" category="Selection">
+				<xr:TypeId>f4fd359b-e68a-447c-a531-03debd9419bd</xr:TypeId>
+				<xr:ValueId>b1140344-ace3-4459-8c8a-7a3b4c6fbb88</xr:ValueId>
+			</xr:GeneratedType>
+			<xr:GeneratedType name="DocumentJournalList.ЗамерЖурнала" category="List">
+				<xr:TypeId>25e4f1e9-86f8-46d4-8edc-ab2878c6ec82</xr:TypeId>
+				<xr:ValueId>259e75af-c6e2-4539-a243-bf6513e49d04</xr:ValueId>
+			</xr:GeneratedType>
+			<xr:GeneratedType name="DocumentJournalManager.ЗамерЖурнала" category="Manager">
+				<xr:TypeId>6f945063-214f-49c0-82c7-7dcde77f9372</xr:TypeId>
+				<xr:ValueId>5266f887-97a2-45a3-83bf-ea256ef68562</xr:ValueId>
+			</xr:GeneratedType>
+		</InternalInfo>
+		<Properties>
+			<Name>ЗамерЖурнала</Name>
+			<Synonym/>
+			<Comment/>
+			<DefaultForm/>
+			<AuxiliaryForm/>
+			<UseStandardCommands>true</UseStandardCommands>
+			<RegisteredDocuments>
+				<xr:Item xsi:type="xr:MDObjectRef">Document.PeriodNone</xr:Item>
+			</RegisteredDocuments>
+			<IncludeHelpInContents>false</IncludeHelpInContents>
+			<ListPresentation/>
+			<ExtendedListPresentation/>
+			<Explanation/>
+		</Properties>
+		<ChildObjects/>
+	</DocumentJournal>
+</MetaDataObject>

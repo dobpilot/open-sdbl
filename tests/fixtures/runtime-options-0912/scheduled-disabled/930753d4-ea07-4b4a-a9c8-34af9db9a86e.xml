@@ -1,0 +1,93 @@
+﻿<?xml version="1.0" encoding="UTF-8"?>
+<MetaDataObject xmlns="http://v8.1c.ru/8.3/MDClasses" xmlns:app="http://v8.1c.ru/8.2/managed-application/core" xmlns:cfg="http://v8.1c.ru/8.1/data/enterprise/current-config" xmlns:cmi="http://v8.1c.ru/8.2/managed-application/cmi" xmlns:ent="http://v8.1c.ru/8.1/data/enterprise" xmlns:lf="http://v8.1c.ru/8.2/managed-application/logform" xmlns:style="http://v8.1c.ru/8.1/data/ui/style" xmlns:sys="http://v8.1c.ru/8.1/data/ui/fonts/system" xmlns:v8="http://v8.1c.ru/8.1/data/core" xmlns:v8ui="http://v8.1c.ru/8.1/data/ui" xmlns:web="http://v8.1c.ru/8.1/data/ui/colors/web" xmlns:win="http://v8.1c.ru/8.1/data/ui/colors/windows" xmlns:xen="http://v8.1c.ru/8.3/xcf/enums" xmlns:xpr="http://v8.1c.ru/8.3/xcf/predef" xmlns:xr="http://v8.1c.ru/8.3/xcf/readable" xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" version="2.20">
+	<AccountingRegister uuid="930753d4-ea07-4b4a-a9c8-34af9db9a86e">
+		<InternalInfo>
+			<xr:GeneratedType name="AccountingRegisterRecord.ЗамерБухгалтерии" category="Record">
+				<xr:TypeId>9270bbbf-4734-4808-b3dc-154a97b81aae</xr:TypeId>
+				<xr:ValueId>bcc2ce96-a9d7-4fcb-9bcc-91eb79ff8d26</xr:ValueId>
+			</xr:GeneratedType>
+			<xr:GeneratedType name="AccountingRegisterExtDimensions.ЗамерБухгалтерии" category="ExtDimensions">
+				<xr:TypeId>384662f5-6df3-4880-8a34-ed27b8d18887</xr:TypeId>
+				<xr:ValueId>8f5026b1-77d1-4532-ba72-ce367d00adba</xr:ValueId>
+			</xr:GeneratedType>
+			<xr:GeneratedType name="AccountingRegisterRecordSet.ЗамерБухгалтерии" category="RecordSet">
+				<xr:TypeId>972aa8e7-b03a-47e4-b0bb-fca97c75bcb1</xr:TypeId>
+				<xr:ValueId>eddb1920-9a8b-4340-89d0-5443ce66b239</xr:ValueId>
+			</xr:GeneratedType>
+			<xr:GeneratedType name="AccountingRegisterRecordKey.ЗамерБухгалтерии" category="RecordKey">
+				<xr:TypeId>f55f3fde-33d9-445a-964b-9882ae486cdd</xr:TypeId>
+				<xr:ValueId>d755dffa-a738-4057-8c4a-e7e83739c8d3</xr:ValueId>
+			</xr:GeneratedType>
+			<xr:GeneratedType name="AccountingRegisterSelection.ЗамерБухгалтерии" category="Selection">
+				<xr:TypeId>b8386333-45c4-4d65-b143-d6fdc3b44e00</xr:TypeId>
+				<xr:ValueId>51e84689-10af-46fa-9af6-3917feb0c561</xr:ValueId>
+			</xr:GeneratedType>
+			<xr:GeneratedType name="AccountingRegisterList.ЗамерБухгалтерии" category="List">
+				<xr:TypeId>0e87f2b8-097c-4c86-a4cd-930472532381</xr:TypeId>
+				<xr:ValueId>545a3d0f-e6e5-41c8-a078-f012fe2e0c4b</xr:ValueId>
+			</xr:GeneratedType>
+			<xr:GeneratedType name="AccountingRegisterManager.ЗамерБухгалтерии" category="Manager">
+				<xr:TypeId>705b445f-8317-4683-be3f-f83fa5beb9f9</xr:TypeId>
+				<xr:ValueId>2aecef1e-f07d-4e9f-9dd8-d713b9342483</xr:ValueId>
+			</xr:GeneratedType>
+		</InternalInfo>
+		<Properties>
+			<Name>ЗамерБухгалтерии</Name>
+			<Synonym/>
+			<Comment/>
+			<UseStandardCommands>true</UseStandardCommands>
+			<IncludeHelpInContents>false</IncludeHelpInContents>
+			<ChartOfAccounts>ChartOfAccounts.ЗамерСчетов</ChartOfAccounts>
+			<Correspondence>false</Correspondence>
+			<PeriodAdjustmentLength>0</PeriodAdjustmentLength>
+			<DefaultListForm/>
+			<AuxiliaryListForm/>
+			<DataLockControlMode>Managed</DataLockControlMode>
+			<EnableTotalsSplitting>false</EnableTotalsSplitting>
+			<FullTextSearch>DontUse</FullTextSearch>
+			<ListPresentation/>
+			<ExtendedListPresentation/>
+			<Explanation/>
+		</Properties>
+		<ChildObjects>
+			<Resource uuid="8b82d27b-2ab8-4047-9c3a-54f33c2e3ce7">
+				<Properties>
+					<Name>СуммаПробы</Name>
+					<Synonym/>
+					<Comment/>
+					<Type>
+						<v8:Type>xs:decimal</v8:Type>
+						<v8:NumberQualifiers>
+							<v8:Digits>15</v8:Digits>
+							<v8:FractionDigits>2</v8:FractionDigits>
+							<v8:AllowedSign>Any</v8:AllowedSign>
+						</v8:NumberQualifiers>
+					</Type>
+					<PasswordMode>false</PasswordMode>
+					<Format/>
+					<EditFormat/>
+					<ToolTip/>
+					<MarkNegatives>false</MarkNegatives>
+					<Mask/>
+					<MultiLine>false</MultiLine>
+					<ExtendedEdit>false</ExtendedEdit>
+					<MinValue xsi:nil="true"/>
+					<MaxValue xsi:nil="true"/>
+					<FillChecking>DontCheck</FillChecking>
+					<ChoiceFoldersAndItems>Items</ChoiceFoldersAndItems>
+					<ChoiceParameterLinks/>
+					<ChoiceParameters/>
+					<QuickChoice>Auto</QuickChoice>
+					<CreateOnInput>Auto</CreateOnInput>
+					<ChoiceForm/>
+					<LinkByType/>
+					<ChoiceHistoryOnInput>Auto</ChoiceHistoryOnInput>
+					<Balance>true</Balance>
+					<AccountingFlag/>
+					<ExtDimensionAccountingFlag/>
+					<FullTextSearch>Use</FullTextSearch>
+				</Properties>
+			</Resource>
+		</ChildObjects>
+	</AccountingRegister>
+</MetaDataObject>
