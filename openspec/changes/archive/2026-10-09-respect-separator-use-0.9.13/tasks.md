@@ -12,4 +12,4 @@
 ## 3. Verification
 - [x] Run workspace fmt, Clippy, tests and rustdoc.
 - [x] Validate all OpenSpec changes strictly.
-- [ ] Commit implementation and archive separately after successful checks.
+- [x] Commit implementation and archive separately after successful checks.
