@@ -8,10 +8,10 @@ use crate::query::core::names::names_equal;
 use crate::query::core::resolve::{CompilationCatalog, SeparatorState};
 use crate::query::core::{QueryDiagnostic, QueryDiagnosticKind};
 
-/// Renders `<alias>.<column> = <value>` for every separator column the
-/// live table declares, in snapshot order. A disabled separator yields
-/// nothing; an `Independent` separator without a value, or a separator
-/// without an empty value, is a diagnostic at `token`.
+/// Формирует `<alias>.<column> = <value>` для разделителей таблицы в порядке
+/// снимка. Выключенный совместный разделитель не создаёт предиката;
+/// выключенный независимый запрещает таблицу. Отсутствующие связанные
+/// параметры и неизвестное пустое значение диагностируются у `token`.
 pub(super) fn separator_predicates(
     catalog: &CompilationCatalog<'_>,
     table: &LiveTable,
@@ -30,6 +30,16 @@ pub(super) fn separator_predicates(
         };
         match &separator.state {
             SeparatorState::Disabled => {}
+            SeparatorState::Forbidden => {
+                return Err(QueryDiagnostic::at(
+                    QueryDiagnosticKind::Metadata,
+                    Some(token),
+                    format!(
+                        "cannot use table: data separator {:?} with independent usage is disabled",
+                        separator.name
+                    ),
+                ));
+            }
             SeparatorState::Value(value) => {
                 let literal = render_scalar_parameter(value, token, dialect, true)?;
                 predicates.push(format!(

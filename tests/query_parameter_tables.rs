@@ -252,7 +252,7 @@ fn joins_a_catalog_of_the_buh_fixture() {
     }
     session.set(QueryParameter::new(
         "ОбластьДанныхИспользование",
-        ParameterValue::Boolean(false),
+        ParameterValue::Boolean(true),
     ));
     let parameters = [QueryParameter::new(
         "Таблица",

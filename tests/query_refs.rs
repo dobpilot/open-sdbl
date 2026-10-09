@@ -186,7 +186,7 @@ fn compares_a_reference_with_a_composite_subquery() {
     }
     session.set(open_sdbl::query::QueryParameter::new(
         "ИспользованиеРазделителя",
-        open_sdbl::query::ParameterValue::Boolean(false),
+        open_sdbl::query::ParameterValue::Boolean(true),
     ));
     let snapshot = support::demo_resolved_at(
         &std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/demo"),
@@ -275,7 +275,7 @@ fn spreads_union_branches_over_the_members_of_a_composite() {
     }
     session.set(open_sdbl::query::QueryParameter::new(
         "ИспользованиеРазделителя",
-        open_sdbl::query::ParameterValue::Boolean(false),
+        open_sdbl::query::ParameterValue::Boolean(true),
     ));
     let snapshot = support::demo_resolved_at(
         &std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/demo"),

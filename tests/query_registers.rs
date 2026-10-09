@@ -304,7 +304,7 @@ fn reads_a_reference_pair_as_a_value() {
     }
     session.set(open_sdbl::query::QueryParameter::new(
         "ИспользованиеРазделителя",
-        open_sdbl::query::ParameterValue::Boolean(false),
+        open_sdbl::query::ParameterValue::Boolean(true),
     ));
     let snapshot = support::demo_resolved_at(
         &std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/demo"),

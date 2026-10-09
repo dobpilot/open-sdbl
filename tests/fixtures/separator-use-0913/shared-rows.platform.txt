@@ -1,0 +1,6 @@
+file.begin	sdbl-0913-shared-rows
+shared.enabled_b	1
+shared.disabled_b	2
+shared.disabled_c	2
+shared.enabled_c	0
+file.end	sdbl-0913-shared-rows

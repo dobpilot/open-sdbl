@@ -193,7 +193,7 @@ fn resolves_the_computed_standard_fields() {
         ));
         session.set(open_sdbl::query::QueryParameter::new(
             "ИспользованиеРазделителя",
-            open_sdbl::query::ParameterValue::Boolean(false),
+            open_sdbl::query::ParameterValue::Boolean(true),
         ));
         session.set(open_sdbl::query::QueryParameter::new(
             "ОбластьДанныхОсновныеДанные",
@@ -244,7 +244,7 @@ fn resolves_the_computed_standard_fields() {
     ));
     session.set(open_sdbl::query::QueryParameter::new(
         "ИспользованиеРазделителя",
-        open_sdbl::query::ParameterValue::Boolean(false),
+        open_sdbl::query::ParameterValue::Boolean(true),
     ));
     session.set(open_sdbl::query::QueryParameter::new(
         "ОбластьДанныхОсновныеДанные",
@@ -467,7 +467,7 @@ fn reads_the_point_in_time_pair() {
         }
         session.set(open_sdbl::query::QueryParameter::new(
             "ИспользованиеРазделителя",
-            open_sdbl::query::ParameterValue::Boolean(false),
+            open_sdbl::query::ParameterValue::Boolean(true),
         ));
         session
     }
@@ -705,7 +705,7 @@ fn joins_only_the_declared_targets_of_a_composite() {
     }
     session.set(open_sdbl::query::QueryParameter::new(
         "ИспользованиеРазделителя",
-        open_sdbl::query::ParameterValue::Boolean(false),
+        open_sdbl::query::ParameterValue::Boolean(true),
     ));
     let snapshot = support::demo_resolved_at(
         &std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/demo"),
@@ -770,7 +770,7 @@ fn spreads_a_mixed_kind_dereference_over_members() {
     }
     session.set(open_sdbl::query::QueryParameter::new(
         "ИспользованиеРазделителя",
-        open_sdbl::query::ParameterValue::Boolean(false),
+        open_sdbl::query::ParameterValue::Boolean(true),
     ));
     let snapshot = support::demo_resolved_at(
         &std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/demo"),

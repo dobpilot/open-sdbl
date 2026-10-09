@@ -41,6 +41,10 @@ fn area(value: i128) -> SessionParameters {
             scale: 0,
         },
     ));
+    session.set(QueryParameter::new(
+        "ИспользованиеРазделителя",
+        ParameterValue::Boolean(true),
+    ));
     session
 }
 
@@ -296,12 +300,10 @@ fn diagnoses_unknown_constants_and_disabled_separators() {
         &CompileOptions::new().session(&disabled),
     )
     .unwrap_err();
-    assert_eq!(error.kind(), QueryDiagnosticKind::UnsupportedFeature);
+    assert_eq!(error.kind(), QueryDiagnosticKind::Metadata);
+    assert!(!error.is_missing_session_parameter());
     assert_eq!((error.line(), error.column()), (1, 28));
-    assert_eq!(
-        error.to_string(),
-        "1:28: constant \"ОсновнойТовар\" is separated; the constants table needs a separator value"
-    );
+    assert!(error.message().contains("independent usage"));
     let count = compile(
         &snapshot,
         PostgresBackend,

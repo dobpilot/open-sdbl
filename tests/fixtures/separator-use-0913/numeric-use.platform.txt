@@ -1,0 +1,12 @@
+file.begin	data-separator-use-before-value-5
+separator_use.initial_use	value:No
+separator_use.initial_value	value:0
+separator_use.setup	ok
+separator_use.privileged_setup	ok
+separator_use.disabled_query	error:{DataProcessor.Замеры.Form.Форма.Form(29)}: Error calling context method (Execute): Query execution error: Cannot use a table because some of the separators with independent usage of separated data are not specified
+object: 'Catalog.ЗамерВременныхТаблиц'
+separator_use.value_after_disabled_query	readable
+separator_use.enabled_unset_query	ok
+separator_use.enabled_set_query	ok
+separator_use.probes	ok
+file.end	data-separator-use-before-value-5

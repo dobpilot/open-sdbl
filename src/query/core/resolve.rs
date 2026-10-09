@@ -629,13 +629,14 @@ mod extension_table_name_tests {
 /// What a statement does about one data separator of the snapshot.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) enum SeparatorState {
-    /// The use-flag session parameter is `ЛОЖЬ`: no predicate anywhere.
+    /// Измеренный совместный режим с выключенным флагом: без предиката.
     Disabled,
+    /// Независимый разделитель выключен: таблицу читать нельзя.
+    Forbidden,
     /// Every table declaring the column is filtered by this value.
     Value(ParameterValue),
-    /// An `Independent` separator without a session value; reading a table
-    /// that declares the column is a `Parameter` diagnostic naming the
-    /// expected session parameter.
+    /// Отсутствующий флаг или необходимое значение: чтение таблицы
+    /// диагностирует имя параметра сеанса через существующий контракт.
     Missing(String),
     /// A separator of a kind without an empty value and without a session
     /// value; reading such a table is a `Metadata` diagnostic.
@@ -674,20 +675,26 @@ fn resolve_statement_separators(
                 .clone()
                 .unwrap_or_else(|| field.physical_name.clone());
             let separation = field.separation.as_ref();
-            let disabled = separation
-                .and_then(|separation| separation.use_parameter.as_deref())
-                .and_then(|parameter| parameters.session_value(parameter))
-                .is_some_and(|value| *value == ParameterValue::Boolean(false));
+            // Флаг решает доступ до чтения значения; отсутствие диагностируется
+            // только при обращении к таблице с этим разделителем.
+            let use_parameter = separation.and_then(|value| value.use_parameter.as_deref());
+            let use_value = use_parameter.and_then(|name| parameters.session_value(name));
+            let independent = separation
+                .is_some_and(|value| value.mode == crate::metadata::SeparatedDataUse::Independent);
             let value_parameter = separation
                 .and_then(|separation| separation.value_parameter.clone())
                 .unwrap_or_else(|| name.clone());
-            let state = if disabled {
-                SeparatorState::Disabled
+            let state = if let Some(parameter) = use_parameter.filter(|_| use_value.is_none()) {
+                SeparatorState::Missing(parameter.to_owned())
+            } else if use_value == Some(&ParameterValue::Boolean(false)) {
+                if independent {
+                    SeparatorState::Forbidden
+                } else {
+                    SeparatorState::Disabled
+                }
             } else if let Some(value) = parameters.session_value(&value_parameter) {
                 SeparatorState::Value(value.clone())
-            } else if separation.is_some_and(|separation| {
-                separation.mode == crate::metadata::SeparatedDataUse::Independent
-            }) {
+            } else if independent {
                 SeparatorState::Missing(value_parameter)
             } else {
                 separator_empty_value(snapshot, field.number)

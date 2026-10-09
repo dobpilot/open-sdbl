@@ -286,7 +286,7 @@ fn options(
                 scale: 0,
             },
         ),
-        ("ОбластьДанныхИспользование", ParameterValue::Boolean(false)),
+        ("ОбластьДанныхИспользование", ParameterValue::Boolean(true)),
         (
             "ОбластьДанныхОсновныеДанные",
             ParameterValue::Number {
@@ -296,7 +296,7 @@ fn options(
         ),
         (
             "ИспользованиеРазделителяСеанса",
-            ParameterValue::Boolean(false),
+            ParameterValue::Boolean(true),
         ),
         (
             "ЗначениеРазделителя",
@@ -305,7 +305,7 @@ fn options(
                 scale: 0,
             },
         ),
-        ("ИспользованиеРазделителя", ParameterValue::Boolean(false)),
+        ("ИспользованиеРазделителя", ParameterValue::Boolean(true)),
     ] {
         session.set(QueryParameter::new(name, value));
     }

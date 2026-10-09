@@ -33,8 +33,8 @@ struct ConstantEntry {
     /// Physical columns of the constant's value with their catalog types,
     /// so the `NULL` placeholders of other branches carry the same type.
     columns: Vec<(String, String)>,
-    /// Separator predicates qualified with [`BRANCH_ALIAS`].
-    separators: Vec<String>,
+    /// Предикаты с [`BRANCH_ALIAS`] либо диагностика, отложенная до выбора поля.
+    separators: Result<Vec<String>, QueryDiagnostic>,
     /// Whether a disabled separator applies to the table, which leaves no
     /// single row to aggregate.
     disabled: bool,
@@ -59,8 +59,7 @@ pub(super) fn constants_source_scope(
             .as_deref()
             .and_then(|physical| snapshot.live_table(physical))
             .expect("constants_fields lists live constants only");
-        let separators =
-            separator_predicates(catalog, table, BRANCH_ALIAS, source.object, dialect)?;
+        let separators = separator_predicates(catalog, table, BRANCH_ALIAS, source.object, dialect);
         // Preparation runs unbound with every separator disabled; the check
         // matters only once the session values are known.
         let disabled = catalog.is_bound()
@@ -124,6 +123,13 @@ pub(super) fn finalize_constants_relation(
         .filter(|(index, _)| used.contains(index))
         .map(|(_, entry)| entry)
         .collect::<Vec<_>>();
+    // Таблица констант читает только выбранные поля: разделители остальных
+    // констант не требуют ленивой инициализации параметров сеанса.
+    for entry in &entries {
+        if let Err(error) = &entry.separators {
+            return Err(error.clone());
+        }
+    }
     if let Some(entry) = entries.iter().find(|entry| entry.disabled) {
         return Err(QueryDiagnostic::at(
             QueryDiagnosticKind::UnsupportedFeature,
@@ -166,9 +172,13 @@ pub(super) fn finalize_constants_relation(
                     dialect.quote_identifier(&entry.table),
                     dialect.quote_identifier(BRANCH_ALIAS)
                 );
-                if !entry.separators.is_empty() {
+                let separators = entry
+                    .separators
+                    .as_ref()
+                    .expect("проверены выбранные константы");
+                if !separators.is_empty() {
                     branch.push_str(" WHERE ");
-                    branch.push_str(&entry.separators.join(" AND "));
+                    branch.push_str(&separators.join(" AND "));
                 }
                 branch
             })

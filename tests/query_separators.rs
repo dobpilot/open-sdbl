@@ -64,7 +64,10 @@ fn number(value: i128) -> ParameterValue {
 }
 
 fn area(value: i128) -> SessionParameters {
-    session(&[("ЗначениеРазделителя", number(value))])
+    session(&[
+        ("ИспользованиеРазделителя", ParameterValue::Boolean(true)),
+        ("ЗначениеРазделителя", number(value)),
+    ])
 }
 
 /// The probe snapshot with `РазделительНезависимо` switched to
@@ -222,18 +225,19 @@ fn filters_a_plain_source_by_the_session_value_before_the_query_filter() {
 #[test]
 fn an_independent_separator_without_a_value_is_a_parameter_diagnostic() {
     let snapshot = separators_snapshot();
+    let enabled = session(&[("ИспользованиеРазделителя", ParameterValue::Boolean(true))]);
     for backend in [
         compile(
             &snapshot,
             PostgresBackend,
             "ВЫБРАТЬ Т.Ссылка ИЗ Справочник.Товары КАК Т",
-            &CompileOptions::new(),
+            &CompileOptions::new().session(&enabled),
         ),
         compile(
             &snapshot,
             mssql(),
             "ВЫБРАТЬ Т.Ссылка ИЗ Справочник.Товары КАК Т",
-            &CompileOptions::new(),
+            &CompileOptions::new().session(&enabled),
         ),
     ] {
         let error = backend.unwrap_err();
@@ -251,7 +255,11 @@ fn a_shared_separator_defaults_to_the_empty_value_and_falls_back_to_its_name() {
     let snapshot = shared_snapshot();
     let source = "ВЫБРАТЬ Т.Ссылка ИЗ Справочник.Товары КАК Т";
     assert_eq!(
-        postgres_sql(&snapshot, source, &SessionParameters::new()),
+        postgres_sql(
+            &snapshot,
+            source,
+            &session(&[("ИспользованиеРазделителя", ParameterValue::Boolean(true))])
+        ),
         "SELECT \"Т\".\"_idrref\" AS \"Ссылка\" FROM \"_reference53\" AS \"Т\" WHERE \"Т\".\"_fld56\" = 0 AND \"Т\".\"_fld57\" = 0"
     );
     assert_eq!(
@@ -264,6 +272,7 @@ fn a_shared_separator_defaults_to_the_empty_value_and_falls_back_to_its_name() {
             source,
             &session(&[
                 ("РазделительНезависимо", number(3)),
+                ("ИспользованиеРазделителя", ParameterValue::Boolean(true)),
                 ("ЗначениеРазделителя", number(7)),
             ])
         ),
@@ -272,14 +281,19 @@ fn a_shared_separator_defaults_to_the_empty_value_and_falls_back_to_its_name() {
 }
 
 #[test]
-fn the_use_flag_disables_the_predicate_and_query_parameters_never_supply_it() {
+fn the_use_flag_rejects_independent_and_query_parameters_never_supply_it() {
     let snapshot = separators_snapshot();
     let source = "ВЫБРАТЬ Т.Ссылка ИЗ Справочник.Товары КАК Т";
     let disabled = session(&[("ИспользованиеРазделителя", ParameterValue::Boolean(false))]);
-    assert_eq!(
-        postgres_sql(&snapshot, source, &disabled),
-        "SELECT \"Т\".\"_idrref\" AS \"Ссылка\" FROM \"_reference53\" AS \"Т\""
-    );
+    let error = compile(
+        &snapshot,
+        PostgresBackend,
+        source,
+        &CompileOptions::new().session(&disabled),
+    )
+    .unwrap_err();
+    assert_eq!(error.kind(), QueryDiagnosticKind::Metadata);
+    assert!(!error.is_missing_session_parameter());
     let query_value = [QueryParameter::new("ЗначениеРазделителя", number(7))];
     let error = compile(
         &snapshot,
@@ -501,4 +515,69 @@ fn filters_register_virtual_tables_inside_their_base_reads() {
         turnovers.contains("(\"__aggregate_base\".\"_period\" < '2026-09-01') AND \"__aggregate_base\".\"_fld999\" = 0 GROUP BY"),
         "{turnovers}"
     );
+}
+
+#[test]
+fn virtual_tables_request_usage_before_value_and_refuse_disabled_independent() {
+    let descriptor = separators_snapshot()
+        .descriptors()
+        .iter()
+        .find(|value| value.object_guid == guid(INDEPENDENT))
+        .unwrap()
+        .clone();
+    for (base, text) in [
+        (
+            information_register_snapshot(),
+            "ВЫБРАТЬ Период ИЗ РегистрСведений.Prices.СрезПоследних()",
+        ),
+        (
+            accumulation_register_snapshot(),
+            "ВЫБРАТЬ КоличествоОстаток ИЗ РегистрНакопления.Остатки.Остатки()",
+        ),
+        (
+            accumulation_register_snapshot(),
+            "ВЫБРАТЬ КоличествоОборот ИЗ РегистрНакопления.Остатки.Обороты()",
+        ),
+    ] {
+        let snapshot = with_descriptors(with_separator(base, 999), |descriptors| {
+            let mut descriptor = descriptor.clone();
+            descriptor.object_guid = guid("a1b2c3d4-0009-4000-8000-000000000009");
+            descriptors.push(descriptor);
+            descriptors.extend(
+                separators_snapshot()
+                    .descriptors()
+                    .iter()
+                    .filter(|value| {
+                        [guid(VALUE_PARAMETER), guid(USE_PARAMETER)].contains(&value.object_guid)
+                    })
+                    .cloned(),
+            );
+        });
+        let options = CompileOptions::new();
+        for result in [
+            compile(&snapshot, PostgresBackend, text, &options),
+            compile(&snapshot, mssql(), text, &options),
+        ] {
+            let error = result.unwrap_err();
+            assert_eq!(
+                error.missing_parameter_name(),
+                Some("ИспользованиеРазделителя"),
+                "{text}: {error}"
+            );
+        }
+        let disabled = session(&[("ИспользованиеРазделителя", ParameterValue::Boolean(false))]);
+        let options = CompileOptions::new().session(&disabled);
+        for result in [
+            compile(&snapshot, PostgresBackend, text, &options),
+            compile(&snapshot, mssql(), text, &options),
+        ] {
+            let error = result.unwrap_err();
+            assert_eq!(
+                error.kind(),
+                QueryDiagnosticKind::Metadata,
+                "{text}: {error}"
+            );
+            assert!(!error.is_missing_session_parameter());
+        }
+    }
 }

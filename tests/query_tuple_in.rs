@@ -108,7 +108,7 @@ fn a_tuple_is_accepted_in_a_virtual_table_condition() {
     }
     session.set(QueryParameter::new(
         "ОбластьДанныхИспользование",
-        ParameterValue::Boolean(false),
+        ParameterValue::Boolean(true),
     ));
     let parameters = [QueryParameter::new("Заказ", ParameterValue::Null)];
     let options = CompileOptions::new()

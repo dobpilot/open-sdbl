@@ -42,6 +42,9 @@ fn a_separator_failure_identifies_a_missing_session_parameter() {
         .compile("ВЫБРАТЬ Т.Ссылка ИЗ Справочник.Товары КАК Т")
         .unwrap_err();
     assert_eq!(error.kind(), QueryDiagnosticKind::Parameter);
-    assert_eq!(error.missing_parameter_name(), Some("ЗначениеРазделителя"));
+    assert_eq!(
+        error.missing_parameter_name(),
+        Some("ИспользованиеРазделителя")
+    );
     assert!(error.is_missing_session_parameter());
 }

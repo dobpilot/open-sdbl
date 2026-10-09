@@ -36,7 +36,7 @@ fn compile(
     }
     session.set(QueryParameter::new(
         "ОбластьДанныхИспользование",
-        ParameterValue::Boolean(false),
+        ParameterValue::Boolean(true),
     ));
     // Only the parameters the text names may be supplied.
     let parameters = open_sdbl::tokenize(source)

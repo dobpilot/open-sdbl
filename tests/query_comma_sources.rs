@@ -127,6 +127,10 @@ fn filters_comma_sources_by_separators_like_the_base() {
     let snapshot = separators_snapshot();
     let mut session = SessionParameters::new();
     session.set(QueryParameter::new(
+        "ИспользованиеРазделителя",
+        ParameterValue::Boolean(true),
+    ));
+    session.set(QueryParameter::new(
         "ЗначениеРазделителя",
         ParameterValue::Number {
             unscaled: 7,

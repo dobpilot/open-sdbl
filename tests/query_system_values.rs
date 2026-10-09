@@ -33,7 +33,7 @@ fn postgres_unf(snapshot: &MetadataSnapshot, source: &str) -> String {
     }
     session.set(QueryParameter::new(
         "ОбластьДанныхИспользование",
-        ParameterValue::Boolean(false),
+        ParameterValue::Boolean(true),
     ));
     let options = CompileOptions::new().session(&session);
     QueryCompiler::new(snapshot, PostgresBackend)

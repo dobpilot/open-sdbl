@@ -294,7 +294,10 @@ fn later_missing_session_parameter_prevents_any_callback<B: Backend>(backend: B)
         .unwrap_err();
     assert_eq!(error.kind(), QueryDiagnosticKind::Parameter);
     assert!(error.is_missing_session_parameter());
-    assert_eq!(error.missing_parameter_name(), Some("ЗначениеРазделителя"));
+    assert_eq!(
+        error.missing_parameter_name(),
+        Some("ИспользованиеРазделителя")
+    );
     assert_eq!(calls, 0);
     assert!(manager.is_empty());
 }
