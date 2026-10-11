@@ -192,6 +192,7 @@ fn compares_a_reference_with_a_composite_subquery() {
         &std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/demo"),
     )
     .snapshot;
+    support::supply_active_separation_conditions(&snapshot, &mut session);
     let source = "ВЫБРАТЬ С.Ссылка КАК С ИЗ Справочник.Сотрудники КАК С
          ГДЕ С.Ссылка В (ВЫБРАТЬ П.Руководитель ИЗ Справочник.Проекты КАК П);";
     let compiled = QueryCompiler::new(&snapshot, PostgresBackend)
@@ -281,6 +282,7 @@ fn spreads_union_branches_over_the_members_of_a_composite() {
         &std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/demo"),
     )
     .snapshot;
+    support::supply_active_separation_conditions(&snapshot, &mut session);
     // A fixed reference beside a composite one: the fixed branch spreads
     // over the members the composite branch already projects.
     let compiled = QueryCompiler::new(&snapshot, PostgresBackend)

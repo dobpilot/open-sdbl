@@ -676,13 +676,14 @@ fn a_document_journal_is_a_target_like_any_other_source() {
             AccessDecision::unrestricted(target.clone())
         }
     });
-    let values = session(&[(
+    let mut values = session(&[(
         "ОбластьДанныхОсновныеДанные",
         ParameterValue::Number {
             unscaled: 0,
             scale: 0,
         },
     )]);
+    supply_active_separation_conditions(&snapshot, &mut values);
     let (postgres, mssql) = compile_both(
         &snapshot,
         &prepared,

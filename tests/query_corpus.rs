@@ -278,6 +278,7 @@ fn options(
         .map(|(name, value)| QueryParameter::new(name, parameter_value(value, snapshot)))
         .collect::<Vec<_>>();
     let mut session = SessionParameters::new();
+    support::supply_active_separation_conditions(snapshot, &mut session);
     for (name, value) in [
         (
             "ОбластьДанныхЗначение",

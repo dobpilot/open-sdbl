@@ -26,6 +26,7 @@ fn compile(
     source: &str,
 ) -> Result<String, open_sdbl::query::QueryDiagnostic> {
     let mut session = SessionParameters::new();
+    supply_active_separation_conditions(snapshot, &mut session);
     let zero = ParameterValue::Number {
         unscaled: 0,
         scale: 0,

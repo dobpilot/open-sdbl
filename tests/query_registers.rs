@@ -310,6 +310,7 @@ fn reads_a_reference_pair_as_a_value() {
         &std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/demo"),
     )
     .snapshot;
+    support::supply_active_separation_conditions(&snapshot, &mut session);
     let compile = |source: &str| {
         QueryCompiler::new(&snapshot, PostgresBackend)
             .compile_with(

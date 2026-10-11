@@ -98,6 +98,7 @@ fn a_tuple_is_accepted_in_a_virtual_table_condition() {
         return;
     };
     let mut session = SessionParameters::new();
+    supply_active_separation_conditions(&snapshot, &mut session);
     let zero = ParameterValue::Number {
         unscaled: 0,
         scale: 0,

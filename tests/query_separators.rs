@@ -80,6 +80,7 @@ fn shared_snapshot() -> MetadataSnapshot {
             .find(|descriptor| descriptor.object_guid == guid(INDEPENDENT))
             .unwrap();
         independent.separation = Some(DataSeparationSettings {
+            conditional_separation: None,
             mode: SeparatedDataUse::IndependentAndShared,
             value_parameter: None,
             use_parameter: None,
@@ -176,6 +177,7 @@ fn projects_separation_settings_from_the_class_list_tail() {
     assert_eq!(
         descriptors[0].separation,
         Some(DataSeparationSettings {
+            conditional_separation: None,
             mode: SeparatedDataUse::IndependentAndShared,
             value_parameter: Some(guid(VALUE_PARAMETER)),
             use_parameter: Some(guid(USE_PARAMETER)),

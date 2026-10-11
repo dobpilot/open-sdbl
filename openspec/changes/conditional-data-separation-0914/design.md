@@ -1,0 +1,5 @@
+# Design
+
+Expose `conditional_separation: Option<Guid>` in acquired and resolved settings. `SessionParameters` carries a separate GUID-keyed boolean map. Compilation reports a structured missing-condition GUID only for a read table that declares the separator; preparation is value-independent. False conditions use measured empty String/Number areas in both Independent and Shared modes. Other conditional empty kinds fail explicitly. Native receipts from open-bsl 8.3.27.2342 distinguish true-condition disabled-use Independent denial from Shared unrestricted selection. No condition values are cached across compilations. SQL generation remains in the existing separator predicate path. Content.Item conditional separation is untouched.
+
+Named separator descriptors with unsupported settings fail closed, rather than treating an unparsed condition as a measured nil reference. Anonymous synthetic physical separators retain their existing fallback. QueryDiagnostic boxes the optional GUID to avoid increasing the common error result size.

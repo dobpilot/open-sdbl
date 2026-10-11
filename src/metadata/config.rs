@@ -84,6 +84,8 @@ pub enum SeparatedDataUse {
 /// `ConfigDescriptor::common_attribute_separation`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DataSeparationSettings {
+    /// Константа глобального условия разделения, если ссылка задана.
+    pub conditional_separation: Option<Guid>,
     /// Separated-data-use mode.
     pub mode: SeparatedDataUse,
     /// Session parameter carrying the separator value, when bound.
@@ -144,6 +146,7 @@ impl SeparationTracker {
         };
         let bound = |guid: &Guid| (!guid.is_nil()).then(|| guid.clone());
         Some(DataSeparationSettings {
+            conditional_separation: bound(&self.references[2]),
             mode,
             value_parameter: bound(&self.references[0]),
             use_parameter: bound(&self.references[1]),

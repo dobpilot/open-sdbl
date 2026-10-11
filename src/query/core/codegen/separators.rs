@@ -58,6 +58,29 @@ pub(super) fn separator_predicates(
                     true,
                 ));
             }
+            SeparatorState::MissingCondition(constant) => {
+                return Err(QueryDiagnostic::missing_condition(constant, token));
+            }
+            SeparatorState::MissingSettings => {
+                return Err(QueryDiagnostic::at(
+                    QueryDiagnosticKind::Metadata,
+                    Some(token),
+                    format!(
+                        "data separator {:?} has unsupported separation settings",
+                        separator.name
+                    ),
+                ));
+            }
+            SeparatorState::UnsupportedConditionEmpty => {
+                return Err(QueryDiagnostic::at(
+                    QueryDiagnosticKind::Metadata,
+                    Some(token),
+                    format!(
+                        "data separator {:?} has an unsupported conditional empty value",
+                        separator.name
+                    ),
+                ));
+            }
             SeparatorState::Unsupported => {
                 return Err(QueryDiagnostic::at(
                     QueryDiagnosticKind::Metadata,

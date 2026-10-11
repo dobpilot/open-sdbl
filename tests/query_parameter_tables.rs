@@ -246,6 +246,7 @@ fn joins_a_catalog_of_the_buh_fixture() {
     }
     let snapshot = demo_resolved_at(&root).snapshot;
     let mut session = SessionParameters::new();
+    supply_active_separation_conditions(&snapshot, &mut session);
     for name in ["ОбластьДанныхЗначение", "ОбластьДанныхОсновныеДанные"]
     {
         session.set(QueryParameter::new(name, number(0)));

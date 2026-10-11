@@ -184,6 +184,7 @@ fn dereferences_standard_fields_through_a_composite_reference() {
 fn resolves_the_computed_standard_fields() {
     fn compile_separated(snapshot: &MetadataSnapshot, source: &str) -> CompiledQuery {
         let mut session = open_sdbl::query::SessionParameters::new();
+        support::supply_active_separation_conditions(snapshot, &mut session);
         session.set(open_sdbl::query::QueryParameter::new(
             "ЗначениеРазделителя",
             open_sdbl::query::ParameterValue::Number {
@@ -235,6 +236,7 @@ fn resolves_the_computed_standard_fields() {
 
     // SQL Server has no boolean type, so the value is spelled as a bit.
     let mut session = open_sdbl::query::SessionParameters::new();
+    support::supply_active_separation_conditions(&snapshot, &mut session);
     session.set(open_sdbl::query::QueryParameter::new(
         "ЗначениеРазделителя",
         open_sdbl::query::ParameterValue::Number {
@@ -343,6 +345,7 @@ fn reads_a_document_journal() {
     )
     .snapshot;
     let mut session = open_sdbl::query::SessionParameters::new();
+    support::supply_active_separation_conditions(&snapshot, &mut session);
     session.set(open_sdbl::query::QueryParameter::new(
         "ОбластьДанныхОсновныеДанные",
         open_sdbl::query::ParameterValue::Number {
@@ -394,6 +397,7 @@ fn reads_a_filter_criterion() {
     )
     .snapshot;
     let mut session = open_sdbl::query::SessionParameters::new();
+    support::supply_active_separation_conditions(&snapshot, &mut session);
     session.set(open_sdbl::query::QueryParameter::new(
         "ОбластьДанныхОсновныеДанные",
         open_sdbl::query::ParameterValue::Number {
@@ -453,8 +457,9 @@ fn reads_the_point_in_time_pair() {
     // the platform spreads the pair over two columns in the projection,
     // over two terms in the ordering, the grouping and `РАЗЛИЧНЫЕ`, and
     // refuses the field where no such pair exists.
-    fn session() -> open_sdbl::query::SessionParameters {
+    fn session(snapshot: &MetadataSnapshot) -> open_sdbl::query::SessionParameters {
         let mut session = open_sdbl::query::SessionParameters::new();
+        support::supply_active_separation_conditions(snapshot, &mut session);
         for name in ["ЗначениеРазделителя", "ОбластьДанныхОсновныеДанные"]
         {
             session.set(open_sdbl::query::QueryParameter::new(
@@ -478,7 +483,7 @@ fn reads_the_point_in_time_pair() {
     let compile = |source: &str| {
         QueryCompiler::new(&snapshot, PostgresBackend).compile_with(
             source,
-            &open_sdbl::query::CompileOptions::new().session(&session()),
+            &open_sdbl::query::CompileOptions::new().session(&session(&snapshot)),
         )
     };
 
@@ -711,6 +716,7 @@ fn joins_only_the_declared_targets_of_a_composite() {
         &std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/demo"),
     )
     .snapshot;
+    support::supply_active_separation_conditions(&snapshot, &mut session);
     let compiled = QueryCompiler::new(&snapshot, PostgresBackend)
         .compile_with(
             "ВЫБРАТЬ О.ЭлектронныйДокумент.Комментарий КАК К
@@ -776,6 +782,7 @@ fn spreads_a_mixed_kind_dereference_over_members() {
         &std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/demo"),
     )
     .snapshot;
+    support::supply_active_separation_conditions(&snapshot, &mut session);
     let compiled = QueryCompiler::new(&snapshot, PostgresBackend)
         .compile_with(
             "ВЫБРАТЬ Р.Регистратор.Организация КАК П

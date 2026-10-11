@@ -2,7 +2,7 @@
 
 use std::fmt;
 
-use crate::metadata::LookupError;
+use crate::metadata::{Guid, LookupError};
 use crate::{Diagnostic, DiagnosticKind, Token};
 
 /// A positional query parsing or metadata-resolution failure.
@@ -16,6 +16,7 @@ pub struct QueryDiagnostic {
     source: Option<QueryDiagnosticSource>,
     missing_parameter: Option<String>,
     missing_session_parameter: bool,
+    missing_separation_condition: Option<Box<Guid>>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -112,6 +113,7 @@ impl QueryDiagnostic {
             source: None,
             missing_parameter: None,
             missing_session_parameter: false,
+            missing_separation_condition: None,
         }
     }
 
@@ -129,6 +131,7 @@ impl QueryDiagnostic {
             source: None,
             missing_parameter: None,
             missing_session_parameter: false,
+            missing_separation_condition: None,
         }
     }
 
@@ -152,6 +155,7 @@ impl QueryDiagnostic {
             source: None,
             missing_parameter: None,
             missing_session_parameter: false,
+            missing_separation_condition: None,
         }
     }
 
@@ -227,6 +231,23 @@ impl QueryDiagnostic {
         self.missing_session_parameter
     }
 
+    /// GUID константы, значение которой хост должен прочитать для разделения.
+    /// Такая диагностика не является отсутствующим параметром сеанса.
+    #[must_use]
+    pub fn missing_separation_condition(&self) -> Option<&Guid> {
+        self.missing_separation_condition.as_deref()
+    }
+
+    pub(super) fn missing_condition(constant: &Guid, token: &Token<'_>) -> Self {
+        let mut diagnostic = Self::at(
+            QueryDiagnosticKind::Metadata,
+            Some(token),
+            format!("data separator requires condition constant {constant}"),
+        );
+        diagnostic.missing_separation_condition = Some(Box::new(constant.clone()));
+        diagnostic
+    }
+
     /// Returns the diagnostic text without its source position.
     #[must_use]
     pub fn message(&self) -> &str {
@@ -296,6 +317,7 @@ impl From<Diagnostic> for QueryDiagnostic {
             source: Some(QueryDiagnosticSource::Lex(error)),
             missing_parameter: None,
             missing_session_parameter: false,
+            missing_separation_condition: None,
         }
     }
 }

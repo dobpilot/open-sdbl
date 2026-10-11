@@ -6699,6 +6699,7 @@ fn names_the_standard_fields_of_processes_and_tasks() {
     )
     .snapshot;
     let mut session = open_sdbl::query::SessionParameters::new();
+    support::supply_active_separation_conditions(&snapshot, &mut session);
     session.set(open_sdbl::query::QueryParameter::new(
         "ОбластьДанныхОсновныеДанные",
         open_sdbl::query::ParameterValue::Number {

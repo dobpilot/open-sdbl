@@ -1,0 +1,35 @@
+{
+  "platform": "8.3.27.2342",
+  "extractor": {
+    "repository": "https://github.com/saby-integration/v8unpack",
+    "commit": "51473807dc8f874e9b06d84f466fff0861f3c4ac"
+  },
+  "sha256": {
+    "condition.cf": "9bb939ef53381e32982d3f08ef088db0033a840c0027ae84bc45efc1d7b579b6",
+    "condition.deflate": "960a6dcd369866f804106c28536121daae13fa751dba8cba60ef539f45acb867",
+    "condition.config": "9c90779baa00f43e504b2bd3e73ae15ef186508df2273374f3d4f95abed32541",
+    "independent-string.platform.txt": "294be6e6befd790d47f796c4390789526a4151af6986df9ae4bb2a463cba4e10",
+    "number.platform.txt": "46a337a171f9ac989ddf71f18aa99f0e93040823a54e9b1458144a232102e8eb",
+    "shared.platform.txt": "67cb36d34fe1f1d9156890d4e2e1fa287c359ec21cef95430f49281dd74fbd5c",
+    "number-shared.platform.txt": "94e2dd6d0bc815f1178fb926c0f0d501d059120304b3b5665d5784c3ac47a560",
+    "measure-common-attribute-conditional-separation.bsl": "2adad1a0554ffe0c18bdcaebf7ed90b0d9ecba8b0b14bf5b80b276624aaaff69",
+    "measure-common-attribute-conditional-separation-number.bsl": "6678e963af11379780d22d70034c73775907970cb8e18aaf421901afc03e335e",
+    "measure-common-attribute-conditional-separation-shared.bsl": "6df76abd3b78c19cf6cb664fefdd81dbfdc4ac151ffa08be487b7dc92a4a54f1",
+    "measure-common-attribute-conditional-separation-number-shared.bsl": "bca84b31024d27d09b7045c27f313f12f1d78ce59209bc6ce25acbf54f8f8f3b",
+    "demo.deflate": "c6b4ff834bcc0322323d305e685bc9958b7cb05399a3e2867f28e9611890025c",
+    "README.md": "6d7fde3d2e9b88e84b282dad32b5fec39ac0173151c27ee37a591a72e549eda7",
+    "no-condition.cf": "0154cefa15b587c32631eb8291ad53de8f621e8f6fb3a7ca1ba42d2c7c505d14",
+    "no-condition.deflate": "c5eebde2f7a029c38c327b7c884dd6331e705190920f5d926a7e2e4baacb5bb5",
+    "no-condition.config": "d4510607700f0f5605dc4864f9d591ff7a0bcc2685c28bfc3fd63d03d94582ea",
+    "constant.deflate": "960a13a07b01bca664397fe93ee85be2be11e10eda77082b0638f4fb4717ed02",
+    ".gitattributes": "93a2f71f1429a8ee48c6455cf6d9555a26d05397ccafa50180c7790051830028",
+    "xml/\u041d\u0430\u0438\u043c\u0435\u043d\u043e\u0432\u0430\u043d\u0438\u0435\u042f\u0437\u044b\u043a1.xml": "7a8ce1fae16b566574b838606a971b42bbd81350a541edff2e05164049543b86",
+    "xml/\u0417\u043d\u0430\u0447\u0435\u043d\u0438\u0435\u041e\u043f\u0446\u0438\u0438\u041f\u0440\u043e\u0431\u044b.xml": "701ada268055d3e704efaeb16f3539a3e38ebda8e3052fe93e0f2c83f1075f3a",
+    "xml/no-condition.xml": "0f37f1f6d5d68d618dda507651ea102348de3ed584121a9c32360f18dd0c7a83",
+    "xml/common-attribute-conditional-separation.xml": "e15d92006c26fec7d5725685cc9286a583559400b0899901fdc9522369b64013",
+    "xml/common-attribute-conditional-separation-number.xml": "7183b5e24c16c2e4b10efb114eba125696cd3e65f2927f991bb3378da2aa18f7",
+    "xml/common-attribute-conditional-separation-shared.xml": "7b171bfeab280e0d1a5b3a108fe1bd424738bc40c2b7fb602f3fa2832fa5f8c1",
+    "xml/common-attribute-conditional-separation-number-shared.xml": "303c543e1efae94ab09d4dfc17009661bd070b5a74b661770e899f2125d3e3a4",
+    "xml/conditional-separation-number-parameter.xml": "55d7905ebd448514b689997699c439d310e739dc91afc68c2c334282aa8506a9"
+  }
+}

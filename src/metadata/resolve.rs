@@ -306,6 +306,8 @@ pub struct MetadataField {
 /// resolved to names.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DataSeparation {
+    /// Константа глобального условия разделения, если ссылка задана.
+    pub conditional_separation: Option<Guid>,
     /// Separated-data-use mode from Config.
     pub mode: SeparatedDataUse,
     /// Name of the session parameter bound as the separator value, when
@@ -1314,6 +1316,7 @@ pub fn resolve_metadata_with_predefined_values_and_extensions(
                                 .map(|descriptor| descriptor.name.clone())
                         };
                         DataSeparation {
+                            conditional_separation: settings.conditional_separation.clone(),
                             mode: settings.mode,
                             value_parameter: parameter_name(&settings.value_parameter),
                             use_parameter: parameter_name(&settings.use_parameter),

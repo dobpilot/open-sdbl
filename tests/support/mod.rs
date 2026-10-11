@@ -1141,3 +1141,19 @@ pub(crate) fn demo_resolved_at(root: &std::path::Path) -> open_sdbl::metadata::R
 pub(crate) fn separators_snapshot() -> open_sdbl::metadata::MetadataSnapshot {
     separators_resolved().snapshot
 }
+
+/// Корпус явно проверяет включённое разделение; его условия не читаются из БД.
+pub(crate) fn supply_active_separation_conditions(
+    snapshot: &open_sdbl::metadata::MetadataSnapshot,
+    session: &mut open_sdbl::query::SessionParameters,
+) {
+    for separator in snapshot.separators() {
+        if let Some(id) = separator
+            .separation
+            .as_ref()
+            .and_then(|settings| settings.conditional_separation.as_ref())
+        {
+            session.set_separation_condition(id.clone(), true);
+        }
+    }
+}

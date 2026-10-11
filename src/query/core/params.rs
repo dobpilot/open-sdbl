@@ -3,7 +3,7 @@
 use std::fmt;
 
 use crate::Token;
-use crate::metadata::ObjectId;
+use crate::metadata::{Guid, ObjectId};
 use crate::query::core::QueryDiagnostic;
 use crate::query::core::ast::days_in_month;
 use crate::query::core::names::names_equal;
@@ -255,13 +255,47 @@ impl QueryParameter {
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct SessionParameters {
     values: Vec<QueryParameter>,
+    separation_conditions: Vec<(Guid, bool)>,
 }
 
 impl SessionParameters {
     /// An empty parameter set.
     #[must_use]
     pub const fn new() -> Self {
-        Self { values: Vec::new() }
+        Self {
+            values: Vec::new(),
+            separation_conditions: Vec::new(),
+        }
+    }
+
+    /// Передаёт текущее значение константы условия разделения.
+    /// Значение заменяется по GUID и не является параметром сеанса BSL.
+    pub fn set_separation_condition(&mut self, constant: Guid, value: bool) {
+        if let Some(existing) = self
+            .separation_conditions
+            .iter_mut()
+            .find(|(id, _)| id == &constant)
+        {
+            existing.1 = value;
+        } else {
+            self.separation_conditions.push((constant, value));
+        }
+    }
+
+    /// Получает переданное хостом условие; отсутствие не означает `false`.
+    #[must_use]
+    pub fn separation_condition(&self, constant: &Guid) -> Option<bool> {
+        self.separation_conditions
+            .iter()
+            .find(|(id, _)| id == constant)
+            .map(|(_, value)| *value)
+    }
+
+    /// Удаляет значение условия перед повторным чтением константы хостом.
+    pub fn remove_separation_condition(&mut self, constant: &Guid) -> bool {
+        let before = self.separation_conditions.len();
+        self.separation_conditions.retain(|(id, _)| id != constant);
+        self.separation_conditions.len() != before
     }
 
     /// Stores a parameter, replacing the value of the same name in place.
@@ -414,7 +448,7 @@ impl<'a> CompileOptions<'a> {
     /// The bound parameter values: query values first, then session
     /// values.
     pub(super) fn bound_parameters(&self) -> Parameters<'a> {
-        Parameters::bound(self.parameters, self.session.values())
+        Parameters::bound(self.parameters, self.session)
     }
 
     /// Supplies application presentation plans.
@@ -452,14 +486,16 @@ pub(super) struct Parameters<'a> {
     values: &'a [QueryParameter],
     /// Session parameters, consulted after `values`.
     session: &'a [QueryParameter],
+    conditions: &'a [(Guid, bool)],
     bound: bool,
 }
 
 impl<'a> Parameters<'a> {
-    pub(super) const fn bound(values: &'a [QueryParameter], session: &'a [QueryParameter]) -> Self {
+    pub(super) fn bound(values: &'a [QueryParameter], session: &'a SessionParameters) -> Self {
         Self {
             values,
-            session,
+            session: session.values(),
+            conditions: &session.separation_conditions,
             bound: true,
         }
     }
@@ -468,6 +504,7 @@ impl<'a> Parameters<'a> {
         Self {
             values: &[],
             session: &[],
+            conditions: &[],
             bound: false,
         }
     }
@@ -478,6 +515,7 @@ impl<'a> Parameters<'a> {
         Self {
             values: &[],
             session: self.session,
+            conditions: self.conditions,
             bound: self.bound,
         }
     }
@@ -495,6 +533,13 @@ impl<'a> Parameters<'a> {
             .iter()
             .find(|parameter| names_equal(parameter.name(), name))
             .map(QueryParameter::value)
+    }
+
+    pub(super) fn separation_condition(&self, constant: &Guid) -> Option<bool> {
+        self.conditions
+            .iter()
+            .find(|(id, _)| id == constant)
+            .map(|(_, value)| *value)
     }
 
     /// Whether some parameter of that name is supplied.

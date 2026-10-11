@@ -23,6 +23,7 @@ fn postgres(snapshot: &MetadataSnapshot, source: &str) -> String {
 /// off through the session parameters.
 fn postgres_unf(snapshot: &MetadataSnapshot, source: &str) -> String {
     let mut session = SessionParameters::new();
+    supply_active_separation_conditions(snapshot, &mut session);
     let zero = ParameterValue::Number {
         unscaled: 0,
         scale: 0,

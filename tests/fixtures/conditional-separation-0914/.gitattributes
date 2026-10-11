@@ -1,0 +1,6 @@
+# Нативные артефакты сохраняются побайтно; CRLF не нормализуется.
+*.cf binary
+*.deflate binary
+*.config -text whitespace=cr-at-eol
+*.xml -text whitespace=cr-at-eol
+*.platform.txt -text whitespace=cr-at-eol

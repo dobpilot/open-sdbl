@@ -638,6 +638,12 @@ pub(super) enum SeparatorState {
     /// Отсутствующий флаг или необходимое значение: чтение таблицы
     /// диагностирует имя параметра сеанса через существующий контракт.
     Missing(String),
+    /// Условие требует отдельного чтения константы хостом.
+    MissingCondition(crate::metadata::Guid),
+    /// Пустая область условного разделителя не измерена для этого типа.
+    UnsupportedConditionEmpty,
+    /// Именованный разделитель имеет неподдержанную форму настроек.
+    MissingSettings,
     /// A separator of a kind without an empty value and without a session
     /// value; reading such a table is a `Metadata` diagnostic.
     Unsupported,
@@ -684,7 +690,25 @@ fn resolve_statement_separators(
             let value_parameter = separation
                 .and_then(|separation| separation.value_parameter.clone())
                 .unwrap_or_else(|| name.clone());
-            let state = if let Some(parameter) = use_parameter.filter(|_| use_value.is_none()) {
+            let condition =
+                separation.and_then(|settings| settings.conditional_separation.as_ref());
+            let condition_value = condition.and_then(|id| parameters.separation_condition(id));
+            let state = if separation.is_none() && field.name.is_some() {
+                // Nil-ссылка измеренно означает отсутствие условия; неразобранные
+                // настройки именованного реквизита этим значением не считаются.
+                SeparatorState::MissingSettings
+            } else if let Some(id) = condition.filter(|_| condition_value.is_none()) {
+                SeparatorState::MissingCondition(id.clone())
+            } else if condition_value == Some(false) {
+                // Нативные String/Number контроли обоих режимов выбирают пустую
+                // область. Остальные типы условного разделения не измерены.
+                match separator_empty_value(snapshot, field.number) {
+                    Some(value @ (ParameterValue::String(_) | ParameterValue::Number { .. })) => {
+                        SeparatorState::Value(value)
+                    }
+                    _ => SeparatorState::UnsupportedConditionEmpty,
+                }
+            } else if let Some(parameter) = use_parameter.filter(|_| use_value.is_none()) {
                 SeparatorState::Missing(parameter.to_owned())
             } else if use_value == Some(&ParameterValue::Boolean(false)) {
                 if independent {
