@@ -1,0 +1,11 @@
+# Назначение расширения, 1С 8.3.27.2342
+
+2026-10-11: собственная PostgreSQL-база `sdbl_measure_0915purpose`, созданная нативным `ibcmd infobase create --locale=ru_RU --create-database`. demo/buh/unf не изменялись. Три `ibcmd extension create` с явно заданными `--purpose=patch|customization|add-on`; `extension info` снят с установленного расширения. `config save --extension=...` дал CFE, `config export --extension=...` — XML. `base.cf` сохраняет базовую конфигурацию.
+
+`rows.tsv` — read-only SQL `_ExtName|_ExtensionScope|hex(_ExtensionZippedInfo)`. `cas/` — фактические BinaryData строк ConfigCAS, имена соответствуют FileName. Назначения нет в ExtensionZippedInfo: записи имеют одну форму, разные ключи поколений. Источник — configuration resource, обозначенный собственным индексом расширения. Ресурс из CFE побайтно совпадает с соответствующей строкой ConfigCAS. CFE извлечён Container из v8unpack commit 51473807dc8f874e9b06d84f466fff0861f3c4ac, без включения зависимости в SDK.
+
+После разбора сериализации: configuration root version2; группа `9cd510cd-abfc-11d4-9434-004095e12fc7`; wrapper version1; configuration header version68 с 61 элементом; compatibility field43=80327; purpose field44: 0=Patch, 1=Customization, 2=AddOn. Все значения сопоставлены с XML ConfigurationExtensionPurpose и native info. Другие версии заголовка/compatibility/коды не сопоставлялись и возвращают None. Каталог продолжает приобретаться независимо от неизвестного назначения.
+
+Дополнительные нативные пары сняты теми же тремя расширениями: XML меняет только ConfigurationExtensionCompatibilityMode на Version8_3_24, затем Version8_3_17. После `config import --extension` и `config apply --extension --force` сняты CFE, XML, extension info и SQL. Все шесть ресурсов сохранили header68/61 элементов; поле43 стало 80324/80317, поле44 осталось 0/1/2 для соответствующего назначения. Каждая compressed CFE-запись совпадает со своей ConfigCAS BinaryData. `rows-80324.tsv`/`rows-80317.tsv` фиксируют поколения SQL; cas содержит их ресурсы. Эти значения нужны для реально встреченных read-only buh корней. Неизмеренные CompatibilityMode не добавлены.
+
+У native info удалены только приглашение ввода пароля, конечные пробелы терминала и пустые конечные строки; строки свойств и значения не изменены. Пароли не сохранены. CFE/CF/DEFLATE/serialized/XML сохраняются побайтно.

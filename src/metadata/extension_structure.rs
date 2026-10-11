@@ -18,10 +18,24 @@ use super::{Guid, MetadataError, MetadataErrorKind};
 pub struct ExtensionCatalog {
     /// The identifier of the extension's configuration object.
     pub configuration: Guid,
+    /// Измеренное назначение расширения; неизвестная форма или код дают `None`.
+    pub purpose: Option<ConfigurationExtensionPurpose>,
     /// Every class the configuration lists, in stored order, each with the
     /// objects the extension declares in it — adopted and its own alike.
     /// A class listing no object is kept.
     pub classes: Vec<ExtensionClass>,
+}
+
+/// Назначение расширения конфигурации, подтверждённое нативной платформой.
+#[non_exhaustive]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ConfigurationExtensionPurpose {
+    /// Исправление конфигурации.
+    Patch,
+    /// Адаптация конфигурации.
+    Customization,
+    /// Дополнение конфигурации.
+    AddOn,
 }
 
 /// One class of metadata objects, as an extension's configuration lists it.
@@ -137,6 +151,7 @@ pub fn parse_extension_catalog(resource: &[u8]) -> Result<ExtensionCatalog, Meta
         }
     }
     Ok(ExtensionCatalog {
+        purpose: extension_purpose(root, groups),
         configuration,
         classes,
     })
@@ -248,6 +263,43 @@ fn counted<'value>(
         .ok_or_else(|| malformed(&format!("{what} carries no count")))? as usize;
     list.get(at + 1..at + 1 + count)
         .ok_or_else(|| malformed(&format!("{what} counts {count} items it does not hold")))
+}
+
+/// Читает назначение только из измеренной формы собственного заголовка.
+/// Сканирование чисел или флагов другой SQL-записи не определяет назначение.
+fn extension_purpose(root: &[Value], groups: &[Value]) -> Option<ConfigurationExtensionPurpose> {
+    if root.first()?.as_scalar()? != "2" {
+        return None;
+    }
+    let mut matching = groups.iter().filter_map(|group| {
+        let group = group.as_list()?;
+        (group.first()?.as_scalar()? == "9cd510cd-abfc-11d4-9434-004095e12fc7").then_some(group)
+    });
+    let group = matching.next()?;
+    if matching.next().is_some() || group.len() != 2 {
+        return None;
+    }
+    let wrapper = group.get(1)?.as_list()?;
+    if wrapper.first()?.as_scalar()? != "1" {
+        return None;
+    }
+    let header = wrapper.get(1)?.as_list()?;
+    // CFE, XML и SQL ConfigCAS платформы 8.3.27.2342 совпадают:
+    // header[44] — 0/1/2; совместимость header[43] измерена для
+    // 80327/80324/80317. Иные версии
+    // заголовка не получают предположительного значения по умолчанию.
+    if header.len() != 61
+        || header.first()?.as_scalar()? != "68"
+        || !matches!(header.get(43)?.as_scalar()?, "80327" | "80324" | "80317")
+    {
+        return None;
+    }
+    match header.get(44)?.as_scalar()? {
+        "0" => Some(ConfigurationExtensionPurpose::Patch),
+        "1" => Some(ConfigurationExtensionPurpose::Customization),
+        "2" => Some(ConfigurationExtensionPurpose::AddOn),
+        _ => None,
+    }
 }
 
 fn class_entry(entry: &Value) -> Result<ExtensionClass, MetadataError> {

@@ -1,0 +1,10 @@
+name                         : "Probe0915Patch"
+version                      :
+active                       : yes
+purpose                      : patch
+safe-mode                    : yes
+security-profile-name        :
+unsafe-action-protection     : yes
+used-in-distributed-infobase : no
+scope                        : infobase
+hash-sum                     : "uD3/eHc4262nx/0V8Lt1g25LCkk="

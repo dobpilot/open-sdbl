@@ -1318,3 +1318,15 @@ GeneratedType объекта отдельно от ссылки и точек м
 Решение одинаково для PostgreSQL и SQL Server и принято в общем компиляторе.
 Нативные доказательства 8.3.27.2342 —
 [фикстуры разделителей](tests/fixtures/separator-use-0913/README.md).
+
+### Назначение расширения
+
+`open_sdbl::metadata::ConfigurationExtensionPurpose` различает `Patch`,
+`Customization` и `AddOn`. `ExtensionCatalog::purpose` и
+`open_sdbl_db::AcquiredExtension::purpose` содержат `Option` этого типа.
+Назначение читается из собственного configuration-root расширения,
+побайтно сопоставленного с нативными CFE/XML и ConfigCAS 1С 8.3.27.2342;
+`ExtensionInfo` этого свойства не хранит. Неизвестная версия заголовка,
+код или повреждение дают `None`, не подразумевая `AddOn`.
+Имя, активность и область действия не определяют назначение.
+Измеренные артефакты находятся в `tests/fixtures/extension/purpose-0915`.

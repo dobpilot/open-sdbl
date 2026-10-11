@@ -1,0 +1,10 @@
+name                         : "Probe0915Addon"
+version                      :
+active                       : yes
+purpose                      : add-on
+safe-mode                    : yes
+security-profile-name        :
+unsafe-action-protection     : yes
+used-in-distributed-infobase : no
+scope                        : infobase
+hash-sum                     : "bg6I0G63ba1+WDJdFQsIDR8y0lA="

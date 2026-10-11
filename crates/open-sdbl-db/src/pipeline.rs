@@ -12,12 +12,13 @@ use std::time::Duration;
 
 use futures_util::{Stream, StreamExt, TryStreamExt};
 use open_sdbl::metadata::{
-    ExtensionCatalog, ExtensionMetadata, ExtensionObject, LiveColumn, LiveIndex, LiveTable,
-    MetadataErrorKind, MetadataSnapshot, ResolutionReport, StorageLayout,
-    extension_configuration_root, extension_metadata_from_restructure, inflate_raw_deflate,
-    inflate_raw_deflate_bounded, is_config_metadata_resource, parse_config_resource_bounded,
-    parse_extension_catalog, parse_extension_index, parse_extension_info, parse_extension_objects,
-    parse_extension_restructure, resolve_metadata_with_predefined_values_and_extensions,
+    ConfigurationExtensionPurpose, ExtensionCatalog, ExtensionMetadata, ExtensionObject,
+    LiveColumn, LiveIndex, LiveTable, MetadataErrorKind, MetadataSnapshot, ResolutionReport,
+    StorageLayout, extension_configuration_root, extension_metadata_from_restructure,
+    inflate_raw_deflate, inflate_raw_deflate_bounded, is_config_metadata_resource,
+    parse_config_resource_bounded, parse_extension_catalog, parse_extension_index,
+    parse_extension_info, parse_extension_objects, parse_extension_restructure,
+    resolve_metadata_with_predefined_values_and_extensions,
 };
 use tokio::sync::Semaphore;
 use tokio::time::timeout;
@@ -228,6 +229,9 @@ pub struct ExtensionCatalogRow {
 #[non_exhaustive]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AcquiredExtension {
+    /// Назначение из измеренного configuration-root расширения; `None` —
+    /// неизвестная, повреждённая или не приобретённая форма, без умолчания.
+    pub purpose: Option<ConfigurationExtensionPurpose>,
     /// Физический `_IDRRef` расширения в шестнадцатеричной записи.
     /// Он сохраняется при переименовании и не является UUID в каноническом
     /// порядке байтов. Для канонического UUID физические байты переставляются
@@ -605,6 +609,7 @@ fn group_extensions(
         }
         let catalog = extension_catalog(&root, &resources);
         extensions.push(AcquiredExtension {
+            purpose: catalog.as_ref().and_then(|catalog| catalog.purpose),
             identity: hexadecimal(&row.identity),
             name,
             active: info.active,
@@ -1269,3 +1274,7 @@ mod runtime_object_099_tests;
 #[cfg(test)]
 #[path = "tests/data_processor_0911.rs"]
 mod data_processor_0911_tests;
+
+#[cfg(test)]
+#[path = "tests/extension_purpose.rs"]
+mod extension_purpose_tests;

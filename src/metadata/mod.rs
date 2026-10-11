@@ -47,8 +47,9 @@ pub use extension::{
     parse_extension_info, parse_extension_restructure,
 };
 pub use extension_structure::{
-    ExtensionCatalog, ExtensionClass, ExtensionObject, ObjectBelonging,
-    extension_configuration_root, parse_extension_catalog, parse_extension_objects,
+    ConfigurationExtensionPurpose, ExtensionCatalog, ExtensionClass, ExtensionObject,
+    ObjectBelonging, extension_configuration_root, parse_extension_catalog,
+    parse_extension_objects,
 };
 pub use guid::Guid;
 pub use identity::{AttributeId, FieldId, LookupError, ObjectId, StandardFieldId};
