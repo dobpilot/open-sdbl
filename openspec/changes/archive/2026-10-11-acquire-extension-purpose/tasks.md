@@ -5,7 +5,7 @@
 - [x] 3. Add typed metadata and acquisition purpose with common decoding.
 - [x] 4. Test all variants, unknown/truncated records and independence of other properties.
 - [x] 5. Run workspace fmt, Clippy, tests, rustdoc and strict OpenSpec without changed SQL/error expectations.
-- [ ] 6. Commit implementation and separately archive after successful gates.
+- [x] 6. Commit implementation and separately archive after successful gates.
 
 ## Verification
 
