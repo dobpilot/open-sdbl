@@ -81,7 +81,7 @@ pub use resolve::{
 pub use roles::{
     GrantedRight, ObjectMember, ObjectRights, ROLES_COLLECTION, Restriction, RestrictionTemplate,
     Right, RoleCatalog, RoleEntry, RoleRights, parse_role_rights, parse_role_rights_bounded,
-    roles_collection,
+    parse_role_without_rights, roles_collection,
 };
 pub use schema::{
     ColumnType, SchemaAnomaly, SchemaColumn, SchemaIndex, SchemaStorage, SchemaTable,

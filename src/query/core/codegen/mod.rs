@@ -12,6 +12,7 @@ mod ordinary;
 mod params;
 pub(super) use params::decimal_text;
 mod projection;
+mod scalar_policy;
 mod select;
 mod separators;
 mod sources;

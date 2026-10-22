@@ -227,12 +227,3 @@ pub(super) fn union_projection(branches: &[CompiledBranch]) -> Option<Vec<Logica
     }
     Some(result)
 }
-
-// Без признака типа SQL NULL не отличает неопределённое значение от Null.
-pub(super) fn contains_undefined(expression: &crate::query::core::ast::Expression<'_, '_>) -> bool {
-    matches!(expression, crate::query::core::ast::Expression::Literal(token)
-        if token.kind == crate::TokenKind::Keyword(crate::Keyword::Undefined))
-        || super::sources::expression_children(expression)
-            .into_iter()
-            .any(contains_undefined)
-}

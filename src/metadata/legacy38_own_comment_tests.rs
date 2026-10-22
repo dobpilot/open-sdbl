@@ -304,6 +304,7 @@ fn strict_identity_callers_keep_rejecting_nonempty_comments() {
                 "45e46cbc-3e24-4165-8b7b-cc98a6f80211",
                 profile
             )
+            .known()
             .is_some()
         );
         let h = own_identity(own_rows(&mut v).last_mut().unwrap());
@@ -317,6 +318,7 @@ fn strict_identity_callers_keep_rejecting_nonempty_comments() {
                 "45e46cbc-3e24-4165-8b7b-cc98a6f80211",
                 profile
             )
+            .known()
             .is_none()
         );
     }

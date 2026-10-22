@@ -645,6 +645,16 @@ pub struct RoleRights {
 }
 
 impl RoleRights {
+    fn empty() -> Self {
+        Self {
+            set_for_new_objects: false,
+            set_for_attributes_by_default: false,
+            independent_rights_of_child_objects: false,
+            objects: Vec::new(),
+            templates: Vec::new(),
+        }
+    }
+
     /// The rights the role records on one object, ignoring its members.
     #[must_use]
     pub fn object(&self, object: &Guid) -> Option<&ObjectRights> {
@@ -766,6 +776,93 @@ impl RestrictionTemplate {
             body: body.into(),
         }
     }
+}
+
+/// Recognizes a measured own-role descriptor with no rights subobject.
+///
+/// Returns empty rights only when the complete descriptor matches `role` and
+/// explicitly records the absence of rights. Unknown, malformed, borrowed,
+/// mismatched or rights-bearing descriptors return `None`. Decompression uses
+/// the same 256 MiB ceiling as [`parse_role_rights`]. Missing `.0` data alone
+/// never proves that a role is empty.
+#[must_use]
+pub fn parse_role_without_rights(role: &Guid, compressed: &[u8]) -> Option<RoleRights> {
+    let decoded =
+        inflate_raw_deflate_bounded(compressed, super::deflate::DEFAULT_OUTPUT_LIMIT).ok()?;
+    let value = parse_serialized(&decoded).ok()?;
+    role_descriptor_has_no_rights(role, &value).then(RoleRights::empty)
+}
+
+fn role_descriptor_has_no_rights(role: &Guid, value: &Value) -> bool {
+    let Value::List(root) = value else {
+        return false;
+    };
+    let [
+        Value::Atom(version),
+        Value::List(class),
+        Value::Atom(root_tail),
+    ] = root.as_slice()
+    else {
+        return false;
+    };
+    let [
+        Value::Atom(kind),
+        Value::List(header),
+        Value::Atom(rights_present),
+        Value::Atom(class_flag),
+        Value::Atom(class_tail),
+    ] = class.as_slice()
+    else {
+        return false;
+    };
+    let [
+        Value::Atom(header_version),
+        Value::List(identity),
+        Value::String(name),
+        Value::List(synonym),
+        Value::String(_comment),
+        Value::Atom(header_flag),
+        Value::Atom(header_mode),
+        Value::Atom(owner),
+        Value::Atom(header_tail),
+    ] = header.as_slice()
+    else {
+        return false;
+    };
+    let [
+        Value::Atom(own),
+        Value::Atom(identity_flag),
+        Value::Atom(identifier),
+    ] = identity.as_slice()
+    else {
+        return false;
+    };
+    let [
+        Value::Atom(synonym_count),
+        Value::String(language),
+        Value::String(_text),
+    ] = synonym.as_slice()
+    else {
+        return false;
+    };
+    version == "1"
+        && root_tail == "0"
+        && kind == "6"
+        && rights_present == "0"
+        && class_flag == "0"
+        && class_tail == "0"
+        && header_version == "3"
+        && own == "1"
+        && identity_flag == "0"
+        && !role.is_nil()
+        && identifier.parse::<Guid>().ok().as_ref() == Some(role)
+        && !name.is_empty()
+        && synonym_count == "1"
+        && !language.is_empty()
+        && header_flag == "0"
+        && header_mode == "0"
+        && owner == Guid::NIL
+        && header_tail == "0"
 }
 
 /// Decodes a role's rights resource.
@@ -1134,3 +1231,7 @@ impl RoleCatalog {
         self.roles.iter().find(|role| &role.guid == guid)
     }
 }
+
+#[cfg(test)]
+#[path = "role_descriptor_tests.rs"]
+mod descriptor_tests;

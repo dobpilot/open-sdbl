@@ -7,6 +7,7 @@ use super::params::{
     ReferenceConstant, list_elements, object_type_number, parameter_kind,
     reference_constant_of_bytes, reference_constant_of_value, render_scalar_parameter,
 };
+use super::scalar_policy::{ScalarStringEquality, postgres_string_equality_operands};
 use super::select::derived_data_type;
 use super::sources::compile_metadata_value;
 use super::totals::hierarchical_catalog_of;
@@ -2452,31 +2453,17 @@ fn compile_logical_or_value(
     }
 }
 
-/// The measured PostgreSQL equality policy, shared by both source contexts.
-pub(super) enum ScalarStringEquality {
-    Strings,
-    Incompatible,
-}
-
-impl ScalarStringEquality {
-    pub(super) fn for_kinds(left: &ColumnKind, right: &ColumnKind) -> Option<Self> {
-        use ColumnKind::{Boolean, DateTime, Number, String};
-        match (left, right) {
-            (String { .. }, String { .. }) => Some(Self::Strings),
-            (String { .. }, Number { .. } | Boolean | DateTime)
-            | (Number { .. } | Boolean | DateTime, String { .. }) => Some(Self::Incompatible),
-            _ => None,
-        }
-    }
-
-    pub(super) fn render(self, left: &str, right: &str) -> String {
-        match self {
-            Self::Strings => format!(
-                "((rtrim(CAST({left} AS text), ' ') COLLATE \"C\") = (rtrim(CAST({right} AS text), ' ') COLLATE \"C\"))"
-            ),
-            Self::Incompatible => {
-                format!("(CASE WHEN {left} IS NULL OR {right} IS NULL THEN NULL ELSE FALSE END)")
-            }
+pub(super) fn render_scalar_string_equality(
+    policy: ScalarStringEquality,
+    left: &str,
+    right: &str,
+) -> String {
+    match policy {
+        ScalarStringEquality::Strings => format!(
+            "((rtrim(CAST({left} AS text), ' ') COLLATE \"C\") = (rtrim(CAST({right} AS text), ' ') COLLATE \"C\"))"
+        ),
+        ScalarStringEquality::Incompatible => {
+            format!("(CASE WHEN {left} IS NULL OR {right} IS NULL THEN NULL ELSE FALSE END)")
         }
     }
 }
@@ -2515,16 +2502,7 @@ fn compile_binary_expression(
     }
     // Compare complete operands before flattening arithmetic spines. A binary
     // left operand must receive the same policy as a binary right operand.
-    if context.dialect == SqlDialect::Postgres
-        && let Expression::Binary {
-            left,
-            operator,
-            right,
-        } = expression
-        && operator.lexeme == "="
-        && !matches!(left.as_ref(), Expression::Case { .. })
-        && !matches!(right.as_ref(), Expression::Case { .. })
-    {
+    if let Some((left, right)) = postgres_string_equality_operands(expression, context.dialect) {
         let left_kind = value_operand_kind(left, context)?;
         let right_kind = value_operand_kind(right, context)?;
         if let Some(equality) = ScalarStringEquality::for_kinds(&left_kind, &right_kind) {
@@ -2532,7 +2510,7 @@ fn compile_binary_expression(
             // authorization and row restrictions cannot be bypassed by FALSE.
             let left = compile_expression(left, context)?;
             let right = compile_expression(right, context)?;
-            return Ok(equality.render(&left, &right));
+            return Ok(render_scalar_string_equality(equality, &left, &right));
         }
     }
     // The platform concatenates strings with `+` and refuses to mix a

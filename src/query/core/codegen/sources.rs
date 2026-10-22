@@ -4,13 +4,17 @@ use std::sync::Arc;
 
 use super::context::{CompilationContext, CompiledBranch, JoinPlan, SourceScope};
 use super::expression::{
-    CasePart, Operand, ScalarStringEquality, binary_operator_sql, check_like_operand,
-    check_scalar_argument, compile_case, compile_predicate, count_diagnostic, function_name,
-    is_count_kind, is_date_operand_kind, is_unbound_parameter, left_binary_spine, operand_token,
-    reference_column, reference_type_column, render_coalesce, render_like, single_column,
-    source_free_expression_kind, type_literal_value, value_type_sql, widen_reference,
+    CasePart, Operand, binary_operator_sql, check_like_operand, check_scalar_argument,
+    compile_case, compile_predicate, count_diagnostic, function_name, is_count_kind,
+    is_date_operand_kind, is_unbound_parameter, left_binary_spine, operand_token, reference_column,
+    reference_type_column, render_coalesce, render_like, render_scalar_string_equality,
+    single_column, source_free_expression_kind, type_literal_value, value_type_sql,
+    widen_reference,
 };
 use super::params::render_scalar_parameter;
+use super::scalar_policy::{
+    ScalarStringEquality, has_exact_scalar_projection, postgres_string_equality_operands,
+};
 use super::select::append_reference_join;
 use super::select::derived_data_type;
 use super::separators::separator_predicates;
@@ -23,6 +27,7 @@ use crate::metadata::{
 use crate::query::core::ast::{
     AggregateArgument, AggregateKind, CastTarget, Expression, JoinAst, JoinKind, OrderTerm,
     PresentationArgument, PresentationOperation, Projection, SelectAst, SourceAst,
+    expression_children,
 };
 use crate::query::core::dialect::{OutputLabelAllocator, SqlDialect, compile_literal};
 use crate::query::core::names::names_equal;
@@ -376,7 +381,7 @@ pub(super) fn compile_source_free_branch(
                     storage_domain,
                 )?;
                 let kind = source_free_expression_kind(expression, snapshot, parameters);
-                if !kind.is_wildcard() && super::projection::contains_undefined(expression) {
+                if !has_exact_scalar_projection(expression, &kind) {
                     exact_projection = false;
                 }
                 (sql, format!("column{}", index + 1), kind)
@@ -1106,16 +1111,7 @@ fn compile_source_free_binary_expression(
             storage_domain,
         );
     }
-    if dialect == SqlDialect::Postgres
-        && let Expression::Binary {
-            left,
-            operator,
-            right,
-        } = expression
-        && operator.lexeme == "="
-        && !matches!(left.as_ref(), Expression::Case { .. })
-        && !matches!(right.as_ref(), Expression::Case { .. })
-    {
+    if let Some((left, right)) = postgres_string_equality_operands(expression, dialect) {
         let left_kind = source_free_expression_kind(left, snapshot, parameters);
         let right_kind = source_free_expression_kind(right, snapshot, parameters);
         if let Some(equality) = ScalarStringEquality::for_kinds(&left_kind, &right_kind) {
@@ -1133,7 +1129,7 @@ fn compile_source_free_binary_expression(
                 parameters,
                 storage_domain,
             )?;
-            return Ok(equality.render(&left, &right));
+            return Ok(render_scalar_string_equality(equality, &left, &right));
         }
     }
     let (left, terms) = left_binary_spine(expression);
@@ -1352,94 +1348,6 @@ pub(super) fn references_a_field(expression: &Expression<'_, '_>) -> bool {
         pending.extend(expression_children(expression));
     }
     false
-}
-
-/// The direct operands of an expression, in no particular order.
-pub(super) fn expression_children<'e, 'a, 'b>(
-    expression: &'e Expression<'a, 'b>,
-) -> Vec<&'e Expression<'a, 'b>> {
-    let mut pending: Vec<&'e Expression<'a, 'b>> = Vec::new();
-    match expression {
-        Expression::Field(_) => {}
-        Expression::Aggregate {
-            argument: AggregateArgument::Expression(argument),
-            ..
-        } => pending.push(argument),
-        Expression::Aggregate { .. }
-        | Expression::Literal(_)
-        | Expression::Parameter(_)
-        | Expression::DateTime { .. }
-        | Expression::MetadataValue { .. }
-        | Expression::SystemValue { .. }
-        | Expression::TypeLiteral { .. }
-        | Expression::Uuid { .. } => {}
-        Expression::Tuple { items, .. } => pending.extend(items),
-        Expression::ScalarFunction { arguments, .. } => pending.extend(arguments),
-        Expression::Between {
-            value, low, high, ..
-        } => {
-            pending.push(value);
-            pending.push(low);
-            pending.push(high);
-        }
-        Expression::BeginOfPeriod { value, .. }
-        | Expression::EndOfPeriod { value, .. }
-        | Expression::DatePart { value, .. }
-        | Expression::Refs { value, .. }
-        | Expression::ValueType {
-            argument: value, ..
-        }
-        | Expression::Unary { value, .. }
-        | Expression::IsNull { value, .. }
-        | Expression::Cast {
-            argument: value, ..
-        } => pending.push(value),
-        Expression::DateAdd { value, count, .. } => {
-            pending.push(value);
-            pending.push(count);
-        }
-        Expression::DateDiff { from, to, .. } => {
-            pending.push(from);
-            pending.push(to);
-        }
-        Expression::Binary { left, right, .. } => {
-            pending.push(left);
-            pending.push(right);
-        }
-        Expression::InList { value, items, .. } => {
-            pending.push(value);
-            pending.extend(items.iter());
-        }
-        Expression::InQuery { value, .. } => pending.push(value),
-        Expression::Case {
-            branches,
-            otherwise,
-            ..
-        } => {
-            pending.extend(otherwise.as_deref());
-            for branch in branches {
-                pending.push(&branch.when);
-                pending.push(&branch.then);
-            }
-        }
-        Expression::IsNullFunction {
-            value, fallback, ..
-        } => {
-            pending.push(value);
-            pending.push(fallback);
-        }
-        Expression::Like {
-            value,
-            pattern,
-            escape,
-            ..
-        } => {
-            pending.push(value);
-            pending.push(pattern);
-            pending.extend(escape.as_deref());
-        }
-    }
-    pending
 }
 
 pub(super) fn contains_aggregate(expression: &Expression<'_, '_>) -> bool {

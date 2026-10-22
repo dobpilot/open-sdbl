@@ -998,3 +998,91 @@ pub(super) fn left_binary_spine<'expression, 'tokens, 'source>(
     terms.reverse();
     (leftmost, terms)
 }
+
+/// The direct operands of an expression, in no particular order.
+pub(super) fn expression_children<'e, 'a, 'b>(
+    expression: &'e Expression<'a, 'b>,
+) -> Vec<&'e Expression<'a, 'b>> {
+    let mut pending: Vec<&'e Expression<'a, 'b>> = Vec::new();
+    match expression {
+        Expression::Field(_) => {}
+        Expression::Aggregate {
+            argument: AggregateArgument::Expression(argument),
+            ..
+        } => pending.push(argument),
+        Expression::Aggregate { .. }
+        | Expression::Literal(_)
+        | Expression::Parameter(_)
+        | Expression::DateTime { .. }
+        | Expression::MetadataValue { .. }
+        | Expression::SystemValue { .. }
+        | Expression::TypeLiteral { .. }
+        | Expression::Uuid { .. } => {}
+        Expression::Tuple { items, .. } => pending.extend(items),
+        Expression::ScalarFunction { arguments, .. } => pending.extend(arguments),
+        Expression::Between {
+            value, low, high, ..
+        } => {
+            pending.push(value);
+            pending.push(low);
+            pending.push(high);
+        }
+        Expression::BeginOfPeriod { value, .. }
+        | Expression::EndOfPeriod { value, .. }
+        | Expression::DatePart { value, .. }
+        | Expression::Refs { value, .. }
+        | Expression::ValueType {
+            argument: value, ..
+        }
+        | Expression::Unary { value, .. }
+        | Expression::IsNull { value, .. }
+        | Expression::Cast {
+            argument: value, ..
+        } => pending.push(value),
+        Expression::DateAdd { value, count, .. } => {
+            pending.push(value);
+            pending.push(count);
+        }
+        Expression::DateDiff { from, to, .. } => {
+            pending.push(from);
+            pending.push(to);
+        }
+        Expression::Binary { left, right, .. } => {
+            pending.push(left);
+            pending.push(right);
+        }
+        Expression::InList { value, items, .. } => {
+            pending.push(value);
+            pending.extend(items.iter());
+        }
+        Expression::InQuery { value, .. } => pending.push(value),
+        Expression::Case {
+            branches,
+            otherwise,
+            ..
+        } => {
+            pending.extend(otherwise.as_deref());
+            for branch in branches {
+                pending.push(&branch.when);
+                pending.push(&branch.then);
+            }
+        }
+        Expression::IsNullFunction {
+            value, fallback, ..
+        } => {
+            pending.push(value);
+            pending.push(fallback);
+        }
+        Expression::Like {
+            value,
+            pattern,
+            escape,
+            ..
+        } => {
+            pending.push(value);
+            pending.push(pattern);
+            pending.extend(escape.as_deref());
+        }
+    }
+    pending
+}

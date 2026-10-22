@@ -18,14 +18,15 @@ use super::params::{
 use super::separators::separator_predicates;
 use super::sources::{
     SourceRestriction, compile_source_free_branch, compile_source_free_expression,
-    compile_source_relation, contains_aggregate, expression_children, projection_is_aggregated,
-    projection_token, references_a_field, validate_aggregate_projection,
+    compile_source_relation, contains_aggregate, projection_is_aggregated, projection_token,
+    references_a_field, validate_aggregate_projection,
 };
 use super::virtual_tables::finalize_aggregate_relation;
 use crate::metadata::{Guid, MetadataSnapshot, ObjectId};
 use crate::query::core::ast::{
     AggregateArgument, CastTarget, Expression, FieldReference, JoinAst, JoinKind, OrderKeyAst,
     OrderTerm, PresentationArgument, Projection, ProjectionItem, SelectAst, SourceAst, TypeName,
+    expression_children,
 };
 use crate::query::core::dialect::{OutputLabelAllocator, SqlDialect, decode_binary_literal};
 use crate::query::core::names::names_equal;
@@ -1379,9 +1380,9 @@ fn compile_selected_projections(
                 let sql = compile_expression(expression, context)?;
                 let kind = expression_kind(expression, context)?;
                 selected.push(SelectedProjection::Generated {
-                    composite: if !kind.is_wildcard()
-                        && super::projection::contains_undefined(expression)
-                    {
+                    composite: if !super::scalar_policy::has_exact_scalar_projection(
+                        expression, &kind,
+                    ) {
                         Some((
                             String::new(),
                             Some(super::projection::UNAVAILABLE_TAG),

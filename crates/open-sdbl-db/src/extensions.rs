@@ -10,9 +10,8 @@
 
 use open_sdbl::metadata::{
     ConfigDescriptor, ContentKey, ExtensionResource, Guid, MsSqlMetadataQueries,
-    PostgresMetadataQueries, RoleRights, StorageLayout, Value, extension_root_key,
-    inflate_raw_deflate, parse_config_descriptors, parse_extension_index, parse_role_rights,
-    parse_serialized,
+    PostgresMetadataQueries, RoleRights, StorageLayout, extension_root_key, inflate_raw_deflate,
+    parse_config_descriptors, parse_extension_index, parse_role_rights, parse_role_without_rights,
 };
 
 use crate::cells::Cell;
@@ -111,7 +110,7 @@ pub async fn read_extension_roles(
             // отсутствие `.0` этого не доказывает: нужен полный дескриптор.
             if let Some(key) = index.key(role.as_str())
                 && let Some(bytes) = read_resource(session, layout, &key).await?
-                && let Some(empty) = decode_role_without_rights(role, &bytes)
+                && let Some(empty) = parse_role_without_rights(role, &bytes)
             {
                 rights.push((role.clone(), empty));
                 if let Ok(named) = parse_config_descriptors(role.as_str(), &bytes) {
@@ -139,99 +138,6 @@ pub async fn read_extension_roles(
         }
     }
     Ok((rights, descriptors))
-}
-
-// Отсутствие подобъекта прав измерено переносом неизменённого дескриптора
-// `ДемоПроф_ОбщиеПрава` в собственный CF. Нативная выгрузка не создаёт
-// `Rights.xml`; явно пустые права имеют другой признак и отдельный `.0`.
-// Заимствованные роли и остальные формы здесь не распознаются.
-fn decode_role_without_rights(role: &Guid, bytes: &[u8]) -> Option<RoleRights> {
-    let decoded = inflate_raw_deflate(bytes).ok()?;
-    let value = parse_serialized(&decoded).ok()?;
-    if !role_descriptor_has_no_rights(role, &value) {
-        return None;
-    }
-    // `RoleRights` создаёт существующий декодер. Эти неизменённые байты
-    // нативного пустого `.0` не содержат объектов, шаблонов или разрешающих
-    // флагов; отдельная фикстура сверяет их результат с измеренной ролью.
-    parse_role_rights(&[
-        0x7b, 0xbf, 0x7b, 0x7f, 0xb5, 0xa1, 0x81, 0x0e, 0x2f, 0x57, 0xb5, 0x41, 0x2d, 0x94, 0x34,
-        0x31, 0xb2, 0x34, 0xb1, 0x34, 0x33, 0x37, 0xb2, 0x34, 0x45, 0x66, 0x1a, 0x20, 0x71, 0x6a,
-        0x01,
-    ])
-    .ok()
-}
-
-fn role_descriptor_has_no_rights(role: &Guid, value: &Value) -> bool {
-    let Value::List(root) = value else {
-        return false;
-    };
-    let [
-        Value::Atom(version),
-        Value::List(class),
-        Value::Atom(root_tail),
-    ] = root.as_slice()
-    else {
-        return false;
-    };
-    let [
-        Value::Atom(kind),
-        Value::List(header),
-        Value::Atom(rights_present),
-        Value::Atom(class_flag),
-        Value::Atom(class_tail),
-    ] = class.as_slice()
-    else {
-        return false;
-    };
-    let [
-        Value::Atom(header_version),
-        Value::List(identity),
-        Value::String(name),
-        Value::List(synonym),
-        Value::String(_comment),
-        Value::Atom(header_flag),
-        Value::Atom(header_mode),
-        Value::Atom(owner),
-        Value::Atom(header_tail),
-    ] = header.as_slice()
-    else {
-        return false;
-    };
-    let [
-        Value::Atom(own),
-        Value::Atom(identity_flag),
-        Value::Atom(identifier),
-    ] = identity.as_slice()
-    else {
-        return false;
-    };
-    let [
-        Value::Atom(synonym_count),
-        Value::String(language),
-        Value::String(_text),
-    ] = synonym.as_slice()
-    else {
-        return false;
-    };
-    version == "1"
-        && root_tail == "0"
-        && kind == "6"
-        && rights_present == "0"
-        && class_flag == "0"
-        && class_tail == "0"
-        && header_version == "3"
-        && own == "1"
-        && identity_flag == "0"
-        && !role.is_nil()
-        && identifier.parse::<Guid>().ok().as_ref() == Some(role)
-        && !name.is_empty()
-        && synonym_count == "1"
-        && !language.is_empty()
-        && header_flag == "0"
-        && header_mode == "0"
-        && owner == Guid::NIL
-        && header_tail == "0"
 }
 
 /// Reads the parts of one resource of the extension store, as they are
