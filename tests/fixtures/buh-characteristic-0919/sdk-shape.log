@@ -1,0 +1,122 @@
+root=list(8)/atom:1
+class.0=atom:34
+class.1=atom:a57ba850-2c0c-41f9-9cc3-b185cbe04f3f
+class.2=atom:7e793587-0d29-4e3d-9dbc-0043d3af6d36
+class.3=atom:824d87c6-28dc-46eb-93d6-fbbcb5c9ab24
+class.4=atom:383f8b68-c5a7-48f1-a2ed-28669095ccc2
+class.5=atom:76cf988c-cfd6-47d7-80aa-815f1d7ce548
+class.6=atom:8b449884-eb95-42c9-a4e3-d43db999158b
+class.7=atom:761d6aeb-fe3e-472f-b6b5-3eabdf5036e7
+class.8=atom:ea0c4cfe-b31e-4561-8a1e-2431545d8904
+class.9=atom:c1ab918a-9fcc-4c3f-a00a-4ce0daf405b3
+class.10=atom:f547d859-d5ca-4f3c-87a5-e52fb2fc03d9
+class.11=atom:55f02777-81a9-403d-8b44-ab7582391414
+class.12=atom:07a73ffa-f561-4a27-9eaf-5fd5e9944a99
+class.13=list(2)/atom:0
+class.14=atom:1
+class.15=list(2)/atom:0
+class.16=atom:1
+class.17=atom:b18d312b-f9c3-4f37-ac77-d499e949f154
+class.18=list(25)/string:Pattern
+class.19=atom:0
+class.20=atom:1
+class.21=atom:0
+class.22=atom:0
+class.23=atom:150
+class.24=atom:1
+class.25=atom:1
+class.26=atom:f82d5bd6-4c74-4c23-978c-565aae3d752a
+class.27=atom:00000000-0000-0000-0000-000000000000
+class.28=atom:7fba41a5-4faa-412b-b367-b30ced0314c0
+class.29=atom:00000000-0000-0000-0000-000000000000
+class.30=atom:00000000-0000-0000-0000-000000000000
+class.31=atom:2
+class.32=atom:0
+class.33=list(2)/atom:1
+class.34=atom:0
+class.35=atom:0
+class.36=atom:1
+class.37=atom:1
+class.38=list(2)/atom:1
+class.39=atom:00000000-0000-0000-0000-000000000000
+class.40=atom:00000000-0000-0000-0000-000000000000
+class.41=atom:00000000-0000-0000-0000-000000000000
+class.42=atom:00000000-0000-0000-0000-000000000000
+class.43=atom:00000000-0000-0000-0000-000000000000
+class.44=list(3)/atom:1
+class.45=list(1)/atom:0
+class.46=list(1)/atom:0
+class.47=list(1)/atom:0
+class.48=list(1)/atom:0
+class.49=atom:0
+class.50=list(2)/atom:0
+class.51=atom:1
+class.52=list(2)/atom:1
+class.53=atom:0
+class.54=list(3)/atom:1
+class.55=atom:0
+class.56=atom:0
+class.57=atom:0
+class.58=atom:0
+descriptors=41
+descriptor=1055d15b-8cb5-4ff0-a526-7fd20a08a96c name=ДополнительныеРеквизитыИСведения settings=Some(CharacteristicSettings { code_length: 0, description_length: 150, value_types: [ConfigDeclaredType { tag: "#", reference: Some(Guid("0574ee81-9dda-4853-85ec-236415303af5")), qualifiers: [] }, ConfigDeclaredType { tag: "#", reference: Some(Guid("376807bc-0d88-4c06-9eb2-42b72b970afb")), qualifiers: [] }, ConfigDeclaredType { tag: "#", reference: Some(Guid("4dea1704-d82b-4cbb-98dd-edf82b9222b3")), qualifiers: [] }, ConfigDeclaredType { tag: "#", reference: Some(Guid("4ee4f6c6-683e-4abc-8890-ed6cde5a53cb")), qualifiers: [] }, ConfigDeclaredType { tag: "B", reference: None, qualifiers: [] }, ConfigDeclaredType { tag: "#", reference: Some(Guid("5e6e9630-024b-4b36-a35c-0d3729ad2b37")), qualifiers: [] }, ConfigDeclaredType { tag: "#", reference: Some(Guid("655fd168-ab6a-4863-a2d5-401497aceec3")), qualifiers: [] }, ConfigDeclaredType { tag: "#", reference: Some(Guid("69696d33-4388-476c-90a6-f656884ff8da")), qualifiers: [] }, ConfigDeclaredType { tag: "#", reference: Some(Guid("79dbcf0d-c72c-4934-82c6-5b56d6d85c49")), qualifiers: [] }, ConfigDeclaredType { tag: "#", reference: Some(Guid("7a9510f7-e984-4e0d-90e2-4c2636ab8e27")), qualifiers: [] }, ConfigDeclaredType { tag: "#", reference: Some(Guid("7c6a7e8d-9204-47b1-8619-ea42fa2be95b")), qualifiers: [] }, ConfigDeclaredType { tag: "#", reference: Some(Guid("889499a3-0544-4b7e-9670-72c9b5db2884")), qualifiers: [] }, ConfigDeclaredType { tag: "S", reference: None, qualifiers: [Atom("1024"), Atom("1")] }, ConfigDeclaredType { tag: "#", reference: Some(Guid("9f6206b2-1ed6-423c-9b08-fd4978930c49")), qualifiers: [] }, ConfigDeclaredType { tag: "#", reference: Some(Guid("a6be8b19-1f08-4c5f-8636-0dd052c33b35")), qualifiers: [] }, ConfigDeclaredType { tag: "D", reference: None, qualifiers: [] }, ConfigDeclaredType { tag: "N", reference: None, qualifiers: [Atom("17"), Atom("5"), Atom("0")] }, ConfigDeclaredType { tag: "#", reference: Some(Guid("bb356e79-e8e6-4912-8561-ad29cca2604f")), qualifiers: [] }, ConfigDeclaredType { tag: "#", reference: Some(Guid("bef59bf9-468d-43c3-95dd-08e0b4135994")), qualifiers: [] }, ConfigDeclaredType { tag: "#", reference: Some(Guid("c92a1124-c41e-42a4-bda7-3bbac9c6039e")), qualifiers: [] }, ConfigDeclaredType { tag: "#", reference: Some(Guid("d8dd31be-4b1a-42cc-8c84-a6754eda9301")), qualifiers: [] }, ConfigDeclaredType { tag: "#", reference: Some(Guid("e18d5670-dd2f-4528-8897-d3f07ca77f21")), qualifiers: [] }, ConfigDeclaredType { tag: "#", reference: Some(Guid("f4a797e0-21b2-4be7-9fa4-eb3aa4db7e22")), qualifiers: [] }, ConfigDeclaredType { tag: "#", reference: Some(Guid("fb97f9cf-7053-4184-ac5d-ca3d81b0fb83")), qualifiers: [] }] }) attributes=None types=None
+descriptor=73cc5b8b-4cba-4988-b2c6-d974dde9723d name=ВидСвойства settings=None attributes=None types=Some([ConfigDeclaredType { tag: "#", reference: Some(Guid("bf5b8126-34b8-4c1c-86bc-c4d37b922b7a")), qualifiers: [] }])
+xml.attribute=8064eb3a-d56c-4517-9db0-b7300149c7c4; name=Виден; types=Some([ConfigDeclaredType { tag: "B", reference: None, qualifiers: [] }])
+xml.attribute=fe926c88-d792-4db3-abcf-3c94dfdcc407; name=ВладелецДополнительныхЗначений; types=Some([ConfigDeclaredType { tag: "#", reference: Some(Guid("824d87c6-28dc-46eb-93d6-fbbcb5c9ab24")), qualifiers: [] }])
+xml.attribute=b1c3a6c1-5245-4a65-8a45-13948be6f6a1; name=ВыводитьВВидеГиперссылки; types=Some([ConfigDeclaredType { tag: "B", reference: None, qualifiers: [] }])
+xml.attribute=bcbdba9e-0b29-4ea7-a7d5-1de819bf86ec; name=ДополнительныеЗначенияИспользуются; types=Some([ConfigDeclaredType { tag: "B", reference: None, qualifiers: [] }])
+xml.attribute=e0c51555-1614-4aa7-a075-c5e1251579ba; name=ДополнительныеЗначенияСВесом; types=Some([ConfigDeclaredType { tag: "B", reference: None, qualifiers: [] }])
+xml.attribute=c75a1c6d-fa33-4b57-b359-6253aff5f3e7; name=Доступен; types=Some([ConfigDeclaredType { tag: "B", reference: None, qualifiers: [] }])
+xml.attribute=af88ea84-5742-4c9f-9a02-6d0f25186f72; name=Заголовок; types=Some([ConfigDeclaredType { tag: "S", reference: None, qualifiers: [Atom("75"), Atom("1")] }])
+xml.attribute=51363236-c8eb-4eb7-9692-5c18edc9a5a8; name=ЗаголовокФормыВыбораЗначения; types=Some([ConfigDeclaredType { tag: "S", reference: None, qualifiers: [Atom("150"), Atom("1")] }])
+xml.attribute=e97edb4a-468d-499d-924d-aa4e5ee16548; name=ЗаголовокФормыВыбораЗначенияЯзык1; types=Some([ConfigDeclaredType { tag: "S", reference: None, qualifiers: [Atom("150"), Atom("1")] }])
+xml.attribute=24366a86-0dae-4a68-a180-d8ea7656a286; name=ЗаголовокФормыВыбораЗначенияЯзык2; types=Some([ConfigDeclaredType { tag: "S", reference: None, qualifiers: [Atom("150"), Atom("1")] }])
+xml.attribute=cb65fbad-69a0-47d8-b4a9-da49274c3eb7; name=ЗаголовокФормыЗначения; types=Some([ConfigDeclaredType { tag: "S", reference: None, qualifiers: [Atom("150"), Atom("1")] }])
+xml.attribute=3c03f78e-c904-47da-a0a1-db5d6b9f7254; name=ЗаголовокФормыЗначенияЯзык1; types=Some([ConfigDeclaredType { tag: "S", reference: None, qualifiers: [Atom("150"), Atom("1")] }])
+xml.attribute=3bf03ed7-6581-4a11-8fc8-748f46c8dad7; name=ЗаголовокФормыЗначенияЯзык2; types=Some([ConfigDeclaredType { tag: "S", reference: None, qualifiers: [Atom("150"), Atom("1")] }])
+xml.attribute=0f28c616-162c-4dba-bd22-f7ea5d23ea5a; name=ЗаголовокЯзык1; types=Some([ConfigDeclaredType { tag: "S", reference: None, qualifiers: [Atom("75"), Atom("1")] }])
+xml.attribute=39bf2771-1d8b-44bb-8d8b-54d046589ebe; name=ЗаголовокЯзык2; types=Some([ConfigDeclaredType { tag: "S", reference: None, qualifiers: [Atom("75"), Atom("1")] }])
+xml.attribute=872521e3-413c-45ac-a6ea-39fe1324bae8; name=ЗаполнятьОбязательно; types=Some([ConfigDeclaredType { tag: "B", reference: None, qualifiers: [] }])
+xml.attribute=f237a21e-066a-48e6-a5c4-5dc2487c7a3b; name=ИдентификаторДляФормул; types=Some([ConfigDeclaredType { tag: "S", reference: None, qualifiers: [Atom("150"), Atom("1")] }])
+xml.attribute=8adebe50-a946-40c2-9258-b17efe787e0e; name=Имя; types=Some([ConfigDeclaredType { tag: "S", reference: None, qualifiers: [Atom("100"), Atom("1")] }])
+xml.attribute=8cad6cfd-91d0-4563-800a-d60c8a1b6a03; name=Комментарий; types=Some([ConfigDeclaredType { tag: "S", reference: None, qualifiers: [] }])
+xml.attribute=81ef02df-498d-4af0-8254-dc6730cbf140; name=МногострочноеПолеВвода; types=Some([ConfigDeclaredType { tag: "N", reference: None, qualifiers: [Atom("2"), Atom("0"), Atom("1")] }])
+xml.attribute=79ad09ba-875a-46bd-9cd9-9d084bf4f6ea; name=НаборСвойств; types=Some([ConfigDeclaredType { tag: "#", reference: Some(Guid("7a576bbd-3683-4c69-8259-b03d2c59db04")), qualifiers: [] }])
+xml.attribute=2902460a-ed86-41cf-8e8f-895adab9a72f; name=Подсказка; types=Some([ConfigDeclaredType { tag: "S", reference: None, qualifiers: [] }])
+xml.attribute=d12c7296-36ab-41e0-83ef-143484958597; name=ПодсказкаЯзык1; types=Some([ConfigDeclaredType { tag: "S", reference: None, qualifiers: [] }])
+xml.attribute=2b6c3bcd-7d2a-4e95-8066-99374002689b; name=ПодсказкаЯзык2; types=Some([ConfigDeclaredType { tag: "S", reference: None, qualifiers: [] }])
+xml.attribute=402f2fe0-4d08-4701-9c8f-0c2bb75815ef; name=ФорматСвойства; types=Some([ConfigDeclaredType { tag: "S", reference: None, qualifiers: [] }])
+xml.attribute=1a4ed7cf-3294-4a5c-9650-75b61d6b2531; name=ЭтоДополнительноеСведение; types=Some([ConfigDeclaredType { tag: "B", reference: None, qualifiers: [] }])
+xml.attribute=73cc5b8b-4cba-4988-b2c6-d974dde9723d; name=ВидСвойства; types=Some([ConfigDeclaredType { tag: "#", reference: Some(Guid("bf5b8126-34b8-4c1c-86bc-c4d37b922b7a")), qualifiers: [] }])
+xml.attribute=1b9bbdb1-b8c0-4459-8b5c-656055482f00; name=ЦветСвойства; types=Some([ConfigDeclaredType { tag: "#", reference: Some(Guid("2d92f997-fd54-4ced-bf30-751bf712de5e")), qualifiers: [] }])
+xml.attributes_verified=28
+target.parent=/3/28/0/1/1/1/1; shape=list(3)/atom:1; value=List([Atom("1"), Atom("0"), Atom("73cc5b8b-4cba-4988-b2c6-d974dde9723d")])
+membership=/3; rows=30
+membership.row.2=list(2)/list(6)/atom:2 -> list(6)/atom:2 -> list(23)/atom:27 -> list(3)/atom:2 -> list(9)/atom:3
+membership.row.3=list(2)/list(6)/atom:2 -> list(6)/atom:2 -> list(23)/atom:27 -> list(3)/atom:2 -> list(9)/atom:3
+membership.row.4=list(2)/list(6)/atom:2 -> list(6)/atom:2 -> list(23)/atom:27 -> list(3)/atom:2 -> list(9)/atom:3
+membership.row.5=list(2)/list(6)/atom:2 -> list(6)/atom:2 -> list(23)/atom:27 -> list(3)/atom:2 -> list(9)/atom:3
+membership.row.6=list(2)/list(6)/atom:2 -> list(6)/atom:2 -> list(23)/atom:27 -> list(3)/atom:2 -> list(9)/atom:3
+membership.row.7=list(2)/list(6)/atom:2 -> list(6)/atom:2 -> list(23)/atom:27 -> list(3)/atom:2 -> list(9)/atom:3
+membership.row.8=list(2)/list(6)/atom:2 -> list(6)/atom:2 -> list(23)/atom:27 -> list(3)/atom:2 -> list(9)/atom:3
+membership.row.9=list(2)/list(6)/atom:2 -> list(6)/atom:2 -> list(23)/atom:27 -> list(3)/atom:2 -> list(9)/atom:3
+membership.row.10=list(2)/list(6)/atom:2 -> list(6)/atom:2 -> list(23)/atom:27 -> list(3)/atom:2 -> list(9)/atom:3
+membership.row.11=list(2)/list(6)/atom:2 -> list(6)/atom:2 -> list(23)/atom:27 -> list(3)/atom:2 -> list(9)/atom:3
+membership.row.12=list(2)/list(6)/atom:2 -> list(6)/atom:2 -> list(23)/atom:27 -> list(3)/atom:2 -> list(9)/atom:3
+membership.row.13=list(2)/list(6)/atom:2 -> list(6)/atom:2 -> list(23)/atom:27 -> list(3)/atom:2 -> list(9)/atom:3
+membership.row.14=list(2)/list(6)/atom:2 -> list(6)/atom:2 -> list(23)/atom:27 -> list(3)/atom:2 -> list(9)/atom:3
+membership.row.15=list(2)/list(6)/atom:2 -> list(6)/atom:2 -> list(23)/atom:27 -> list(3)/atom:2 -> list(9)/atom:3
+membership.row.16=list(2)/list(6)/atom:2 -> list(6)/atom:2 -> list(23)/atom:27 -> list(3)/atom:2 -> list(9)/atom:3
+membership.row.17=list(2)/list(6)/atom:2 -> list(6)/atom:2 -> list(23)/atom:27 -> list(3)/atom:2 -> list(9)/atom:3
+membership.row.18=list(2)/list(6)/atom:2 -> list(6)/atom:2 -> list(23)/atom:27 -> list(3)/atom:2 -> list(9)/atom:3
+membership.row.19=list(2)/list(6)/atom:2 -> list(6)/atom:2 -> list(23)/atom:27 -> list(3)/atom:2 -> list(9)/atom:3
+membership.row.20=list(2)/list(6)/atom:2 -> list(6)/atom:2 -> list(23)/atom:27 -> list(3)/atom:2 -> list(9)/atom:3
+membership.row.21=list(2)/list(6)/atom:2 -> list(6)/atom:2 -> list(23)/atom:27 -> list(3)/atom:2 -> list(9)/atom:3
+membership.row.22=list(2)/list(6)/atom:2 -> list(6)/atom:2 -> list(23)/atom:27 -> list(3)/atom:2 -> list(9)/atom:3
+membership.row.23=list(2)/list(6)/atom:2 -> list(6)/atom:2 -> list(23)/atom:27 -> list(3)/atom:2 -> list(9)/atom:3
+membership.row.24=list(2)/list(6)/atom:2 -> list(6)/atom:2 -> list(23)/atom:27 -> list(3)/atom:2 -> list(9)/atom:3
+membership.row.25=list(2)/list(6)/atom:2 -> list(6)/atom:2 -> list(23)/atom:27 -> list(3)/atom:2 -> list(9)/atom:3
+membership.row.26=list(2)/list(6)/atom:2 -> list(6)/atom:2 -> list(23)/atom:27 -> list(3)/atom:2 -> list(9)/atom:3
+membership.row.27=list(2)/list(6)/atom:2 -> list(6)/atom:2 -> list(23)/atom:27 -> list(3)/atom:2 -> list(9)/atom:3
+membership.row.28=list(2)/list(6)/atom:2 -> list(6)/atom:2 -> list(23)/atom:27 -> list(3)/atom:2 -> list(9)/atom:3
+membership.row.29=list(2)/list(6)/atom:2 -> list(6)/atom:2 -> list(23)/atom:27 -> list(3)/atom:2 -> list(9)/atom:3

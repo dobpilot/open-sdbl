@@ -718,7 +718,13 @@ fn resolve_statement_separators(
                 }
             } else if let Some(value) = parameters.session_value(&value_parameter) {
                 SeparatorState::Value(value.clone())
-            } else if independent {
+            } else if independent
+                || (use_value == Some(&ParameterValue::Boolean(true))
+                    && separation.is_some_and(|settings| settings.value_parameter.is_some()))
+            {
+                // Явно включённый связанный разделитель запрашивает значение у
+                // хоста; отсутствие в `CompileOptions` не доказывает отсутствие
+                // значения в сеансе.
                 SeparatorState::Missing(value_parameter)
             } else {
                 separator_empty_value(snapshot, field.number)
@@ -1317,10 +1323,68 @@ impl CompiledColumn {
     }
 }
 
+/// Одна исходная позиция логического результата до раскрытия составных членов.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct LogicalResultColumn {
+    /// Полное логическое имя, до сокращения физических SQL-меток.
+    pub name: String,
+    /// Индексы и роли ячеек окончательной физической проекции.
+    pub value: LogicalResultValue,
+}
+
+/// Способ сборки одного логического значения из физической строки.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum LogicalResultValue {
+    /// Момент времени из пары даты и уже типизированной ячейки ссылки.
+    PointInTime {
+        /// Нулевой индекс физической колонки даты.
+        date: usize,
+        /// Нулевой индекс физической колонки типизированной ссылки.
+        reference: usize,
+    },
+    /// Скалярная ячейка с типом из `CompiledQuery::columns`.
+    Scalar {
+        /// Нулевой индекс физической колонки.
+        column: usize,
+    },
+    /// Составное значение с явным однобайтовым признаком активного типа.
+    Composite {
+        /// Нулевой индекс колонки признака типа.
+        discriminator: usize,
+        /// Однозначные варианты активного значения.
+        members: Vec<CompositeResultMember>,
+    },
+}
+
+/// Один вариант значения, выбираемый признаком составного типа.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct CompositeResultMember {
+    /// Байт признака из существующего протокола `TypeValue::tag`.
+    pub type_tag: u8,
+    /// Нулевой индекс полезной ячейки; отсутствие означает вариант без данных.
+    pub column: Option<usize>,
+}
+
 /// Native SQL text generated from one bounded 1C query.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub struct CompiledQuery {
+    /// Индекс логической служебной колонки проверки запрещённых строк.
+    ///
+    /// `Some` обязывает потребителя сначала проверить эту Boolean-ячейку
+    /// во всех строках единственного SQL-результата. `true` означает отказ
+    /// доступа ко всему запросу; отсутствующая или неверно типизированная
+    /// ячейка означает нарушение контракта исполнения. До этой проверки
+    /// нельзя преобразовывать логическую проекцию, разрешать представления
+    /// или выдавать строки. Полезная часть строки отказа заполнена NULL.
+    /// `None` не доказывает наличие проверки обычного запроса.
+    pub forbidden_row_column: Option<usize>,
+    /// Полная логическая проекция; `None` означает отсутствие точного рецепта.
+    /// Индексы относятся к `columns`, служебные колонки сюда не входят.
+    pub logical_projection: Option<Vec<LogicalResultColumn>>,
     /// SELECT-only statement in the requested database dialect.
     pub sql: String,
     /// Output columns in statement order, each with its emitted label and
@@ -2346,6 +2410,19 @@ fn project_queryable_fields(
             if let Some(alias) = side_alias {
                 push_unique_name(&mut aliases, alias);
             }
+            // The identity comes from the field that was projected, not
+            // from a later lookup by name: a name two fields answer to
+            // must not attach the wrong origin to a column.
+            let field = match custom_names {
+                CustomFieldNames::Scan(snapshot) => {
+                    scanned_custom_field_id(snapshot, physical_table, &schema_name)
+                }
+                CustomFieldNames::Indexed(names) => {
+                    indexed_custom_field(names, physical_table, &schema_name).map(|(_, id)| id)
+                }
+            }
+            .map(FieldId::Metadata)
+            .or_else(|| StandardFieldId::from_name(&schema_name).map(FieldId::Standard));
             let compound = columns.len() > 1;
             let runtime_typed = columns
                 .iter()
@@ -2371,25 +2448,15 @@ fn project_queryable_fields(
                         physical_name: column.name.clone(),
                         data_type: column.data_type.clone(),
                         kind: match &reference_kind {
+                            _ if !compound
+                                && matches!(field, Some(FieldId::Metadata(id)) if snapshot.attribute_is_uuid(id))
+                                && matches!(ColumnKind::from_catalog_type(&column.data_type), ColumnKind::Binary { .. }) => ColumnKind::Uuid,
                             Some(kind) if is_reference_value => kind.clone(),
                             _ => ColumnKind::from_catalog_type(&column.data_type),
                         },
                     }
                 })
                 .collect();
-            // The identity comes from the field that was projected, not
-            // from a later lookup by name: a name two fields answer to
-            // must not attach the wrong origin to a column.
-            let field = match custom_names {
-                CustomFieldNames::Scan(snapshot) => {
-                    scanned_custom_field_id(snapshot, physical_table, &schema_name)
-                }
-                CustomFieldNames::Indexed(names) => {
-                    indexed_custom_field(names, physical_table, &schema_name).map(|(_, id)| id)
-                }
-            }
-            .map(FieldId::Metadata)
-            .or_else(|| StandardFieldId::from_name(&schema_name).map(FieldId::Standard));
             QueryableField {
                 name,
                 schema_name: query_schema_name,

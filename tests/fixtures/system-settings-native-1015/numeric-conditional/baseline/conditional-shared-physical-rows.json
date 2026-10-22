@@ -1,0 +1,65 @@
+{
+  "columns": [
+    [
+      "_changedate",
+      "timestamp without time zone"
+    ],
+    [
+      "_dataseparationuse58",
+      "boolean"
+    ],
+    [
+      "_fld55",
+      "numeric"
+    ],
+    [
+      "_objectkey",
+      "USER-DEFINED"
+    ],
+    [
+      "_settingsdata",
+      "bytea"
+    ],
+    [
+      "_settingskey",
+      "USER-DEFINED"
+    ],
+    [
+      "_settingskeyhash",
+      "numeric"
+    ],
+    [
+      "_settingspresentation",
+      "USER-DEFINED"
+    ],
+    [
+      "_userid",
+      "USER-DEFINED"
+    ],
+    [
+      "_useridhash",
+      "numeric"
+    ],
+    [
+      "_version",
+      "bytea"
+    ]
+  ],
+  "rows": [
+    [
+      "OpenBslSettingsAdmin",
+      true,
+      "0"
+    ],
+    [
+      "OpenBslSettingsAdmin",
+      true,
+      "101"
+    ],
+    [
+      "OpenBslSettingsAdmin",
+      true,
+      "202"
+    ]
+  ]
+}

@@ -1,0 +1,18 @@
+{
+  "pid": 456303,
+  "command": [
+    "/opt/1cv8/x86_64/8.3.27.2342/ibsrv",
+    "--config=/tmp/open-bsl-user-settings-native-1015/server.yml",
+    "--data=/tmp/open-bsl-user-settings-native-1015/server-data",
+    "--http-address=localhost",
+    "--http-port=55440",
+    "--direct-regport=55441",
+    "--direct-range=55442:55449",
+    "--monitor-address=localhost",
+    "--monitor-port=55451",
+    "--disable-ssh-gate",
+    "--disable-direct-gate",
+    "--schedule-jobs=deny"
+  ],
+  "started_epoch": 1792087632.301069
+}

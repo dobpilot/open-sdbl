@@ -1,0 +1,12 @@
+{
+  "platform": "8.3.27.2342",
+  "native_snapshot": "docs/research/fixtures/approved-sdk-production-integration-1016/current-language-session-audit/native-user-records-1017/languages.dt",
+  "native_snapshot_sha256": "9eccaa0d6c9b3b7347602cb9d5e5a9462f90d8afcaadc98a08072863ecf74ecf",
+  "forms": [
+    31,
+    37
+  ],
+  "cases": "Three own native user records in each reconstructed form; two independent standalone-server starts; official user-manager Language property read",
+  "oracle_origin": "1C platform only",
+  "existing_root_runtime_checks": "SDK0.9.24 host gates remain3906/0/1; no runtime source change"
+}

@@ -1,0 +1,112 @@
+[
+  {
+    "name": "CatalogObject.НаправленияСдачиОтчетности",
+    "kind": "TypeId",
+    "guid": "7cf78536-c507-4ad6-99c3-fec295ff3cd1",
+    "paths": [
+      [
+        1,
+        1
+      ]
+    ]
+  },
+  {
+    "name": "CatalogObject.НаправленияСдачиОтчетности",
+    "kind": "ValueId",
+    "guid": "38b9c522-355d-4e6b-8b8d-d3bea2f28264",
+    "paths": [
+      [
+        1,
+        2
+      ]
+    ]
+  },
+  {
+    "name": "CatalogRef.НаправленияСдачиОтчетности",
+    "kind": "TypeId",
+    "guid": "a920961a-74c9-46eb-8237-905c912e6289",
+    "paths": [
+      [
+        1,
+        3
+      ]
+    ]
+  },
+  {
+    "name": "CatalogRef.НаправленияСдачиОтчетности",
+    "kind": "ValueId",
+    "guid": "174aaeec-4cc7-447f-8e94-f08a22058461",
+    "paths": [
+      [
+        1,
+        4
+      ]
+    ]
+  },
+  {
+    "name": "CatalogSelection.НаправленияСдачиОтчетности",
+    "kind": "TypeId",
+    "guid": "67cf2cec-b43d-4d8a-bf2b-07bf8417745d",
+    "paths": [
+      [
+        1,
+        5
+      ]
+    ]
+  },
+  {
+    "name": "CatalogSelection.НаправленияСдачиОтчетности",
+    "kind": "ValueId",
+    "guid": "653bd2a8-d92c-4c75-9b2b-fb5df99d6730",
+    "paths": [
+      [
+        1,
+        6
+      ]
+    ]
+  },
+  {
+    "name": "CatalogList.НаправленияСдачиОтчетности",
+    "kind": "TypeId",
+    "guid": "ec4b4e24-80b7-4da7-92aa-c77e726e3646",
+    "paths": [
+      [
+        1,
+        7
+      ]
+    ]
+  },
+  {
+    "name": "CatalogList.НаправленияСдачиОтчетности",
+    "kind": "ValueId",
+    "guid": "0d63717a-0100-473b-88dd-f9b127d2af51",
+    "paths": [
+      [
+        1,
+        8
+      ]
+    ]
+  },
+  {
+    "name": "CatalogManager.НаправленияСдачиОтчетности",
+    "kind": "TypeId",
+    "guid": "f2b9ae27-f384-4675-9873-5da4b4d868f7",
+    "paths": [
+      [
+        1,
+        34
+      ]
+    ]
+  },
+  {
+    "name": "CatalogManager.НаправленияСдачиОтчетности",
+    "kind": "ValueId",
+    "guid": "23651a47-2a3b-4948-97d1-8a19ce8d22c6",
+    "paths": [
+      [
+        1,
+        35
+      ]
+    ]
+  }
+]

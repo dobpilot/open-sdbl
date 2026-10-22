@@ -1,0 +1,17 @@
+{
+  "scope": "selector-only diagnostic control, not a native resource",
+  "tree_changes": [
+    {
+      "path": [
+        1,
+        0
+      ],
+      "before": "37",
+      "after": "38"
+    }
+  ],
+  "original_known_declarations": 0,
+  "synthetic_known_declarations": 0,
+  "synthetic_document_attributes_known": false,
+  "interpretation": "Changing only the selector does not make the measured class37/50 satisfy the existing class38/51 and wrapper4/5 profile; no positions or dummy fields were fabricated."
+}

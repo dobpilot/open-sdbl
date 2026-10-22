@@ -1,0 +1,29 @@
+﻿<?xml version="1.0" encoding="UTF-8"?>
+<ConfigDumpInfo xmlns="http://v8.1c.ru/8.3/xcf/dumpinfo" xmlns:xen="http://v8.1c.ru/8.3/xcf/enums" xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" format="Hierarchical" version="2.20">
+	<ConfigVersions>
+		<Metadata name="CommonModule.DynamicProbe" id="8d81ea28-9da1-4f1b-949c-a53f857c8423" configVersion="196c2359591f764d99fd0249f038c88c00000000"/>
+		<Metadata name="CommonModule.DynamicProbe.Module" id="8d81ea28-9da1-4f1b-949c-a53f857c8423.0" configVersion="3fb58c4c3b87ae4eb55f518d39c3308000000000"/>
+		<Metadata name="Configuration.Configuration" id="26c30ece-33b5-498a-b409-a91a046ba66b" configVersion="bdf2b9db8482744a90213560527740b200000000"/>
+		<Metadata name="Configuration.Configuration.ManagedApplicationModule" id="e2267f2f-daf0-49f2-b383-c9bc3ebe5df0.6" configVersion="91aed490ca2a35488fafc105d3de479900000000"/>
+		<Metadata name="DataProcessor.Замеры" id="ff92317d-71e7-4664-a13a-18bd31fd3701" configVersion="1ddeb49015661e4a9d5fbb7ac73f726900000000"/>
+		<Metadata name="DataProcessor.Замеры.Form.Форма" id="8081de47-60ab-4047-8c98-1e22e2725431" configVersion="0b9cb791798b68409bee71918ef141ae00000000"/>
+		<Metadata name="DataProcessor.Замеры.Form.Форма.Form" id="8081de47-60ab-4047-8c98-1e22e2725431.0" configVersion="9e5f0f71383df7449158fb6b43ce034500000000"/>
+		<Metadata name="DataProcessor.Замеры.ObjectModule" id="ff92317d-71e7-4664-a13a-18bd31fd3701.0" configVersion="38e6826e9fccd140aa19d651843da92300000000"/>
+		<Metadata name="Enum.EnumLegacyProbe" id="c143f002-c8de-45ef-8272-ca10ec452db4" configVersion="33885acb77ca4d438c487fa9c4dc18e500000000">
+			<Metadata name="Enum.EnumLegacyProbe.EnumValue.Second" id="0a6c66ba-3403-4eae-bad0-66ce551f7082"/>
+			<Metadata name="Enum.EnumLegacyProbe.EnumValue.First" id="40ae3f99-8ef0-4819-8dff-e6701aab4cf4"/>
+		</Metadata>
+		<Metadata name="InformationRegister.ОпцииПробы" id="c34d5785-6f04-45c7-9555-088544ddc489" configVersion="471feafc3d9b0c46a2753fa51481c4ea00000000">
+			<Metadata name="InformationRegister.ОпцииПробы.Resource.ЧислоОпции" id="709ba1ee-c392-42ad-afa0-72deb98d83f0"/>
+			<Metadata name="InformationRegister.ОпцииПробы.Dimension.ПервыйКлюч" id="9852d238-b149-4520-9745-75b0234529c8"/>
+			<Metadata name="InformationRegister.ОпцииПробы.Resource.ПризнакОпции" id="9d1fa913-1a38-4ee4-a9d5-763eaced5a0d"/>
+			<Metadata name="InformationRegister.ОпцииПробы.Dimension.ВторойКлюч" id="b38a5ccc-45e8-4f1f-8d94-15b3bbd34e25"/>
+		</Metadata>
+		<Metadata name="InformationRegister.ОпцииПробы.ManagerModule" id="c34d5785-6f04-45c7-9555-088544ddc489.2" configVersion="7a823959f8f5294e9c58c82e066be83c00000000"/>
+		<Metadata name="Language.English" id="63db5aee-c386-4dc8-ade0-98e46bbd7dc1" configVersion="8852a3b530528649891160e4f8c9c56a00000000"/>
+		<Metadata name="Role.ControlAdmin" id="77777777-7777-4777-8777-777777777777" configVersion="7c91662a4e646b42901e04f34e3d416500000000"/>
+		<Metadata name="Role.ControlAdmin.Rights" id="77777777-7777-4777-8777-777777777777.0" configVersion="dd252fa70626fc4eb7f457f4dd54ae8d00000000"/>
+		<Metadata name="Role.ControlClient" id="55555555-5555-4555-8555-555555555555" configVersion="3dfd72b34c3e1b4c968a13dcc6d2179200000000"/>
+		<Metadata name="Role.ControlClient.Rights" id="55555555-5555-4555-8555-555555555555.0" configVersion="577548aeff49f24ba1e6eb4920f7ec2100000000"/>
+	</ConfigVersions>
+</ConfigDumpInfo>

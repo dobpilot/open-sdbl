@@ -1,0 +1,7 @@
+# Native BUH news characteristic metadata
+
+The retained Config resource and unchanged Designer XML establish class 32/56 with owner identity 1/9 and five attributes using homogeneous wrapper 1/5, body 27/23, typed 2/3 and identity 1/7. The stream scanner previously did not select this class for additional runtime metadata projection.
+
+ChartOfCharacteristicTypes.xml is the independent source for all five ordered identities and names, four Boolean types and the EnumRef attribute, owner CodeLength 20, DescriptionLength 50 and characteristic value declarations B,S,CatalogRef,D,N. Number qualifiers are 28/4/Any, string qualifiers 100/Variable and date qualifiers DateTime. ValueCatalog.xml and TypeEnumeration.xml independently verify both referenced generated type identities. Object and reference generated identities are distinct and verified separately; no new SDK object-type API is introduced.
+
+The regression uses only this native pair, checks every declaration and qualifier and rejects seven malformed owner variants and eleven malformed membership variants without publishing a prefix. base-red-tests.log records the exact regression failing against the frozen preceding conversion review before the decoder was implemented. Existing modern and BUH characteristic regressions remain unchanged. Metadata does not establish new runtime object semantics. Versions remain 0.9.20 pending release authorization.

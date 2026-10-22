@@ -4,10 +4,10 @@ use std::sync::Arc;
 
 use super::context::{CompilationContext, CompiledBranch, JoinPlan, SourceScope};
 use super::expression::{
-    CasePart, Operand, binary_operator_sql, check_like_operand, check_scalar_argument,
-    compile_case, compile_predicate, count_diagnostic, function_name, is_count_kind,
-    is_date_operand_kind, is_unbound_parameter, left_binary_spine, operand_token, reference_column,
-    reference_type_column, render_coalesce, render_like, single_column,
+    CasePart, Operand, ScalarStringEquality, binary_operator_sql, check_like_operand,
+    check_scalar_argument, compile_case, compile_predicate, count_diagnostic, function_name,
+    is_count_kind, is_date_operand_kind, is_unbound_parameter, left_binary_spine, operand_token,
+    reference_column, reference_type_column, render_coalesce, render_like, single_column,
     source_free_expression_kind, type_literal_value, value_type_sql, widen_reference,
 };
 use super::params::render_scalar_parameter;
@@ -335,6 +335,7 @@ pub(super) fn compile_source_free_branch(
     }
 
     let mut projections = Vec::with_capacity(ast.projection.len());
+    let mut exact_projection = true;
     let mut columns = Vec::with_capacity(ast.projection.len());
     let mut labels = OutputLabelAllocator::new(dialect);
     for (index, projection) in ast.projection.iter().enumerate() {
@@ -374,11 +375,11 @@ pub(super) fn compile_source_free_branch(
                     parameters,
                     storage_domain,
                 )?;
-                (
-                    sql,
-                    format!("column{}", index + 1),
-                    source_free_expression_kind(expression, snapshot, parameters),
-                )
+                let kind = source_free_expression_kind(expression, snapshot, parameters);
+                if !kind.is_wildcard() && super::projection::contains_undefined(expression) {
+                    exact_projection = false;
+                }
+                (sql, format!("column{}", index + 1), kind)
             }
             Projection::Presentation {
                 token,
@@ -438,6 +439,16 @@ pub(super) fn compile_source_free_branch(
     }
     dialect.append_limit(&mut sql, ast.top);
     Ok(CompiledBranch {
+        logical_projection: exact_projection.then(|| {
+            columns
+                .iter()
+                .enumerate()
+                .map(|(column, value)| crate::query::LogicalResultColumn {
+                    name: value.name.clone(),
+                    value: crate::query::LogicalResultValue::Scalar { column },
+                })
+                .collect()
+        }),
         sql,
         logical_columns: vec![1; columns.len()],
         logical_width: columns.len(),
@@ -1017,7 +1028,29 @@ fn compile_source_free_predicate(
                 TokenKind::Keyword(Keyword::And | Keyword::Or)
             ) =>
         {
-            let (left, terms) = left_binary_spine(expression);
+            let (left, terms) = if dialect == SqlDialect::Postgres {
+                // Keep comparisons intact so their scalar equality policy is
+                // applied even at the left edge of a long conjunction.
+                let mut leftmost = expression;
+                let mut terms = Vec::new();
+                while let Expression::Binary {
+                    left,
+                    operator,
+                    right,
+                } = leftmost
+                    && matches!(
+                        operator.kind,
+                        TokenKind::Keyword(Keyword::And | Keyword::Or)
+                    )
+                {
+                    terms.push((*operator, right.as_ref()));
+                    leftmost = left.as_ref();
+                }
+                terms.reverse();
+                (leftmost, terms)
+            } else {
+                left_binary_spine(expression)
+            };
             let mut sql = "(".repeat(terms.len());
             sql.push_str(&compile_source_free_predicate(
                 left,
@@ -1058,6 +1091,51 @@ fn compile_source_free_binary_expression(
     parameters: Parameters<'_>,
     storage_domain: bool,
 ) -> Result<String, QueryDiagnostic> {
+    if dialect == SqlDialect::Postgres
+        && let Expression::Binary { operator, .. } = expression
+        && matches!(
+            operator.kind,
+            TokenKind::Keyword(Keyword::And | Keyword::Or)
+        )
+    {
+        return compile_source_free_predicate(
+            expression,
+            snapshot,
+            dialect,
+            parameters,
+            storage_domain,
+        );
+    }
+    if dialect == SqlDialect::Postgres
+        && let Expression::Binary {
+            left,
+            operator,
+            right,
+        } = expression
+        && operator.lexeme == "="
+        && !matches!(left.as_ref(), Expression::Case { .. })
+        && !matches!(right.as_ref(), Expression::Case { .. })
+    {
+        let left_kind = source_free_expression_kind(left, snapshot, parameters);
+        let right_kind = source_free_expression_kind(right, snapshot, parameters);
+        if let Some(equality) = ScalarStringEquality::for_kinds(&left_kind, &right_kind) {
+            let left = compile_source_free_expression(
+                left,
+                snapshot,
+                dialect,
+                parameters,
+                storage_domain,
+            )?;
+            let right = compile_source_free_expression(
+                right,
+                snapshot,
+                dialect,
+                parameters,
+                storage_domain,
+            )?;
+            return Ok(equality.render(&left, &right));
+        }
+    }
     let (left, terms) = left_binary_spine(expression);
     let mut sql = "(".repeat(terms.len());
     sql.push_str(&compile_source_free_expression(

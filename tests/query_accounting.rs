@@ -809,14 +809,22 @@ fn records_conditions_read_side_less_names_on_either_side() {
     )
     .unwrap();
     println!("SQL {dereferenced}");
-    assert_contains(&dereferenced, "(\"__ref1\".\"_code\" = '51')");
-    assert_contains(&dereferenced, "(\"__ref3\".\"_code\" = '51')");
+    assert_contains(
+        &dereferenced,
+        "((rtrim(CAST(\"__ref1\".\"_code\" AS text), ' ') COLLATE \"C\") = (rtrim(CAST('51' AS text), ' ') COLLATE \"C\"))",
+    );
+    assert_contains(
+        &dereferenced,
+        "((rtrim(CAST(\"__ref3\".\"_code\" AS text), ' ') COLLATE \"C\") = (rtrim(CAST('51' AS text), ' ') COLLATE \"C\"))",
+    );
     assert_contains(
         &dereferenced,
         "\"__aggregate_base\".\"_accountctrref\" = \"__ref3\".\"_idrref\"",
     );
     assert_eq!(
-        dereferenced.matches("\"_description\" = 'А'").count(),
+        dereferenced
+            .matches("\"_description\" AS text), ' ') COLLATE \"C\") = (rtrim(CAST('А' AS text)")
+            .count(),
         2,
         "{dereferenced}"
     );

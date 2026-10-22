@@ -1,0 +1,10 @@
+principal	ReadOwner
+privileged	false
+read.right	true
+get.value	13
+query.value	13
+query.rows	1
+day.get.value	42
+day.query.date	20240102000000
+day.query.value	42
+day.query.rows	1

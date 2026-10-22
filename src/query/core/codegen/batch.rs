@@ -400,7 +400,9 @@ fn place_statement(
             hierarchy: _,
         } = compiled;
         return Ok(Some(CompiledQuery {
+            forbidden_row_column: query.forbidden_row_column,
             sql: join_with_prefix(with_prefix(manager, &dependencies, dialect), &query.sql),
+            logical_projection: query.logical_projection,
             columns: query.columns,
             deferred_presentations: query.deferred_presentations,
             nested: query.nested,
@@ -487,6 +489,8 @@ fn count_of_relation(
 ) -> CompiledQuery {
     let label = dialect.quote_identifier("Количество");
     CompiledQuery {
+        forbidden_row_column: None,
+        logical_projection: None,
         sql: format!(
             "{}SELECT COUNT(*) AS {label} FROM {relation} AS {}",
             with_prefix(manager, dependencies, dialect),

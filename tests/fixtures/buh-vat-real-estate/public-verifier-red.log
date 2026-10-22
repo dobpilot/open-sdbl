@@ -1,0 +1,4 @@
+
+thread 'main' (37) panicked at /home/kan/Документы/develop/open-bsl/docs/research/fixtures/buh-vat-real-estate-metadata-1016/public-verifier.rs:20:56:
+нужны десять собственных реквизитов
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace

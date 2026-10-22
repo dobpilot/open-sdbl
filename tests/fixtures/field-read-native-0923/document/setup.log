@@ -1,0 +1,5 @@
+создаю информационную базу в /tmp/open-bsl-document-fields-1017-ib
+объявлений: 3, строк тела: 26
+снято строк: 1  ->  docs/research/fixtures/document-field-access-1017/native/measure.platform.txt
+
+сверка:  cargo run -p bsl-cli -- --ingest-measurements docs/research/fixtures/document-field-access-1017/native/measure.platform.txt

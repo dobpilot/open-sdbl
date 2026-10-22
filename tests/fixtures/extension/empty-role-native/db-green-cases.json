@@ -1,0 +1,79 @@
+[
+  {
+    "case": "no-subobject",
+    "expected": "empty",
+    "exit": 0,
+    "stdout": "loaded_rights=1; named_descriptors=1\nempty_role_complete=true\n",
+    "stderr": ""
+  },
+  {
+    "case": "promised-missing",
+    "expected": "missing",
+    "exit": 0,
+    "stdout": "loaded_rights=0; named_descriptors=0\nunknown_or_unavailable_role_unreadable=true\n",
+    "stderr": ""
+  },
+  {
+    "case": "unknown-profile",
+    "expected": "missing",
+    "exit": 0,
+    "stdout": "loaded_rights=0; named_descriptors=0\nunknown_or_unavailable_role_unreadable=true\n",
+    "stderr": ""
+  },
+  {
+    "case": "descriptor-missing",
+    "expected": "missing",
+    "exit": 0,
+    "stdout": "loaded_rights=0; named_descriptors=0\nunknown_or_unavailable_role_unreadable=true\n",
+    "stderr": ""
+  },
+  {
+    "case": "descriptor-corrupt",
+    "expected": "missing",
+    "exit": 0,
+    "stdout": "loaded_rights=0; named_descriptors=0\nunknown_or_unavailable_role_unreadable=true\n",
+    "stderr": ""
+  },
+  {
+    "case": "identity-mismatch",
+    "expected": "missing",
+    "exit": 0,
+    "stdout": "loaded_rights=0; named_descriptors=0\nunknown_or_unavailable_role_unreadable=true\n",
+    "stderr": ""
+  },
+  {
+    "case": "borrowed-profile",
+    "expected": "missing",
+    "exit": 0,
+    "stdout": "loaded_rights=0; named_descriptors=0\nunknown_or_unavailable_role_unreadable=true\n",
+    "stderr": ""
+  },
+  {
+    "case": "declared-rights-missing",
+    "expected": "missing",
+    "exit": 0,
+    "stdout": "loaded_rights=0; named_descriptors=0\nunknown_or_unavailable_role_unreadable=true\n",
+    "stderr": ""
+  },
+  {
+    "case": "declared-rights-corrupt",
+    "expected": "corrupt",
+    "exit": 0,
+    "stdout": "declared_corrupt_rights_refused=true\n",
+    "stderr": ""
+  },
+  {
+    "case": "declared-rights-stored",
+    "expected": "stored",
+    "exit": 0,
+    "stdout": "loaded_rights=1; named_descriptors=1\nstored_rights_take_precedence=true\n",
+    "stderr": ""
+  },
+  {
+    "case": "declared-rights-no-descriptor",
+    "expected": "stored",
+    "exit": 0,
+    "stdout": "loaded_rights=1; named_descriptors=0\nstored_rights_take_precedence=true\n",
+    "stderr": ""
+  }
+]

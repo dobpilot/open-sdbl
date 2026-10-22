@@ -1,0 +1,2 @@
+isolated-startup exit: 0 seconds: 4.47
+option.descriptor resource=19056365-9ff1-4733-876e-a7ebdbbe0557 object=19056365-9ff1-4733-876e-a7ebdbbe0557 location_guid=None location=None privileged=None

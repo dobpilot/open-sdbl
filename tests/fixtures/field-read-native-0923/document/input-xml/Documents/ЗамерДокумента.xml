@@ -1,0 +1,121 @@
+<?xml version='1.0' encoding='utf-8'?>
+<MetaDataObject xmlns="http://v8.1c.ru/8.3/MDClasses" xmlns:v8="http://v8.1c.ru/8.1/data/core" xmlns:xr="http://v8.1c.ru/8.3/xcf/readable" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" version="2.20" xmlns:xs="http://www.w3.org/2001/XMLSchema">
+  <Document uuid="f77edfd7-d0d4-532b-a649-399fb412f0a4">
+    <InternalInfo>
+      <xr:GeneratedType name="DocumentObject.ЗамерДокумента" category="Object">
+        <xr:TypeId>559f445d-2eef-5d80-a0ab-43e958fdc6f6</xr:TypeId>
+        <xr:ValueId>c8489ff6-0b93-51d0-a290-fb7a5e748c31</xr:ValueId>
+      </xr:GeneratedType>
+      <xr:GeneratedType name="DocumentRef.ЗамерДокумента" category="Ref">
+        <xr:TypeId>66bb49c5-b325-5609-a5b0-267606d0b5da</xr:TypeId>
+        <xr:ValueId>92ca1fc0-04ca-5712-8ee3-7b655949b5b0</xr:ValueId>
+      </xr:GeneratedType>
+      <xr:GeneratedType name="DocumentSelection.ЗамерДокумента" category="Selection">
+        <xr:TypeId>a5dbde16-44df-5b4b-819b-f0b6d2fca1b4</xr:TypeId>
+        <xr:ValueId>b24856d7-d826-56b7-9307-bddf31a8238d</xr:ValueId>
+      </xr:GeneratedType>
+      <xr:GeneratedType name="DocumentList.ЗамерДокумента" category="List">
+        <xr:TypeId>f3b8814e-4543-5596-b163-69bbbb2b447e</xr:TypeId>
+        <xr:ValueId>7a135f81-0f3c-51a7-9a20-a6b67cf7c46c</xr:ValueId>
+      </xr:GeneratedType>
+      <xr:GeneratedType name="DocumentManager.ЗамерДокумента" category="Manager">
+        <xr:TypeId>29611101-a28f-5fa8-bee1-d85777e8c3db</xr:TypeId>
+        <xr:ValueId>c5a8dfd3-6e1c-5a3b-9623-88ce055483fc</xr:ValueId>
+      </xr:GeneratedType>
+    </InternalInfo>
+    <Properties>
+      <Name>ЗамерДокумента</Name>
+      <Synonym>
+        <v8:item>
+          <v8:lang>ru</v8:lang>
+          <v8:content>Проба документа</v8:content>
+        </v8:item>
+      </Synonym>
+      <Comment />
+      <NumberType>String</NumberType>
+      <NumberLength>9</NumberLength>
+      <NumberAllowedLength>Variable</NumberAllowedLength>
+      <NumberPeriodicity>Nonperiodical</NumberPeriodicity>
+      <CheckUnique>true</CheckUnique>
+      <Autonumbering>true</Autonumbering>
+    </Properties>
+    <ChildObjects>
+      <Attribute uuid="ae787631-1111-4444-8888-123456789001">
+        <Properties>
+          <Name>Заполняемый</Name>
+          <Synonym />
+          <Comment />
+          <Type>
+            <v8:Type>xs:string</v8:Type>
+            <v8:StringQualifiers>
+              <v8:Length>12</v8:Length>
+              <v8:AllowedLength>Variable</v8:AllowedLength>
+            </v8:StringQualifiers>
+          </Type>
+          <PasswordMode>false</PasswordMode>
+          <Format />
+          <EditFormat />
+          <ToolTip />
+          <MarkNegatives>false</MarkNegatives>
+          <Mask />
+          <MultiLine>false</MultiLine>
+          <ExtendedEdit>false</ExtendedEdit>
+          <MinValue xsi:nil="true" />
+          <MaxValue xsi:nil="true" />
+          <FillFromFillingValue>true</FillFromFillingValue>
+          <FillValue xsi:type="xs:string">default</FillValue>
+          <FillChecking>DontCheck</FillChecking>
+          <ChoiceFoldersAndItems>Items</ChoiceFoldersAndItems>
+          <ChoiceParameterLinks />
+          <ChoiceParameters />
+          <QuickChoice>Auto</QuickChoice>
+          <CreateOnInput>Auto</CreateOnInput>
+          <ChoiceForm />
+          <LinkByType />
+          <ChoiceHistoryOnInput>Auto</ChoiceHistoryOnInput>
+          <Indexing>DontIndex</Indexing>
+          <FullTextSearch>Use</FullTextSearch>
+          <DataHistory>Use</DataHistory>
+        </Properties>
+      </Attribute>
+      <Attribute uuid="ae787631-1111-4444-8888-123456789002">
+        <Properties>
+          <Name>НеЗаполняемый</Name>
+          <Synonym />
+          <Comment />
+          <Type>
+            <v8:Type>xs:string</v8:Type>
+            <v8:StringQualifiers>
+              <v8:Length>12</v8:Length>
+              <v8:AllowedLength>Variable</v8:AllowedLength>
+            </v8:StringQualifiers>
+          </Type>
+          <PasswordMode>false</PasswordMode>
+          <Format />
+          <EditFormat />
+          <ToolTip />
+          <MarkNegatives>false</MarkNegatives>
+          <Mask />
+          <MultiLine>false</MultiLine>
+          <ExtendedEdit>false</ExtendedEdit>
+          <MinValue xsi:nil="true" />
+          <MaxValue xsi:nil="true" />
+          <FillFromFillingValue>false</FillFromFillingValue>
+          <FillValue xsi:type="xs:string">default</FillValue>
+          <FillChecking>DontCheck</FillChecking>
+          <ChoiceFoldersAndItems>Items</ChoiceFoldersAndItems>
+          <ChoiceParameterLinks />
+          <ChoiceParameters />
+          <QuickChoice>Auto</QuickChoice>
+          <CreateOnInput>Auto</CreateOnInput>
+          <ChoiceForm />
+          <LinkByType />
+          <ChoiceHistoryOnInput>Auto</ChoiceHistoryOnInput>
+          <Indexing>DontIndex</Indexing>
+          <FullTextSearch>Use</FullTextSearch>
+          <DataHistory>Use</DataHistory>
+        </Properties>
+      </Attribute>
+    </ChildObjects>
+  </Document>
+</MetaDataObject>

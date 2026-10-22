@@ -1,0 +1,168 @@
+[
+  {
+    "name": "CatalogObject.СобытияОтправкиОтчетности",
+    "kind": "TypeId",
+    "guid": "aefbcf61-a198-4233-b16b-877349cfc265",
+    "paths": [
+      [
+        1,
+        1
+      ]
+    ]
+  },
+  {
+    "name": "CatalogObject.СобытияОтправкиОтчетности",
+    "kind": "ValueId",
+    "guid": "f34d8caa-96b4-4200-a730-2ed0bf72e5db",
+    "paths": [
+      [
+        1,
+        2
+      ]
+    ]
+  },
+  {
+    "name": "CatalogRef.СобытияОтправкиОтчетности",
+    "kind": "TypeId",
+    "guid": "c6c798a4-5070-4712-9158-2b0fc9619d03",
+    "paths": [
+      [
+        1,
+        3
+      ]
+    ]
+  },
+  {
+    "name": "CatalogRef.СобытияОтправкиОтчетности",
+    "kind": "ValueId",
+    "guid": "8f1b3aca-fdd6-46f5-8a27-cba418b3caf5",
+    "paths": [
+      [
+        1,
+        4
+      ]
+    ]
+  },
+  {
+    "name": "CatalogSelection.СобытияОтправкиОтчетности",
+    "kind": "TypeId",
+    "guid": "03cb1704-3edd-477d-b93b-ac6c0c3495bf",
+    "paths": [
+      [
+        1,
+        5
+      ]
+    ]
+  },
+  {
+    "name": "CatalogSelection.СобытияОтправкиОтчетности",
+    "kind": "ValueId",
+    "guid": "af7de0f4-b6cf-43de-ad3b-8386dc0bc6f8",
+    "paths": [
+      [
+        1,
+        6
+      ]
+    ]
+  },
+  {
+    "name": "CatalogList.СобытияОтправкиОтчетности",
+    "kind": "TypeId",
+    "guid": "f328dfe1-1360-4370-ad2a-505937d34f26",
+    "paths": [
+      [
+        1,
+        7
+      ]
+    ]
+  },
+  {
+    "name": "CatalogList.СобытияОтправкиОтчетности",
+    "kind": "ValueId",
+    "guid": "237214a1-9c66-4ccb-98b4-7cb86d9eb647",
+    "paths": [
+      [
+        1,
+        8
+      ]
+    ]
+  },
+  {
+    "name": "CatalogManager.СобытияОтправкиОтчетности",
+    "kind": "TypeId",
+    "guid": "e1877fbd-d55c-415d-bc7c-db4522e8f2ef",
+    "paths": [
+      [
+        1,
+        34
+      ]
+    ]
+  },
+  {
+    "name": "CatalogManager.СобытияОтправкиОтчетности",
+    "kind": "ValueId",
+    "guid": "8a70c097-db2f-4b6c-85c5-f58b7e89a70f",
+    "paths": [
+      [
+        1,
+        35
+      ]
+    ]
+  },
+  {
+    "name": "CatalogTabularSection.СобытияОтправкиОтчетности.ПричиныОтказа",
+    "kind": "TypeId",
+    "guid": "74808a5f-7dec-4490-9644-040ab06b7efc",
+    "paths": [
+      [
+        5,
+        2,
+        0,
+        1,
+        1
+      ]
+    ]
+  },
+  {
+    "name": "CatalogTabularSection.СобытияОтправкиОтчетности.ПричиныОтказа",
+    "kind": "ValueId",
+    "guid": "a35dd1b1-edb5-410f-8383-fff8c8c68275",
+    "paths": [
+      [
+        5,
+        2,
+        0,
+        1,
+        2
+      ]
+    ]
+  },
+  {
+    "name": "CatalogTabularSectionRow.СобытияОтправкиОтчетности.ПричиныОтказа",
+    "kind": "TypeId",
+    "guid": "560741e3-591a-46a3-a818-9bc662065617",
+    "paths": [
+      [
+        5,
+        2,
+        0,
+        1,
+        3
+      ]
+    ]
+  },
+  {
+    "name": "CatalogTabularSectionRow.СобытияОтправкиОтчетности.ПричиныОтказа",
+    "kind": "ValueId",
+    "guid": "36eae296-a61c-468d-9075-6a1605f83412",
+    "paths": [
+      [
+        5,
+        2,
+        0,
+        1,
+        4
+      ]
+    ]
+  }
+]

@@ -1,0 +1,18 @@
+   Compiling open-sdbl v0.9.15 (/tmp/open-sdbl-logical-projection-draft-1013)
+error[E0432]: unresolved import `open_sdbl::query::LogicalResultValue`
+ --> tests/query_logical_projection.rs:3:24
+  |
+3 | use open_sdbl::query::{LogicalResultValue, PostgresBackend, QueryCompiler};
+  |                        ^^^^^^^^^^^^^^^^^^ no `LogicalResultValue` in `query`
+
+error[E0609]: no field `logical_projection` on type `CompiledQuery`
+  --> tests/query_logical_projection.rs:11:22
+   |
+11 |     let plan = query.logical_projection.as_ref().unwrap();
+   |                      ^^^^^^^^^^^^^^^^^^ unknown field
+   |
+   = note: available fields are: `sql`, `columns`, `deferred_presentations`, `nested`, `service_columns`
+
+Some errors have detailed explanations: E0432, E0609.
+For more information about an error, try `rustc --explain E0432`.
+error: could not compile `open-sdbl` (test "query_logical_projection") due to 2 previous errors

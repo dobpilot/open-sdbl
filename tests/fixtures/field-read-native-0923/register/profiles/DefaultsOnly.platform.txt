@@ -1,0 +1,5 @@
+principal	DefaultsOnly
+privileged	false
+read.right	false
+get.error	{DataProcessor.Замеры.Form.Форма.Form(40)}: Ошибка при вызове метода контекста (Get): Нарушение прав доступа!
+query.error	{DataProcessor.Замеры.Form.Форма.Form(47)}: Ошибка при вызове метода контекста (Execute): Недостаточно прав для работы с таблицей "InformationRegister.ЗамерПолучить"

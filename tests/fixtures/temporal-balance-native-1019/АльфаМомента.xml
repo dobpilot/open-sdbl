@@ -1,0 +1,44 @@
+﻿<?xml version='1.0' encoding='UTF-8'?>
+<MetaDataObject xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns="http://v8.1c.ru/8.3/MDClasses" xmlns:v8="http://v8.1c.ru/8.1/data/core" xmlns:xr="http://v8.1c.ru/8.3/xcf/readable" version="2.20">
+	<Document uuid="ffffffff-ffff-4fff-8fff-ffffffffffff">
+		<InternalInfo>
+			<xr:GeneratedType name="DocumentObject.АльфаМомента" category="Object">
+				<xr:TypeId>7c484a20-280b-5592-8c59-4b8bf6885bab</xr:TypeId>
+				<xr:ValueId>bfc266d9-c28f-5b8e-9d0a-d6869c95b480</xr:ValueId>
+			</xr:GeneratedType>
+			<xr:GeneratedType name="DocumentRef.АльфаМомента" category="Ref">
+				<xr:TypeId>3cbabe8b-98a0-5f00-93b1-8a17d7ac9b1d</xr:TypeId>
+				<xr:ValueId>85ff3e93-0dff-5c41-8017-820b69126d91</xr:ValueId>
+			</xr:GeneratedType>
+			<xr:GeneratedType name="DocumentSelection.АльфаМомента" category="Selection">
+				<xr:TypeId>e8f4bd20-d32b-5261-8a88-1a051b609bde</xr:TypeId>
+				<xr:ValueId>1ca2e379-c96b-5a39-aa63-bcfa8684365a</xr:ValueId>
+			</xr:GeneratedType>
+			<xr:GeneratedType name="DocumentList.АльфаМомента" category="List">
+				<xr:TypeId>6d528216-5d6b-5ce2-b60e-c1643256284c</xr:TypeId>
+				<xr:ValueId>d35a74d9-55f8-5612-adb6-4ecda5bfd02a</xr:ValueId>
+			</xr:GeneratedType>
+			<xr:GeneratedType name="DocumentManager.АльфаМомента" category="Manager">
+				<xr:TypeId>825db143-811a-5be1-88c3-c814a902ab89</xr:TypeId>
+				<xr:ValueId>e0c6c2aa-2a90-59fc-b032-8fdd603d5b11</xr:ValueId>
+			</xr:GeneratedType>
+		</InternalInfo>
+		<Properties>
+			<Name>АльфаМомента</Name>
+			<Synonym>
+				<v8:item>
+					<v8:lang>ru</v8:lang>
+					<v8:content>Проба документа</v8:content>
+				</v8:item>
+			</Synonym>
+			<Comment />
+			<NumberType>String</NumberType>
+			<NumberLength>9</NumberLength>
+			<NumberAllowedLength>Variable</NumberAllowedLength>
+			<NumberPeriodicity>Nonperiodical</NumberPeriodicity>
+			<CheckUnique>true</CheckUnique>
+			<Autonumbering>true</Autonumbering>
+		<RegisterRecords><xr:Item xsi:type="xr:MDObjectRef">AccumulationRegister.ЗамерМакетаРегистра</xr:Item></RegisterRecords></Properties>
+		<ChildObjects />
+	</Document>
+</MetaDataObject>

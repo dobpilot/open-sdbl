@@ -1,0 +1,40 @@
+﻿<?xml version="1.0" encoding="UTF-8"?>
+<ConfigDumpInfo xmlns="http://v8.1c.ru/8.3/xcf/dumpinfo" xmlns:xen="http://v8.1c.ru/8.3/xcf/enums" xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" format="Hierarchical" version="2.20">
+	<ConfigVersions>
+		<Metadata name="CommonModule.ЗамерыДинамическогоМодуля" id="d7b9c017-c8e3-45a9-b8c0-2e5902fc2aa4" configVersion="52df9038b1ced9439773dc78ebc1b27600000000"/>
+		<Metadata name="CommonModule.ЗамерыДинамическогоМодуля.Module" id="d7b9c017-c8e3-45a9-b8c0-2e5902fc2aa4.0" configVersion="db957fb8580c9e47977915f68b735d3100000000"/>
+		<Metadata name="CommonModule.ЗамерыЗначенияМодуля" id="4d392458-2a40-4ad6-9c35-9c8422c2184b" configVersion="25368656c3d76041b1e04cc969d0240e00000000"/>
+		<Metadata name="CommonModule.ЗамерыЗначенияМодуля.Module" id="4d392458-2a40-4ad6-9c35-9c8422c2184b.0" configVersion="058da8b1c7200f4ca69f571fdd9945a600000000"/>
+		<Metadata name="CommonModule.ЗамерыЛенивойАрности" id="fca893b1-3e72-4fbb-a3d5-4b5a1a63d146" configVersion="e20a903fdb2eb34db7549790d555fdf000000000"/>
+		<Metadata name="CommonModule.ЗамерыЛенивойАрности.Module" id="fca893b1-3e72-4fbb-a3d5-4b5a1a63d146.0" configVersion="974930b0fbcfb245b2abe0b117688a5900000000"/>
+		<Metadata name="CommonModule.ЗамерыСамоссылкиМодуля" id="3a56c8f4-6ef2-4d72-924b-0e3f82bc6901" configVersion="b9ae56bc7a25a943909ad93f1b7653be00000000"/>
+		<Metadata name="CommonModule.ЗамерыСамоссылкиМодуля.Module" id="3a56c8f4-6ef2-4d72-924b-0e3f82bc6901.0" configVersion="0154e695382c9347834b948427f3067400000000"/>
+		<Metadata name="CommonModule.ЗамерыФоновыйСосед" id="9e4b2f7c-8b6d-4eaf-9c73-3f4d2e1a6b23" configVersion="202001709aea874b91d440cb6d4c552000000000"/>
+		<Metadata name="CommonModule.ЗамерыФоновыйСосед.Module" id="9e4b2f7c-8b6d-4eaf-9c73-3f4d2e1a6b23.0" configVersion="76f9b270aa993548be8a34544f66713900000000"/>
+		<Metadata name="CommonModule.ЗамерыФоновыхЗаданий" id="7c2f2d5a-6f4b-4c8e-9a51-1d2b0c9e4f01" configVersion="0e1ddd632bba094bb4dc1e5511c48dd700000000"/>
+		<Metadata name="CommonModule.ЗамерыФоновыхЗаданий.Module" id="7c2f2d5a-6f4b-4c8e-9a51-1d2b0c9e4f01.0" configVersion="0ac5c6d15bd9f54baefa052bd8f68eac00000000"/>
+		<Metadata name="CommonModule.ЗамерыФоновыхЗаданийДвусторонние" id="8d3a1e6b-7a5c-4d9f-8b62-2e3c1d0f5a12" configVersion="7c35b2c0fd43f941b1861a1b6066243200000000"/>
+		<Metadata name="CommonModule.ЗамерыФоновыхЗаданийДвусторонние.Module" id="8d3a1e6b-7a5c-4d9f-8b62-2e3c1d0f5a12.0" configVersion="1fc4fc64c0b23c4d94e4f058ba9ed26a00000000"/>
+		<Metadata name="Configuration.Configuration" id="1b36b146-b187-4059-998d-37596d5a510e" configVersion="445770eee0002e498caad64a7aa0359b00000000"/>
+		<Metadata name="Configuration.Configuration.ManagedApplicationModule" id="4b609fa2-4665-43f6-a123-5884a11b20b4.6" configVersion="4dbf4f0658075f4188af16b7247dc29900000000"/>
+		<Metadata name="Configuration.Configuration.SessionModule" id="4b609fa2-4665-43f6-a123-5884a11b20b4.7" configVersion="29688e4054e49747a7198b151899e6bc00000000"/>
+		<Metadata name="DataProcessor.Замеры" id="ff92317d-71e7-4664-a13a-18bd31fd3701" configVersion="ed7de3412b64594ca2b6776e15047eb200000000"/>
+		<Metadata name="DataProcessor.Замеры.Form.Форма" id="8081de47-60ab-4047-8c98-1e22e2725431" configVersion="00c287f1fbb98749bde45c29d1b5a9b800000000"/>
+		<Metadata name="DataProcessor.Замеры.Form.Форма.Form" id="8081de47-60ab-4047-8c98-1e22e2725431.0" configVersion="e33088a1a2c1f541bc3bd48daadf5f3f00000000"/>
+		<Metadata name="DataProcessor.Замеры.ObjectModule" id="ff92317d-71e7-4664-a13a-18bd31fd3701.0" configVersion="3b290c363fd1d746aac76e3f6402fb0c00000000"/>
+		<Metadata name="Document.ЗамерДокумента" id="f77edfd7-d0d4-532b-a649-399fb412f0a4" configVersion="c7c4af7573ef094d816de1fe89cd015500000000">
+			<Metadata name="Document.ЗамерДокумента.Attribute.Заполняемый" id="ae787631-1111-4444-8888-123456789001"/>
+			<Metadata name="Document.ЗамерДокумента.Attribute.НеЗаполняемый" id="ae787631-1111-4444-8888-123456789002"/>
+		</Metadata>
+		<Metadata name="Document.ЗамерДокумента.ObjectModule" id="f77edfd7-d0d4-532b-a649-399fb412f0a4.0" configVersion="522ce4aacc46e147a96584dc629e150b00000000"/>
+		<Metadata name="Language.English" id="220d033d-4a5f-45ed-926b-af14b6cf30bc" configVersion="58c45591bb3025489ca99662c04c910500000000"/>
+		<Metadata name="Role.ControlAdmin" id="fbb9bd53-0568-51cb-9367-3d6e873788a7" configVersion="e013d5f479cee8468de01b7f67ac3de800000000"/>
+		<Metadata name="Role.ControlAdmin.Rights" id="fbb9bd53-0568-51cb-9367-3d6e873788a7.0" configVersion="db1459ed73811b4e8cadd44772eac87200000000"/>
+		<Metadata name="Role.ControlDenied" id="d1ff2f11-fda5-544e-8a1e-9123e6eec187" configVersion="78cd6a03d926a443b0324ff6525e84c600000000"/>
+		<Metadata name="Role.ControlDenied.Rights" id="d1ff2f11-fda5-544e-8a1e-9123e6eec187.0" configVersion="0ad9c80bb135154a80677c0f0999f46000000000"/>
+		<Metadata name="Role.ControlReadOff" id="1818eca6-dabb-55d5-8275-38d6c66088d9" configVersion="37c623593164f542aa34cb4b751d97e600000000"/>
+		<Metadata name="Role.ControlReadOff.Rights" id="1818eca6-dabb-55d5-8275-38d6c66088d9.0" configVersion="649e9649253e4b4ea7206f9ebf8bb37c00000000"/>
+		<Metadata name="Role.ControlReadOn" id="d0c7f3bf-7e25-5068-9d5a-35fa41923ea2" configVersion="53785bb14a9900448a255fd6d323393500000000"/>
+		<Metadata name="Role.ControlReadOn.Rights" id="d0c7f3bf-7e25-5068-9d5a-35fa41923ea2.0" configVersion="28a3b5dec468d541bb7547a62b23fe6400000000"/>
+	</ConfigVersions>
+</ConfigDumpInfo>

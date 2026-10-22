@@ -1,0 +1,30 @@
+{
+  "owner": "c5a2db66-da7e-4191-b273-85267e5f1e17",
+  "class": "37/50",
+  "owner_identity": "1/7",
+  "owner_comment": "",
+  "owner_flags": [
+    "0",
+    "0"
+  ],
+  "own_count": 10,
+  "own_wrapper": "3/4",
+  "own_wrapper_tail_counts": {
+    "2,1": 1,
+    "0,1": 9
+  },
+  "parts": 2,
+  "part_wrapper": "1/2",
+  "part_body": "11/9",
+  "part_fields": [
+    14,
+    10
+  ],
+  "field_wrapper": "6/4",
+  "field_wrapper_tail_counts": {
+    "0,1": 23,
+    "1,1": 1
+  },
+  "all_owner_child_and_section_identity_comments_empty": true,
+  "generated_type_value_ids_verified": 18
+}

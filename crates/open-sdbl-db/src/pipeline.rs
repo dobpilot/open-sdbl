@@ -120,6 +120,44 @@ pub trait MetadataSource {
     /// Probes the catalog for `PartNo` columns and extension tables; runs
     /// inside the read-only transaction and never fails on a legacy base.
     async fn detect_layout(&mut self) -> Result<StorageLayout, DbError>;
+    /// Читает только перечисленные физические имена `Config` или `ConfigCAS`.
+    /// Провайдер проверяет полноту результата и ограничения до сборки частей.
+    ///
+    /// # Errors
+    /// Возвращает ошибку отсутствующего ресурса, последовательности частей,
+    /// запроса, лимита либо отсутствия поддержки адресного чтения.
+    async fn read_indexed_resources(
+        &mut self,
+        _layout: &StorageLayout,
+        _names: &[String],
+        _extension: bool,
+        _limits: Limits,
+    ) -> Result<Vec<ConfigResource>, DbError> {
+        Err(DbError::Data(
+            "this provider cannot read indexed resources".into(),
+        ))
+    }
+    /// Читает только уникальные имена ресурсов `Config`, без содержимого.
+    ///
+    /// # Errors
+    /// Возвращает ошибку запроса, лимита либо отсутствия поддержки обнаружения.
+    async fn read_configuration_resource_names(
+        &mut self,
+        _layout: &StorageLayout,
+    ) -> Result<Vec<String>, DbError> {
+        Err(DbError::Data(
+            "this provider cannot discover Config resource names".into(),
+        ))
+    }
+
+    /// Читает структуры расширений для адресного обнаружения с бюджетом хранения.
+    async fn read_bounded_extension_restructures(
+        &mut self,
+        layout: &StorageLayout,
+    ) -> Result<Vec<Vec<u8>>, DbError> {
+        self.read_extension_restructures(layout).await
+    }
+
     /// Reads and decodes `DBNames`.
     async fn read_db_names(
         &mut self,
@@ -1031,6 +1069,25 @@ where
                 .join("; ")
         );
     }
+    Ok(finish_config_metadata(
+        descriptors,
+        predefined_values,
+        criteria,
+        roles,
+        route_points,
+    ))
+}
+
+pub(crate) fn finish_config_metadata(
+    mut descriptors: Vec<open_sdbl::metadata::ConfigDescriptor>,
+    mut predefined_values: Vec<open_sdbl::metadata::ConfigPredefinedValue>,
+    mut criteria: Vec<open_sdbl::metadata::ConfigCriterion>,
+    roles: Vec<open_sdbl::metadata::Guid>,
+    route_points: Vec<(
+        open_sdbl::metadata::Guid,
+        Vec<open_sdbl::metadata::BusinessProcessRoutePoint>,
+    )>,
+) -> ConfigMetadata {
     for (owner, points) in route_points {
         if let Some(descriptor) = descriptors.iter_mut().find(|d| {
             d.object_guid == owner && d.business_process_route_point_reference_type.is_some()
@@ -1038,13 +1095,7 @@ where
             descriptor.business_process_route_points = Some(points);
         }
     }
-    descriptors.sort_by(|left, right| {
-        left.resource_guid
-            .as_str()
-            .cmp(right.resource_guid.as_str())
-            .then_with(|| left.object_guid.as_str().cmp(right.object_guid.as_str()))
-            .then_with(|| left.name.cmp(&right.name))
-    });
+    sort_descriptors(&mut descriptors);
     predefined_values.sort_by(|left, right| {
         left.owner_guid
             .as_str()
@@ -1053,8 +1104,40 @@ where
             .then_with(|| left.name.cmp(&right.name))
     });
     criteria.sort_by(|left, right| left.name.cmp(&right.name));
-    Ok((descriptors, predefined_values, criteria, roles))
+    (descriptors, predefined_values, criteria, roles)
 }
+
+// Сортируем номера, а не крупные описатели. Исходная позиция разрешает
+// равные ключи и сохраняет прежний стабильный порядок. Обратная перестановка
+// затем переносит каждый описатель не более чем через один цикл обменов.
+fn sort_descriptors(descriptors: &mut [open_sdbl::metadata::ConfigDescriptor]) {
+    let mut order: Vec<usize> = (0..descriptors.len()).collect();
+    order.sort_unstable_by(|&left, &right| {
+        let a = &descriptors[left];
+        let b = &descriptors[right];
+        a.resource_guid
+            .as_str()
+            .cmp(b.resource_guid.as_str())
+            .then_with(|| a.object_guid.as_str().cmp(b.object_guid.as_str()))
+            .then_with(|| a.name.cmp(&b.name))
+            .then_with(|| left.cmp(&right))
+    });
+    let mut destinations = vec![0; descriptors.len()];
+    for (destination, source) in order.into_iter().enumerate() {
+        destinations[source] = destination;
+    }
+    for position in 0..descriptors.len() {
+        while destinations[position] != position {
+            let target = destinations[position];
+            descriptors.swap(position, target);
+            destinations.swap(position, target);
+        }
+    }
+}
+
+#[cfg(test)]
+#[path = "tests/descriptor_order.rs"]
+mod descriptor_order_tests;
 
 /// Refuses a read whose totals already exceed what the caller allows one
 /// store to hold.
@@ -1278,3 +1361,7 @@ mod data_processor_0911_tests;
 #[cfg(test)]
 #[path = "tests/extension_purpose.rs"]
 mod extension_purpose_tests;
+
+#[cfg(test)]
+#[path = "tests/report_metadata.rs"]
+mod report_metadata_tests;

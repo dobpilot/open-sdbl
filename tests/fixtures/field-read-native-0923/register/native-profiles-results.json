@@ -1,0 +1,17 @@
+[
+  {
+    "profile": "NoRead",
+    "exit_code": 0,
+    "receipt": "/home/kan/\u0414\u043e\u043a\u0443\u043c\u0435\u043d\u0442\u044b/develop/open-bsl/docs/research/fixtures/information-register-rights-1016/profiles/NoRead.platform.txt"
+  },
+  {
+    "profile": "DefaultsOnly",
+    "exit_code": 0,
+    "receipt": "/home/kan/\u0414\u043e\u043a\u0443\u043c\u0435\u043d\u0442\u044b/develop/open-bsl/docs/research/fixtures/information-register-rights-1016/profiles/DefaultsOnly.platform.txt"
+  },
+  {
+    "profile": "ReadDefaults",
+    "exit_code": 0,
+    "receipt": "/home/kan/\u0414\u043e\u043a\u0443\u043c\u0435\u043d\u0442\u044b/develop/open-bsl/docs/research/fixtures/information-register-rights-1016/profiles/ReadDefaults.platform.txt"
+  }
+]

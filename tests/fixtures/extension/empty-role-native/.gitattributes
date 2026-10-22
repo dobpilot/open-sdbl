@@ -1,0 +1,8 @@
+# Нативные артефакты сохраняются побайтно; CRLF не нормализуется.
+*.cf binary
+*.deflate binary
+*.serialized -text whitespace=cr-at-eol
+*.xml -text whitespace=cr-at-eol
+*.oracle -text whitespace=cr-at-eol
+# В исходном индексе строка бинарных данных содержит CRCRLF.
+extension-root.serialized binary

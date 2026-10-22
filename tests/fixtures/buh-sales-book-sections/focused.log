@@ -1,0 +1,450 @@
+   Compiling open-sdbl v0.9.20 (/tmp/open-sdbl-sales-book-sections-review)
+    Finished `test` profile [unoptimized] target(s) in 5.43s
+     Running unittests src/lib.rs (/home/kan/Документы/develop/open-bsl/target/open-sdbl-sales-book-sections-review-agent/debug/deps/open_sdbl-4aae15254d7c1c95)
+
+running 4 tests
+test metadata::runtime_metadata::legacy_sales_book_sections_tests::native_sales_book_sections_match_all_six_sections_68_fields_and_201_qualified_types ... ok
+test metadata::runtime_metadata::legacy_sales_book_sections_tests::section_identities_cannot_alias_the_owner_or_its_existing_own_attributes ... ok
+test metadata::runtime_metadata::legacy_sales_book_sections_tests::malformed_last_section_never_publishes_section_or_field_prefixes ... ok
+test metadata::runtime_metadata::legacy_sales_book_sections_tests::malformed_last_section_field_never_publishes_any_of_68_declarations ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 148 filtered out; finished in 0.19s
+
+     Running tests/access_expansion.rs (/home/kan/Документы/develop/open-bsl/target/open-sdbl-sales-book-sections-review-agent/debug/deps/access_expansion-a4372c5c8898991d)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 10 filtered out; finished in 0.00s
+
+     Running tests/access_roles.rs (/home/kan/Документы/develop/open-bsl/target/open-sdbl-sales-book-sections-review-agent/debug/deps/access_roles-35a0534c7221a583)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 8 filtered out; finished in 0.00s
+
+     Running tests/access_templates.rs (/home/kan/Документы/develop/open-bsl/target/open-sdbl-sales-book-sections-review-agent/debug/deps/access_templates-14e374ccf97bdf64)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 9 filtered out; finished in 0.00s
+
+     Running tests/access_users.rs (/home/kan/Документы/develop/open-bsl/target/open-sdbl-sales-book-sections-review-agent/debug/deps/access_users-6e43ca06fff82c96)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 6 filtered out; finished in 0.00s
+
+     Running tests/buh_catalog_layout_56.rs (/home/kan/Документы/develop/open-bsl/target/open-sdbl-sales-book-sections-review-agent/debug/deps/buh_catalog_layout_56-b4c9c44eed29b72a)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 3 filtered out; finished in 0.00s
+
+     Running tests/business_task_reference.rs (/home/kan/Документы/develop/open-bsl/target/open-sdbl-sales-book-sections-review-agent/debug/deps/business_task_reference-74671d3f44283fcb)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 5 filtered out; finished in 0.00s
+
+     Running tests/catalog_default_presentation.rs (/home/kan/Документы/develop/open-bsl/target/open-sdbl-sales-book-sections-review-agent/debug/deps/catalog_default_presentation-2f032fcd8d813c34)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 3 filtered out; finished in 0.00s
+
+     Running tests/catalog_hierarchy.rs (/home/kan/Документы/develop/open-bsl/target/open-sdbl-sales-book-sections-review-agent/debug/deps/catalog_hierarchy-1d426064db865c60)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 3 filtered out; finished in 0.00s
+
+     Running tests/catalog_own_attributes.rs (/home/kan/Документы/develop/open-bsl/target/open-sdbl-sales-book-sections-review-agent/debug/deps/catalog_own_attributes-8e568f4e3884127a)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 3 filtered out; finished in 0.00s
+
+     Running tests/catalog_standard_attributes.rs (/home/kan/Документы/develop/open-bsl/target/open-sdbl-sales-book-sections-review-agent/debug/deps/catalog_standard_attributes-874022038c691a7a)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 3 filtered out; finished in 0.00s
+
+     Running tests/catalog_tabular_sections.rs (/home/kan/Документы/develop/open-bsl/target/open-sdbl-sales-book-sections-review-agent/debug/deps/catalog_tabular_sections-9efc5cf9215149c5)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 3 filtered out; finished in 0.00s
+
+     Running tests/characteristic_settings.rs (/home/kan/Документы/develop/open-bsl/target/open-sdbl-sales-book-sections-review-agent/debug/deps/characteristic_settings-e7b364d19486b6de)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 5 filtered out; finished in 0.00s
+
+     Running tests/common_settings_load.rs (/home/kan/Документы/develop/open-bsl/target/open-sdbl-sales-book-sections-review-agent/debug/deps/common_settings_load-29bd6300ae409c3a)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 10 filtered out; finished in 0.00s
+
+     Running tests/configuration_fingerprint_scope.rs (/home/kan/Документы/develop/open-bsl/target/open-sdbl-sales-book-sections-review-agent/debug/deps/configuration_fingerprint_scope-3153dcd5a4cf1a0c)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out; finished in 0.00s
+
+     Running tests/corpus_fixture.rs (/home/kan/Документы/develop/open-bsl/target/open-sdbl-sales-book-sections-review-agent/debug/deps/corpus_fixture-1a4d9cc11165bb82)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s
+
+     Running tests/data_processor_0911.rs (/home/kan/Документы/develop/open-bsl/target/open-sdbl-sales-book-sections-review-agent/debug/deps/data_processor_0911-ee740ee781b011c0)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 4 filtered out; finished in 0.00s
+
+     Running tests/data_processor_header2.rs (/home/kan/Документы/develop/open-bsl/target/open-sdbl-sales-book-sections-review-agent/debug/deps/data_processor_header2-de42e81dee9f1730)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 4 filtered out; finished in 0.00s
+
+     Running tests/document_numbering_096.rs (/home/kan/Документы/develop/open-bsl/target/open-sdbl-sales-book-sections-review-agent/debug/deps/document_numbering_096-11d2e517a31e63ac)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 3 filtered out; finished in 0.00s
+
+     Running tests/document_register_membership_096.rs (/home/kan/Документы/develop/open-bsl/target/open-sdbl-sales-book-sections-review-agent/debug/deps/document_register_membership_096-459d820455dbf981)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 3 filtered out; finished in 0.00s
+
+     Running tests/enum_header19.rs (/home/kan/Документы/develop/open-bsl/target/open-sdbl-sales-book-sections-review-agent/debug/deps/enum_header19-e2143d91a7d66887)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 4 filtered out; finished in 0.00s
+
+     Running tests/enum_reference_type_096.rs (/home/kan/Документы/develop/open-bsl/target/open-sdbl-sales-book-sections-review-agent/debug/deps/enum_reference_type_096-6bf67019955dff49)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s
+
+     Running tests/extension_roles.rs (/home/kan/Документы/develop/open-bsl/target/open-sdbl-sales-book-sections-review-agent/debug/deps/extension_roles-ac5aff8a750e44a9)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 8 filtered out; finished in 0.00s
+
+     Running tests/extension_structure.rs (/home/kan/Документы/develop/open-bsl/target/open-sdbl-sales-book-sections-review-agent/debug/deps/extension_structure-ee4bba38c4d666b4)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 12 filtered out; finished in 0.00s
+
+     Running tests/fill_checking_096.rs (/home/kan/Документы/develop/open-bsl/target/open-sdbl-sales-book-sections-review-agent/debug/deps/fill_checking_096-c44181826fb1f874)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 4 filtered out; finished in 0.00s
+
+     Running tests/functional_option_content.rs (/home/kan/Документы/develop/open-bsl/target/open-sdbl-sales-book-sections-review-agent/debug/deps/functional_option_content-4b45f4a0934c7ca5)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 4 filtered out; finished in 0.00s
+
+     Running tests/lexer.rs (/home/kan/Документы/develop/open-bsl/target/open-sdbl-sales-book-sections-review-agent/debug/deps/lexer-23b02214806b4bb0)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 26 filtered out; finished in 0.00s
+
+     Running tests/metadata_conformance.rs (/home/kan/Документы/develop/open-bsl/target/open-sdbl-sales-book-sections-review-agent/debug/deps/metadata_conformance-23d48166641f7575)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s
+
+     Running tests/metadata_lookup.rs (/home/kan/Документы/develop/open-bsl/target/open-sdbl-sales-book-sections-review-agent/debug/deps/metadata_lookup-65794cec18412576)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 3 filtered out; finished in 0.00s
+
+     Running tests/metadata_synonyms.rs (/home/kan/Документы/develop/open-bsl/target/open-sdbl-sales-book-sections-review-agent/debug/deps/metadata_synonyms-37bfb43b96024a53)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 7 filtered out; finished in 0.00s
+
+     Running tests/minimal_document_membership_096.rs (/home/kan/Документы/develop/open-bsl/target/open-sdbl-sales-book-sections-review-agent/debug/deps/minimal_document_membership_096-c2173e0b9db5099c)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s
+
+     Running tests/native_extension_properties.rs (/home/kan/Документы/develop/open-bsl/target/open-sdbl-sales-book-sections-review-agent/debug/deps/native_extension_properties-8848183dbc744d11)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 5 filtered out; finished in 0.00s
+
+     Running tests/native_extension_purpose.rs (/home/kan/Документы/develop/open-bsl/target/open-sdbl-sales-book-sections-review-agent/debug/deps/native_extension_purpose-0ee5b6fd874b9e6d)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 5 filtered out; finished in 0.00s
+
+     Running tests/native_legacy_extension_headers.rs (/home/kan/Документы/develop/open-bsl/target/open-sdbl-sales-book-sections-review-agent/debug/deps/native_legacy_extension_headers-adf60888c021ae2b)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out; finished in 0.00s
+
+     Running tests/native_root_right_guids.rs (/home/kan/Документы/develop/open-bsl/target/open-sdbl-sales-book-sections-review-agent/debug/deps/native_root_right_guids-96ba98c52b56439b)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out; finished in 0.00s
+
+     Running tests/query_accounting.rs (/home/kan/Документы/develop/open-bsl/target/open-sdbl-sales-book-sections-review-agent/debug/deps/query_accounting-b924af1ce234f099)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 31 filtered out; finished in 0.00s
+
+     Running tests/query_average.rs (/home/kan/Документы/develop/open-bsl/target/open-sdbl-sales-book-sections-review-agent/debug/deps/query_average-1e669c5d82460ca1)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 3 filtered out; finished in 0.00s
+
+     Running tests/query_column_origin.rs (/home/kan/Документы/develop/open-bsl/target/open-sdbl-sales-book-sections-review-agent/debug/deps/query_column_origin-d60e20d6f1a1a8a4)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 10 filtered out; finished in 0.00s
+
+     Running tests/query_comma_sources.rs (/home/kan/Документы/develop/open-bsl/target/open-sdbl-sales-book-sections-review-agent/debug/deps/query_comma_sources-bb48867e99da808d)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 6 filtered out; finished in 0.00s
+
+     Running tests/query_compile.rs (/home/kan/Документы/develop/open-bsl/target/open-sdbl-sales-book-sections-review-agent/debug/deps/query_compile-5fd80368317099eb)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 167 filtered out; finished in 0.00s
+
+     Running tests/query_conditional_separation_0914.rs (/home/kan/Документы/develop/open-bsl/target/open-sdbl-sales-book-sections-review-agent/debug/deps/query_conditional_separation_0914-a25dec271010ea66)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 10 filtered out; finished in 0.00s
+
+     Running tests/query_constants.rs (/home/kan/Документы/develop/open-bsl/target/open-sdbl-sales-book-sections-review-agent/debug/deps/query_constants-52e0911bae09bb3c)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 7 filtered out; finished in 0.00s
+
+     Running tests/query_corpus.rs (/home/kan/Документы/develop/open-bsl/target/open-sdbl-sales-book-sections-review-agent/debug/deps/query_corpus-203d55972e63e25f)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 5 filtered out; finished in 0.00s
+
+     Running tests/query_date_functions.rs (/home/kan/Документы/develop/open-bsl/target/open-sdbl-sales-book-sections-review-agent/debug/deps/query_date_functions-afb5ad81798f3da4)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 12 filtered out; finished in 0.00s
+
+     Running tests/query_date_parts.rs (/home/kan/Документы/develop/open-bsl/target/open-sdbl-sales-book-sections-review-agent/debug/deps/query_date_parts-bfe1be32c3707c13)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 5 filtered out; finished in 0.00s
+
+     Running tests/query_dereference.rs (/home/kan/Документы/develop/open-bsl/target/open-sdbl-sales-book-sections-review-agent/debug/deps/query_dereference-db393b2785706571)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 14 filtered out; finished in 0.00s
+
+     Running tests/query_field_usage.rs (/home/kan/Документы/develop/open-bsl/target/open-sdbl-sales-book-sections-review-agent/debug/deps/query_field_usage-006e94fadeae681c)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 9 filtered out; finished in 0.00s
+
+     Running tests/query_hierarchy.rs (/home/kan/Документы/develop/open-bsl/target/open-sdbl-sales-book-sections-review-agent/debug/deps/query_hierarchy-62af42248472bada)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 4 filtered out; finished in 0.00s
+
+     Running tests/query_logical_projection.rs (/home/kan/Документы/develop/open-bsl/target/open-sdbl-sales-book-sections-review-agent/debug/deps/query_logical_projection-02084781b3927b4d)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 9 filtered out; finished in 0.00s
+
+     Running tests/query_materialized.rs (/home/kan/Документы/develop/open-bsl/target/open-sdbl-sales-book-sections-review-agent/debug/deps/query_materialized-406d454ec02ac8af)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 17 filtered out; finished in 0.00s
+
+     Running tests/query_missing_parameter_identity.rs (/home/kan/Документы/develop/open-bsl/target/open-sdbl-sales-book-sections-review-agent/debug/deps/query_missing_parameter_identity-cfeb612d81d552fa)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 3 filtered out; finished in 0.00s
+
+     Running tests/query_parameter_tables.rs (/home/kan/Документы/develop/open-bsl/target/open-sdbl-sales-book-sections-review-agent/debug/deps/query_parameter_tables-ecc6fef35b44ed04)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 7 filtered out; finished in 0.00s
+
+     Running tests/query_refs.rs (/home/kan/Документы/develop/open-bsl/target/open-sdbl-sales-book-sections-review-agent/debug/deps/query_refs-a500c62f525bd1a8)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 7 filtered out; finished in 0.00s
+
+     Running tests/query_registers.rs (/home/kan/Документы/develop/open-bsl/target/open-sdbl-sales-book-sections-review-agent/debug/deps/query_registers-c3a344d422956bd6)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 14 filtered out; finished in 0.00s
+
+     Running tests/query_restrictions.rs (/home/kan/Документы/develop/open-bsl/target/open-sdbl-sales-book-sections-review-agent/debug/deps/query_restrictions-02fde82c1f411271)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 13 filtered out; finished in 0.00s
+
+     Running tests/query_scalar_functions.rs (/home/kan/Документы/develop/open-bsl/target/open-sdbl-sales-book-sections-review-agent/debug/deps/query_scalar_functions-b0653ea0dd81b49b)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 5 filtered out; finished in 0.00s
+
+     Running tests/query_separator_use_0913.rs (/home/kan/Документы/develop/open-bsl/target/open-sdbl-sales-book-sections-review-agent/debug/deps/query_separator_use_0913-a8197850a5f6043f)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 6 filtered out; finished in 0.00s
+
+     Running tests/query_separators.rs (/home/kan/Документы/develop/open-bsl/target/open-sdbl-sales-book-sections-review-agent/debug/deps/query_separators-c9b0d52eba747d8a)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 13 filtered out; finished in 0.00s
+
+     Running tests/query_strict_restrictions.rs (/home/kan/Документы/develop/open-bsl/target/open-sdbl-sales-book-sections-review-agent/debug/deps/query_strict_restrictions-e352637e9062cb23)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 27 filtered out; finished in 0.00s
+
+     Running tests/query_system_values.rs (/home/kan/Документы/develop/open-bsl/target/open-sdbl-sales-book-sections-review-agent/debug/deps/query_system_values-86fd1fb68558a707)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 4 filtered out; finished in 0.00s
+
+     Running tests/query_totals.rs (/home/kan/Документы/develop/open-bsl/target/open-sdbl-sales-book-sections-review-agent/debug/deps/query_totals-63c04cd21faedf43)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 7 filtered out; finished in 0.00s
+
+     Running tests/query_tuple_in.rs (/home/kan/Документы/develop/open-bsl/target/open-sdbl-sales-book-sections-review-agent/debug/deps/query_tuple_in-3875e9a397ba82b4)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 4 filtered out; finished in 0.00s
+
+     Running tests/query_types.rs (/home/kan/Документы/develop/open-bsl/target/open-sdbl-sales-book-sections-review-agent/debug/deps/query_types-34f6249585862eb2)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 14 filtered out; finished in 0.00s
+
+     Running tests/query_uuid_values.rs (/home/kan/Документы/develop/open-bsl/target/open-sdbl-sales-book-sections-review-agent/debug/deps/query_uuid_values-7baed0a694924525)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 7 filtered out; finished in 0.00s
+
+     Running tests/reference_dump_conformance.rs (/home/kan/Документы/develop/open-bsl/target/open-sdbl-sales-book-sections-review-agent/debug/deps/reference_dump_conformance-78c09c4fd64193fc)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 6 filtered out; finished in 0.00s
+
+     Running tests/runtime_metadata_096.rs (/home/kan/Документы/develop/open-bsl/target/open-sdbl-sales-book-sections-review-agent/debug/deps/runtime_metadata_096-6eb501d37d996636)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 5 filtered out; finished in 0.00s
+
+     Running tests/runtime_object_099.rs (/home/kan/Документы/develop/open-bsl/target/open-sdbl-sales-book-sections-review-agent/debug/deps/runtime_object_099-e75837a14abee934)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 7 filtered out; finished in 0.00s
+
+     Running tests/runtime_options_0912.rs (/home/kan/Документы/develop/open-bsl/target/open-sdbl-sales-book-sections-review-agent/debug/deps/runtime_options_0912-fce766a4b2dd85d3)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 11 filtered out; finished in 0.00s
+
+     Running tests/service_table_fixtures.rs (/home/kan/Документы/develop/open-bsl/target/open-sdbl-sales-book-sections-review-agent/debug/deps/service_table_fixtures-9b385dbc75b9b479)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 10 filtered out; finished in 0.00s
+
+     Running tests/session_shape_096.rs (/home/kan/Документы/develop/open-bsl/target/open-sdbl-sales-book-sections-review-agent/debug/deps/session_shape_096-450d74ef10e1e46f)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 5 filtered out; finished in 0.00s
+
+     Running tests/stored_value_text.rs (/home/kan/Документы/develop/open-bsl/target/open-sdbl-sales-book-sections-review-agent/debug/deps/stored_value_text-6f35f3b7e9909782)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 5 filtered out; finished in 0.00s
+
+     Running tests/system_settings_load.rs (/home/kan/Документы/develop/open-bsl/target/open-sdbl-sales-book-sections-review-agent/debug/deps/system_settings_load-a299f55ab0f8919d)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 15 filtered out; finished in 0.00s
+
+     Running tests/tabular_section_membership_096.rs (/home/kan/Документы/develop/open-bsl/target/open-sdbl-sales-book-sections-review-agent/debug/deps/tabular_section_membership_096-17ac22d654ce92b4)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 4 filtered out; finished in 0.00s
+
+     Running tests/value_storage.rs (/home/kan/Документы/develop/open-bsl/target/open-sdbl-sales-book-sections-review-agent/debug/deps/value_storage-53e6e50e89e7eccc)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 4 filtered out; finished in 0.00s
+

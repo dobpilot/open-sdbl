@@ -1,0 +1,38 @@
+[
+  {
+    "label": "import",
+    "command": [
+      "/opt/1cv8/x86_64/8.3.27.2342/ibcmd",
+      "config",
+      "import",
+      "--dbms=PostgreSQL",
+      "--db-server=127.0.0.1 port=55439",
+      "--db-name=open_bsl_user_settings_control_1013",
+      "--db-user=sdbl_control",
+      "--data=/home/kan/\u0414\u043e\u043a\u0443\u043c\u0435\u043d\u0442\u044b/develop/open-bsl/target/diagnostics/system-settings-native-1015/management-data",
+      "--user=OpenBslSettingsAdmin",
+      "/home/kan/\u0414\u043e\u043a\u0443\u043c\u0435\u043d\u0442\u044b/develop/open-bsl/target/diagnostics/system-settings-native-1015/input-xml"
+    ],
+    "exit": 0,
+    "seconds": 2.07
+  },
+  {
+    "label": "apply",
+    "command": [
+      "/opt/1cv8/x86_64/8.3.27.2342/ibcmd",
+      "config",
+      "apply",
+      "--dbms=PostgreSQL",
+      "--db-server=127.0.0.1 port=55439",
+      "--db-name=open_bsl_user_settings_control_1013",
+      "--db-user=sdbl_control",
+      "--data=/home/kan/\u0414\u043e\u043a\u0443\u043c\u0435\u043d\u0442\u044b/develop/open-bsl/target/diagnostics/system-settings-native-1015/management-data",
+      "--user=OpenBslSettingsAdmin",
+      "--dynamic=disable",
+      "--session-terminate=disable",
+      "--force"
+    ],
+    "exit": 0,
+    "seconds": 2.07
+  }
+]

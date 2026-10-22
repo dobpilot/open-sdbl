@@ -1,0 +1,36 @@
+[
+  {
+    "command": [
+      "/opt/1cv8/x86_64/8.3.27.2342/1cv8",
+      "ENTERPRISE",
+      "/F",
+      "/tmp/sdbl-extension-rights-evidence-1013/empty-users5-ib",
+      "/N",
+      "Baseline",
+      "/RunModeManagedApplication",
+      "/DisableStartupDialogs",
+      "/Out",
+      "/tmp/sdbl-extension-rights-evidence-1013/empty-Baseline-managed.log"
+    ],
+    "exit": 0,
+    "seconds": 7.47,
+    "completed_oracle": true
+  },
+  {
+    "command": [
+      "/opt/1cv8/x86_64/8.3.27.2342/1cv8",
+      "ENTERPRISE",
+      "/F",
+      "/tmp/sdbl-extension-rights-evidence-1013/empty-users5-ib",
+      "/N",
+      "Target",
+      "/RunModeManagedApplication",
+      "/DisableStartupDialogs",
+      "/Out",
+      "/tmp/sdbl-extension-rights-evidence-1013/empty-Target-managed.log"
+    ],
+    "exit": 0,
+    "seconds": 7.46,
+    "completed_oracle": true
+  }
+]

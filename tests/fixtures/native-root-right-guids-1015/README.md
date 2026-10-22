@@ -1,0 +1,1 @@
+Native 1C 8.3.27.2342, own file infobase. Four single-right roles, two own users, positive and cross-negative AccessRight checks. Compressed role resources extracted without inflation from container 1 of a native CF using v8unpack. Configuration owner: 26c30ece-33b5-498a-b409-a91a046ba66b. No original infobase data.

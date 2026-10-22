@@ -1,0 +1,35 @@
+{
+  "catalogs": 752,
+  "changed_count": 1,
+  "unchanged_count": 751,
+  "modern_unchanged": 727,
+  "restored_native_own_attributes": 4,
+  "changed_membership_names_order_and_type_presence_match_xml": true,
+  "scope_limit": "Full qualifiers verified independently only for actual reached owner; batch proves membership/order/names/type presence and full projection hashes",
+  "changed": [
+    {
+      "before": {
+        "owner": "b5697377-16f3-4e8c-b65b-1742fbe55dd0",
+        "name": "НаправленияСдачиОтчетности",
+        "class": "53",
+        "class_len": "58",
+        "native_own": "4",
+        "sdk_own": "None",
+        "order_and_names_match": "false",
+        "known_own_types": "0",
+        "projection_hash": "8e743f5ac5c26759"
+      },
+      "after": {
+        "owner": "b5697377-16f3-4e8c-b65b-1742fbe55dd0",
+        "name": "НаправленияСдачиОтчетности",
+        "class": "53",
+        "class_len": "58",
+        "native_own": "4",
+        "sdk_own": "4",
+        "order_and_names_match": "true",
+        "known_own_types": "4",
+        "projection_hash": "60b7734acaa41257"
+      }
+    }
+  ]
+}

@@ -1,0 +1,17 @@
+{
+  "sdk": "/tmp/open-sdbl-controlled-transactions-review",
+  "version": "0.9.20",
+  "runtime_sha256": "c16a6a793e6ac1b497834e0669be639245a5c4f44e504b5be6066d330d737a39",
+  "config_sha256": "ad9c6a45e3f7ef23c43f55fbd63d1fabeaaddb73169277be8182176ba6f8a407",
+  "database_access": false,
+  "sdk_build": false,
+  "production_edits": false,
+  "xml_raw_own": 2,
+  "xml_raw_types": 2,
+  "xml_raw_sections": 0,
+  "generated_guid_pairs": 5,
+  "public_descriptors": 3,
+  "public_declared_types": 0,
+  "public_own": "None",
+  "synthetic_control": "not applied: cross-class slot mapping is not measured"
+}

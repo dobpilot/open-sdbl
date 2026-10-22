@@ -1,0 +1,184 @@
+{
+  "platform": "8.3.27.2342",
+  "compatibility_mode": "Version8_2_16",
+  "source_database": "buh",
+  "source_access": "SELECT only; default_transaction_read_only=on via PGOPTIONS; no original database native runtime or writes",
+  "source_extension": "ПутеводительПоДемоБазеПроф",
+  "source_role_uuid": "2bc105dd-b388-436d-9410-a756e3415d30",
+  "source_role_name": "ДемоПроф_ОбщиеПрава",
+  "source_root_key": "80408d2f4fedf3485193db5b878103586fa33493",
+  "source_descriptor_key": "52ee233472b3581a75f2bcaac5d357828bdb1542",
+  "source_index_resources": 105,
+  "rights_entry_declared": false,
+  "base_rights_resource_rows": 0,
+  "base_roles_checked": 683,
+  "same_name_base_roles": [],
+  "native_original_payload_preserved": true,
+  "native_role_has_rights_xml": false,
+  "original_extension_object_belonging_native_xml": "not acquired; own transplanted config XML does not establish this property",
+  "native_permission_controls": [
+    "missing-baseline.oracle",
+    "missing-target.oracle",
+    "empty-baseline.oracle",
+    "empty-target.oracle"
+  ],
+  "native_permission_scope": "six configuration denials and two shared client grants; not all platform permissions",
+  "runtime_success_flags": [
+    "/RunModeManagedApplication",
+    "/DisableStartupDialogs",
+    "/Out"
+  ],
+  "sdk_base": "c95a1ea39eade5d80532fab440f8ae70807280bc",
+  "sdk_version": "0.9.15",
+  "files": {
+    ".gitattributes": {
+      "sha256": "ea5cd2d66d67f3c9fe0beddafa469559755a59bb3edfc6cfbe2c3d7996cdb7a0",
+      "bytes": 393
+    },
+    "README.md": {
+      "sha256": "3b6cb38036e74405cf3664b0e7b3683dced671800c467dcc0a76cddfc88ef88d",
+      "bytes": 6548
+    },
+    "db-green-cases.json": {
+      "sha256": "f48a1f6e91bc627cd6def6ea674c5c3c7c8e091a1cb061681e96fcd3192f0deb",
+      "bytes": 2160
+    },
+    "db-probe.rs": {
+      "sha256": "7f22983ae20fa5b9e7ed2379db1ae28a8037852f4ae96789e6a817ed1e1572c1",
+      "bytes": 2448
+    },
+    "db-probe.toml": {
+      "sha256": "d8b3198a2353930b91128123489eda39ac4e119d5f458e8af09ecddfce7e5ac4",
+      "bytes": 340
+    },
+    "db-red.log": {
+      "sha256": "f21dad4550339c7a13b5c127aef50ad215f0e102f9fbd4b94b79c28a5618bdd5",
+      "bytes": 308
+    },
+    "empty-baseline.oracle": {
+      "sha256": "67be11d2256f86f86e46031399b58196116d9c77d5907b70e38da53d68524b71",
+      "bytes": 413
+    },
+    "empty-receipts.json": {
+      "sha256": "0f3e863ebd31f4bdc26a5835a11eabbb02dfc198637b48756c76388ed33a7803",
+      "bytes": 1559
+    },
+    "empty-target.oracle": {
+      "sha256": "dacc9e502bbfe7db904dab99ce4168335fa2b49b011b88b410b0f2484d4a595a",
+      "bytes": 412
+    },
+    "empty-user-receipts.json": {
+      "sha256": "b644ff9dfe50812dfef2471c9478bcfae676b5a130c5d362482c39ba99316898",
+      "bytes": 852
+    },
+    "empty-users-control.py": {
+      "sha256": "166ea39f81c1c27df94c2c320eeb59130a896922395c50c4ebf6e1e5403e9a5d",
+      "bytes": 10602
+    },
+    "explicit-empty-rights.deflate": {
+      "sha256": "bce1834dac1f0a6b493881757921afcd523ee48da531542c189fd9e996fb5b50",
+      "bytes": 31
+    },
+    "explicit-empty-rights.xml": {
+      "sha256": "c0a3999650c0ca6a6e2332619caefc5ae4e4bfa32651119ba1e6b46fbe1f7b63",
+      "bytes": 410
+    },
+    "explicit-empty-role.deflate": {
+      "sha256": "78724e0281d77a8af56873f944dafa3249aadc826edb240920384f1f11a3b55a",
+      "bytes": 145
+    },
+    "explicit-empty-role.xml": {
+      "sha256": "5aefabdc1b619d30c49727bf26ebe11f53a962b1a7b12275696ee6595f8aa5c0",
+      "bytes": 1255
+    },
+    "explicit-empty.cf": {
+      "sha256": "f32b5dd106806f1375bbe9bf847b65b99b63044a36b15d08ce1892944ba8db2e",
+      "bytes": 7092
+    },
+    "extension-root.deflate": {
+      "sha256": "9889b5fd791f11fe2bbdd3f9883d9deb75da4dcde0d801c74834adb8af9be5ec",
+      "bytes": 4633
+    },
+    "extension-root.serialized": {
+      "sha256": "dab819db5c8d72140a9ea57f7d25de8aee6d70c17b4b7310961b5103a599ac08",
+      "bytes": 8130
+    },
+    "gates.json": {
+      "sha256": "5764de335062381fbc724b1b03c7d28f882f24f6b56709154498202c2ba6d3bd",
+      "bytes": 885
+    },
+    "missing-baseline.oracle": {
+      "sha256": "67be11d2256f86f86e46031399b58196116d9c77d5907b70e38da53d68524b71",
+      "bytes": 413
+    },
+    "missing-target-receipt.json": {
+      "sha256": "af5476ab1f65d241b8216708a7a5a124cf669090c5fbdd3916ba09e0b426890e",
+      "bytes": 391
+    },
+    "missing-target.oracle": {
+      "sha256": "dacc9e502bbfe7db904dab99ce4168335fa2b49b011b88b410b0f2484d4a595a",
+      "bytes": 412
+    },
+    "missing-users-control.py": {
+      "sha256": "17e819d44cc171781edd63a6dead2c8cdff16d9d2018ae950654d4ab57b385c6",
+      "bytes": 10566
+    },
+    "native-pack.py": {
+      "sha256": "66e20cb45f4e58b67821338de93dc785b0ede43bfb4573b5319d9422b030f770",
+      "bytes": 1821
+    },
+    "native-receipts.json": {
+      "sha256": "d74768a0df23309869b6d0ca4f80b18916f345ab91deb7478ed7dcf710a4080a",
+      "bytes": 1108
+    },
+    "native-role.xml": {
+      "sha256": "5aefabdc1b619d30c49727bf26ebe11f53a962b1a7b12275696ee6595f8aa5c0",
+      "bytes": 1255
+    },
+    "pg-cases.py": {
+      "sha256": "8515736ac0c4e27da13621c51f9862fdbe19bc88d99bb2677fc97387a1e41460",
+      "bytes": 2705
+    },
+    "pg-seed.py": {
+      "sha256": "b4e0b15d31e54c20902da17945f18c13c9779ed78927c05565839540523a657e",
+      "bytes": 979
+    },
+    "preservation.json": {
+      "sha256": "3d46f5835ec5d99c9f584678e78222c4ee5d0cd0841a9c733b8c5b0968d31495",
+      "bytes": 432
+    },
+    "preserved-role.cf": {
+      "sha256": "bd6680b522a71c0f3c2059e74c95615fa78ff2927b78300ef966bfc370aaeef7",
+      "bytes": 6418
+    },
+    "role.deflate": {
+      "sha256": "6c0258240de5d3cb1dbb7e1e3af6220ead8bad77119517a285bdc804fb5e8a3d",
+      "bytes": 140
+    },
+    "role.serialized": {
+      "sha256": "d69d5275774096db7cc733a99d434a1b2529f627b4c23f74c3d2a29c47951a21",
+      "bytes": 210
+    },
+    "sdk-index.txt": {
+      "sha256": "f7dce6a45417a09ddedffc720e82832b93f9882d76ccd0f12c99f0545cf7adae",
+      "bytes": 116
+    },
+    "test-totals.json": {
+      "sha256": "afae119d9d151fc136e22c01606bd1d238c3a97ef6a9afb0ef77b571899eeb61",
+      "bytes": 52
+    }
+  },
+  "verification": {
+    "workspace_tests": {
+      "passed": 935,
+      "failed": 0,
+      "ignored": 13
+    },
+    "fmt": "passed",
+    "clippy": "passed, warnings denied, all targets",
+    "rustdoc": "passed, warnings denied",
+    "strict_openspec": "10 passed, 0 failed",
+    "postgres_control_cases": 11,
+    "control_postgres_stopped": true
+  }
+}

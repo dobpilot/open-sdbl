@@ -1,0 +1,107 @@
+[
+  {
+    "object_uuid": "1e057ae0-c258-4599-9816-0e609d98a3be",
+    "generated_types": {
+      "Ref": {
+        "TypeId": "be2470cf-d875-47ce-af16-a604d1f8c90a",
+        "ValueId": "3da3e503-8aab-41b2-8989-59d829158c14"
+      },
+      "Manager": {
+        "TypeId": "6e36c95c-5a42-47ed-8c43-439ecb084607",
+        "ValueId": "33cab1d7-619b-49ea-9472-447e76154ebc"
+      },
+      "List": {
+        "TypeId": "92d895b7-7280-4e65-8029-b130dba3e130",
+        "ValueId": "3111383f-72de-4d25-ba83-880a015261e6"
+      }
+    },
+    "enum_value_count": 2,
+    "actual_mode": "Version8_2_16",
+    "platform": "8.3.27.2342",
+    "sdk_probe_exit_expected_regression": 1
+  },
+  {
+    "object_uuid": "85e94a95-10a0-4116-8984-125a166bcf02",
+    "native_xml_file": "native-xml/Enums/УровниБюджетов.xml",
+    "generated_types": {
+      "Ref": {
+        "TypeId": "89481115-d690-4ca9-b3c5-86ae6e46ec92",
+        "ValueId": "2d39d80c-c334-4f02-baab-9b54f82e2c4b"
+      },
+      "Manager": {
+        "TypeId": "0b0f478f-1b20-490b-aa39-f4c11b3367c0",
+        "ValueId": "75263c14-8fa1-4024-8999-17bc9d74ab47"
+      },
+      "List": {
+        "TypeId": "f0c0c5f4-bb7a-4798-952e-fbc6dd770d79",
+        "ValueId": "9074db23-0bf8-4a43-8c0d-8a7b15e3f612"
+      }
+    },
+    "enum_value_count": 3,
+    "mode": "Version8_2_16",
+    "platform": "8.3.27.2342"
+  },
+  {
+    "object_uuid": "8f758f39-1f5a-4b1f-abe7-72ed99516ec1",
+    "native_xml_file": "native-xml/Enums/ВидыСтоимости.xml",
+    "generated_types": {
+      "Ref": {
+        "TypeId": "d49270ae-b525-4966-b9a4-a45a0ee5eae8",
+        "ValueId": "4dfbc0df-1c8b-4743-b4a4-3106d2d3efbe"
+      },
+      "Manager": {
+        "TypeId": "fb497901-c5cc-4f89-ad2c-54a61b767121",
+        "ValueId": "ba191e1a-11ec-4a42-aba6-840b7a5a71ed"
+      },
+      "List": {
+        "TypeId": "202d9f39-a30a-4ae7-800d-6d7d776a4f83",
+        "ValueId": "3336305d-9868-46f2-a996-4da9b6055de3"
+      }
+    },
+    "enum_value_count": 3,
+    "mode": "Version8_2_16",
+    "platform": "8.3.27.2342"
+  },
+  {
+    "object_uuid": "9cc43f9d-e693-42bb-8439-5754583bd7ac",
+    "native_xml_file": "native-xml/Enums/ПрибылиИУбытки.xml",
+    "generated_types": {
+      "Ref": {
+        "TypeId": "eff45316-caae-482e-8d93-59c0d152b28d",
+        "ValueId": "3acaad0d-f0cf-4ac4-bdf3-60435c7edf4f"
+      },
+      "Manager": {
+        "TypeId": "1b03cd92-84de-41fd-8b53-ab3f4ea41820",
+        "ValueId": "ab651c02-3c99-4ca3-b0dc-911c0798ad5f"
+      },
+      "List": {
+        "TypeId": "3962480a-9705-4a53-9636-f2ca53f91550",
+        "ValueId": "b7d308a0-73b2-4e66-a2f1-f8474e0c91ea"
+      }
+    },
+    "enum_value_count": 5,
+    "mode": "Version8_2_16",
+    "platform": "8.3.27.2342"
+  },
+  {
+    "object_uuid": "fe9c408b-b39c-40b8-be5d-9061ba2198ec",
+    "native_xml_file": "native-xml/Enums/ДвиженияЦелевыхСредств.xml",
+    "generated_types": {
+      "Ref": {
+        "TypeId": "4678b32c-95d5-458a-9794-12a23bd6b37c",
+        "ValueId": "0539e59b-6259-4ed8-9e88-89f178a0bf40"
+      },
+      "Manager": {
+        "TypeId": "f109971a-e535-4db6-b05c-6999f993f1ec",
+        "ValueId": "227a11fe-3b3e-4564-babd-aa289991688d"
+      },
+      "List": {
+        "TypeId": "9f335acd-62e1-4b5e-9341-fbb19413c6c4",
+        "ValueId": "2df87e3a-77a1-4ec9-930f-3112bebfe10d"
+      }
+    },
+    "enum_value_count": 12,
+    "mode": "Version8_2_16",
+    "platform": "8.3.27.2342"
+  }
+]

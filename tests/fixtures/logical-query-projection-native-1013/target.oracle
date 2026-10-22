@@ -1,0 +1,48 @@
+﻿user=Target
+role.client=YES
+role.admin=NO
+normal.before.privileged=NO
+normal.before.safe=NO
+normal.before.permission.read=NO
+normal.before.query=REFUSED:{InformationRegister.ОпцииПробы.ManagerModule(23)}: Error calling context method (Execute): Insufficient rights to use table "InformationRegister.ОпцииПробы"
+privileged.on.privileged=YES
+privileged.on.safe=NO
+privileged.on.permission.read=YES
+privileged.on.columns=1;name=ЧислоОпции
+privileged.on.row=1;type=Boolean;value=No
+privileged.on.row=2;type=Boolean;value=Yes
+privileged.on.row=3;type=String;value=native-string
+privileged.on.rows=3
+caseBS.columns=1;name=ЧислоОпции
+caseBS.row=1;type=Boolean;value=No
+caseBS.rows=1
+unionNull.columns=1;name=ЧислоОпции
+unionNull.row=1;type=Null;value=
+unionNull.row=2;type=String;value=native-string
+unionNull.rows=2
+unionUndefined.columns=1;name=ЧислоОпции
+unionUndefined.row=1;type=Undefined;value=
+unionUndefined.row=2;type=String;value=native-string
+unionUndefined.rows=2
+normal.after.privileged=NO
+normal.after.safe=NO
+normal.after.permission.read=NO
+normal.after.query=REFUSED:{InformationRegister.ОпцииПробы.ManagerModule(23)}: Error calling context method (Execute): Insufficient rights to use table "InformationRegister.ОпцииПробы"
+suppression.only.privileged=NO
+suppression.only.safe=NO
+suppression.only.permission.read=NO
+suppression.only.query=REFUSED:{InformationRegister.ОпцииПробы.ManagerModule(23)}: Error calling context method (Execute): Insufficient rights to use table "InformationRegister.ОпцииПробы"
+suppression.privileged.privileged=YES
+suppression.privileged.safe=NO
+suppression.privileged.permission.read=YES
+suppression.privileged.columns=1;name=ЧислоОпции
+suppression.privileged.row=1;type=Boolean;value=No
+suppression.privileged.row=2;type=Boolean;value=Yes
+suppression.privileged.row=3;type=String;value=native-string
+suppression.privileged.rows=3
+suppression.after.privileged=NO
+suppression.after.safe=NO
+suppression.after.permission.read=NO
+suppression.after.query=REFUSED:{InformationRegister.ОпцииПробы.ManagerModule(23)}: Error calling context method (Execute): Insufficient rights to use table "InformationRegister.ОпцииПробы"
+
+completed=YES

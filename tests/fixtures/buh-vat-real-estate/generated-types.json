@@ -1,0 +1,224 @@
+[
+  {
+    "name": "DocumentObject.ВосстановлениеНДСПоОбъектамНедвижимости",
+    "kind": "TypeId",
+    "guid": "bc802235-bb2d-4d89-8e20-235c034d9363",
+    "paths": [
+      [
+        1,
+        1
+      ]
+    ]
+  },
+  {
+    "name": "DocumentObject.ВосстановлениеНДСПоОбъектамНедвижимости",
+    "kind": "ValueId",
+    "guid": "b72c1433-acb0-41ca-9374-6d26ab0c2145",
+    "paths": [
+      [
+        1,
+        2
+      ]
+    ]
+  },
+  {
+    "name": "DocumentRef.ВосстановлениеНДСПоОбъектамНедвижимости",
+    "kind": "TypeId",
+    "guid": "d9f28070-eda0-4d70-acbc-e71c4433e4bf",
+    "paths": [
+      [
+        1,
+        3
+      ]
+    ]
+  },
+  {
+    "name": "DocumentRef.ВосстановлениеНДСПоОбъектамНедвижимости",
+    "kind": "ValueId",
+    "guid": "54fc66f3-c6d8-4dc1-8c00-121dc68b637a",
+    "paths": [
+      [
+        1,
+        4
+      ]
+    ]
+  },
+  {
+    "name": "DocumentSelection.ВосстановлениеНДСПоОбъектамНедвижимости",
+    "kind": "TypeId",
+    "guid": "b11bd6ad-26eb-4260-8ec0-f64becc33a01",
+    "paths": [
+      [
+        1,
+        5
+      ]
+    ]
+  },
+  {
+    "name": "DocumentSelection.ВосстановлениеНДСПоОбъектамНедвижимости",
+    "kind": "ValueId",
+    "guid": "d023e101-207a-4ac1-8212-fb402df1f70f",
+    "paths": [
+      [
+        1,
+        6
+      ]
+    ]
+  },
+  {
+    "name": "DocumentList.ВосстановлениеНДСПоОбъектамНедвижимости",
+    "kind": "TypeId",
+    "guid": "fbaffda4-a753-4577-8f68-aa409eaedbc9",
+    "paths": [
+      [
+        1,
+        7
+      ]
+    ]
+  },
+  {
+    "name": "DocumentList.ВосстановлениеНДСПоОбъектамНедвижимости",
+    "kind": "ValueId",
+    "guid": "25fc7ebc-c6ca-478b-b81e-11a5d7d40d2d",
+    "paths": [
+      [
+        1,
+        8
+      ]
+    ]
+  },
+  {
+    "name": "DocumentManager.ВосстановлениеНДСПоОбъектамНедвижимости",
+    "kind": "TypeId",
+    "guid": "48fcfe99-918b-43ea-8690-0084870757be",
+    "paths": [
+      [
+        1,
+        26
+      ]
+    ]
+  },
+  {
+    "name": "DocumentManager.ВосстановлениеНДСПоОбъектамНедвижимости",
+    "kind": "ValueId",
+    "guid": "7c7b059f-8ead-4918-9bb9-2cb89d88220a",
+    "paths": [
+      [
+        1,
+        27
+      ]
+    ]
+  },
+  {
+    "name": "DocumentTabularSection.ВосстановлениеНДСПоОбъектамНедвижимости.ОбъектыНедвижимости",
+    "kind": "TypeId",
+    "guid": "f683728e-cfab-46b5-9f8a-33ab31f7cb6c",
+    "paths": [
+      [
+        3,
+        2,
+        0,
+        1,
+        1
+      ]
+    ]
+  },
+  {
+    "name": "DocumentTabularSection.ВосстановлениеНДСПоОбъектамНедвижимости.ОбъектыНедвижимости",
+    "kind": "ValueId",
+    "guid": "92366e65-39bf-4157-9524-c162ed1277fe",
+    "paths": [
+      [
+        3,
+        2,
+        0,
+        1,
+        2
+      ]
+    ]
+  },
+  {
+    "name": "DocumentTabularSectionRow.ВосстановлениеНДСПоОбъектамНедвижимости.ОбъектыНедвижимости",
+    "kind": "TypeId",
+    "guid": "a29a4e1e-0be0-42ea-9c81-27d10f4cc873",
+    "paths": [
+      [
+        3,
+        2,
+        0,
+        1,
+        3
+      ]
+    ]
+  },
+  {
+    "name": "DocumentTabularSectionRow.ВосстановлениеНДСПоОбъектамНедвижимости.ОбъектыНедвижимости",
+    "kind": "ValueId",
+    "guid": "29b18444-cefe-41c5-b4f8-318212ffd20c",
+    "paths": [
+      [
+        3,
+        2,
+        0,
+        1,
+        4
+      ]
+    ]
+  },
+  {
+    "name": "DocumentTabularSection.ВосстановлениеНДСПоОбъектамНедвижимости.СчетаФактуры",
+    "kind": "TypeId",
+    "guid": "6273d953-8e94-4401-8d01-1099b4c978f5",
+    "paths": [
+      [
+        3,
+        3,
+        0,
+        1,
+        1
+      ]
+    ]
+  },
+  {
+    "name": "DocumentTabularSection.ВосстановлениеНДСПоОбъектамНедвижимости.СчетаФактуры",
+    "kind": "ValueId",
+    "guid": "2a352e49-8d0d-4cd4-a9ab-ba66d2e50b28",
+    "paths": [
+      [
+        3,
+        3,
+        0,
+        1,
+        2
+      ]
+    ]
+  },
+  {
+    "name": "DocumentTabularSectionRow.ВосстановлениеНДСПоОбъектамНедвижимости.СчетаФактуры",
+    "kind": "TypeId",
+    "guid": "120a15ea-4048-49c1-b85d-4239a1095dd7",
+    "paths": [
+      [
+        3,
+        3,
+        0,
+        1,
+        3
+      ]
+    ]
+  },
+  {
+    "name": "DocumentTabularSectionRow.ВосстановлениеНДСПоОбъектамНедвижимости.СчетаФактуры",
+    "kind": "ValueId",
+    "guid": "eb0bb58d-fa6a-4f86-9db3-45cc0c735362",
+    "paths": [
+      [
+        3,
+        3,
+        0,
+        1,
+        4
+      ]
+    ]
+  }
+]

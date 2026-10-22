@@ -1,0 +1,12 @@
+{
+  "platform": "8.3.27.2342",
+  "compatibility": "Version8_3_27",
+  "own_source_context": "/tmp/sdbl-privileged-read-native-1013",
+  "own_control": "/tmp/sdbl-logical-priv-context-native-1013",
+  "native_xml": "extended-native-xml",
+  "native_oracle": "target.oracle",
+  "original_databases_accessed": false,
+  "native_byte_tags_measured_here": false,
+  "tag_protocol_source": "src/query/core/types.rs module documentation and TypeValue::tag",
+  "all_operations_exit_zero": true
+}

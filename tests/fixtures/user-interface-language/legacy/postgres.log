@@ -1,0 +1,714 @@
+2026-10-18 22:40:40.026 MSK [3326735] LOG:  starting CFS version 0.55, supported compression algorithms:  pglz,zlib,lz4,zstd, GC enabled
+2026-10-18 22:40:40.029 MSK [3326735] LOG:  starting PostgreSQL 18.6 on x86_64-pc-linux-gnu, compiled by gcc (GCC) 14.2.1 20250110 (Red Hat 14.2.1-7), 64-bit
+2026-10-18 22:40:40.029 MSK [3326735] LOG:  listening on IPv4 address "127.0.0.1", port 44259
+2026-10-18 22:40:40.031 MSK [3326738] LOG:  database system was shut down at 2026-10-18 22:40:39 MSK
+2026-10-18 22:40:40.032 MSK [3326735] LOG:  database system is ready to accept connections
+2026-10-18 22:40:40.034 MSK [3326745] LOG:  starting background freezer (worker: enabled, backends: enabled, message size: 1024; packets: 21; min send size: 256; min packets: 5)
+2026-10-18 22:40:40.353 MSK [3326762] LOG:  connection received: host=127.0.0.1 port=35688
+2026-10-18 22:40:40.354 MSK [3326762] LOG:  connection authenticated: user="native_control" method=trust (/home/kan/Документы/develop/open-bsl/target/language-legacy-native-1q8p81fc/data/pg_hba.conf:119)
+2026-10-18 22:40:40.354 MSK [3326762] LOG:  connection authorized: user=native_control database=template1
+2026-10-18 22:40:40.358 MSK [3326762] LOG:  disconnection: session time: 0:00:00.006 user=native_control database=template1 host=127.0.0.1 port=35688
+2026-10-18 22:40:40.359 MSK [3326763] LOG:  connection received: host=127.0.0.1 port=35698
+2026-10-18 22:40:40.360 MSK [3326763] LOG:  connection authenticated: user="native_control" method=trust (/home/kan/Документы/develop/open-bsl/target/language-legacy-native-1q8p81fc/data/pg_hba.conf:119)
+2026-10-18 22:40:40.360 MSK [3326763] LOG:  connection authorized: user=native_control database=template1
+2026-10-18 22:40:40.398 MSK [3326763] LOG:  disconnection: session time: 0:00:00.039 user=native_control database=template1 host=127.0.0.1 port=35698
+2026-10-18 22:40:40.399 MSK [3326764] LOG:  connection received: host=127.0.0.1 port=35712
+2026-10-18 22:40:40.400 MSK [3326764] LOG:  connection authenticated: user="native_control" method=trust (/home/kan/Документы/develop/open-bsl/target/language-legacy-native-1q8p81fc/data/pg_hba.conf:119)
+2026-10-18 22:40:40.400 MSK [3326764] LOG:  connection authorized: user=native_control database=native_legacy_user_languages_1018
+2026-10-18 22:40:40.404 MSK [3326764] ERROR:  syntax error at or near "'plpgsql'" at character 28
+2026-10-18 22:40:40.404 MSK [3326764] STATEMENT:  CREATE PROCEDURAL LANGUAGE 'plpgsql' HANDLER plpgsql_call_handler
+2026-10-18 22:40:40.404 MSK [3326764] WARNING:  there is no transaction in progress
+2026-10-18 22:40:40.419 MSK [3326764] LOG:  disconnection: session time: 0:00:00.020 user=native_control database=native_legacy_user_languages_1018 host=127.0.0.1 port=35712
+2026-10-18 22:40:40.420 MSK [3326765] LOG:  connection received: host=127.0.0.1 port=35714
+2026-10-18 22:40:40.421 MSK [3326765] LOG:  connection authenticated: user="native_control" method=trust (/home/kan/Документы/develop/open-bsl/target/language-legacy-native-1q8p81fc/data/pg_hba.conf:119)
+2026-10-18 22:40:40.421 MSK [3326765] LOG:  connection authorized: user=native_control database=native_legacy_user_languages_1018
+2026-10-18 22:40:42.049 MSK [3326765] LOG:  disconnection: session time: 0:00:01.629 user=native_control database=native_legacy_user_languages_1018 host=127.0.0.1 port=35714
+2026-10-18 22:40:42.222 MSK [3327035] LOG:  connection received: host=127.0.0.1 port=35718
+2026-10-18 22:40:42.223 MSK [3327035] LOG:  connection authenticated: user="native_control" method=trust (/home/kan/Документы/develop/open-bsl/target/language-legacy-native-1q8p81fc/data/pg_hba.conf:119)
+2026-10-18 22:40:42.223 MSK [3327035] LOG:  connection authorized: user=native_control database=native_legacy_user_languages_1018
+2026-10-18 22:40:42.225 MSK [3327035] LOG:  disconnection: session time: 0:00:00.003 user=native_control database=native_legacy_user_languages_1018 host=127.0.0.1 port=35718
+2026-10-18 22:40:42.226 MSK [3327038] LOG:  connection received: host=127.0.0.1 port=35722
+2026-10-18 22:40:42.226 MSK [3327038] LOG:  connection authenticated: user="native_control" method=trust (/home/kan/Документы/develop/open-bsl/target/language-legacy-native-1q8p81fc/data/pg_hba.conf:119)
+2026-10-18 22:40:42.226 MSK [3327038] LOG:  connection authorized: user=native_control database=native_legacy_user_languages_1018
+2026-10-18 22:40:42.232 MSK [3327038] LOG:  disconnection: session time: 0:00:00.006 user=native_control database=native_legacy_user_languages_1018 host=127.0.0.1 port=35722
+2026-10-18 22:40:42.233 MSK [3327039] LOG:  connection received: host=127.0.0.1 port=35728
+2026-10-18 22:40:42.234 MSK [3327039] LOG:  connection authenticated: user="native_control" method=trust (/home/kan/Документы/develop/open-bsl/target/language-legacy-native-1q8p81fc/data/pg_hba.conf:119)
+2026-10-18 22:40:42.234 MSK [3327039] LOG:  connection authorized: user=native_control database=native_legacy_user_languages_1018
+2026-10-18 22:40:43.913 MSK [3327039] LOG:  disconnection: session time: 0:00:01.679 user=native_control database=native_legacy_user_languages_1018 host=127.0.0.1 port=35728
+2026-10-18 22:40:43.987 MSK [3326735] LOG:  received fast shutdown request
+2026-10-18 22:40:43.987 MSK [3326735] LOG:  aborting any active transactions
+2026-10-18 22:40:43.988 MSK [3326735] LOG:  background worker "logical replication launcher" (PID 3326746) exited with exit code 1
+2026-10-18 22:40:43.989 MSK [3326736] LOG:  shutting down
+2026-10-18 22:40:43.989 MSK [3326736] LOG:  checkpoint starting: shutdown immediate
+2026-10-18 22:40:43.993 MSK [3326736] LOG:  checkpoint complete: wrote 554 buffers (27.1%), wrote 4 SLRU buffers; 0 WAL file(s) added, 0 removed, 0 recycled; write=0.004 s, sync=0.001 s, total=0.005 s; sync files=0, longest=0.000 s, average=0.000 s; distance=4676 kB, estimate=4676 kB; lsn=0/1991FE8, redo lsn=0/1991FE8
+2026-10-18 22:40:44.001 MSK [3326735] LOG:  database system is shut down
+2026-10-18 22:41:29.781 MSK [3328399] LOG:  starting CFS version 0.55, supported compression algorithms:  pglz,zlib,lz4,zstd, GC enabled
+2026-10-18 22:41:29.784 MSK [3328399] LOG:  starting PostgreSQL 18.6 on x86_64-pc-linux-gnu, compiled by gcc (GCC) 14.2.1 20250110 (Red Hat 14.2.1-7), 64-bit
+2026-10-18 22:41:29.784 MSK [3328399] LOG:  listening on IPv4 address "127.0.0.1", port 45091
+2026-10-18 22:41:29.786 MSK [3328402] LOG:  database system was shut down at 2026-10-18 22:41:29 MSK
+2026-10-18 22:41:29.788 MSK [3328399] LOG:  database system is ready to accept connections
+2026-10-18 22:41:29.790 MSK [3328409] LOG:  starting background freezer (worker: enabled, backends: enabled, message size: 1024; packets: 21; min send size: 256; min packets: 5)
+2026-10-18 22:41:30.092 MSK [3328422] LOG:  connection received: host=127.0.0.1 port=55406
+2026-10-18 22:41:30.093 MSK [3328422] LOG:  connection authenticated: user="native_control" method=trust (/home/kan/Документы/develop/open-bsl/target/language-legacy-native-0coyo_1x/data/pg_hba.conf:119)
+2026-10-18 22:41:30.093 MSK [3328422] LOG:  connection authorized: user=native_control database=template1
+2026-10-18 22:41:30.098 MSK [3328422] LOG:  disconnection: session time: 0:00:00.006 user=native_control database=template1 host=127.0.0.1 port=55406
+2026-10-18 22:41:30.099 MSK [3328423] LOG:  connection received: host=127.0.0.1 port=55414
+2026-10-18 22:41:30.100 MSK [3328423] LOG:  connection authenticated: user="native_control" method=trust (/home/kan/Документы/develop/open-bsl/target/language-legacy-native-0coyo_1x/data/pg_hba.conf:119)
+2026-10-18 22:41:30.100 MSK [3328423] LOG:  connection authorized: user=native_control database=template1
+2026-10-18 22:41:30.140 MSK [3328423] LOG:  disconnection: session time: 0:00:00.041 user=native_control database=template1 host=127.0.0.1 port=55414
+2026-10-18 22:41:30.141 MSK [3328424] LOG:  connection received: host=127.0.0.1 port=55424
+2026-10-18 22:41:30.142 MSK [3328424] LOG:  connection authenticated: user="native_control" method=trust (/home/kan/Документы/develop/open-bsl/target/language-legacy-native-0coyo_1x/data/pg_hba.conf:119)
+2026-10-18 22:41:30.142 MSK [3328424] LOG:  connection authorized: user=native_control database=native_legacy_user_languages_1018
+2026-10-18 22:41:30.146 MSK [3328424] ERROR:  syntax error at or near "'plpgsql'" at character 28
+2026-10-18 22:41:30.146 MSK [3328424] STATEMENT:  CREATE PROCEDURAL LANGUAGE 'plpgsql' HANDLER plpgsql_call_handler
+2026-10-18 22:41:30.146 MSK [3328424] WARNING:  there is no transaction in progress
+2026-10-18 22:41:30.162 MSK [3328424] LOG:  disconnection: session time: 0:00:00.021 user=native_control database=native_legacy_user_languages_1018 host=127.0.0.1 port=55424
+2026-10-18 22:41:30.163 MSK [3328425] LOG:  connection received: host=127.0.0.1 port=55430
+2026-10-18 22:41:30.164 MSK [3328425] LOG:  connection authenticated: user="native_control" method=trust (/home/kan/Документы/develop/open-bsl/target/language-legacy-native-0coyo_1x/data/pg_hba.conf:119)
+2026-10-18 22:41:30.164 MSK [3328425] LOG:  connection authorized: user=native_control database=native_legacy_user_languages_1018
+2026-10-18 22:41:31.750 MSK [3328425] LOG:  disconnection: session time: 0:00:01.586 user=native_control database=native_legacy_user_languages_1018 host=127.0.0.1 port=55430
+2026-10-18 22:41:31.920 MSK [3328747] LOG:  connection received: host=127.0.0.1 port=55436
+2026-10-18 22:41:31.921 MSK [3328747] LOG:  connection authenticated: user="native_control" method=trust (/home/kan/Документы/develop/open-bsl/target/language-legacy-native-0coyo_1x/data/pg_hba.conf:119)
+2026-10-18 22:41:31.921 MSK [3328747] LOG:  connection authorized: user=native_control database=native_legacy_user_languages_1018
+2026-10-18 22:41:31.923 MSK [3328747] LOG:  disconnection: session time: 0:00:00.003 user=native_control database=native_legacy_user_languages_1018 host=127.0.0.1 port=55436
+2026-10-18 22:41:31.924 MSK [3328748] LOG:  connection received: host=127.0.0.1 port=55446
+2026-10-18 22:41:31.924 MSK [3328748] LOG:  connection authenticated: user="native_control" method=trust (/home/kan/Документы/develop/open-bsl/target/language-legacy-native-0coyo_1x/data/pg_hba.conf:119)
+2026-10-18 22:41:31.924 MSK [3328748] LOG:  connection authorized: user=native_control database=native_legacy_user_languages_1018
+2026-10-18 22:41:31.930 MSK [3328748] LOG:  disconnection: session time: 0:00:00.006 user=native_control database=native_legacy_user_languages_1018 host=127.0.0.1 port=55446
+2026-10-18 22:41:31.930 MSK [3328749] LOG:  connection received: host=127.0.0.1 port=55460
+2026-10-18 22:41:31.931 MSK [3328749] LOG:  connection authenticated: user="native_control" method=trust (/home/kan/Документы/develop/open-bsl/target/language-legacy-native-0coyo_1x/data/pg_hba.conf:119)
+2026-10-18 22:41:31.931 MSK [3328749] LOG:  connection authorized: user=native_control database=native_legacy_user_languages_1018
+2026-10-18 22:41:33.617 MSK [3328749] LOG:  disconnection: session time: 0:00:01.686 user=native_control database=native_legacy_user_languages_1018 host=127.0.0.1 port=55460
+2026-10-18 22:41:33.913 MSK [3329046] LOG:  connection received: host=127.0.0.1 port=55468
+2026-10-18 22:41:33.913 MSK [3329046] LOG:  connection authenticated: user="native_control" method=trust (/home/kan/Документы/develop/open-bsl/target/language-legacy-native-0coyo_1x/data/pg_hba.conf:119)
+2026-10-18 22:41:33.913 MSK [3329046] LOG:  connection authorized: user=native_control database=native_legacy_user_languages_1018
+2026-10-18 22:41:33.916 MSK [3329046] LOG:  disconnection: session time: 0:00:00.003 user=native_control database=native_legacy_user_languages_1018 host=127.0.0.1 port=55468
+2026-10-18 22:41:33.917 MSK [3329047] LOG:  connection received: host=127.0.0.1 port=55474
+2026-10-18 22:41:33.917 MSK [3329047] LOG:  connection authenticated: user="native_control" method=trust (/home/kan/Документы/develop/open-bsl/target/language-legacy-native-0coyo_1x/data/pg_hba.conf:119)
+2026-10-18 22:41:33.917 MSK [3329047] LOG:  connection authorized: user=native_control database=native_legacy_user_languages_1018
+2026-10-18 22:41:33.923 MSK [3329047] LOG:  disconnection: session time: 0:00:00.006 user=native_control database=native_legacy_user_languages_1018 host=127.0.0.1 port=55474
+2026-10-18 22:41:33.924 MSK [3329048] LOG:  connection received: host=127.0.0.1 port=55482
+2026-10-18 22:41:33.924 MSK [3329048] LOG:  connection authenticated: user="native_control" method=trust (/home/kan/Документы/develop/open-bsl/target/language-legacy-native-0coyo_1x/data/pg_hba.conf:119)
+2026-10-18 22:41:33.924 MSK [3329048] LOG:  connection authorized: user=native_control database=native_legacy_user_languages_1018
+2026-10-18 22:41:34.604 MSK [3329308] LOG:  connection received: host=127.0.0.1 port=55484
+2026-10-18 22:41:34.604 MSK [3329308] LOG:  connection authenticated: user="native_control" method=trust (/home/kan/Документы/develop/open-bsl/target/language-legacy-native-0coyo_1x/data/pg_hba.conf:119)
+2026-10-18 22:41:34.604 MSK [3329308] LOG:  connection authorized: user=native_control database=native_legacy_user_languages_1018
+2026-10-18 22:41:34.607 MSK [3329309] LOG:  connection received: host=127.0.0.1 port=55488
+2026-10-18 22:41:34.608 MSK [3329309] LOG:  connection authenticated: user="native_control" method=trust (/home/kan/Документы/develop/open-bsl/target/language-legacy-native-0coyo_1x/data/pg_hba.conf:119)
+2026-10-18 22:41:34.608 MSK [3329309] LOG:  connection authorized: user=native_control database=native_legacy_user_languages_1018
+2026-10-18 22:41:34.610 MSK [3329310] LOG:  connection received: host=127.0.0.1 port=55498
+2026-10-18 22:41:34.611 MSK [3329310] LOG:  connection authenticated: user="native_control" method=trust (/home/kan/Документы/develop/open-bsl/target/language-legacy-native-0coyo_1x/data/pg_hba.conf:119)
+2026-10-18 22:41:34.611 MSK [3329310] LOG:  connection authorized: user=native_control database=native_legacy_user_languages_1018
+2026-10-18 22:41:34.613 MSK [3329311] LOG:  connection received: host=127.0.0.1 port=55502
+2026-10-18 22:41:34.614 MSK [3329311] LOG:  connection authenticated: user="native_control" method=trust (/home/kan/Документы/develop/open-bsl/target/language-legacy-native-0coyo_1x/data/pg_hba.conf:119)
+2026-10-18 22:41:34.614 MSK [3329311] LOG:  connection authorized: user=native_control database=native_legacy_user_languages_1018
+2026-10-18 22:41:34.616 MSK [3329312] LOG:  connection received: host=127.0.0.1 port=55514
+2026-10-18 22:41:34.617 MSK [3329312] LOG:  connection authenticated: user="native_control" method=trust (/home/kan/Документы/develop/open-bsl/target/language-legacy-native-0coyo_1x/data/pg_hba.conf:119)
+2026-10-18 22:41:34.617 MSK [3329312] LOG:  connection authorized: user=native_control database=native_legacy_user_languages_1018
+2026-10-18 22:41:34.620 MSK [3329313] LOG:  connection received: host=127.0.0.1 port=55516
+2026-10-18 22:41:34.620 MSK [3329313] LOG:  connection authenticated: user="native_control" method=trust (/home/kan/Документы/develop/open-bsl/target/language-legacy-native-0coyo_1x/data/pg_hba.conf:119)
+2026-10-18 22:41:34.620 MSK [3329313] LOG:  connection authorized: user=native_control database=native_legacy_user_languages_1018
+2026-10-18 22:41:34.623 MSK [3329314] LOG:  connection received: host=127.0.0.1 port=55518
+2026-10-18 22:41:34.623 MSK [3329314] LOG:  connection authenticated: user="native_control" method=trust (/home/kan/Документы/develop/open-bsl/target/language-legacy-native-0coyo_1x/data/pg_hba.conf:119)
+2026-10-18 22:41:34.623 MSK [3329314] LOG:  connection authorized: user=native_control database=native_legacy_user_languages_1018
+2026-10-18 22:41:34.626 MSK [3329315] LOG:  connection received: host=127.0.0.1 port=55528
+2026-10-18 22:41:34.626 MSK [3329315] LOG:  connection authenticated: user="native_control" method=trust (/home/kan/Документы/develop/open-bsl/target/language-legacy-native-0coyo_1x/data/pg_hba.conf:119)
+2026-10-18 22:41:34.626 MSK [3329315] LOG:  connection authorized: user=native_control database=native_legacy_user_languages_1018
+2026-10-18 22:41:34.628 MSK [3329316] LOG:  connection received: host=127.0.0.1 port=55542
+2026-10-18 22:41:34.629 MSK [3329316] LOG:  connection authenticated: user="native_control" method=trust (/home/kan/Документы/develop/open-bsl/target/language-legacy-native-0coyo_1x/data/pg_hba.conf:119)
+2026-10-18 22:41:34.629 MSK [3329316] LOG:  connection authorized: user=native_control database=native_legacy_user_languages_1018
+2026-10-18 22:41:34.631 MSK [3329317] LOG:  connection received: host=127.0.0.1 port=55548
+2026-10-18 22:41:34.632 MSK [3329317] LOG:  connection authenticated: user="native_control" method=trust (/home/kan/Документы/develop/open-bsl/target/language-legacy-native-0coyo_1x/data/pg_hba.conf:119)
+2026-10-18 22:41:34.632 MSK [3329317] LOG:  connection authorized: user=native_control database=native_legacy_user_languages_1018
+2026-10-18 22:41:34.634 MSK [3329318] LOG:  connection received: host=127.0.0.1 port=55562
+2026-10-18 22:41:34.635 MSK [3329318] LOG:  connection authenticated: user="native_control" method=trust (/home/kan/Документы/develop/open-bsl/target/language-legacy-native-0coyo_1x/data/pg_hba.conf:119)
+2026-10-18 22:41:34.635 MSK [3329318] LOG:  connection authorized: user=native_control database=native_legacy_user_languages_1018
+2026-10-18 22:41:34.637 MSK [3329319] LOG:  connection received: host=127.0.0.1 port=55572
+2026-10-18 22:41:34.638 MSK [3329319] LOG:  connection authenticated: user="native_control" method=trust (/home/kan/Документы/develop/open-bsl/target/language-legacy-native-0coyo_1x/data/pg_hba.conf:119)
+2026-10-18 22:41:34.638 MSK [3329319] LOG:  connection authorized: user=native_control database=native_legacy_user_languages_1018
+2026-10-18 22:41:34.640 MSK [3329320] LOG:  connection received: host=127.0.0.1 port=55574
+2026-10-18 22:41:34.641 MSK [3329320] LOG:  connection authenticated: user="native_control" method=trust (/home/kan/Документы/develop/open-bsl/target/language-legacy-native-0coyo_1x/data/pg_hba.conf:119)
+2026-10-18 22:41:34.641 MSK [3329320] LOG:  connection authorized: user=native_control database=native_legacy_user_languages_1018
+2026-10-18 22:41:34.643 MSK [3329321] LOG:  connection received: host=127.0.0.1 port=55580
+2026-10-18 22:41:34.644 MSK [3329321] LOG:  connection authenticated: user="native_control" method=trust (/home/kan/Документы/develop/open-bsl/target/language-legacy-native-0coyo_1x/data/pg_hba.conf:119)
+2026-10-18 22:41:34.644 MSK [3329321] LOG:  connection authorized: user=native_control database=native_legacy_user_languages_1018
+2026-10-18 22:41:35.668 MSK [3329313] LOG:  disconnection: session time: 0:00:01.048 user=native_control database=native_legacy_user_languages_1018 host=127.0.0.1 port=55516
+2026-10-18 22:41:35.668 MSK [3329315] LOG:  disconnection: session time: 0:00:01.042 user=native_control database=native_legacy_user_languages_1018 host=127.0.0.1 port=55528
+2026-10-18 22:41:35.668 MSK [3329314] LOG:  disconnection: session time: 0:00:01.045 user=native_control database=native_legacy_user_languages_1018 host=127.0.0.1 port=55518
+2026-10-18 22:41:35.668 MSK [3329316] LOG:  disconnection: session time: 0:00:01.039 user=native_control database=native_legacy_user_languages_1018 host=127.0.0.1 port=55542
+2026-10-18 22:41:35.668 MSK [3329317] LOG:  disconnection: session time: 0:00:01.036 user=native_control database=native_legacy_user_languages_1018 host=127.0.0.1 port=55548
+2026-10-18 22:41:35.668 MSK [3329318] LOG:  disconnection: session time: 0:00:01.033 user=native_control database=native_legacy_user_languages_1018 host=127.0.0.1 port=55562
+2026-10-18 22:41:35.668 MSK [3329319] LOG:  disconnection: session time: 0:00:01.030 user=native_control database=native_legacy_user_languages_1018 host=127.0.0.1 port=55572
+2026-10-18 22:41:35.668 MSK [3329320] LOG:  disconnection: session time: 0:00:01.027 user=native_control database=native_legacy_user_languages_1018 host=127.0.0.1 port=55574
+2026-10-18 22:41:35.668 MSK [3329048] LOG:  disconnection: session time: 0:00:01.744 user=native_control database=native_legacy_user_languages_1018 host=127.0.0.1 port=55482
+2026-10-18 22:41:35.668 MSK [3329321] LOG:  disconnection: session time: 0:00:01.025 user=native_control database=native_legacy_user_languages_1018 host=127.0.0.1 port=55580
+2026-10-18 22:41:35.668 MSK [3329308] LOG:  disconnection: session time: 0:00:01.064 user=native_control database=native_legacy_user_languages_1018 host=127.0.0.1 port=55484
+2026-10-18 22:41:35.668 MSK [3329310] LOG:  disconnection: session time: 0:00:01.058 user=native_control database=native_legacy_user_languages_1018 host=127.0.0.1 port=55498
+2026-10-18 22:41:35.668 MSK [3329312] LOG:  disconnection: session time: 0:00:01.052 user=native_control database=native_legacy_user_languages_1018 host=127.0.0.1 port=55514
+2026-10-18 22:41:35.668 MSK [3329311] LOG:  disconnection: session time: 0:00:01.055 user=native_control database=native_legacy_user_languages_1018 host=127.0.0.1 port=55502
+2026-10-18 22:41:35.670 MSK [3329309] LOG:  disconnection: session time: 0:00:01.063 user=native_control database=native_legacy_user_languages_1018 host=127.0.0.1 port=55488
+2026-10-18 22:41:35.932 MSK [3329346] LOG:  connection received: host=127.0.0.1 port=55586
+2026-10-18 22:41:35.933 MSK [3329346] LOG:  connection authenticated: user="native_control" method=trust (/home/kan/Документы/develop/open-bsl/target/language-legacy-native-0coyo_1x/data/pg_hba.conf:119)
+2026-10-18 22:41:35.933 MSK [3329346] LOG:  connection authorized: user=native_control database=native_legacy_user_languages_1018
+2026-10-18 22:41:35.935 MSK [3329346] LOG:  disconnection: session time: 0:00:00.003 user=native_control database=native_legacy_user_languages_1018 host=127.0.0.1 port=55586
+2026-10-18 22:41:35.936 MSK [3329347] LOG:  connection received: host=127.0.0.1 port=55602
+2026-10-18 22:41:35.936 MSK [3329347] LOG:  connection authenticated: user="native_control" method=trust (/home/kan/Документы/develop/open-bsl/target/language-legacy-native-0coyo_1x/data/pg_hba.conf:119)
+2026-10-18 22:41:35.936 MSK [3329347] LOG:  connection authorized: user=native_control database=native_legacy_user_languages_1018
+2026-10-18 22:41:35.942 MSK [3329347] LOG:  disconnection: session time: 0:00:00.005 user=native_control database=native_legacy_user_languages_1018 host=127.0.0.1 port=55602
+2026-10-18 22:41:35.942 MSK [3329348] LOG:  connection received: host=127.0.0.1 port=55608
+2026-10-18 22:41:35.943 MSK [3329348] LOG:  connection authenticated: user="native_control" method=trust (/home/kan/Документы/develop/open-bsl/target/language-legacy-native-0coyo_1x/data/pg_hba.conf:119)
+2026-10-18 22:41:35.943 MSK [3329348] LOG:  connection authorized: user=native_control database=native_legacy_user_languages_1018
+2026-10-18 22:41:36.795 MSK [3329618] LOG:  connection received: host=127.0.0.1 port=55618
+2026-10-18 22:41:36.796 MSK [3329618] LOG:  connection authenticated: user="native_control" method=trust (/home/kan/Документы/develop/open-bsl/target/language-legacy-native-0coyo_1x/data/pg_hba.conf:119)
+2026-10-18 22:41:36.796 MSK [3329618] LOG:  connection authorized: user=native_control database=native_legacy_user_languages_1018
+2026-10-18 22:41:36.799 MSK [3329628] LOG:  connection received: host=127.0.0.1 port=55628
+2026-10-18 22:41:36.799 MSK [3329628] LOG:  connection authenticated: user="native_control" method=trust (/home/kan/Документы/develop/open-bsl/target/language-legacy-native-0coyo_1x/data/pg_hba.conf:119)
+2026-10-18 22:41:36.799 MSK [3329628] LOG:  connection authorized: user=native_control database=native_legacy_user_languages_1018
+2026-10-18 22:41:36.802 MSK [3329629] LOG:  connection received: host=127.0.0.1 port=55630
+2026-10-18 22:41:36.802 MSK [3329629] LOG:  connection authenticated: user="native_control" method=trust (/home/kan/Документы/develop/open-bsl/target/language-legacy-native-0coyo_1x/data/pg_hba.conf:119)
+2026-10-18 22:41:36.802 MSK [3329629] LOG:  connection authorized: user=native_control database=native_legacy_user_languages_1018
+2026-10-18 22:41:36.805 MSK [3329630] LOG:  connection received: host=127.0.0.1 port=55646
+2026-10-18 22:41:36.805 MSK [3329630] LOG:  connection authenticated: user="native_control" method=trust (/home/kan/Документы/develop/open-bsl/target/language-legacy-native-0coyo_1x/data/pg_hba.conf:119)
+2026-10-18 22:41:36.805 MSK [3329630] LOG:  connection authorized: user=native_control database=native_legacy_user_languages_1018
+2026-10-18 22:41:36.807 MSK [3329631] LOG:  connection received: host=127.0.0.1 port=55654
+2026-10-18 22:41:36.808 MSK [3329631] LOG:  connection authenticated: user="native_control" method=trust (/home/kan/Документы/develop/open-bsl/target/language-legacy-native-0coyo_1x/data/pg_hba.conf:119)
+2026-10-18 22:41:36.808 MSK [3329631] LOG:  connection authorized: user=native_control database=native_legacy_user_languages_1018
+2026-10-18 22:41:36.810 MSK [3329633] LOG:  connection received: host=127.0.0.1 port=55666
+2026-10-18 22:41:36.811 MSK [3329633] LOG:  connection authenticated: user="native_control" method=trust (/home/kan/Документы/develop/open-bsl/target/language-legacy-native-0coyo_1x/data/pg_hba.conf:119)
+2026-10-18 22:41:36.811 MSK [3329633] LOG:  connection authorized: user=native_control database=native_legacy_user_languages_1018
+2026-10-18 22:41:36.813 MSK [3329634] LOG:  connection received: host=127.0.0.1 port=55680
+2026-10-18 22:41:36.814 MSK [3329634] LOG:  connection authenticated: user="native_control" method=trust (/home/kan/Документы/develop/open-bsl/target/language-legacy-native-0coyo_1x/data/pg_hba.conf:119)
+2026-10-18 22:41:36.814 MSK [3329634] LOG:  connection authorized: user=native_control database=native_legacy_user_languages_1018
+2026-10-18 22:41:36.816 MSK [3329635] LOG:  connection received: host=127.0.0.1 port=55692
+2026-10-18 22:41:36.816 MSK [3329635] LOG:  connection authenticated: user="native_control" method=trust (/home/kan/Документы/develop/open-bsl/target/language-legacy-native-0coyo_1x/data/pg_hba.conf:119)
+2026-10-18 22:41:36.817 MSK [3329635] LOG:  connection authorized: user=native_control database=native_legacy_user_languages_1018
+2026-10-18 22:41:36.819 MSK [3329636] LOG:  connection received: host=127.0.0.1 port=55706
+2026-10-18 22:41:36.819 MSK [3329636] LOG:  connection authenticated: user="native_control" method=trust (/home/kan/Документы/develop/open-bsl/target/language-legacy-native-0coyo_1x/data/pg_hba.conf:119)
+2026-10-18 22:41:36.819 MSK [3329636] LOG:  connection authorized: user=native_control database=native_legacy_user_languages_1018
+2026-10-18 22:41:36.822 MSK [3329637] LOG:  connection received: host=127.0.0.1 port=55720
+2026-10-18 22:41:36.822 MSK [3329637] LOG:  connection authenticated: user="native_control" method=trust (/home/kan/Документы/develop/open-bsl/target/language-legacy-native-0coyo_1x/data/pg_hba.conf:119)
+2026-10-18 22:41:36.822 MSK [3329637] LOG:  connection authorized: user=native_control database=native_legacy_user_languages_1018
+2026-10-18 22:41:36.824 MSK [3329638] LOG:  connection received: host=127.0.0.1 port=55726
+2026-10-18 22:41:36.825 MSK [3329638] LOG:  connection authenticated: user="native_control" method=trust (/home/kan/Документы/develop/open-bsl/target/language-legacy-native-0coyo_1x/data/pg_hba.conf:119)
+2026-10-18 22:41:36.825 MSK [3329638] LOG:  connection authorized: user=native_control database=native_legacy_user_languages_1018
+2026-10-18 22:41:36.827 MSK [3329639] LOG:  connection received: host=127.0.0.1 port=55732
+2026-10-18 22:41:36.828 MSK [3329639] LOG:  connection authenticated: user="native_control" method=trust (/home/kan/Документы/develop/open-bsl/target/language-legacy-native-0coyo_1x/data/pg_hba.conf:119)
+2026-10-18 22:41:36.828 MSK [3329639] LOG:  connection authorized: user=native_control database=native_legacy_user_languages_1018
+2026-10-18 22:41:36.830 MSK [3329640] LOG:  connection received: host=127.0.0.1 port=55734
+2026-10-18 22:41:36.831 MSK [3329640] LOG:  connection authenticated: user="native_control" method=trust (/home/kan/Документы/develop/open-bsl/target/language-legacy-native-0coyo_1x/data/pg_hba.conf:119)
+2026-10-18 22:41:36.831 MSK [3329640] LOG:  connection authorized: user=native_control database=native_legacy_user_languages_1018
+2026-10-18 22:41:36.833 MSK [3329641] LOG:  connection received: host=127.0.0.1 port=55746
+2026-10-18 22:41:36.834 MSK [3329641] LOG:  connection authenticated: user="native_control" method=trust (/home/kan/Документы/develop/open-bsl/target/language-legacy-native-0coyo_1x/data/pg_hba.conf:119)
+2026-10-18 22:41:36.834 MSK [3329641] LOG:  connection authorized: user=native_control database=native_legacy_user_languages_1018
+2026-10-18 22:41:36.837 MSK [3329642] LOG:  connection received: host=127.0.0.1 port=55750
+2026-10-18 22:41:36.837 MSK [3329642] LOG:  connection authenticated: user="native_control" method=trust (/home/kan/Документы/develop/open-bsl/target/language-legacy-native-0coyo_1x/data/pg_hba.conf:119)
+2026-10-18 22:41:36.837 MSK [3329642] LOG:  connection authorized: user=native_control database=native_legacy_user_languages_1018
+2026-10-18 22:41:37.682 MSK [3329348] LOG:  disconnection: session time: 0:00:01.739 user=native_control database=native_legacy_user_languages_1018 host=127.0.0.1 port=55608
+2026-10-18 22:41:37.682 MSK [3329642] LOG:  disconnection: session time: 0:00:00.845 user=native_control database=native_legacy_user_languages_1018 host=127.0.0.1 port=55750
+2026-10-18 22:41:37.682 MSK [3329618] LOG:  disconnection: session time: 0:00:00.886 user=native_control database=native_legacy_user_languages_1018 host=127.0.0.1 port=55618
+2026-10-18 22:41:37.682 MSK [3329628] LOG:  disconnection: session time: 0:00:00.883 user=native_control database=native_legacy_user_languages_1018 host=127.0.0.1 port=55628
+2026-10-18 22:41:37.682 MSK [3329633] LOG:  disconnection: session time: 0:00:00.871 user=native_control database=native_legacy_user_languages_1018 host=127.0.0.1 port=55666
+2026-10-18 22:41:37.682 MSK [3329630] LOG:  disconnection: session time: 0:00:00.877 user=native_control database=native_legacy_user_languages_1018 host=127.0.0.1 port=55646
+2026-10-18 22:41:37.682 MSK [3329629] LOG:  disconnection: session time: 0:00:00.880 user=native_control database=native_legacy_user_languages_1018 host=127.0.0.1 port=55630
+2026-10-18 22:41:37.682 MSK [3329634] LOG:  disconnection: session time: 0:00:00.868 user=native_control database=native_legacy_user_languages_1018 host=127.0.0.1 port=55680
+2026-10-18 22:41:37.682 MSK [3329631] LOG:  disconnection: session time: 0:00:00.874 user=native_control database=native_legacy_user_languages_1018 host=127.0.0.1 port=55654
+2026-10-18 22:41:37.682 MSK [3329635] LOG:  disconnection: session time: 0:00:00.866 user=native_control database=native_legacy_user_languages_1018 host=127.0.0.1 port=55692
+2026-10-18 22:41:37.682 MSK [3329636] LOG:  disconnection: session time: 0:00:00.863 user=native_control database=native_legacy_user_languages_1018 host=127.0.0.1 port=55706
+2026-10-18 22:41:37.682 MSK [3329638] LOG:  disconnection: session time: 0:00:00.858 user=native_control database=native_legacy_user_languages_1018 host=127.0.0.1 port=55726
+2026-10-18 22:41:37.683 MSK [3329639] LOG:  disconnection: session time: 0:00:00.855 user=native_control database=native_legacy_user_languages_1018 host=127.0.0.1 port=55732
+2026-10-18 22:41:37.684 MSK [3329640] LOG:  disconnection: session time: 0:00:00.853 user=native_control database=native_legacy_user_languages_1018 host=127.0.0.1 port=55734
+2026-10-18 22:41:37.684 MSK [3329641] LOG:  disconnection: session time: 0:00:00.850 user=native_control database=native_legacy_user_languages_1018 host=127.0.0.1 port=55746
+2026-10-18 22:41:37.684 MSK [3329637] LOG:  disconnection: session time: 0:00:00.862 user=native_control database=native_legacy_user_languages_1018 host=127.0.0.1 port=55720
+2026-10-18 22:41:37.947 MSK [3329705] LOG:  connection received: host=127.0.0.1 port=55754
+2026-10-18 22:41:37.947 MSK [3329705] LOG:  connection authenticated: user="native_control" method=trust (/home/kan/Документы/develop/open-bsl/target/language-legacy-native-0coyo_1x/data/pg_hba.conf:119)
+2026-10-18 22:41:37.947 MSK [3329705] LOG:  connection authorized: user=native_control database=native_legacy_user_languages_1018
+2026-10-18 22:41:37.950 MSK [3329705] LOG:  disconnection: session time: 0:00:00.003 user=native_control database=native_legacy_user_languages_1018 host=127.0.0.1 port=55754
+2026-10-18 22:41:37.951 MSK [3329706] LOG:  connection received: host=127.0.0.1 port=55760
+2026-10-18 22:41:37.951 MSK [3329706] LOG:  connection authenticated: user="native_control" method=trust (/home/kan/Документы/develop/open-bsl/target/language-legacy-native-0coyo_1x/data/pg_hba.conf:119)
+2026-10-18 22:41:37.951 MSK [3329706] LOG:  connection authorized: user=native_control database=native_legacy_user_languages_1018
+2026-10-18 22:41:37.957 MSK [3329706] LOG:  disconnection: session time: 0:00:00.006 user=native_control database=native_legacy_user_languages_1018 host=127.0.0.1 port=55760
+2026-10-18 22:41:37.958 MSK [3329707] LOG:  connection received: host=127.0.0.1 port=55770
+2026-10-18 22:41:37.958 MSK [3329707] LOG:  connection authenticated: user="native_control" method=trust (/home/kan/Документы/develop/open-bsl/target/language-legacy-native-0coyo_1x/data/pg_hba.conf:119)
+2026-10-18 22:41:37.958 MSK [3329707] LOG:  connection authorized: user=native_control database=native_legacy_user_languages_1018
+2026-10-18 22:41:38.644 MSK [3329968] LOG:  connection received: host=127.0.0.1 port=55784
+2026-10-18 22:41:38.645 MSK [3329968] LOG:  connection authenticated: user="native_control" method=trust (/home/kan/Документы/develop/open-bsl/target/language-legacy-native-0coyo_1x/data/pg_hba.conf:119)
+2026-10-18 22:41:38.645 MSK [3329968] LOG:  connection authorized: user=native_control database=native_legacy_user_languages_1018
+2026-10-18 22:41:38.647 MSK [3329969] LOG:  connection received: host=127.0.0.1 port=55792
+2026-10-18 22:41:38.648 MSK [3329969] LOG:  connection authenticated: user="native_control" method=trust (/home/kan/Документы/develop/open-bsl/target/language-legacy-native-0coyo_1x/data/pg_hba.conf:119)
+2026-10-18 22:41:38.648 MSK [3329969] LOG:  connection authorized: user=native_control database=native_legacy_user_languages_1018
+2026-10-18 22:41:38.651 MSK [3329970] LOG:  connection received: host=127.0.0.1 port=55796
+2026-10-18 22:41:38.651 MSK [3329970] LOG:  connection authenticated: user="native_control" method=trust (/home/kan/Документы/develop/open-bsl/target/language-legacy-native-0coyo_1x/data/pg_hba.conf:119)
+2026-10-18 22:41:38.651 MSK [3329970] LOG:  connection authorized: user=native_control database=native_legacy_user_languages_1018
+2026-10-18 22:41:38.653 MSK [3329971] LOG:  connection received: host=127.0.0.1 port=55808
+2026-10-18 22:41:38.654 MSK [3329971] LOG:  connection authenticated: user="native_control" method=trust (/home/kan/Документы/develop/open-bsl/target/language-legacy-native-0coyo_1x/data/pg_hba.conf:119)
+2026-10-18 22:41:38.654 MSK [3329971] LOG:  connection authorized: user=native_control database=native_legacy_user_languages_1018
+2026-10-18 22:41:38.656 MSK [3329972] LOG:  connection received: host=127.0.0.1 port=55824
+2026-10-18 22:41:38.657 MSK [3329972] LOG:  connection authenticated: user="native_control" method=trust (/home/kan/Документы/develop/open-bsl/target/language-legacy-native-0coyo_1x/data/pg_hba.conf:119)
+2026-10-18 22:41:38.657 MSK [3329972] LOG:  connection authorized: user=native_control database=native_legacy_user_languages_1018
+2026-10-18 22:41:38.659 MSK [3329973] LOG:  connection received: host=127.0.0.1 port=55828
+2026-10-18 22:41:38.660 MSK [3329973] LOG:  connection authenticated: user="native_control" method=trust (/home/kan/Документы/develop/open-bsl/target/language-legacy-native-0coyo_1x/data/pg_hba.conf:119)
+2026-10-18 22:41:38.660 MSK [3329973] LOG:  connection authorized: user=native_control database=native_legacy_user_languages_1018
+2026-10-18 22:41:38.662 MSK [3329974] LOG:  connection received: host=127.0.0.1 port=55836
+2026-10-18 22:41:38.663 MSK [3329974] LOG:  connection authenticated: user="native_control" method=trust (/home/kan/Документы/develop/open-bsl/target/language-legacy-native-0coyo_1x/data/pg_hba.conf:119)
+2026-10-18 22:41:38.663 MSK [3329974] LOG:  connection authorized: user=native_control database=native_legacy_user_languages_1018
+2026-10-18 22:41:38.665 MSK [3329975] LOG:  connection received: host=127.0.0.1 port=55838
+2026-10-18 22:41:38.666 MSK [3329975] LOG:  connection authenticated: user="native_control" method=trust (/home/kan/Документы/develop/open-bsl/target/language-legacy-native-0coyo_1x/data/pg_hba.conf:119)
+2026-10-18 22:41:38.666 MSK [3329975] LOG:  connection authorized: user=native_control database=native_legacy_user_languages_1018
+2026-10-18 22:41:38.668 MSK [3329976] LOG:  connection received: host=127.0.0.1 port=55850
+2026-10-18 22:41:38.668 MSK [3329976] LOG:  connection authenticated: user="native_control" method=trust (/home/kan/Документы/develop/open-bsl/target/language-legacy-native-0coyo_1x/data/pg_hba.conf:119)
+2026-10-18 22:41:38.668 MSK [3329976] LOG:  connection authorized: user=native_control database=native_legacy_user_languages_1018
+2026-10-18 22:41:38.671 MSK [3329977] LOG:  connection received: host=127.0.0.1 port=55866
+2026-10-18 22:41:38.671 MSK [3329977] LOG:  connection authenticated: user="native_control" method=trust (/home/kan/Документы/develop/open-bsl/target/language-legacy-native-0coyo_1x/data/pg_hba.conf:119)
+2026-10-18 22:41:38.671 MSK [3329977] LOG:  connection authorized: user=native_control database=native_legacy_user_languages_1018
+2026-10-18 22:41:38.674 MSK [3329978] LOG:  connection received: host=127.0.0.1 port=55882
+2026-10-18 22:41:38.674 MSK [3329978] LOG:  connection authenticated: user="native_control" method=trust (/home/kan/Документы/develop/open-bsl/target/language-legacy-native-0coyo_1x/data/pg_hba.conf:119)
+2026-10-18 22:41:38.674 MSK [3329978] LOG:  connection authorized: user=native_control database=native_legacy_user_languages_1018
+2026-10-18 22:41:38.677 MSK [3329979] LOG:  connection received: host=127.0.0.1 port=55894
+2026-10-18 22:41:38.677 MSK [3329979] LOG:  connection authenticated: user="native_control" method=trust (/home/kan/Документы/develop/open-bsl/target/language-legacy-native-0coyo_1x/data/pg_hba.conf:119)
+2026-10-18 22:41:38.677 MSK [3329979] LOG:  connection authorized: user=native_control database=native_legacy_user_languages_1018
+2026-10-18 22:41:38.680 MSK [3329980] LOG:  connection received: host=127.0.0.1 port=55902
+2026-10-18 22:41:38.680 MSK [3329980] LOG:  connection authenticated: user="native_control" method=trust (/home/kan/Документы/develop/open-bsl/target/language-legacy-native-0coyo_1x/data/pg_hba.conf:119)
+2026-10-18 22:41:38.680 MSK [3329980] LOG:  connection authorized: user=native_control database=native_legacy_user_languages_1018
+2026-10-18 22:41:38.682 MSK [3329981] LOG:  connection received: host=127.0.0.1 port=55912
+2026-10-18 22:41:38.683 MSK [3329981] LOG:  connection authenticated: user="native_control" method=trust (/home/kan/Документы/develop/open-bsl/target/language-legacy-native-0coyo_1x/data/pg_hba.conf:119)
+2026-10-18 22:41:38.683 MSK [3329981] LOG:  connection authorized: user=native_control database=native_legacy_user_languages_1018
+2026-10-18 22:41:39.695 MSK [3329969] LOG:  disconnection: session time: 0:00:01.048 user=native_control database=native_legacy_user_languages_1018 host=127.0.0.1 port=55792
+2026-10-18 22:41:39.695 MSK [3329970] LOG:  disconnection: session time: 0:00:01.044 user=native_control database=native_legacy_user_languages_1018 host=127.0.0.1 port=55796
+2026-10-18 22:41:39.695 MSK [3329971] LOG:  disconnection: session time: 0:00:01.041 user=native_control database=native_legacy_user_languages_1018 host=127.0.0.1 port=55808
+2026-10-18 22:41:39.695 MSK [3329972] LOG:  disconnection: session time: 0:00:01.038 user=native_control database=native_legacy_user_languages_1018 host=127.0.0.1 port=55824
+2026-10-18 22:41:39.695 MSK [3329973] LOG:  disconnection: session time: 0:00:01.035 user=native_control database=native_legacy_user_languages_1018 host=127.0.0.1 port=55828
+2026-10-18 22:41:39.695 MSK [3329974] LOG:  disconnection: session time: 0:00:01.033 user=native_control database=native_legacy_user_languages_1018 host=127.0.0.1 port=55836
+2026-10-18 22:41:39.695 MSK [3329975] LOG:  disconnection: session time: 0:00:01.030 user=native_control database=native_legacy_user_languages_1018 host=127.0.0.1 port=55838
+2026-10-18 22:41:39.695 MSK [3329976] LOG:  disconnection: session time: 0:00:01.027 user=native_control database=native_legacy_user_languages_1018 host=127.0.0.1 port=55850
+2026-10-18 22:41:39.695 MSK [3329977] LOG:  disconnection: session time: 0:00:01.024 user=native_control database=native_legacy_user_languages_1018 host=127.0.0.1 port=55866
+2026-10-18 22:41:39.695 MSK [3329978] LOG:  disconnection: session time: 0:00:01.021 user=native_control database=native_legacy_user_languages_1018 host=127.0.0.1 port=55882
+2026-10-18 22:41:39.695 MSK [3329979] LOG:  disconnection: session time: 0:00:01.019 user=native_control database=native_legacy_user_languages_1018 host=127.0.0.1 port=55894
+2026-10-18 22:41:39.696 MSK [3329981] LOG:  disconnection: session time: 0:00:01.013 user=native_control database=native_legacy_user_languages_1018 host=127.0.0.1 port=55912
+2026-10-18 22:41:39.696 MSK [3329980] LOG:  disconnection: session time: 0:00:01.016 user=native_control database=native_legacy_user_languages_1018 host=127.0.0.1 port=55902
+2026-10-18 22:41:39.696 MSK [3329707] LOG:  disconnection: session time: 0:00:01.739 user=native_control database=native_legacy_user_languages_1018 host=127.0.0.1 port=55770
+2026-10-18 22:41:39.698 MSK [3329968] LOG:  disconnection: session time: 0:00:01.053 user=native_control database=native_legacy_user_languages_1018 host=127.0.0.1 port=55784
+2026-10-18 22:41:39.898 MSK [3330021] LOG:  connection received: host=127.0.0.1 port=34926
+2026-10-18 22:41:39.899 MSK [3330021] LOG:  connection authenticated: user="native_control" method=trust (/home/kan/Документы/develop/open-bsl/target/language-legacy-native-0coyo_1x/data/pg_hba.conf:119)
+2026-10-18 22:41:39.899 MSK [3330021] LOG:  connection authorized: user=native_control database=native_legacy_user_languages_1018
+2026-10-18 22:41:39.908 MSK [3330022] LOG:  connection received: host=127.0.0.1 port=34934
+2026-10-18 22:41:39.909 MSK [3330022] LOG:  connection authenticated: user="native_control" method=trust (/home/kan/Документы/develop/open-bsl/target/language-legacy-native-0coyo_1x/data/pg_hba.conf:119)
+2026-10-18 22:41:39.909 MSK [3330022] LOG:  connection authorized: user=native_control database=native_legacy_user_languages_1018
+2026-10-18 22:41:39.910 MSK [3330021] LOG:  disconnection: session time: 0:00:00.012 user=native_control database=native_legacy_user_languages_1018 host=127.0.0.1 port=34926
+2026-10-18 22:41:39.917 MSK [3328399] LOG:  received fast shutdown request
+2026-10-18 22:41:39.918 MSK [3328399] LOG:  aborting any active transactions
+2026-10-18 22:41:39.918 MSK [3330022] FATAL:  terminating connection due to administrator command
+2026-10-18 22:41:39.918 MSK [3330022] LOG:  disconnection: session time: 0:00:00.010 user=native_control database=native_legacy_user_languages_1018 host=127.0.0.1 port=34934
+2026-10-18 22:41:39.919 MSK [3328399] LOG:  background worker "logical replication launcher" (PID 3328410) exited with exit code 1
+2026-10-18 22:41:39.919 MSK [3328400] LOG:  shutting down
+2026-10-18 22:41:39.919 MSK [3328400] LOG:  checkpoint starting: shutdown immediate
+2026-10-18 22:41:39.930 MSK [3328400] LOG:  checkpoint complete: wrote 689 buffers (33.6%), wrote 4 SLRU buffers; 0 WAL file(s) added, 0 removed, 0 recycled; write=0.004 s, sync=0.001 s, total=0.011 s; sync files=0, longest=0.000 s, average=0.000 s; distance=7286 kB, estimate=7286 kB; lsn=0/1C1E618, redo lsn=0/1C1E618
+2026-10-18 22:41:39.937 MSK [3328399] LOG:  database system is shut down
+2026-10-18 22:43:19.115 MSK [3332235] LOG:  starting CFS version 0.55, supported compression algorithms:  pglz,zlib,lz4,zstd, GC enabled
+2026-10-18 22:43:19.118 MSK [3332235] LOG:  starting PostgreSQL 18.6 on x86_64-pc-linux-gnu, compiled by gcc (GCC) 14.2.1 20250110 (Red Hat 14.2.1-7), 64-bit
+2026-10-18 22:43:19.118 MSK [3332235] LOG:  listening on IPv4 address "127.0.0.1", port 38929
+2026-10-18 22:43:19.120 MSK [3332238] LOG:  database system was shut down at 2026-10-18 22:43:18 MSK
+2026-10-18 22:43:19.122 MSK [3332235] LOG:  database system is ready to accept connections
+2026-10-18 22:43:19.123 MSK [3332245] LOG:  starting background freezer (worker: enabled, backends: enabled, message size: 1024; packets: 21; min send size: 256; min packets: 5)
+2026-10-18 22:43:19.425 MSK [3332298] LOG:  connection received: host=127.0.0.1 port=49720
+2026-10-18 22:43:19.426 MSK [3332298] LOG:  connection authenticated: user="native_control" method=trust (/home/kan/Документы/develop/open-bsl/target/language-legacy-native-snvoxc3k/data/pg_hba.conf:119)
+2026-10-18 22:43:19.426 MSK [3332298] LOG:  connection authorized: user=native_control database=template1
+2026-10-18 22:43:19.431 MSK [3332298] LOG:  disconnection: session time: 0:00:00.005 user=native_control database=template1 host=127.0.0.1 port=49720
+2026-10-18 22:43:19.432 MSK [3332299] LOG:  connection received: host=127.0.0.1 port=49734
+2026-10-18 22:43:19.433 MSK [3332299] LOG:  connection authenticated: user="native_control" method=trust (/home/kan/Документы/develop/open-bsl/target/language-legacy-native-snvoxc3k/data/pg_hba.conf:119)
+2026-10-18 22:43:19.433 MSK [3332299] LOG:  connection authorized: user=native_control database=template1
+2026-10-18 22:43:19.473 MSK [3332299] LOG:  disconnection: session time: 0:00:00.041 user=native_control database=template1 host=127.0.0.1 port=49734
+2026-10-18 22:43:19.474 MSK [3332301] LOG:  connection received: host=127.0.0.1 port=49740
+2026-10-18 22:43:19.475 MSK [3332301] LOG:  connection authenticated: user="native_control" method=trust (/home/kan/Документы/develop/open-bsl/target/language-legacy-native-snvoxc3k/data/pg_hba.conf:119)
+2026-10-18 22:43:19.475 MSK [3332301] LOG:  connection authorized: user=native_control database=native_legacy_user_languages_1018
+2026-10-18 22:43:19.479 MSK [3332301] ERROR:  syntax error at or near "'plpgsql'" at character 28
+2026-10-18 22:43:19.479 MSK [3332301] STATEMENT:  CREATE PROCEDURAL LANGUAGE 'plpgsql' HANDLER plpgsql_call_handler
+2026-10-18 22:43:19.479 MSK [3332301] WARNING:  there is no transaction in progress
+2026-10-18 22:43:19.495 MSK [3332301] LOG:  disconnection: session time: 0:00:00.021 user=native_control database=native_legacy_user_languages_1018 host=127.0.0.1 port=49740
+2026-10-18 22:43:19.496 MSK [3332302] LOG:  connection received: host=127.0.0.1 port=49748
+2026-10-18 22:43:19.496 MSK [3332302] LOG:  connection authenticated: user="native_control" method=trust (/home/kan/Документы/develop/open-bsl/target/language-legacy-native-snvoxc3k/data/pg_hba.conf:119)
+2026-10-18 22:43:19.496 MSK [3332302] LOG:  connection authorized: user=native_control database=native_legacy_user_languages_1018
+2026-10-18 22:43:21.069 MSK [3332302] LOG:  disconnection: session time: 0:00:01.573 user=native_control database=native_legacy_user_languages_1018 host=127.0.0.1 port=49748
+2026-10-18 22:43:21.233 MSK [3332583] LOG:  connection received: host=127.0.0.1 port=51712
+2026-10-18 22:43:21.234 MSK [3332583] LOG:  connection authenticated: user="native_control" method=trust (/home/kan/Документы/develop/open-bsl/target/language-legacy-native-snvoxc3k/data/pg_hba.conf:119)
+2026-10-18 22:43:21.234 MSK [3332583] LOG:  connection authorized: user=native_control database=native_legacy_user_languages_1018
+2026-10-18 22:43:21.236 MSK [3332583] LOG:  disconnection: session time: 0:00:00.003 user=native_control database=native_legacy_user_languages_1018 host=127.0.0.1 port=51712
+2026-10-18 22:43:21.237 MSK [3332584] LOG:  connection received: host=127.0.0.1 port=51724
+2026-10-18 22:43:21.238 MSK [3332584] LOG:  connection authenticated: user="native_control" method=trust (/home/kan/Документы/develop/open-bsl/target/language-legacy-native-snvoxc3k/data/pg_hba.conf:119)
+2026-10-18 22:43:21.238 MSK [3332584] LOG:  connection authorized: user=native_control database=native_legacy_user_languages_1018
+2026-10-18 22:43:21.243 MSK [3332584] LOG:  disconnection: session time: 0:00:00.006 user=native_control database=native_legacy_user_languages_1018 host=127.0.0.1 port=51724
+2026-10-18 22:43:21.244 MSK [3332585] LOG:  connection received: host=127.0.0.1 port=51736
+2026-10-18 22:43:21.245 MSK [3332585] LOG:  connection authenticated: user="native_control" method=trust (/home/kan/Документы/develop/open-bsl/target/language-legacy-native-snvoxc3k/data/pg_hba.conf:119)
+2026-10-18 22:43:21.245 MSK [3332585] LOG:  connection authorized: user=native_control database=native_legacy_user_languages_1018
+2026-10-18 22:43:22.930 MSK [3332585] LOG:  disconnection: session time: 0:00:01.686 user=native_control database=native_legacy_user_languages_1018 host=127.0.0.1 port=51736
+2026-10-18 22:43:23.201 MSK [3332880] LOG:  connection received: host=127.0.0.1 port=51746
+2026-10-18 22:43:23.201 MSK [3332880] LOG:  connection authenticated: user="native_control" method=trust (/home/kan/Документы/develop/open-bsl/target/language-legacy-native-snvoxc3k/data/pg_hba.conf:119)
+2026-10-18 22:43:23.201 MSK [3332880] LOG:  connection authorized: user=native_control database=native_legacy_user_languages_1018
+2026-10-18 22:43:23.204 MSK [3332880] LOG:  disconnection: session time: 0:00:00.003 user=native_control database=native_legacy_user_languages_1018 host=127.0.0.1 port=51746
+2026-10-18 22:43:23.205 MSK [3332881] LOG:  connection received: host=127.0.0.1 port=51756
+2026-10-18 22:43:23.205 MSK [3332881] LOG:  connection authenticated: user="native_control" method=trust (/home/kan/Документы/develop/open-bsl/target/language-legacy-native-snvoxc3k/data/pg_hba.conf:119)
+2026-10-18 22:43:23.205 MSK [3332881] LOG:  connection authorized: user=native_control database=native_legacy_user_languages_1018
+2026-10-18 22:43:23.211 MSK [3332881] LOG:  disconnection: session time: 0:00:00.006 user=native_control database=native_legacy_user_languages_1018 host=127.0.0.1 port=51756
+2026-10-18 22:43:23.212 MSK [3332882] LOG:  connection received: host=127.0.0.1 port=51766
+2026-10-18 22:43:23.212 MSK [3332882] LOG:  connection authenticated: user="native_control" method=trust (/home/kan/Документы/develop/open-bsl/target/language-legacy-native-snvoxc3k/data/pg_hba.conf:119)
+2026-10-18 22:43:23.212 MSK [3332882] LOG:  connection authorized: user=native_control database=native_legacy_user_languages_1018
+2026-10-18 22:43:23.901 MSK [3333138] LOG:  connection received: host=127.0.0.1 port=51772
+2026-10-18 22:43:23.902 MSK [3333138] LOG:  connection authenticated: user="native_control" method=trust (/home/kan/Документы/develop/open-bsl/target/language-legacy-native-snvoxc3k/data/pg_hba.conf:119)
+2026-10-18 22:43:23.902 MSK [3333138] LOG:  connection authorized: user=native_control database=native_legacy_user_languages_1018
+2026-10-18 22:43:23.904 MSK [3333139] LOG:  connection received: host=127.0.0.1 port=51778
+2026-10-18 22:43:23.905 MSK [3333139] LOG:  connection authenticated: user="native_control" method=trust (/home/kan/Документы/develop/open-bsl/target/language-legacy-native-snvoxc3k/data/pg_hba.conf:119)
+2026-10-18 22:43:23.905 MSK [3333139] LOG:  connection authorized: user=native_control database=native_legacy_user_languages_1018
+2026-10-18 22:43:23.907 MSK [3333140] LOG:  connection received: host=127.0.0.1 port=51780
+2026-10-18 22:43:23.908 MSK [3333140] LOG:  connection authenticated: user="native_control" method=trust (/home/kan/Документы/develop/open-bsl/target/language-legacy-native-snvoxc3k/data/pg_hba.conf:119)
+2026-10-18 22:43:23.908 MSK [3333140] LOG:  connection authorized: user=native_control database=native_legacy_user_languages_1018
+2026-10-18 22:43:23.910 MSK [3333141] LOG:  connection received: host=127.0.0.1 port=51794
+2026-10-18 22:43:23.911 MSK [3333141] LOG:  connection authenticated: user="native_control" method=trust (/home/kan/Документы/develop/open-bsl/target/language-legacy-native-snvoxc3k/data/pg_hba.conf:119)
+2026-10-18 22:43:23.911 MSK [3333141] LOG:  connection authorized: user=native_control database=native_legacy_user_languages_1018
+2026-10-18 22:43:23.913 MSK [3333142] LOG:  connection received: host=127.0.0.1 port=51800
+2026-10-18 22:43:23.914 MSK [3333142] LOG:  connection authenticated: user="native_control" method=trust (/home/kan/Документы/develop/open-bsl/target/language-legacy-native-snvoxc3k/data/pg_hba.conf:119)
+2026-10-18 22:43:23.914 MSK [3333142] LOG:  connection authorized: user=native_control database=native_legacy_user_languages_1018
+2026-10-18 22:43:23.916 MSK [3333143] LOG:  connection received: host=127.0.0.1 port=51814
+2026-10-18 22:43:23.917 MSK [3333143] LOG:  connection authenticated: user="native_control" method=trust (/home/kan/Документы/develop/open-bsl/target/language-legacy-native-snvoxc3k/data/pg_hba.conf:119)
+2026-10-18 22:43:23.917 MSK [3333143] LOG:  connection authorized: user=native_control database=native_legacy_user_languages_1018
+2026-10-18 22:43:23.919 MSK [3333144] LOG:  connection received: host=127.0.0.1 port=51824
+2026-10-18 22:43:23.920 MSK [3333144] LOG:  connection authenticated: user="native_control" method=trust (/home/kan/Документы/develop/open-bsl/target/language-legacy-native-snvoxc3k/data/pg_hba.conf:119)
+2026-10-18 22:43:23.920 MSK [3333144] LOG:  connection authorized: user=native_control database=native_legacy_user_languages_1018
+2026-10-18 22:43:23.922 MSK [3333145] LOG:  connection received: host=127.0.0.1 port=51826
+2026-10-18 22:43:23.923 MSK [3333145] LOG:  connection authenticated: user="native_control" method=trust (/home/kan/Документы/develop/open-bsl/target/language-legacy-native-snvoxc3k/data/pg_hba.conf:119)
+2026-10-18 22:43:23.923 MSK [3333145] LOG:  connection authorized: user=native_control database=native_legacy_user_languages_1018
+2026-10-18 22:43:23.925 MSK [3333146] LOG:  connection received: host=127.0.0.1 port=51840
+2026-10-18 22:43:23.926 MSK [3333146] LOG:  connection authenticated: user="native_control" method=trust (/home/kan/Документы/develop/open-bsl/target/language-legacy-native-snvoxc3k/data/pg_hba.conf:119)
+2026-10-18 22:43:23.926 MSK [3333146] LOG:  connection authorized: user=native_control database=native_legacy_user_languages_1018
+2026-10-18 22:43:23.928 MSK [3333147] LOG:  connection received: host=127.0.0.1 port=51844
+2026-10-18 22:43:23.929 MSK [3333147] LOG:  connection authenticated: user="native_control" method=trust (/home/kan/Документы/develop/open-bsl/target/language-legacy-native-snvoxc3k/data/pg_hba.conf:119)
+2026-10-18 22:43:23.929 MSK [3333147] LOG:  connection authorized: user=native_control database=native_legacy_user_languages_1018
+2026-10-18 22:43:23.931 MSK [3333148] LOG:  connection received: host=127.0.0.1 port=51856
+2026-10-18 22:43:23.931 MSK [3333148] LOG:  connection authenticated: user="native_control" method=trust (/home/kan/Документы/develop/open-bsl/target/language-legacy-native-snvoxc3k/data/pg_hba.conf:119)
+2026-10-18 22:43:23.931 MSK [3333148] LOG:  connection authorized: user=native_control database=native_legacy_user_languages_1018
+2026-10-18 22:43:23.934 MSK [3333149] LOG:  connection received: host=127.0.0.1 port=51864
+2026-10-18 22:43:23.934 MSK [3333149] LOG:  connection authenticated: user="native_control" method=trust (/home/kan/Документы/develop/open-bsl/target/language-legacy-native-snvoxc3k/data/pg_hba.conf:119)
+2026-10-18 22:43:23.934 MSK [3333149] LOG:  connection authorized: user=native_control database=native_legacy_user_languages_1018
+2026-10-18 22:43:23.937 MSK [3333150] LOG:  connection received: host=127.0.0.1 port=51866
+2026-10-18 22:43:23.937 MSK [3333150] LOG:  connection authenticated: user="native_control" method=trust (/home/kan/Документы/develop/open-bsl/target/language-legacy-native-snvoxc3k/data/pg_hba.conf:119)
+2026-10-18 22:43:23.937 MSK [3333150] LOG:  connection authorized: user=native_control database=native_legacy_user_languages_1018
+2026-10-18 22:43:23.940 MSK [3333151] LOG:  connection received: host=127.0.0.1 port=51878
+2026-10-18 22:43:23.940 MSK [3333151] LOG:  connection authenticated: user="native_control" method=trust (/home/kan/Документы/develop/open-bsl/target/language-legacy-native-snvoxc3k/data/pg_hba.conf:119)
+2026-10-18 22:43:23.940 MSK [3333151] LOG:  connection authorized: user=native_control database=native_legacy_user_languages_1018
+2026-10-18 22:43:24.958 MSK [3333143] LOG:  disconnection: session time: 0:00:01.042 user=native_control database=native_legacy_user_languages_1018 host=127.0.0.1 port=51814
+2026-10-18 22:43:24.958 MSK [3333144] LOG:  disconnection: session time: 0:00:01.039 user=native_control database=native_legacy_user_languages_1018 host=127.0.0.1 port=51824
+2026-10-18 22:43:24.958 MSK [3333145] LOG:  disconnection: session time: 0:00:01.036 user=native_control database=native_legacy_user_languages_1018 host=127.0.0.1 port=51826
+2026-10-18 22:43:24.958 MSK [3333146] LOG:  disconnection: session time: 0:00:01.033 user=native_control database=native_legacy_user_languages_1018 host=127.0.0.1 port=51840
+2026-10-18 22:43:24.958 MSK [3333147] LOG:  disconnection: session time: 0:00:01.030 user=native_control database=native_legacy_user_languages_1018 host=127.0.0.1 port=51844
+2026-10-18 22:43:24.958 MSK [3333148] LOG:  disconnection: session time: 0:00:01.027 user=native_control database=native_legacy_user_languages_1018 host=127.0.0.1 port=51856
+2026-10-18 22:43:24.958 MSK [3333150] LOG:  disconnection: session time: 0:00:01.021 user=native_control database=native_legacy_user_languages_1018 host=127.0.0.1 port=51866
+2026-10-18 22:43:24.958 MSK [3333149] LOG:  disconnection: session time: 0:00:01.024 user=native_control database=native_legacy_user_languages_1018 host=127.0.0.1 port=51864
+2026-10-18 22:43:24.958 MSK [3333151] LOG:  disconnection: session time: 0:00:01.018 user=native_control database=native_legacy_user_languages_1018 host=127.0.0.1 port=51878
+2026-10-18 22:43:24.958 MSK [3333139] LOG:  disconnection: session time: 0:00:01.054 user=native_control database=native_legacy_user_languages_1018 host=127.0.0.1 port=51778
+2026-10-18 22:43:24.958 MSK [3332882] LOG:  disconnection: session time: 0:00:01.746 user=native_control database=native_legacy_user_languages_1018 host=127.0.0.1 port=51766
+2026-10-18 22:43:24.959 MSK [3333140] LOG:  disconnection: session time: 0:00:01.051 user=native_control database=native_legacy_user_languages_1018 host=127.0.0.1 port=51780
+2026-10-18 22:43:24.959 MSK [3333141] LOG:  disconnection: session time: 0:00:01.048 user=native_control database=native_legacy_user_languages_1018 host=127.0.0.1 port=51794
+2026-10-18 22:43:24.959 MSK [3333142] LOG:  disconnection: session time: 0:00:01.045 user=native_control database=native_legacy_user_languages_1018 host=127.0.0.1 port=51800
+2026-10-18 22:43:24.959 MSK [3333138] LOG:  disconnection: session time: 0:00:01.058 user=native_control database=native_legacy_user_languages_1018 host=127.0.0.1 port=51772
+2026-10-18 22:43:25.262 MSK [3333220] LOG:  connection received: host=127.0.0.1 port=51888
+2026-10-18 22:43:25.262 MSK [3333220] LOG:  connection authenticated: user="native_control" method=trust (/home/kan/Документы/develop/open-bsl/target/language-legacy-native-snvoxc3k/data/pg_hba.conf:119)
+2026-10-18 22:43:25.262 MSK [3333220] LOG:  connection authorized: user=native_control database=native_legacy_user_languages_1018
+2026-10-18 22:43:25.265 MSK [3333220] LOG:  disconnection: session time: 0:00:00.003 user=native_control database=native_legacy_user_languages_1018 host=127.0.0.1 port=51888
+2026-10-18 22:43:25.266 MSK [3333221] LOG:  connection received: host=127.0.0.1 port=51894
+2026-10-18 22:43:25.266 MSK [3333221] LOG:  connection authenticated: user="native_control" method=trust (/home/kan/Документы/develop/open-bsl/target/language-legacy-native-snvoxc3k/data/pg_hba.conf:119)
+2026-10-18 22:43:25.266 MSK [3333221] LOG:  connection authorized: user=native_control database=native_legacy_user_languages_1018
+2026-10-18 22:43:25.272 MSK [3333221] LOG:  disconnection: session time: 0:00:00.006 user=native_control database=native_legacy_user_languages_1018 host=127.0.0.1 port=51894
+2026-10-18 22:43:25.273 MSK [3333222] LOG:  connection received: host=127.0.0.1 port=51906
+2026-10-18 22:43:25.273 MSK [3333222] LOG:  connection authenticated: user="native_control" method=trust (/home/kan/Документы/develop/open-bsl/target/language-legacy-native-snvoxc3k/data/pg_hba.conf:119)
+2026-10-18 22:43:25.273 MSK [3333222] LOG:  connection authorized: user=native_control database=native_legacy_user_languages_1018
+2026-10-18 22:43:26.119 MSK [3333489] LOG:  connection received: host=127.0.0.1 port=51910
+2026-10-18 22:43:26.120 MSK [3333489] LOG:  connection authenticated: user="native_control" method=trust (/home/kan/Документы/develop/open-bsl/target/language-legacy-native-snvoxc3k/data/pg_hba.conf:119)
+2026-10-18 22:43:26.120 MSK [3333489] LOG:  connection authorized: user=native_control database=native_legacy_user_languages_1018
+2026-10-18 22:43:26.122 MSK [3333500] LOG:  connection received: host=127.0.0.1 port=51918
+2026-10-18 22:43:26.123 MSK [3333500] LOG:  connection authenticated: user="native_control" method=trust (/home/kan/Документы/develop/open-bsl/target/language-legacy-native-snvoxc3k/data/pg_hba.conf:119)
+2026-10-18 22:43:26.123 MSK [3333500] LOG:  connection authorized: user=native_control database=native_legacy_user_languages_1018
+2026-10-18 22:43:26.125 MSK [3333501] LOG:  connection received: host=127.0.0.1 port=51928
+2026-10-18 22:43:26.126 MSK [3333501] LOG:  connection authenticated: user="native_control" method=trust (/home/kan/Документы/develop/open-bsl/target/language-legacy-native-snvoxc3k/data/pg_hba.conf:119)
+2026-10-18 22:43:26.126 MSK [3333501] LOG:  connection authorized: user=native_control database=native_legacy_user_languages_1018
+2026-10-18 22:43:26.128 MSK [3333502] LOG:  connection received: host=127.0.0.1 port=51932
+2026-10-18 22:43:26.129 MSK [3333502] LOG:  connection authenticated: user="native_control" method=trust (/home/kan/Документы/develop/open-bsl/target/language-legacy-native-snvoxc3k/data/pg_hba.conf:119)
+2026-10-18 22:43:26.129 MSK [3333502] LOG:  connection authorized: user=native_control database=native_legacy_user_languages_1018
+2026-10-18 22:43:26.131 MSK [3333503] LOG:  connection received: host=127.0.0.1 port=51938
+2026-10-18 22:43:26.132 MSK [3333503] LOG:  connection authenticated: user="native_control" method=trust (/home/kan/Документы/develop/open-bsl/target/language-legacy-native-snvoxc3k/data/pg_hba.conf:119)
+2026-10-18 22:43:26.132 MSK [3333503] LOG:  connection authorized: user=native_control database=native_legacy_user_languages_1018
+2026-10-18 22:43:26.134 MSK [3333504] LOG:  connection received: host=127.0.0.1 port=51946
+2026-10-18 22:43:26.134 MSK [3333504] LOG:  connection authenticated: user="native_control" method=trust (/home/kan/Документы/develop/open-bsl/target/language-legacy-native-snvoxc3k/data/pg_hba.conf:119)
+2026-10-18 22:43:26.134 MSK [3333504] LOG:  connection authorized: user=native_control database=native_legacy_user_languages_1018
+2026-10-18 22:43:26.137 MSK [3333505] LOG:  connection received: host=127.0.0.1 port=51960
+2026-10-18 22:43:26.138 MSK [3333505] LOG:  connection authenticated: user="native_control" method=trust (/home/kan/Документы/develop/open-bsl/target/language-legacy-native-snvoxc3k/data/pg_hba.conf:119)
+2026-10-18 22:43:26.138 MSK [3333505] LOG:  connection authorized: user=native_control database=native_legacy_user_languages_1018
+2026-10-18 22:43:26.140 MSK [3333506] LOG:  connection received: host=127.0.0.1 port=51970
+2026-10-18 22:43:26.141 MSK [3333506] LOG:  connection authenticated: user="native_control" method=trust (/home/kan/Документы/develop/open-bsl/target/language-legacy-native-snvoxc3k/data/pg_hba.conf:119)
+2026-10-18 22:43:26.141 MSK [3333506] LOG:  connection authorized: user=native_control database=native_legacy_user_languages_1018
+2026-10-18 22:43:26.143 MSK [3333507] LOG:  connection received: host=127.0.0.1 port=51976
+2026-10-18 22:43:26.144 MSK [3333507] LOG:  connection authenticated: user="native_control" method=trust (/home/kan/Документы/develop/open-bsl/target/language-legacy-native-snvoxc3k/data/pg_hba.conf:119)
+2026-10-18 22:43:26.144 MSK [3333507] LOG:  connection authorized: user=native_control database=native_legacy_user_languages_1018
+2026-10-18 22:43:26.146 MSK [3333509] LOG:  connection received: host=127.0.0.1 port=51986
+2026-10-18 22:43:26.147 MSK [3333509] LOG:  connection authenticated: user="native_control" method=trust (/home/kan/Документы/develop/open-bsl/target/language-legacy-native-snvoxc3k/data/pg_hba.conf:119)
+2026-10-18 22:43:26.147 MSK [3333509] LOG:  connection authorized: user=native_control database=native_legacy_user_languages_1018
+2026-10-18 22:43:26.149 MSK [3333510] LOG:  connection received: host=127.0.0.1 port=51998
+2026-10-18 22:43:26.150 MSK [3333510] LOG:  connection authenticated: user="native_control" method=trust (/home/kan/Документы/develop/open-bsl/target/language-legacy-native-snvoxc3k/data/pg_hba.conf:119)
+2026-10-18 22:43:26.150 MSK [3333510] LOG:  connection authorized: user=native_control database=native_legacy_user_languages_1018
+2026-10-18 22:43:26.152 MSK [3333511] LOG:  connection received: host=127.0.0.1 port=52014
+2026-10-18 22:43:26.153 MSK [3333511] LOG:  connection authenticated: user="native_control" method=trust (/home/kan/Документы/develop/open-bsl/target/language-legacy-native-snvoxc3k/data/pg_hba.conf:119)
+2026-10-18 22:43:26.153 MSK [3333511] LOG:  connection authorized: user=native_control database=native_legacy_user_languages_1018
+2026-10-18 22:43:26.155 MSK [3333512] LOG:  connection received: host=127.0.0.1 port=52030
+2026-10-18 22:43:26.156 MSK [3333512] LOG:  connection authenticated: user="native_control" method=trust (/home/kan/Документы/develop/open-bsl/target/language-legacy-native-snvoxc3k/data/pg_hba.conf:119)
+2026-10-18 22:43:26.156 MSK [3333512] LOG:  connection authorized: user=native_control database=native_legacy_user_languages_1018
+2026-10-18 22:43:26.158 MSK [3333513] LOG:  connection received: host=127.0.0.1 port=52044
+2026-10-18 22:43:26.159 MSK [3333513] LOG:  connection authenticated: user="native_control" method=trust (/home/kan/Документы/develop/open-bsl/target/language-legacy-native-snvoxc3k/data/pg_hba.conf:119)
+2026-10-18 22:43:26.159 MSK [3333513] LOG:  connection authorized: user=native_control database=native_legacy_user_languages_1018
+2026-10-18 22:43:26.161 MSK [3333514] LOG:  connection received: host=127.0.0.1 port=52058
+2026-10-18 22:43:26.162 MSK [3333514] LOG:  connection authenticated: user="native_control" method=trust (/home/kan/Документы/develop/open-bsl/target/language-legacy-native-snvoxc3k/data/pg_hba.conf:119)
+2026-10-18 22:43:26.162 MSK [3333514] LOG:  connection authorized: user=native_control database=native_legacy_user_languages_1018
+2026-10-18 22:43:27.017 MSK [3333503] LOG:  disconnection: session time: 0:00:00.885 user=native_control database=native_legacy_user_languages_1018 host=127.0.0.1 port=51938
+2026-10-18 22:43:27.017 MSK [3333505] LOG:  disconnection: session time: 0:00:00.879 user=native_control database=native_legacy_user_languages_1018 host=127.0.0.1 port=51960
+2026-10-18 22:43:27.017 MSK [3333504] LOG:  disconnection: session time: 0:00:00.882 user=native_control database=native_legacy_user_languages_1018 host=127.0.0.1 port=51946
+2026-10-18 22:43:27.017 MSK [3333509] LOG:  disconnection: session time: 0:00:00.870 user=native_control database=native_legacy_user_languages_1018 host=127.0.0.1 port=51986
+2026-10-18 22:43:27.017 MSK [3333506] LOG:  disconnection: session time: 0:00:00.876 user=native_control database=native_legacy_user_languages_1018 host=127.0.0.1 port=51970
+2026-10-18 22:43:27.017 MSK [3333507] LOG:  disconnection: session time: 0:00:00.873 user=native_control database=native_legacy_user_languages_1018 host=127.0.0.1 port=51976
+2026-10-18 22:43:27.017 MSK [3333513] LOG:  disconnection: session time: 0:00:00.858 user=native_control database=native_legacy_user_languages_1018 host=127.0.0.1 port=52044
+2026-10-18 22:43:27.017 MSK [3333511] LOG:  disconnection: session time: 0:00:00.864 user=native_control database=native_legacy_user_languages_1018 host=127.0.0.1 port=52014
+2026-10-18 22:43:27.017 MSK [3333510] LOG:  disconnection: session time: 0:00:00.867 user=native_control database=native_legacy_user_languages_1018 host=127.0.0.1 port=51998
+2026-10-18 22:43:27.017 MSK [3333512] LOG:  disconnection: session time: 0:00:00.861 user=native_control database=native_legacy_user_languages_1018 host=127.0.0.1 port=52030
+2026-10-18 22:43:27.017 MSK [3333489] LOG:  disconnection: session time: 0:00:00.897 user=native_control database=native_legacy_user_languages_1018 host=127.0.0.1 port=51910
+2026-10-18 22:43:27.017 MSK [3333502] LOG:  disconnection: session time: 0:00:00.889 user=native_control database=native_legacy_user_languages_1018 host=127.0.0.1 port=51932
+2026-10-18 22:43:27.018 MSK [3333514] LOG:  disconnection: session time: 0:00:00.857 user=native_control database=native_legacy_user_languages_1018 host=127.0.0.1 port=52058
+2026-10-18 22:43:27.018 MSK [3333500] LOG:  disconnection: session time: 0:00:00.896 user=native_control database=native_legacy_user_languages_1018 host=127.0.0.1 port=51918
+2026-10-18 22:43:27.019 MSK [3333501] LOG:  disconnection: session time: 0:00:00.893 user=native_control database=native_legacy_user_languages_1018 host=127.0.0.1 port=51928
+2026-10-18 22:43:27.019 MSK [3333222] LOG:  disconnection: session time: 0:00:01.746 user=native_control database=native_legacy_user_languages_1018 host=127.0.0.1 port=51906
+2026-10-18 22:43:27.281 MSK [3333540] LOG:  connection received: host=127.0.0.1 port=52064
+2026-10-18 22:43:27.282 MSK [3333540] LOG:  connection authenticated: user="native_control" method=trust (/home/kan/Документы/develop/open-bsl/target/language-legacy-native-snvoxc3k/data/pg_hba.conf:119)
+2026-10-18 22:43:27.282 MSK [3333540] LOG:  connection authorized: user=native_control database=native_legacy_user_languages_1018
+2026-10-18 22:43:27.284 MSK [3333540] LOG:  disconnection: session time: 0:00:00.003 user=native_control database=native_legacy_user_languages_1018 host=127.0.0.1 port=52064
+2026-10-18 22:43:27.285 MSK [3333541] LOG:  connection received: host=127.0.0.1 port=52074
+2026-10-18 22:43:27.286 MSK [3333541] LOG:  connection authenticated: user="native_control" method=trust (/home/kan/Документы/develop/open-bsl/target/language-legacy-native-snvoxc3k/data/pg_hba.conf:119)
+2026-10-18 22:43:27.286 MSK [3333541] LOG:  connection authorized: user=native_control database=native_legacy_user_languages_1018
+2026-10-18 22:43:27.292 MSK [3333541] LOG:  disconnection: session time: 0:00:00.006 user=native_control database=native_legacy_user_languages_1018 host=127.0.0.1 port=52074
+2026-10-18 22:43:27.292 MSK [3333542] LOG:  connection received: host=127.0.0.1 port=52086
+2026-10-18 22:43:27.293 MSK [3333542] LOG:  connection authenticated: user="native_control" method=trust (/home/kan/Документы/develop/open-bsl/target/language-legacy-native-snvoxc3k/data/pg_hba.conf:119)
+2026-10-18 22:43:27.293 MSK [3333542] LOG:  connection authorized: user=native_control database=native_legacy_user_languages_1018
+2026-10-18 22:43:27.986 MSK [3333797] LOG:  connection received: host=127.0.0.1 port=52090
+2026-10-18 22:43:27.987 MSK [3333797] LOG:  connection authenticated: user="native_control" method=trust (/home/kan/Документы/develop/open-bsl/target/language-legacy-native-snvoxc3k/data/pg_hba.conf:119)
+2026-10-18 22:43:27.987 MSK [3333797] LOG:  connection authorized: user=native_control database=native_legacy_user_languages_1018
+2026-10-18 22:43:27.989 MSK [3333798] LOG:  connection received: host=127.0.0.1 port=52106
+2026-10-18 22:43:27.990 MSK [3333798] LOG:  connection authenticated: user="native_control" method=trust (/home/kan/Документы/develop/open-bsl/target/language-legacy-native-snvoxc3k/data/pg_hba.conf:119)
+2026-10-18 22:43:27.990 MSK [3333798] LOG:  connection authorized: user=native_control database=native_legacy_user_languages_1018
+2026-10-18 22:43:27.993 MSK [3333799] LOG:  connection received: host=127.0.0.1 port=52116
+2026-10-18 22:43:27.993 MSK [3333799] LOG:  connection authenticated: user="native_control" method=trust (/home/kan/Документы/develop/open-bsl/target/language-legacy-native-snvoxc3k/data/pg_hba.conf:119)
+2026-10-18 22:43:27.994 MSK [3333799] LOG:  connection authorized: user=native_control database=native_legacy_user_languages_1018
+2026-10-18 22:43:27.996 MSK [3333800] LOG:  connection received: host=127.0.0.1 port=52130
+2026-10-18 22:43:27.997 MSK [3333800] LOG:  connection authenticated: user="native_control" method=trust (/home/kan/Документы/develop/open-bsl/target/language-legacy-native-snvoxc3k/data/pg_hba.conf:119)
+2026-10-18 22:43:27.997 MSK [3333800] LOG:  connection authorized: user=native_control database=native_legacy_user_languages_1018
+2026-10-18 22:43:27.999 MSK [3333801] LOG:  connection received: host=127.0.0.1 port=52136
+2026-10-18 22:43:28.000 MSK [3333801] LOG:  connection authenticated: user="native_control" method=trust (/home/kan/Документы/develop/open-bsl/target/language-legacy-native-snvoxc3k/data/pg_hba.conf:119)
+2026-10-18 22:43:28.000 MSK [3333801] LOG:  connection authorized: user=native_control database=native_legacy_user_languages_1018
+2026-10-18 22:43:28.002 MSK [3333802] LOG:  connection received: host=127.0.0.1 port=52150
+2026-10-18 22:43:28.003 MSK [3333802] LOG:  connection authenticated: user="native_control" method=trust (/home/kan/Документы/develop/open-bsl/target/language-legacy-native-snvoxc3k/data/pg_hba.conf:119)
+2026-10-18 22:43:28.003 MSK [3333802] LOG:  connection authorized: user=native_control database=native_legacy_user_languages_1018
+2026-10-18 22:43:28.005 MSK [3333804] LOG:  connection received: host=127.0.0.1 port=52160
+2026-10-18 22:43:28.006 MSK [3333804] LOG:  connection authenticated: user="native_control" method=trust (/home/kan/Документы/develop/open-bsl/target/language-legacy-native-snvoxc3k/data/pg_hba.conf:119)
+2026-10-18 22:43:28.006 MSK [3333804] LOG:  connection authorized: user=native_control database=native_legacy_user_languages_1018
+2026-10-18 22:43:28.008 MSK [3333805] LOG:  connection received: host=127.0.0.1 port=52166
+2026-10-18 22:43:28.009 MSK [3333805] LOG:  connection authenticated: user="native_control" method=trust (/home/kan/Документы/develop/open-bsl/target/language-legacy-native-snvoxc3k/data/pg_hba.conf:119)
+2026-10-18 22:43:28.009 MSK [3333805] LOG:  connection authorized: user=native_control database=native_legacy_user_languages_1018
+2026-10-18 22:43:28.011 MSK [3333806] LOG:  connection received: host=127.0.0.1 port=52168
+2026-10-18 22:43:28.012 MSK [3333806] LOG:  connection authenticated: user="native_control" method=trust (/home/kan/Документы/develop/open-bsl/target/language-legacy-native-snvoxc3k/data/pg_hba.conf:119)
+2026-10-18 22:43:28.012 MSK [3333806] LOG:  connection authorized: user=native_control database=native_legacy_user_languages_1018
+2026-10-18 22:43:28.014 MSK [3333807] LOG:  connection received: host=127.0.0.1 port=52184
+2026-10-18 22:43:28.015 MSK [3333807] LOG:  connection authenticated: user="native_control" method=trust (/home/kan/Документы/develop/open-bsl/target/language-legacy-native-snvoxc3k/data/pg_hba.conf:119)
+2026-10-18 22:43:28.015 MSK [3333807] LOG:  connection authorized: user=native_control database=native_legacy_user_languages_1018
+2026-10-18 22:43:28.017 MSK [3333808] LOG:  connection received: host=127.0.0.1 port=52194
+2026-10-18 22:43:28.018 MSK [3333808] LOG:  connection authenticated: user="native_control" method=trust (/home/kan/Документы/develop/open-bsl/target/language-legacy-native-snvoxc3k/data/pg_hba.conf:119)
+2026-10-18 22:43:28.018 MSK [3333808] LOG:  connection authorized: user=native_control database=native_legacy_user_languages_1018
+2026-10-18 22:43:28.021 MSK [3333809] LOG:  connection received: host=127.0.0.1 port=52210
+2026-10-18 22:43:28.021 MSK [3333809] LOG:  connection authenticated: user="native_control" method=trust (/home/kan/Документы/develop/open-bsl/target/language-legacy-native-snvoxc3k/data/pg_hba.conf:119)
+2026-10-18 22:43:28.021 MSK [3333809] LOG:  connection authorized: user=native_control database=native_legacy_user_languages_1018
+2026-10-18 22:43:28.023 MSK [3333810] LOG:  connection received: host=127.0.0.1 port=52224
+2026-10-18 22:43:28.024 MSK [3333810] LOG:  connection authenticated: user="native_control" method=trust (/home/kan/Документы/develop/open-bsl/target/language-legacy-native-snvoxc3k/data/pg_hba.conf:119)
+2026-10-18 22:43:28.024 MSK [3333810] LOG:  connection authorized: user=native_control database=native_legacy_user_languages_1018
+2026-10-18 22:43:28.026 MSK [3333811] LOG:  connection received: host=127.0.0.1 port=52232
+2026-10-18 22:43:28.027 MSK [3333811] LOG:  connection authenticated: user="native_control" method=trust (/home/kan/Документы/develop/open-bsl/target/language-legacy-native-snvoxc3k/data/pg_hba.conf:119)
+2026-10-18 22:43:28.027 MSK [3333811] LOG:  connection authorized: user=native_control database=native_legacy_user_languages_1018
+2026-10-18 22:43:29.037 MSK [3333801] LOG:  disconnection: session time: 0:00:01.037 user=native_control database=native_legacy_user_languages_1018 host=127.0.0.1 port=52136
+2026-10-18 22:43:29.037 MSK [3333802] LOG:  disconnection: session time: 0:00:01.035 user=native_control database=native_legacy_user_languages_1018 host=127.0.0.1 port=52150
+2026-10-18 22:43:29.037 MSK [3333804] LOG:  disconnection: session time: 0:00:01.031 user=native_control database=native_legacy_user_languages_1018 host=127.0.0.1 port=52160
+2026-10-18 22:43:29.037 MSK [3333805] LOG:  disconnection: session time: 0:00:01.028 user=native_control database=native_legacy_user_languages_1018 host=127.0.0.1 port=52166
+2026-10-18 22:43:29.037 MSK [3333806] LOG:  disconnection: session time: 0:00:01.025 user=native_control database=native_legacy_user_languages_1018 host=127.0.0.1 port=52168
+2026-10-18 22:43:29.037 MSK [3333807] LOG:  disconnection: session time: 0:00:01.022 user=native_control database=native_legacy_user_languages_1018 host=127.0.0.1 port=52184
+2026-10-18 22:43:29.037 MSK [3333808] LOG:  disconnection: session time: 0:00:01.019 user=native_control database=native_legacy_user_languages_1018 host=127.0.0.1 port=52194
+2026-10-18 22:43:29.037 MSK [3333809] LOG:  disconnection: session time: 0:00:01.016 user=native_control database=native_legacy_user_languages_1018 host=127.0.0.1 port=52210
+2026-10-18 22:43:29.037 MSK [3333810] LOG:  disconnection: session time: 0:00:01.013 user=native_control database=native_legacy_user_languages_1018 host=127.0.0.1 port=52224
+2026-10-18 22:43:29.037 MSK [3333811] LOG:  disconnection: session time: 0:00:01.011 user=native_control database=native_legacy_user_languages_1018 host=127.0.0.1 port=52232
+2026-10-18 22:43:29.037 MSK [3333542] LOG:  disconnection: session time: 0:00:01.745 user=native_control database=native_legacy_user_languages_1018 host=127.0.0.1 port=52086
+2026-10-18 22:43:29.037 MSK [3333797] LOG:  disconnection: session time: 0:00:01.051 user=native_control database=native_legacy_user_languages_1018 host=127.0.0.1 port=52090
+2026-10-18 22:43:29.037 MSK [3333800] LOG:  disconnection: session time: 0:00:01.041 user=native_control database=native_legacy_user_languages_1018 host=127.0.0.1 port=52130
+2026-10-18 22:43:29.037 MSK [3333798] LOG:  disconnection: session time: 0:00:01.048 user=native_control database=native_legacy_user_languages_1018 host=127.0.0.1 port=52106
+2026-10-18 22:43:29.037 MSK [3333799] LOG:  disconnection: session time: 0:00:01.044 user=native_control database=native_legacy_user_languages_1018 host=127.0.0.1 port=52116
+2026-10-18 22:43:29.078 MSK [3333840] LOG:  connection received: host=127.0.0.1 port=52234
+2026-10-18 22:43:29.078 MSK [3333840] LOG:  connection authenticated: user="native_control" method=trust (/home/kan/Документы/develop/open-bsl/target/language-legacy-native-snvoxc3k/data/pg_hba.conf:119)
+2026-10-18 22:43:29.078 MSK [3333840] LOG:  connection authorized: user=native_control database=native_legacy_user_languages_1018
+2026-10-18 22:43:29.303 MSK [3333881] LOG:  connection received: host=127.0.0.1 port=52244
+2026-10-18 22:43:29.304 MSK [3333881] LOG:  connection authenticated: user="native_control" method=trust (/home/kan/Документы/develop/open-bsl/target/language-legacy-native-snvoxc3k/data/pg_hba.conf:119)
+2026-10-18 22:43:29.304 MSK [3333881] LOG:  connection authorized: user=native_control database=native_legacy_user_languages_1018
+2026-10-18 22:43:29.305 MSK [3333840] LOG:  disconnection: session time: 0:00:00.227 user=native_control database=native_legacy_user_languages_1018 host=127.0.0.1 port=52234
+2026-10-18 22:43:29.832 MSK [3334326] LOG:  connection received: host=127.0.0.1 port=47630
+2026-10-18 22:43:29.833 MSK [3334326] LOG:  connection authenticated: user="native_control" method=trust (/home/kan/Документы/develop/open-bsl/target/language-legacy-native-snvoxc3k/data/pg_hba.conf:119)
+2026-10-18 22:43:29.833 MSK [3334326] LOG:  connection authorized: user=native_control database=native_legacy_user_languages_1018
+2026-10-18 22:43:29.835 MSK [3334326] LOG:  disconnection: session time: 0:00:00.003 user=native_control database=native_legacy_user_languages_1018 host=127.0.0.1 port=47630
+2026-10-18 22:43:29.836 MSK [3334327] LOG:  connection received: host=127.0.0.1 port=47644
+2026-10-18 22:43:29.837 MSK [3334327] LOG:  connection authenticated: user="native_control" method=trust (/home/kan/Документы/develop/open-bsl/target/language-legacy-native-snvoxc3k/data/pg_hba.conf:119)
+2026-10-18 22:43:29.837 MSK [3334327] LOG:  connection authorized: user=native_control database=native_legacy_user_languages_1018
+2026-10-18 22:43:29.842 MSK [3334327] LOG:  disconnection: session time: 0:00:00.006 user=native_control database=native_legacy_user_languages_1018 host=127.0.0.1 port=47644
+2026-10-18 22:43:29.843 MSK [3334328] LOG:  connection received: host=127.0.0.1 port=47650
+2026-10-18 22:43:29.844 MSK [3334328] LOG:  connection authenticated: user="native_control" method=trust (/home/kan/Документы/develop/open-bsl/target/language-legacy-native-snvoxc3k/data/pg_hba.conf:119)
+2026-10-18 22:43:29.844 MSK [3334328] LOG:  connection authorized: user=native_control database=native_legacy_user_languages_1018
+2026-10-18 22:43:30.598 MSK [3334624] LOG:  connection received: host=127.0.0.1 port=47654
+2026-10-18 22:43:30.598 MSK [3334624] LOG:  connection authenticated: user="native_control" method=trust (/home/kan/Документы/develop/open-bsl/target/language-legacy-native-snvoxc3k/data/pg_hba.conf:119)
+2026-10-18 22:43:30.598 MSK [3334624] LOG:  connection authorized: user=native_control database=native_legacy_user_languages_1018
+2026-10-18 22:43:30.601 MSK [3334625] LOG:  connection received: host=127.0.0.1 port=47658
+2026-10-18 22:43:30.602 MSK [3334625] LOG:  connection authenticated: user="native_control" method=trust (/home/kan/Документы/develop/open-bsl/target/language-legacy-native-snvoxc3k/data/pg_hba.conf:119)
+2026-10-18 22:43:30.602 MSK [3334625] LOG:  connection authorized: user=native_control database=native_legacy_user_languages_1018
+2026-10-18 22:43:30.604 MSK [3334626] LOG:  connection received: host=127.0.0.1 port=47666
+2026-10-18 22:43:30.605 MSK [3334626] LOG:  connection authenticated: user="native_control" method=trust (/home/kan/Документы/develop/open-bsl/target/language-legacy-native-snvoxc3k/data/pg_hba.conf:119)
+2026-10-18 22:43:30.605 MSK [3334626] LOG:  connection authorized: user=native_control database=native_legacy_user_languages_1018
+2026-10-18 22:43:30.607 MSK [3334627] LOG:  connection received: host=127.0.0.1 port=47668
+2026-10-18 22:43:30.608 MSK [3334627] LOG:  connection authenticated: user="native_control" method=trust (/home/kan/Документы/develop/open-bsl/target/language-legacy-native-snvoxc3k/data/pg_hba.conf:119)
+2026-10-18 22:43:30.608 MSK [3334627] LOG:  connection authorized: user=native_control database=native_legacy_user_languages_1018
+2026-10-18 22:43:30.610 MSK [3334628] LOG:  connection received: host=127.0.0.1 port=47682
+2026-10-18 22:43:30.611 MSK [3334628] LOG:  connection authenticated: user="native_control" method=trust (/home/kan/Документы/develop/open-bsl/target/language-legacy-native-snvoxc3k/data/pg_hba.conf:119)
+2026-10-18 22:43:30.611 MSK [3334628] LOG:  connection authorized: user=native_control database=native_legacy_user_languages_1018
+2026-10-18 22:43:30.613 MSK [3334629] LOG:  connection received: host=127.0.0.1 port=47698
+2026-10-18 22:43:30.614 MSK [3334629] LOG:  connection authenticated: user="native_control" method=trust (/home/kan/Документы/develop/open-bsl/target/language-legacy-native-snvoxc3k/data/pg_hba.conf:119)
+2026-10-18 22:43:30.614 MSK [3334629] LOG:  connection authorized: user=native_control database=native_legacy_user_languages_1018
+2026-10-18 22:43:30.616 MSK [3334630] LOG:  connection received: host=127.0.0.1 port=47714
+2026-10-18 22:43:30.616 MSK [3334630] LOG:  connection authenticated: user="native_control" method=trust (/home/kan/Документы/develop/open-bsl/target/language-legacy-native-snvoxc3k/data/pg_hba.conf:119)
+2026-10-18 22:43:30.616 MSK [3334630] LOG:  connection authorized: user=native_control database=native_legacy_user_languages_1018
+2026-10-18 22:43:30.619 MSK [3334631] LOG:  connection received: host=127.0.0.1 port=47724
+2026-10-18 22:43:30.619 MSK [3334631] LOG:  connection authenticated: user="native_control" method=trust (/home/kan/Документы/develop/open-bsl/target/language-legacy-native-snvoxc3k/data/pg_hba.conf:119)
+2026-10-18 22:43:30.619 MSK [3334631] LOG:  connection authorized: user=native_control database=native_legacy_user_languages_1018
+2026-10-18 22:43:30.622 MSK [3334632] LOG:  connection received: host=127.0.0.1 port=47726
+2026-10-18 22:43:30.623 MSK [3334632] LOG:  connection authenticated: user="native_control" method=trust (/home/kan/Документы/develop/open-bsl/target/language-legacy-native-snvoxc3k/data/pg_hba.conf:119)
+2026-10-18 22:43:30.623 MSK [3334632] LOG:  connection authorized: user=native_control database=native_legacy_user_languages_1018
+2026-10-18 22:43:30.625 MSK [3334633] LOG:  connection received: host=127.0.0.1 port=47730
+2026-10-18 22:43:30.626 MSK [3334633] LOG:  connection authenticated: user="native_control" method=trust (/home/kan/Документы/develop/open-bsl/target/language-legacy-native-snvoxc3k/data/pg_hba.conf:119)
+2026-10-18 22:43:30.626 MSK [3334633] LOG:  connection authorized: user=native_control database=native_legacy_user_languages_1018
+2026-10-18 22:43:30.628 MSK [3334634] LOG:  connection received: host=127.0.0.1 port=47744
+2026-10-18 22:43:30.628 MSK [3334634] LOG:  connection authenticated: user="native_control" method=trust (/home/kan/Документы/develop/open-bsl/target/language-legacy-native-snvoxc3k/data/pg_hba.conf:119)
+2026-10-18 22:43:30.628 MSK [3334634] LOG:  connection authorized: user=native_control database=native_legacy_user_languages_1018
+2026-10-18 22:43:30.631 MSK [3334635] LOG:  connection received: host=127.0.0.1 port=47760
+2026-10-18 22:43:30.631 MSK [3334635] LOG:  connection authenticated: user="native_control" method=trust (/home/kan/Документы/develop/open-bsl/target/language-legacy-native-snvoxc3k/data/pg_hba.conf:119)
+2026-10-18 22:43:30.631 MSK [3334635] LOG:  connection authorized: user=native_control database=native_legacy_user_languages_1018
+2026-10-18 22:43:30.633 MSK [3334636] LOG:  connection received: host=127.0.0.1 port=47774
+2026-10-18 22:43:30.634 MSK [3334636] LOG:  connection authenticated: user="native_control" method=trust (/home/kan/Документы/develop/open-bsl/target/language-legacy-native-snvoxc3k/data/pg_hba.conf:119)
+2026-10-18 22:43:30.634 MSK [3334636] LOG:  connection authorized: user=native_control database=native_legacy_user_languages_1018
+2026-10-18 22:43:37.313 MSK [3334627] LOG:  disconnection: session time: 0:00:06.705 user=native_control database=native_legacy_user_languages_1018 host=127.0.0.1 port=47668
+2026-10-18 22:43:37.313 MSK [3334629] LOG:  disconnection: session time: 0:00:06.699 user=native_control database=native_legacy_user_languages_1018 host=127.0.0.1 port=47698
+2026-10-18 22:43:37.313 MSK [3334631] LOG:  disconnection: session time: 0:00:06.694 user=native_control database=native_legacy_user_languages_1018 host=127.0.0.1 port=47724
+2026-10-18 22:43:37.313 MSK [3334633] LOG:  disconnection: session time: 0:00:06.687 user=native_control database=native_legacy_user_languages_1018 host=127.0.0.1 port=47730
+2026-10-18 22:43:37.313 MSK [3334632] LOG:  disconnection: session time: 0:00:06.690 user=native_control database=native_legacy_user_languages_1018 host=127.0.0.1 port=47726
+2026-10-18 22:43:37.313 MSK [3334630] LOG:  disconnection: session time: 0:00:06.697 user=native_control database=native_legacy_user_languages_1018 host=127.0.0.1 port=47714
+2026-10-18 22:43:37.313 MSK [3334636] LOG:  disconnection: session time: 0:00:06.679 user=native_control database=native_legacy_user_languages_1018 host=127.0.0.1 port=47774
+2026-10-18 22:43:37.313 MSK [3334634] LOG:  disconnection: session time: 0:00:06.684 user=native_control database=native_legacy_user_languages_1018 host=127.0.0.1 port=47744
+2026-10-18 22:43:37.313 MSK [3334328] LOG:  disconnection: session time: 0:00:07.469 user=native_control database=native_legacy_user_languages_1018 host=127.0.0.1 port=47650
+2026-10-18 22:43:37.313 MSK [3334625] LOG:  disconnection: session time: 0:00:06.712 user=native_control database=native_legacy_user_languages_1018 host=127.0.0.1 port=47658
+2026-10-18 22:43:37.313 MSK [3334635] LOG:  disconnection: session time: 0:00:06.682 user=native_control database=native_legacy_user_languages_1018 host=127.0.0.1 port=47760
+2026-10-18 22:43:37.313 MSK [3334626] LOG:  disconnection: session time: 0:00:06.709 user=native_control database=native_legacy_user_languages_1018 host=127.0.0.1 port=47666
+2026-10-18 22:43:37.315 MSK [3334628] LOG:  disconnection: session time: 0:00:06.705 user=native_control database=native_legacy_user_languages_1018 host=127.0.0.1 port=47682
+2026-10-18 22:43:37.315 MSK [3334624] LOG:  disconnection: session time: 0:00:06.717 user=native_control database=native_legacy_user_languages_1018 host=127.0.0.1 port=47654
+2026-10-18 22:43:47.106 MSK [3335053] LOG:  connection received: host=127.0.0.1 port=58858
+2026-10-18 22:43:47.107 MSK [3335053] LOG:  connection authenticated: user="native_control" method=trust (/home/kan/Документы/develop/open-bsl/target/language-legacy-native-snvoxc3k/data/pg_hba.conf:119)
+2026-10-18 22:43:47.107 MSK [3335053] LOG:  connection authorized: user=native_control database=native_legacy_user_languages_1018
+2026-10-18 22:43:47.110 MSK [3333881] LOG:  disconnection: session time: 0:00:17.807 user=native_control database=native_legacy_user_languages_1018 host=127.0.0.1 port=52244
+2026-10-18 22:43:47.117 MSK [3335054] LOG:  connection received: host=127.0.0.1 port=58862
+2026-10-18 22:43:47.118 MSK [3335054] LOG:  connection authenticated: user="native_control" method=trust (/home/kan/Документы/develop/open-bsl/target/language-legacy-native-snvoxc3k/data/pg_hba.conf:119)
+2026-10-18 22:43:47.118 MSK [3335054] LOG:  connection authorized: user=native_control database=native_legacy_user_languages_1018
+2026-10-18 22:43:47.119 MSK [3335053] LOG:  disconnection: session time: 0:00:00.013 user=native_control database=native_legacy_user_languages_1018 host=127.0.0.1 port=58858
+2026-10-18 22:43:47.631 MSK [3335513] LOG:  connection received: host=127.0.0.1 port=58876
+2026-10-18 22:43:47.631 MSK [3335513] LOG:  connection authenticated: user="native_control" method=trust (/home/kan/Документы/develop/open-bsl/target/language-legacy-native-snvoxc3k/data/pg_hba.conf:119)
+2026-10-18 22:43:47.631 MSK [3335513] LOG:  connection authorized: user=native_control database=native_legacy_user_languages_1018
+2026-10-18 22:43:47.634 MSK [3335513] LOG:  disconnection: session time: 0:00:00.003 user=native_control database=native_legacy_user_languages_1018 host=127.0.0.1 port=58876
+2026-10-18 22:43:47.635 MSK [3335515] LOG:  connection received: host=127.0.0.1 port=58892
+2026-10-18 22:43:47.635 MSK [3335515] LOG:  connection authenticated: user="native_control" method=trust (/home/kan/Документы/develop/open-bsl/target/language-legacy-native-snvoxc3k/data/pg_hba.conf:119)
+2026-10-18 22:43:47.635 MSK [3335515] LOG:  connection authorized: user=native_control database=native_legacy_user_languages_1018
+2026-10-18 22:43:47.641 MSK [3335515] LOG:  disconnection: session time: 0:00:00.006 user=native_control database=native_legacy_user_languages_1018 host=127.0.0.1 port=58892
+2026-10-18 22:43:47.642 MSK [3335522] LOG:  connection received: host=127.0.0.1 port=58896
+2026-10-18 22:43:47.643 MSK [3335522] LOG:  connection authenticated: user="native_control" method=trust (/home/kan/Документы/develop/open-bsl/target/language-legacy-native-snvoxc3k/data/pg_hba.conf:119)
+2026-10-18 22:43:47.643 MSK [3335522] LOG:  connection authorized: user=native_control database=native_legacy_user_languages_1018
+2026-10-18 22:43:48.383 MSK [3335800] LOG:  connection received: host=127.0.0.1 port=58904
+2026-10-18 22:43:48.384 MSK [3335800] LOG:  connection authenticated: user="native_control" method=trust (/home/kan/Документы/develop/open-bsl/target/language-legacy-native-snvoxc3k/data/pg_hba.conf:119)
+2026-10-18 22:43:48.384 MSK [3335800] LOG:  connection authorized: user=native_control database=native_legacy_user_languages_1018
+2026-10-18 22:43:48.386 MSK [3335801] LOG:  connection received: host=127.0.0.1 port=58912
+2026-10-18 22:43:48.387 MSK [3335801] LOG:  connection authenticated: user="native_control" method=trust (/home/kan/Документы/develop/open-bsl/target/language-legacy-native-snvoxc3k/data/pg_hba.conf:119)
+2026-10-18 22:43:48.387 MSK [3335801] LOG:  connection authorized: user=native_control database=native_legacy_user_languages_1018
+2026-10-18 22:43:48.389 MSK [3335802] LOG:  connection received: host=127.0.0.1 port=58924
+2026-10-18 22:43:48.390 MSK [3335802] LOG:  connection authenticated: user="native_control" method=trust (/home/kan/Документы/develop/open-bsl/target/language-legacy-native-snvoxc3k/data/pg_hba.conf:119)
+2026-10-18 22:43:48.390 MSK [3335802] LOG:  connection authorized: user=native_control database=native_legacy_user_languages_1018
+2026-10-18 22:43:48.392 MSK [3335803] LOG:  connection received: host=127.0.0.1 port=58938
+2026-10-18 22:43:48.392 MSK [3335803] LOG:  connection authenticated: user="native_control" method=trust (/home/kan/Документы/develop/open-bsl/target/language-legacy-native-snvoxc3k/data/pg_hba.conf:119)
+2026-10-18 22:43:48.392 MSK [3335803] LOG:  connection authorized: user=native_control database=native_legacy_user_languages_1018
+2026-10-18 22:43:48.395 MSK [3335804] LOG:  connection received: host=127.0.0.1 port=58950
+2026-10-18 22:43:48.395 MSK [3335804] LOG:  connection authenticated: user="native_control" method=trust (/home/kan/Документы/develop/open-bsl/target/language-legacy-native-snvoxc3k/data/pg_hba.conf:119)
+2026-10-18 22:43:48.395 MSK [3335804] LOG:  connection authorized: user=native_control database=native_legacy_user_languages_1018
+2026-10-18 22:43:48.397 MSK [3335805] LOG:  connection received: host=127.0.0.1 port=58962
+2026-10-18 22:43:48.398 MSK [3335805] LOG:  connection authenticated: user="native_control" method=trust (/home/kan/Документы/develop/open-bsl/target/language-legacy-native-snvoxc3k/data/pg_hba.conf:119)
+2026-10-18 22:43:48.398 MSK [3335805] LOG:  connection authorized: user=native_control database=native_legacy_user_languages_1018
+2026-10-18 22:43:48.400 MSK [3335806] LOG:  connection received: host=127.0.0.1 port=58966
+2026-10-18 22:43:48.401 MSK [3335806] LOG:  connection authenticated: user="native_control" method=trust (/home/kan/Документы/develop/open-bsl/target/language-legacy-native-snvoxc3k/data/pg_hba.conf:119)
+2026-10-18 22:43:48.401 MSK [3335806] LOG:  connection authorized: user=native_control database=native_legacy_user_languages_1018
+2026-10-18 22:43:48.403 MSK [3335807] LOG:  connection received: host=127.0.0.1 port=58978
+2026-10-18 22:43:48.404 MSK [3335807] LOG:  connection authenticated: user="native_control" method=trust (/home/kan/Документы/develop/open-bsl/target/language-legacy-native-snvoxc3k/data/pg_hba.conf:119)
+2026-10-18 22:43:48.404 MSK [3335807] LOG:  connection authorized: user=native_control database=native_legacy_user_languages_1018
+2026-10-18 22:43:48.407 MSK [3335808] LOG:  connection received: host=127.0.0.1 port=58984
+2026-10-18 22:43:48.407 MSK [3335808] LOG:  connection authenticated: user="native_control" method=trust (/home/kan/Документы/develop/open-bsl/target/language-legacy-native-snvoxc3k/data/pg_hba.conf:119)
+2026-10-18 22:43:48.407 MSK [3335808] LOG:  connection authorized: user=native_control database=native_legacy_user_languages_1018
+2026-10-18 22:43:48.410 MSK [3335809] LOG:  connection received: host=127.0.0.1 port=58992
+2026-10-18 22:43:48.410 MSK [3335809] LOG:  connection authenticated: user="native_control" method=trust (/home/kan/Документы/develop/open-bsl/target/language-legacy-native-snvoxc3k/data/pg_hba.conf:119)
+2026-10-18 22:43:48.410 MSK [3335809] LOG:  connection authorized: user=native_control database=native_legacy_user_languages_1018
+2026-10-18 22:43:48.412 MSK [3335810] LOG:  connection received: host=127.0.0.1 port=59004
+2026-10-18 22:43:48.413 MSK [3335810] LOG:  connection authenticated: user="native_control" method=trust (/home/kan/Документы/develop/open-bsl/target/language-legacy-native-snvoxc3k/data/pg_hba.conf:119)
+2026-10-18 22:43:48.413 MSK [3335810] LOG:  connection authorized: user=native_control database=native_legacy_user_languages_1018
+2026-10-18 22:43:48.416 MSK [3335812] LOG:  connection received: host=127.0.0.1 port=59010
+2026-10-18 22:43:48.416 MSK [3335812] LOG:  connection authenticated: user="native_control" method=trust (/home/kan/Документы/develop/open-bsl/target/language-legacy-native-snvoxc3k/data/pg_hba.conf:119)
+2026-10-18 22:43:48.416 MSK [3335812] LOG:  connection authorized: user=native_control database=native_legacy_user_languages_1018
+2026-10-18 22:43:48.418 MSK [3335813] LOG:  connection received: host=127.0.0.1 port=59024
+2026-10-18 22:43:48.419 MSK [3335813] LOG:  connection authenticated: user="native_control" method=trust (/home/kan/Документы/develop/open-bsl/target/language-legacy-native-snvoxc3k/data/pg_hba.conf:119)
+2026-10-18 22:43:48.419 MSK [3335813] LOG:  connection authorized: user=native_control database=native_legacy_user_languages_1018
+2026-10-18 22:43:48.421 MSK [3335814] LOG:  connection received: host=127.0.0.1 port=59030
+2026-10-18 22:43:48.422 MSK [3335814] LOG:  connection authenticated: user="native_control" method=trust (/home/kan/Документы/develop/open-bsl/target/language-legacy-native-snvoxc3k/data/pg_hba.conf:119)
+2026-10-18 22:43:48.422 MSK [3335814] LOG:  connection authorized: user=native_control database=native_legacy_user_languages_1018
+2026-10-18 22:43:55.106 MSK [3335809] LOG:  disconnection: session time: 0:00:06.696 user=native_control database=native_legacy_user_languages_1018 host=127.0.0.1 port=58992
+2026-10-18 22:43:55.106 MSK [3335805] LOG:  disconnection: session time: 0:00:06.708 user=native_control database=native_legacy_user_languages_1018 host=127.0.0.1 port=58962
+2026-10-18 22:43:55.106 MSK [3335808] LOG:  disconnection: session time: 0:00:06.699 user=native_control database=native_legacy_user_languages_1018 host=127.0.0.1 port=58984
+2026-10-18 22:43:55.106 MSK [3335812] LOG:  disconnection: session time: 0:00:06.690 user=native_control database=native_legacy_user_languages_1018 host=127.0.0.1 port=59010
+2026-10-18 22:43:55.106 MSK [3335813] LOG:  disconnection: session time: 0:00:06.687 user=native_control database=native_legacy_user_languages_1018 host=127.0.0.1 port=59024
+2026-10-18 22:43:55.106 MSK [3335810] LOG:  disconnection: session time: 0:00:06.693 user=native_control database=native_legacy_user_languages_1018 host=127.0.0.1 port=59004
+2026-10-18 22:43:55.106 MSK [3335800] LOG:  disconnection: session time: 0:00:06.723 user=native_control database=native_legacy_user_languages_1018 host=127.0.0.1 port=58904
+2026-10-18 22:43:55.106 MSK [3335814] LOG:  disconnection: session time: 0:00:06.684 user=native_control database=native_legacy_user_languages_1018 host=127.0.0.1 port=59030
+2026-10-18 22:43:55.106 MSK [3335522] LOG:  disconnection: session time: 0:00:07.464 user=native_control database=native_legacy_user_languages_1018 host=127.0.0.1 port=58896
+2026-10-18 22:43:55.106 MSK [3335802] LOG:  disconnection: session time: 0:00:06.716 user=native_control database=native_legacy_user_languages_1018 host=127.0.0.1 port=58924
+2026-10-18 22:43:55.106 MSK [3335801] LOG:  disconnection: session time: 0:00:06.720 user=native_control database=native_legacy_user_languages_1018 host=127.0.0.1 port=58912
+2026-10-18 22:43:55.106 MSK [3335803] LOG:  disconnection: session time: 0:00:06.714 user=native_control database=native_legacy_user_languages_1018 host=127.0.0.1 port=58938
+2026-10-18 22:43:55.106 MSK [3335806] LOG:  disconnection: session time: 0:00:06.705 user=native_control database=native_legacy_user_languages_1018 host=127.0.0.1 port=58966
+2026-10-18 22:43:55.106 MSK [3335804] LOG:  disconnection: session time: 0:00:06.711 user=native_control database=native_legacy_user_languages_1018 host=127.0.0.1 port=58950
+2026-10-18 22:43:55.107 MSK [3335807] LOG:  disconnection: session time: 0:00:06.703 user=native_control database=native_legacy_user_languages_1018 host=127.0.0.1 port=58978
+2026-10-18 22:44:04.766 MSK [3336262] LOG:  connection received: host=127.0.0.1 port=42506
+2026-10-18 22:44:04.767 MSK [3336262] LOG:  connection authenticated: user="native_control" method=trust (/home/kan/Документы/develop/open-bsl/target/language-legacy-native-snvoxc3k/data/pg_hba.conf:119)
+2026-10-18 22:44:04.767 MSK [3336262] LOG:  connection authorized: user=native_control database=native_legacy_user_languages_1018
+2026-10-18 22:44:04.770 MSK [3335054] LOG:  disconnection: session time: 0:00:17.653 user=native_control database=native_legacy_user_languages_1018 host=127.0.0.1 port=58862
+2026-10-18 22:44:04.777 MSK [3336263] LOG:  connection received: host=127.0.0.1 port=42522
+2026-10-18 22:44:04.778 MSK [3336263] LOG:  connection authenticated: user="native_control" method=trust (/home/kan/Документы/develop/open-bsl/target/language-legacy-native-snvoxc3k/data/pg_hba.conf:119)
+2026-10-18 22:44:04.778 MSK [3336263] LOG:  connection authorized: user=native_control database=native_legacy_user_languages_1018
+2026-10-18 22:44:04.779 MSK [3336262] LOG:  disconnection: session time: 0:00:00.013 user=native_control database=native_legacy_user_languages_1018 host=127.0.0.1 port=42506
+2026-10-18 22:44:04.786 MSK [3332235] LOG:  received fast shutdown request
+2026-10-18 22:44:04.787 MSK [3332235] LOG:  aborting any active transactions
+2026-10-18 22:44:04.787 MSK [3336263] FATAL:  terminating connection due to administrator command
+2026-10-18 22:44:04.787 MSK [3336263] LOG:  disconnection: session time: 0:00:00.009 user=native_control database=native_legacy_user_languages_1018 host=127.0.0.1 port=42522
+2026-10-18 22:44:04.788 MSK [3332235] LOG:  background worker "logical replication launcher" (PID 3332246) exited with exit code 1
+2026-10-18 22:44:04.788 MSK [3332236] LOG:  shutting down
+2026-10-18 22:44:04.788 MSK [3332236] LOG:  checkpoint starting: shutdown immediate
+2026-10-18 22:44:04.800 MSK [3332236] LOG:  checkpoint complete: wrote 814 buffers (39.7%), wrote 4 SLRU buffers; 0 WAL file(s) added, 0 removed, 0 recycled; write=0.005 s, sync=0.001 s, total=0.012 s; sync files=0, longest=0.000 s, average=0.000 s; distance=8211 kB, estimate=8211 kB; lsn=0/1D05CF0, redo lsn=0/1D05CF0
+2026-10-18 22:44:04.808 MSK [3332235] LOG:  database system is shut down

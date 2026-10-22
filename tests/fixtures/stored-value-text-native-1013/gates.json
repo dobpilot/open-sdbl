@@ -1,0 +1,24 @@
+{
+  "base": "3ff9202fac92b77ee3ee3db3e307179df7a9874c",
+  "workspace_tests": {
+    "exit": 0,
+    "passed": 944,
+    "failed": 0,
+    "ignored": 13,
+    "log": "/tmp/sdbl-stored-value-text-workspace-tests.log"
+  },
+  "focused_new_tests": {
+    "exit": 0,
+    "passed": 5
+  },
+  "fmt": 0,
+  "clippy_workspace_all_targets": 0,
+  "rustdoc_warnings_denied": 0,
+  "openspec_all_strict": {
+    "exit": 0,
+    "passed": 12
+  },
+  "red_receipt": "red-api-receipt.log",
+  "native_positive_ten_byte_envelope": "NOT MEASURED",
+  "native_distinct_0201_negative": true
+}

@@ -1,0 +1,873 @@
+{
+  "platform": "8.3.27.2342",
+  "compatibility": "Version8_3_27",
+  "script_variant": "English",
+  "actor": "RootProbeDeny",
+  "effective_privileged": false,
+  "rows": [
+    {
+      "profile": "both-refuse-child",
+      "probe": "verify.Read.undefined",
+      "native_value": "allowed",
+      "category": "allowed",
+      "oracle": "both-refuse-child/deny.oracle",
+      "oracle_sha256": "869cc728fc73c61f3d3cc99e9f35ae3d961b7b6eb93b17785b6d1dacc126a3c9"
+    },
+    {
+      "profile": "both-refuse-child",
+      "probe": "access.Read.undefined",
+      "native_value": "allowed",
+      "category": "allowed",
+      "oracle": "both-refuse-child/deny.oracle",
+      "oracle_sha256": "869cc728fc73c61f3d3cc99e9f35ae3d961b7b6eb93b17785b6d1dacc126a3c9"
+    },
+    {
+      "profile": "both-refuse-child",
+      "probe": "verify.Read.empty",
+      "native_value": "error:{DataProcessor.Замеры.Form.Форма.Form(49)}: Error calling context method (VerifyAccessRights): Invalid parameter value (parameter number '3')",
+      "category": "invalid_standard_path",
+      "oracle": "both-refuse-child/deny.oracle",
+      "oracle_sha256": "869cc728fc73c61f3d3cc99e9f35ae3d961b7b6eb93b17785b6d1dacc126a3c9"
+    },
+    {
+      "profile": "both-refuse-child",
+      "probe": "access.Read.empty",
+      "native_value": "error:{DataProcessor.Замеры.Form.Форма.Form(52)}: Error calling context method (AccessRight): Invalid parameter value (parameter number '4')",
+      "category": "invalid_standard_path",
+      "oracle": "both-refuse-child/deny.oracle",
+      "oracle_sha256": "869cc728fc73c61f3d3cc99e9f35ae3d961b7b6eb93b17785b6d1dacc126a3c9"
+    },
+    {
+      "profile": "both-refuse-child",
+      "probe": "verify.Read.Код",
+      "native_value": "allowed",
+      "category": "allowed",
+      "oracle": "both-refuse-child/deny.oracle",
+      "oracle_sha256": "869cc728fc73c61f3d3cc99e9f35ae3d961b7b6eb93b17785b6d1dacc126a3c9"
+    },
+    {
+      "profile": "both-refuse-child",
+      "probe": "access.Read.Код",
+      "native_value": "error:{DataProcessor.Замеры.Form.Форма.Form(52)}: Error calling context method (AccessRight): Cannot apply the Read right to Catalog.ВладелецПробы",
+      "category": "not_applicable",
+      "oracle": "both-refuse-child/deny.oracle",
+      "oracle_sha256": "869cc728fc73c61f3d3cc99e9f35ae3d961b7b6eb93b17785b6d1dacc126a3c9"
+    },
+    {
+      "profile": "both-refuse-child",
+      "probe": "verify.Read.Code",
+      "native_value": "allowed",
+      "category": "allowed",
+      "oracle": "both-refuse-child/deny.oracle",
+      "oracle_sha256": "869cc728fc73c61f3d3cc99e9f35ae3d961b7b6eb93b17785b6d1dacc126a3c9"
+    },
+    {
+      "profile": "both-refuse-child",
+      "probe": "access.Read.Code",
+      "native_value": "error:{DataProcessor.Замеры.Form.Форма.Form(52)}: Error calling context method (AccessRight): Cannot apply the Read right to Catalog.ВладелецПробы",
+      "category": "not_applicable",
+      "oracle": "both-refuse-child/deny.oracle",
+      "oracle_sha256": "869cc728fc73c61f3d3cc99e9f35ae3d961b7b6eb93b17785b6d1dacc126a3c9"
+    },
+    {
+      "profile": "both-refuse-child",
+      "probe": "verify.Read.Description",
+      "native_value": "allowed",
+      "category": "allowed",
+      "oracle": "both-refuse-child/deny.oracle",
+      "oracle_sha256": "869cc728fc73c61f3d3cc99e9f35ae3d961b7b6eb93b17785b6d1dacc126a3c9"
+    },
+    {
+      "profile": "both-refuse-child",
+      "probe": "access.Read.Description",
+      "native_value": "error:{DataProcessor.Замеры.Form.Форма.Form(52)}: Error calling context method (AccessRight): Cannot apply the Read right to Catalog.ВладелецПробы",
+      "category": "not_applicable",
+      "oracle": "both-refuse-child/deny.oracle",
+      "oracle_sha256": "869cc728fc73c61f3d3cc99e9f35ae3d961b7b6eb93b17785b6d1dacc126a3c9"
+    },
+    {
+      "profile": "both-refuse-child",
+      "probe": "verify.Read.Наименование",
+      "native_value": "allowed",
+      "category": "allowed",
+      "oracle": "both-refuse-child/deny.oracle",
+      "oracle_sha256": "869cc728fc73c61f3d3cc99e9f35ae3d961b7b6eb93b17785b6d1dacc126a3c9"
+    },
+    {
+      "profile": "both-refuse-child",
+      "probe": "access.Read.Наименование",
+      "native_value": "error:{DataProcessor.Замеры.Form.Форма.Form(52)}: Error calling context method (AccessRight): Cannot apply the Read right to Catalog.ВладелецПробы",
+      "category": "not_applicable",
+      "oracle": "both-refuse-child/deny.oracle",
+      "oracle_sha256": "869cc728fc73c61f3d3cc99e9f35ae3d961b7b6eb93b17785b6d1dacc126a3c9"
+    },
+    {
+      "profile": "both-refuse-child",
+      "probe": "verify.Read.cOdE",
+      "native_value": "allowed",
+      "category": "allowed",
+      "oracle": "both-refuse-child/deny.oracle",
+      "oracle_sha256": "869cc728fc73c61f3d3cc99e9f35ae3d961b7b6eb93b17785b6d1dacc126a3c9"
+    },
+    {
+      "profile": "both-refuse-child",
+      "probe": "access.Read.cOdE",
+      "native_value": "error:{DataProcessor.Замеры.Form.Форма.Form(52)}: Error calling context method (AccessRight): Cannot apply the Read right to Catalog.ВладелецПробы",
+      "category": "not_applicable",
+      "oracle": "both-refuse-child/deny.oracle",
+      "oracle_sha256": "869cc728fc73c61f3d3cc99e9f35ae3d961b7b6eb93b17785b6d1dacc126a3c9"
+    },
+    {
+      "profile": "both-refuse-child",
+      "probe": "verify.Read.код",
+      "native_value": "allowed",
+      "category": "allowed",
+      "oracle": "both-refuse-child/deny.oracle",
+      "oracle_sha256": "869cc728fc73c61f3d3cc99e9f35ae3d961b7b6eb93b17785b6d1dacc126a3c9"
+    },
+    {
+      "profile": "both-refuse-child",
+      "probe": "access.Read.код",
+      "native_value": "error:{DataProcessor.Замеры.Form.Форма.Form(52)}: Error calling context method (AccessRight): Cannot apply the Read right to Catalog.ВладелецПробы",
+      "category": "not_applicable",
+      "oracle": "both-refuse-child/deny.oracle",
+      "oracle_sha256": "869cc728fc73c61f3d3cc99e9f35ae3d961b7b6eb93b17785b6d1dacc126a3c9"
+    },
+    {
+      "profile": "both-refuse-child",
+      "probe": "verify.Read.НеСуществует",
+      "native_value": "error:{DataProcessor.Замеры.Form.Форма.Form(49)}: Error calling context method (VerifyAccessRights): Invalid parameter value (parameter number '3') (НеСуществует)",
+      "category": "invalid_standard_path",
+      "oracle": "both-refuse-child/deny.oracle",
+      "oracle_sha256": "869cc728fc73c61f3d3cc99e9f35ae3d961b7b6eb93b17785b6d1dacc126a3c9"
+    },
+    {
+      "profile": "both-refuse-child",
+      "probe": "access.Read.НеСуществует",
+      "native_value": "error:{DataProcessor.Замеры.Form.Форма.Form(52)}: Error calling context method (AccessRight): Invalid parameter value (parameter number '4') (НеСуществует)",
+      "category": "invalid_standard_path",
+      "oracle": "both-refuse-child/deny.oracle",
+      "oracle_sha256": "869cc728fc73c61f3d3cc99e9f35ae3d961b7b6eb93b17785b6d1dacc126a3c9"
+    },
+    {
+      "profile": "both-refuse-child",
+      "probe": "verify.View.undefined",
+      "native_value": "allowed",
+      "category": "allowed",
+      "oracle": "both-refuse-child/deny.oracle",
+      "oracle_sha256": "869cc728fc73c61f3d3cc99e9f35ae3d961b7b6eb93b17785b6d1dacc126a3c9"
+    },
+    {
+      "profile": "both-refuse-child",
+      "probe": "access.View.undefined",
+      "native_value": "allowed",
+      "category": "allowed",
+      "oracle": "both-refuse-child/deny.oracle",
+      "oracle_sha256": "869cc728fc73c61f3d3cc99e9f35ae3d961b7b6eb93b17785b6d1dacc126a3c9"
+    },
+    {
+      "profile": "both-refuse-child",
+      "probe": "verify.View.empty",
+      "native_value": "error:{DataProcessor.Замеры.Form.Форма.Form(49)}: Error calling context method (VerifyAccessRights): Invalid parameter value (parameter number '3')",
+      "category": "invalid_standard_path",
+      "oracle": "both-refuse-child/deny.oracle",
+      "oracle_sha256": "869cc728fc73c61f3d3cc99e9f35ae3d961b7b6eb93b17785b6d1dacc126a3c9"
+    },
+    {
+      "profile": "both-refuse-child",
+      "probe": "access.View.empty",
+      "native_value": "error:{DataProcessor.Замеры.Form.Форма.Form(52)}: Error calling context method (AccessRight): Invalid parameter value (parameter number '4')",
+      "category": "invalid_standard_path",
+      "oracle": "both-refuse-child/deny.oracle",
+      "oracle_sha256": "869cc728fc73c61f3d3cc99e9f35ae3d961b7b6eb93b17785b6d1dacc126a3c9"
+    },
+    {
+      "profile": "both-refuse-child",
+      "probe": "verify.View.Код",
+      "native_value": "error:{DataProcessor.Замеры.Form.Форма.Form(49)}: Error calling context method (VerifyAccessRights): Access violation!",
+      "category": "denied",
+      "oracle": "both-refuse-child/deny.oracle",
+      "oracle_sha256": "869cc728fc73c61f3d3cc99e9f35ae3d961b7b6eb93b17785b6d1dacc126a3c9"
+    },
+    {
+      "profile": "both-refuse-child",
+      "probe": "access.View.Код",
+      "native_value": "denied",
+      "category": "denied",
+      "oracle": "both-refuse-child/deny.oracle",
+      "oracle_sha256": "869cc728fc73c61f3d3cc99e9f35ae3d961b7b6eb93b17785b6d1dacc126a3c9"
+    },
+    {
+      "profile": "both-refuse-child",
+      "probe": "verify.View.Code",
+      "native_value": "error:{DataProcessor.Замеры.Form.Форма.Form(49)}: Error calling context method (VerifyAccessRights): Access violation!",
+      "category": "denied",
+      "oracle": "both-refuse-child/deny.oracle",
+      "oracle_sha256": "869cc728fc73c61f3d3cc99e9f35ae3d961b7b6eb93b17785b6d1dacc126a3c9"
+    },
+    {
+      "profile": "both-refuse-child",
+      "probe": "access.View.Code",
+      "native_value": "denied",
+      "category": "denied",
+      "oracle": "both-refuse-child/deny.oracle",
+      "oracle_sha256": "869cc728fc73c61f3d3cc99e9f35ae3d961b7b6eb93b17785b6d1dacc126a3c9"
+    },
+    {
+      "profile": "both-refuse-child",
+      "probe": "verify.View.Description",
+      "native_value": "error:{DataProcessor.Замеры.Form.Форма.Form(49)}: Error calling context method (VerifyAccessRights): Access violation!",
+      "category": "denied",
+      "oracle": "both-refuse-child/deny.oracle",
+      "oracle_sha256": "869cc728fc73c61f3d3cc99e9f35ae3d961b7b6eb93b17785b6d1dacc126a3c9"
+    },
+    {
+      "profile": "both-refuse-child",
+      "probe": "access.View.Description",
+      "native_value": "denied",
+      "category": "denied",
+      "oracle": "both-refuse-child/deny.oracle",
+      "oracle_sha256": "869cc728fc73c61f3d3cc99e9f35ae3d961b7b6eb93b17785b6d1dacc126a3c9"
+    },
+    {
+      "profile": "both-refuse-child",
+      "probe": "verify.View.Наименование",
+      "native_value": "error:{DataProcessor.Замеры.Form.Форма.Form(49)}: Error calling context method (VerifyAccessRights): Access violation!",
+      "category": "denied",
+      "oracle": "both-refuse-child/deny.oracle",
+      "oracle_sha256": "869cc728fc73c61f3d3cc99e9f35ae3d961b7b6eb93b17785b6d1dacc126a3c9"
+    },
+    {
+      "profile": "both-refuse-child",
+      "probe": "access.View.Наименование",
+      "native_value": "denied",
+      "category": "denied",
+      "oracle": "both-refuse-child/deny.oracle",
+      "oracle_sha256": "869cc728fc73c61f3d3cc99e9f35ae3d961b7b6eb93b17785b6d1dacc126a3c9"
+    },
+    {
+      "profile": "both-refuse-child",
+      "probe": "verify.View.cOdE",
+      "native_value": "error:{DataProcessor.Замеры.Form.Форма.Form(49)}: Error calling context method (VerifyAccessRights): Access violation!",
+      "category": "denied",
+      "oracle": "both-refuse-child/deny.oracle",
+      "oracle_sha256": "869cc728fc73c61f3d3cc99e9f35ae3d961b7b6eb93b17785b6d1dacc126a3c9"
+    },
+    {
+      "profile": "both-refuse-child",
+      "probe": "access.View.cOdE",
+      "native_value": "denied",
+      "category": "denied",
+      "oracle": "both-refuse-child/deny.oracle",
+      "oracle_sha256": "869cc728fc73c61f3d3cc99e9f35ae3d961b7b6eb93b17785b6d1dacc126a3c9"
+    },
+    {
+      "profile": "both-refuse-child",
+      "probe": "verify.View.код",
+      "native_value": "error:{DataProcessor.Замеры.Form.Форма.Form(49)}: Error calling context method (VerifyAccessRights): Access violation!",
+      "category": "denied",
+      "oracle": "both-refuse-child/deny.oracle",
+      "oracle_sha256": "869cc728fc73c61f3d3cc99e9f35ae3d961b7b6eb93b17785b6d1dacc126a3c9"
+    },
+    {
+      "profile": "both-refuse-child",
+      "probe": "access.View.код",
+      "native_value": "denied",
+      "category": "denied",
+      "oracle": "both-refuse-child/deny.oracle",
+      "oracle_sha256": "869cc728fc73c61f3d3cc99e9f35ae3d961b7b6eb93b17785b6d1dacc126a3c9"
+    },
+    {
+      "profile": "both-refuse-child",
+      "probe": "verify.View.НеСуществует",
+      "native_value": "error:{DataProcessor.Замеры.Form.Форма.Form(49)}: Error calling context method (VerifyAccessRights): Invalid parameter value (parameter number '3') (НеСуществует)",
+      "category": "invalid_standard_path",
+      "oracle": "both-refuse-child/deny.oracle",
+      "oracle_sha256": "869cc728fc73c61f3d3cc99e9f35ae3d961b7b6eb93b17785b6d1dacc126a3c9"
+    },
+    {
+      "profile": "both-refuse-child",
+      "probe": "access.View.НеСуществует",
+      "native_value": "error:{DataProcessor.Замеры.Form.Форма.Form(52)}: Error calling context method (AccessRight): Invalid parameter value (parameter number '4') (НеСуществует)",
+      "category": "invalid_standard_path",
+      "oracle": "both-refuse-child/deny.oracle",
+      "oracle_sha256": "869cc728fc73c61f3d3cc99e9f35ae3d961b7b6eb93b17785b6d1dacc126a3c9"
+    },
+    {
+      "profile": "second-role-complete",
+      "probe": "verify.Read.undefined",
+      "native_value": "allowed",
+      "category": "allowed",
+      "oracle": "second-role-complete/deny.oracle",
+      "oracle_sha256": "de0657fe04e8bab05e891ac24571754bc7596b9e9382afc4e24d919dacee4576"
+    },
+    {
+      "profile": "second-role-complete",
+      "probe": "access.Read.undefined",
+      "native_value": "allowed",
+      "category": "allowed",
+      "oracle": "second-role-complete/deny.oracle",
+      "oracle_sha256": "de0657fe04e8bab05e891ac24571754bc7596b9e9382afc4e24d919dacee4576"
+    },
+    {
+      "profile": "second-role-complete",
+      "probe": "verify.Read.empty",
+      "native_value": "error:{DataProcessor.Замеры.Form.Форма.Form(49)}: Error calling context method (VerifyAccessRights): Invalid parameter value (parameter number '3')",
+      "category": "invalid_standard_path",
+      "oracle": "second-role-complete/deny.oracle",
+      "oracle_sha256": "de0657fe04e8bab05e891ac24571754bc7596b9e9382afc4e24d919dacee4576"
+    },
+    {
+      "profile": "second-role-complete",
+      "probe": "access.Read.empty",
+      "native_value": "error:{DataProcessor.Замеры.Form.Форма.Form(52)}: Error calling context method (AccessRight): Invalid parameter value (parameter number '4')",
+      "category": "invalid_standard_path",
+      "oracle": "second-role-complete/deny.oracle",
+      "oracle_sha256": "de0657fe04e8bab05e891ac24571754bc7596b9e9382afc4e24d919dacee4576"
+    },
+    {
+      "profile": "second-role-complete",
+      "probe": "verify.Read.Код",
+      "native_value": "allowed",
+      "category": "allowed",
+      "oracle": "second-role-complete/deny.oracle",
+      "oracle_sha256": "de0657fe04e8bab05e891ac24571754bc7596b9e9382afc4e24d919dacee4576"
+    },
+    {
+      "profile": "second-role-complete",
+      "probe": "access.Read.Код",
+      "native_value": "error:{DataProcessor.Замеры.Form.Форма.Form(52)}: Error calling context method (AccessRight): Cannot apply the Read right to Catalog.ВладелецПробы",
+      "category": "not_applicable",
+      "oracle": "second-role-complete/deny.oracle",
+      "oracle_sha256": "de0657fe04e8bab05e891ac24571754bc7596b9e9382afc4e24d919dacee4576"
+    },
+    {
+      "profile": "second-role-complete",
+      "probe": "verify.Read.Code",
+      "native_value": "allowed",
+      "category": "allowed",
+      "oracle": "second-role-complete/deny.oracle",
+      "oracle_sha256": "de0657fe04e8bab05e891ac24571754bc7596b9e9382afc4e24d919dacee4576"
+    },
+    {
+      "profile": "second-role-complete",
+      "probe": "access.Read.Code",
+      "native_value": "error:{DataProcessor.Замеры.Form.Форма.Form(52)}: Error calling context method (AccessRight): Cannot apply the Read right to Catalog.ВладелецПробы",
+      "category": "not_applicable",
+      "oracle": "second-role-complete/deny.oracle",
+      "oracle_sha256": "de0657fe04e8bab05e891ac24571754bc7596b9e9382afc4e24d919dacee4576"
+    },
+    {
+      "profile": "second-role-complete",
+      "probe": "verify.Read.Description",
+      "native_value": "allowed",
+      "category": "allowed",
+      "oracle": "second-role-complete/deny.oracle",
+      "oracle_sha256": "de0657fe04e8bab05e891ac24571754bc7596b9e9382afc4e24d919dacee4576"
+    },
+    {
+      "profile": "second-role-complete",
+      "probe": "access.Read.Description",
+      "native_value": "error:{DataProcessor.Замеры.Form.Форма.Form(52)}: Error calling context method (AccessRight): Cannot apply the Read right to Catalog.ВладелецПробы",
+      "category": "not_applicable",
+      "oracle": "second-role-complete/deny.oracle",
+      "oracle_sha256": "de0657fe04e8bab05e891ac24571754bc7596b9e9382afc4e24d919dacee4576"
+    },
+    {
+      "profile": "second-role-complete",
+      "probe": "verify.Read.Наименование",
+      "native_value": "allowed",
+      "category": "allowed",
+      "oracle": "second-role-complete/deny.oracle",
+      "oracle_sha256": "de0657fe04e8bab05e891ac24571754bc7596b9e9382afc4e24d919dacee4576"
+    },
+    {
+      "profile": "second-role-complete",
+      "probe": "access.Read.Наименование",
+      "native_value": "error:{DataProcessor.Замеры.Form.Форма.Form(52)}: Error calling context method (AccessRight): Cannot apply the Read right to Catalog.ВладелецПробы",
+      "category": "not_applicable",
+      "oracle": "second-role-complete/deny.oracle",
+      "oracle_sha256": "de0657fe04e8bab05e891ac24571754bc7596b9e9382afc4e24d919dacee4576"
+    },
+    {
+      "profile": "second-role-complete",
+      "probe": "verify.Read.cOdE",
+      "native_value": "allowed",
+      "category": "allowed",
+      "oracle": "second-role-complete/deny.oracle",
+      "oracle_sha256": "de0657fe04e8bab05e891ac24571754bc7596b9e9382afc4e24d919dacee4576"
+    },
+    {
+      "profile": "second-role-complete",
+      "probe": "access.Read.cOdE",
+      "native_value": "error:{DataProcessor.Замеры.Form.Форма.Form(52)}: Error calling context method (AccessRight): Cannot apply the Read right to Catalog.ВладелецПробы",
+      "category": "not_applicable",
+      "oracle": "second-role-complete/deny.oracle",
+      "oracle_sha256": "de0657fe04e8bab05e891ac24571754bc7596b9e9382afc4e24d919dacee4576"
+    },
+    {
+      "profile": "second-role-complete",
+      "probe": "verify.Read.код",
+      "native_value": "allowed",
+      "category": "allowed",
+      "oracle": "second-role-complete/deny.oracle",
+      "oracle_sha256": "de0657fe04e8bab05e891ac24571754bc7596b9e9382afc4e24d919dacee4576"
+    },
+    {
+      "profile": "second-role-complete",
+      "probe": "access.Read.код",
+      "native_value": "error:{DataProcessor.Замеры.Form.Форма.Form(52)}: Error calling context method (AccessRight): Cannot apply the Read right to Catalog.ВладелецПробы",
+      "category": "not_applicable",
+      "oracle": "second-role-complete/deny.oracle",
+      "oracle_sha256": "de0657fe04e8bab05e891ac24571754bc7596b9e9382afc4e24d919dacee4576"
+    },
+    {
+      "profile": "second-role-complete",
+      "probe": "verify.Read.НеСуществует",
+      "native_value": "error:{DataProcessor.Замеры.Form.Форма.Form(49)}: Error calling context method (VerifyAccessRights): Invalid parameter value (parameter number '3') (НеСуществует)",
+      "category": "invalid_standard_path",
+      "oracle": "second-role-complete/deny.oracle",
+      "oracle_sha256": "de0657fe04e8bab05e891ac24571754bc7596b9e9382afc4e24d919dacee4576"
+    },
+    {
+      "profile": "second-role-complete",
+      "probe": "access.Read.НеСуществует",
+      "native_value": "error:{DataProcessor.Замеры.Form.Форма.Form(52)}: Error calling context method (AccessRight): Invalid parameter value (parameter number '4') (НеСуществует)",
+      "category": "invalid_standard_path",
+      "oracle": "second-role-complete/deny.oracle",
+      "oracle_sha256": "de0657fe04e8bab05e891ac24571754bc7596b9e9382afc4e24d919dacee4576"
+    },
+    {
+      "profile": "second-role-complete",
+      "probe": "verify.View.undefined",
+      "native_value": "allowed",
+      "category": "allowed",
+      "oracle": "second-role-complete/deny.oracle",
+      "oracle_sha256": "de0657fe04e8bab05e891ac24571754bc7596b9e9382afc4e24d919dacee4576"
+    },
+    {
+      "profile": "second-role-complete",
+      "probe": "access.View.undefined",
+      "native_value": "allowed",
+      "category": "allowed",
+      "oracle": "second-role-complete/deny.oracle",
+      "oracle_sha256": "de0657fe04e8bab05e891ac24571754bc7596b9e9382afc4e24d919dacee4576"
+    },
+    {
+      "profile": "second-role-complete",
+      "probe": "verify.View.empty",
+      "native_value": "error:{DataProcessor.Замеры.Form.Форма.Form(49)}: Error calling context method (VerifyAccessRights): Invalid parameter value (parameter number '3')",
+      "category": "invalid_standard_path",
+      "oracle": "second-role-complete/deny.oracle",
+      "oracle_sha256": "de0657fe04e8bab05e891ac24571754bc7596b9e9382afc4e24d919dacee4576"
+    },
+    {
+      "profile": "second-role-complete",
+      "probe": "access.View.empty",
+      "native_value": "error:{DataProcessor.Замеры.Form.Форма.Form(52)}: Error calling context method (AccessRight): Invalid parameter value (parameter number '4')",
+      "category": "invalid_standard_path",
+      "oracle": "second-role-complete/deny.oracle",
+      "oracle_sha256": "de0657fe04e8bab05e891ac24571754bc7596b9e9382afc4e24d919dacee4576"
+    },
+    {
+      "profile": "second-role-complete",
+      "probe": "verify.View.Код",
+      "native_value": "allowed",
+      "category": "allowed",
+      "oracle": "second-role-complete/deny.oracle",
+      "oracle_sha256": "de0657fe04e8bab05e891ac24571754bc7596b9e9382afc4e24d919dacee4576"
+    },
+    {
+      "profile": "second-role-complete",
+      "probe": "access.View.Код",
+      "native_value": "allowed",
+      "category": "allowed",
+      "oracle": "second-role-complete/deny.oracle",
+      "oracle_sha256": "de0657fe04e8bab05e891ac24571754bc7596b9e9382afc4e24d919dacee4576"
+    },
+    {
+      "profile": "second-role-complete",
+      "probe": "verify.View.Code",
+      "native_value": "allowed",
+      "category": "allowed",
+      "oracle": "second-role-complete/deny.oracle",
+      "oracle_sha256": "de0657fe04e8bab05e891ac24571754bc7596b9e9382afc4e24d919dacee4576"
+    },
+    {
+      "profile": "second-role-complete",
+      "probe": "access.View.Code",
+      "native_value": "allowed",
+      "category": "allowed",
+      "oracle": "second-role-complete/deny.oracle",
+      "oracle_sha256": "de0657fe04e8bab05e891ac24571754bc7596b9e9382afc4e24d919dacee4576"
+    },
+    {
+      "profile": "second-role-complete",
+      "probe": "verify.View.Description",
+      "native_value": "error:{DataProcessor.Замеры.Form.Форма.Form(49)}: Error calling context method (VerifyAccessRights): Access violation!",
+      "category": "denied",
+      "oracle": "second-role-complete/deny.oracle",
+      "oracle_sha256": "de0657fe04e8bab05e891ac24571754bc7596b9e9382afc4e24d919dacee4576"
+    },
+    {
+      "profile": "second-role-complete",
+      "probe": "access.View.Description",
+      "native_value": "denied",
+      "category": "denied",
+      "oracle": "second-role-complete/deny.oracle",
+      "oracle_sha256": "de0657fe04e8bab05e891ac24571754bc7596b9e9382afc4e24d919dacee4576"
+    },
+    {
+      "profile": "second-role-complete",
+      "probe": "verify.View.Наименование",
+      "native_value": "error:{DataProcessor.Замеры.Form.Форма.Form(49)}: Error calling context method (VerifyAccessRights): Access violation!",
+      "category": "denied",
+      "oracle": "second-role-complete/deny.oracle",
+      "oracle_sha256": "de0657fe04e8bab05e891ac24571754bc7596b9e9382afc4e24d919dacee4576"
+    },
+    {
+      "profile": "second-role-complete",
+      "probe": "access.View.Наименование",
+      "native_value": "denied",
+      "category": "denied",
+      "oracle": "second-role-complete/deny.oracle",
+      "oracle_sha256": "de0657fe04e8bab05e891ac24571754bc7596b9e9382afc4e24d919dacee4576"
+    },
+    {
+      "profile": "second-role-complete",
+      "probe": "verify.View.cOdE",
+      "native_value": "allowed",
+      "category": "allowed",
+      "oracle": "second-role-complete/deny.oracle",
+      "oracle_sha256": "de0657fe04e8bab05e891ac24571754bc7596b9e9382afc4e24d919dacee4576"
+    },
+    {
+      "profile": "second-role-complete",
+      "probe": "access.View.cOdE",
+      "native_value": "allowed",
+      "category": "allowed",
+      "oracle": "second-role-complete/deny.oracle",
+      "oracle_sha256": "de0657fe04e8bab05e891ac24571754bc7596b9e9382afc4e24d919dacee4576"
+    },
+    {
+      "profile": "second-role-complete",
+      "probe": "verify.View.код",
+      "native_value": "allowed",
+      "category": "allowed",
+      "oracle": "second-role-complete/deny.oracle",
+      "oracle_sha256": "de0657fe04e8bab05e891ac24571754bc7596b9e9382afc4e24d919dacee4576"
+    },
+    {
+      "profile": "second-role-complete",
+      "probe": "access.View.код",
+      "native_value": "allowed",
+      "category": "allowed",
+      "oracle": "second-role-complete/deny.oracle",
+      "oracle_sha256": "de0657fe04e8bab05e891ac24571754bc7596b9e9382afc4e24d919dacee4576"
+    },
+    {
+      "profile": "second-role-complete",
+      "probe": "verify.View.НеСуществует",
+      "native_value": "error:{DataProcessor.Замеры.Form.Форма.Form(49)}: Error calling context method (VerifyAccessRights): Invalid parameter value (parameter number '3') (НеСуществует)",
+      "category": "invalid_standard_path",
+      "oracle": "second-role-complete/deny.oracle",
+      "oracle_sha256": "de0657fe04e8bab05e891ac24571754bc7596b9e9382afc4e24d919dacee4576"
+    },
+    {
+      "profile": "second-role-complete",
+      "probe": "access.View.НеСуществует",
+      "native_value": "error:{DataProcessor.Замеры.Form.Форма.Form(52)}: Error calling context method (AccessRight): Invalid parameter value (parameter number '4') (НеСуществует)",
+      "category": "invalid_standard_path",
+      "oracle": "second-role-complete/deny.oracle",
+      "oracle_sha256": "de0657fe04e8bab05e891ac24571754bc7596b9e9382afc4e24d919dacee4576"
+    },
+    {
+      "profile": "split-parent-child",
+      "probe": "verify.Read.undefined",
+      "native_value": "allowed",
+      "category": "allowed",
+      "oracle": "split-parent-child/deny.oracle",
+      "oracle_sha256": "869cc728fc73c61f3d3cc99e9f35ae3d961b7b6eb93b17785b6d1dacc126a3c9"
+    },
+    {
+      "profile": "split-parent-child",
+      "probe": "access.Read.undefined",
+      "native_value": "allowed",
+      "category": "allowed",
+      "oracle": "split-parent-child/deny.oracle",
+      "oracle_sha256": "869cc728fc73c61f3d3cc99e9f35ae3d961b7b6eb93b17785b6d1dacc126a3c9"
+    },
+    {
+      "profile": "split-parent-child",
+      "probe": "verify.Read.empty",
+      "native_value": "error:{DataProcessor.Замеры.Form.Форма.Form(49)}: Error calling context method (VerifyAccessRights): Invalid parameter value (parameter number '3')",
+      "category": "invalid_standard_path",
+      "oracle": "split-parent-child/deny.oracle",
+      "oracle_sha256": "869cc728fc73c61f3d3cc99e9f35ae3d961b7b6eb93b17785b6d1dacc126a3c9"
+    },
+    {
+      "profile": "split-parent-child",
+      "probe": "access.Read.empty",
+      "native_value": "error:{DataProcessor.Замеры.Form.Форма.Form(52)}: Error calling context method (AccessRight): Invalid parameter value (parameter number '4')",
+      "category": "invalid_standard_path",
+      "oracle": "split-parent-child/deny.oracle",
+      "oracle_sha256": "869cc728fc73c61f3d3cc99e9f35ae3d961b7b6eb93b17785b6d1dacc126a3c9"
+    },
+    {
+      "profile": "split-parent-child",
+      "probe": "verify.Read.Код",
+      "native_value": "allowed",
+      "category": "allowed",
+      "oracle": "split-parent-child/deny.oracle",
+      "oracle_sha256": "869cc728fc73c61f3d3cc99e9f35ae3d961b7b6eb93b17785b6d1dacc126a3c9"
+    },
+    {
+      "profile": "split-parent-child",
+      "probe": "access.Read.Код",
+      "native_value": "error:{DataProcessor.Замеры.Form.Форма.Form(52)}: Error calling context method (AccessRight): Cannot apply the Read right to Catalog.ВладелецПробы",
+      "category": "not_applicable",
+      "oracle": "split-parent-child/deny.oracle",
+      "oracle_sha256": "869cc728fc73c61f3d3cc99e9f35ae3d961b7b6eb93b17785b6d1dacc126a3c9"
+    },
+    {
+      "profile": "split-parent-child",
+      "probe": "verify.Read.Code",
+      "native_value": "allowed",
+      "category": "allowed",
+      "oracle": "split-parent-child/deny.oracle",
+      "oracle_sha256": "869cc728fc73c61f3d3cc99e9f35ae3d961b7b6eb93b17785b6d1dacc126a3c9"
+    },
+    {
+      "profile": "split-parent-child",
+      "probe": "access.Read.Code",
+      "native_value": "error:{DataProcessor.Замеры.Form.Форма.Form(52)}: Error calling context method (AccessRight): Cannot apply the Read right to Catalog.ВладелецПробы",
+      "category": "not_applicable",
+      "oracle": "split-parent-child/deny.oracle",
+      "oracle_sha256": "869cc728fc73c61f3d3cc99e9f35ae3d961b7b6eb93b17785b6d1dacc126a3c9"
+    },
+    {
+      "profile": "split-parent-child",
+      "probe": "verify.Read.Description",
+      "native_value": "allowed",
+      "category": "allowed",
+      "oracle": "split-parent-child/deny.oracle",
+      "oracle_sha256": "869cc728fc73c61f3d3cc99e9f35ae3d961b7b6eb93b17785b6d1dacc126a3c9"
+    },
+    {
+      "profile": "split-parent-child",
+      "probe": "access.Read.Description",
+      "native_value": "error:{DataProcessor.Замеры.Form.Форма.Form(52)}: Error calling context method (AccessRight): Cannot apply the Read right to Catalog.ВладелецПробы",
+      "category": "not_applicable",
+      "oracle": "split-parent-child/deny.oracle",
+      "oracle_sha256": "869cc728fc73c61f3d3cc99e9f35ae3d961b7b6eb93b17785b6d1dacc126a3c9"
+    },
+    {
+      "profile": "split-parent-child",
+      "probe": "verify.Read.Наименование",
+      "native_value": "allowed",
+      "category": "allowed",
+      "oracle": "split-parent-child/deny.oracle",
+      "oracle_sha256": "869cc728fc73c61f3d3cc99e9f35ae3d961b7b6eb93b17785b6d1dacc126a3c9"
+    },
+    {
+      "profile": "split-parent-child",
+      "probe": "access.Read.Наименование",
+      "native_value": "error:{DataProcessor.Замеры.Form.Форма.Form(52)}: Error calling context method (AccessRight): Cannot apply the Read right to Catalog.ВладелецПробы",
+      "category": "not_applicable",
+      "oracle": "split-parent-child/deny.oracle",
+      "oracle_sha256": "869cc728fc73c61f3d3cc99e9f35ae3d961b7b6eb93b17785b6d1dacc126a3c9"
+    },
+    {
+      "profile": "split-parent-child",
+      "probe": "verify.Read.cOdE",
+      "native_value": "allowed",
+      "category": "allowed",
+      "oracle": "split-parent-child/deny.oracle",
+      "oracle_sha256": "869cc728fc73c61f3d3cc99e9f35ae3d961b7b6eb93b17785b6d1dacc126a3c9"
+    },
+    {
+      "profile": "split-parent-child",
+      "probe": "access.Read.cOdE",
+      "native_value": "error:{DataProcessor.Замеры.Form.Форма.Form(52)}: Error calling context method (AccessRight): Cannot apply the Read right to Catalog.ВладелецПробы",
+      "category": "not_applicable",
+      "oracle": "split-parent-child/deny.oracle",
+      "oracle_sha256": "869cc728fc73c61f3d3cc99e9f35ae3d961b7b6eb93b17785b6d1dacc126a3c9"
+    },
+    {
+      "profile": "split-parent-child",
+      "probe": "verify.Read.код",
+      "native_value": "allowed",
+      "category": "allowed",
+      "oracle": "split-parent-child/deny.oracle",
+      "oracle_sha256": "869cc728fc73c61f3d3cc99e9f35ae3d961b7b6eb93b17785b6d1dacc126a3c9"
+    },
+    {
+      "profile": "split-parent-child",
+      "probe": "access.Read.код",
+      "native_value": "error:{DataProcessor.Замеры.Form.Форма.Form(52)}: Error calling context method (AccessRight): Cannot apply the Read right to Catalog.ВладелецПробы",
+      "category": "not_applicable",
+      "oracle": "split-parent-child/deny.oracle",
+      "oracle_sha256": "869cc728fc73c61f3d3cc99e9f35ae3d961b7b6eb93b17785b6d1dacc126a3c9"
+    },
+    {
+      "profile": "split-parent-child",
+      "probe": "verify.Read.НеСуществует",
+      "native_value": "error:{DataProcessor.Замеры.Form.Форма.Form(49)}: Error calling context method (VerifyAccessRights): Invalid parameter value (parameter number '3') (НеСуществует)",
+      "category": "invalid_standard_path",
+      "oracle": "split-parent-child/deny.oracle",
+      "oracle_sha256": "869cc728fc73c61f3d3cc99e9f35ae3d961b7b6eb93b17785b6d1dacc126a3c9"
+    },
+    {
+      "profile": "split-parent-child",
+      "probe": "access.Read.НеСуществует",
+      "native_value": "error:{DataProcessor.Замеры.Form.Форма.Form(52)}: Error calling context method (AccessRight): Invalid parameter value (parameter number '4') (НеСуществует)",
+      "category": "invalid_standard_path",
+      "oracle": "split-parent-child/deny.oracle",
+      "oracle_sha256": "869cc728fc73c61f3d3cc99e9f35ae3d961b7b6eb93b17785b6d1dacc126a3c9"
+    },
+    {
+      "profile": "split-parent-child",
+      "probe": "verify.View.undefined",
+      "native_value": "allowed",
+      "category": "allowed",
+      "oracle": "split-parent-child/deny.oracle",
+      "oracle_sha256": "869cc728fc73c61f3d3cc99e9f35ae3d961b7b6eb93b17785b6d1dacc126a3c9"
+    },
+    {
+      "profile": "split-parent-child",
+      "probe": "access.View.undefined",
+      "native_value": "allowed",
+      "category": "allowed",
+      "oracle": "split-parent-child/deny.oracle",
+      "oracle_sha256": "869cc728fc73c61f3d3cc99e9f35ae3d961b7b6eb93b17785b6d1dacc126a3c9"
+    },
+    {
+      "profile": "split-parent-child",
+      "probe": "verify.View.empty",
+      "native_value": "error:{DataProcessor.Замеры.Form.Форма.Form(49)}: Error calling context method (VerifyAccessRights): Invalid parameter value (parameter number '3')",
+      "category": "invalid_standard_path",
+      "oracle": "split-parent-child/deny.oracle",
+      "oracle_sha256": "869cc728fc73c61f3d3cc99e9f35ae3d961b7b6eb93b17785b6d1dacc126a3c9"
+    },
+    {
+      "profile": "split-parent-child",
+      "probe": "access.View.empty",
+      "native_value": "error:{DataProcessor.Замеры.Form.Форма.Form(52)}: Error calling context method (AccessRight): Invalid parameter value (parameter number '4')",
+      "category": "invalid_standard_path",
+      "oracle": "split-parent-child/deny.oracle",
+      "oracle_sha256": "869cc728fc73c61f3d3cc99e9f35ae3d961b7b6eb93b17785b6d1dacc126a3c9"
+    },
+    {
+      "profile": "split-parent-child",
+      "probe": "verify.View.Код",
+      "native_value": "error:{DataProcessor.Замеры.Form.Форма.Form(49)}: Error calling context method (VerifyAccessRights): Access violation!",
+      "category": "denied",
+      "oracle": "split-parent-child/deny.oracle",
+      "oracle_sha256": "869cc728fc73c61f3d3cc99e9f35ae3d961b7b6eb93b17785b6d1dacc126a3c9"
+    },
+    {
+      "profile": "split-parent-child",
+      "probe": "access.View.Код",
+      "native_value": "denied",
+      "category": "denied",
+      "oracle": "split-parent-child/deny.oracle",
+      "oracle_sha256": "869cc728fc73c61f3d3cc99e9f35ae3d961b7b6eb93b17785b6d1dacc126a3c9"
+    },
+    {
+      "profile": "split-parent-child",
+      "probe": "verify.View.Code",
+      "native_value": "error:{DataProcessor.Замеры.Form.Форма.Form(49)}: Error calling context method (VerifyAccessRights): Access violation!",
+      "category": "denied",
+      "oracle": "split-parent-child/deny.oracle",
+      "oracle_sha256": "869cc728fc73c61f3d3cc99e9f35ae3d961b7b6eb93b17785b6d1dacc126a3c9"
+    },
+    {
+      "profile": "split-parent-child",
+      "probe": "access.View.Code",
+      "native_value": "denied",
+      "category": "denied",
+      "oracle": "split-parent-child/deny.oracle",
+      "oracle_sha256": "869cc728fc73c61f3d3cc99e9f35ae3d961b7b6eb93b17785b6d1dacc126a3c9"
+    },
+    {
+      "profile": "split-parent-child",
+      "probe": "verify.View.Description",
+      "native_value": "error:{DataProcessor.Замеры.Form.Форма.Form(49)}: Error calling context method (VerifyAccessRights): Access violation!",
+      "category": "denied",
+      "oracle": "split-parent-child/deny.oracle",
+      "oracle_sha256": "869cc728fc73c61f3d3cc99e9f35ae3d961b7b6eb93b17785b6d1dacc126a3c9"
+    },
+    {
+      "profile": "split-parent-child",
+      "probe": "access.View.Description",
+      "native_value": "denied",
+      "category": "denied",
+      "oracle": "split-parent-child/deny.oracle",
+      "oracle_sha256": "869cc728fc73c61f3d3cc99e9f35ae3d961b7b6eb93b17785b6d1dacc126a3c9"
+    },
+    {
+      "profile": "split-parent-child",
+      "probe": "verify.View.Наименование",
+      "native_value": "error:{DataProcessor.Замеры.Form.Форма.Form(49)}: Error calling context method (VerifyAccessRights): Access violation!",
+      "category": "denied",
+      "oracle": "split-parent-child/deny.oracle",
+      "oracle_sha256": "869cc728fc73c61f3d3cc99e9f35ae3d961b7b6eb93b17785b6d1dacc126a3c9"
+    },
+    {
+      "profile": "split-parent-child",
+      "probe": "access.View.Наименование",
+      "native_value": "denied",
+      "category": "denied",
+      "oracle": "split-parent-child/deny.oracle",
+      "oracle_sha256": "869cc728fc73c61f3d3cc99e9f35ae3d961b7b6eb93b17785b6d1dacc126a3c9"
+    },
+    {
+      "profile": "split-parent-child",
+      "probe": "verify.View.cOdE",
+      "native_value": "error:{DataProcessor.Замеры.Form.Форма.Form(49)}: Error calling context method (VerifyAccessRights): Access violation!",
+      "category": "denied",
+      "oracle": "split-parent-child/deny.oracle",
+      "oracle_sha256": "869cc728fc73c61f3d3cc99e9f35ae3d961b7b6eb93b17785b6d1dacc126a3c9"
+    },
+    {
+      "profile": "split-parent-child",
+      "probe": "access.View.cOdE",
+      "native_value": "denied",
+      "category": "denied",
+      "oracle": "split-parent-child/deny.oracle",
+      "oracle_sha256": "869cc728fc73c61f3d3cc99e9f35ae3d961b7b6eb93b17785b6d1dacc126a3c9"
+    },
+    {
+      "profile": "split-parent-child",
+      "probe": "verify.View.код",
+      "native_value": "error:{DataProcessor.Замеры.Form.Форма.Form(49)}: Error calling context method (VerifyAccessRights): Access violation!",
+      "category": "denied",
+      "oracle": "split-parent-child/deny.oracle",
+      "oracle_sha256": "869cc728fc73c61f3d3cc99e9f35ae3d961b7b6eb93b17785b6d1dacc126a3c9"
+    },
+    {
+      "profile": "split-parent-child",
+      "probe": "access.View.код",
+      "native_value": "denied",
+      "category": "denied",
+      "oracle": "split-parent-child/deny.oracle",
+      "oracle_sha256": "869cc728fc73c61f3d3cc99e9f35ae3d961b7b6eb93b17785b6d1dacc126a3c9"
+    },
+    {
+      "profile": "split-parent-child",
+      "probe": "verify.View.НеСуществует",
+      "native_value": "error:{DataProcessor.Замеры.Form.Форма.Form(49)}: Error calling context method (VerifyAccessRights): Invalid parameter value (parameter number '3') (НеСуществует)",
+      "category": "invalid_standard_path",
+      "oracle": "split-parent-child/deny.oracle",
+      "oracle_sha256": "869cc728fc73c61f3d3cc99e9f35ae3d961b7b6eb93b17785b6d1dacc126a3c9"
+    },
+    {
+      "profile": "split-parent-child",
+      "probe": "access.View.НеСуществует",
+      "native_value": "error:{DataProcessor.Замеры.Form.Форма.Form(52)}: Error calling context method (AccessRight): Invalid parameter value (parameter number '4') (НеСуществует)",
+      "category": "invalid_standard_path",
+      "oracle": "split-parent-child/deny.oracle",
+      "oracle_sha256": "869cc728fc73c61f3d3cc99e9f35ae3d961b7b6eb93b17785b6d1dacc126a3c9"
+    }
+  ]
+}

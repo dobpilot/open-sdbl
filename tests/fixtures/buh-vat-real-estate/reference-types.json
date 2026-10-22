@@ -1,0 +1,152 @@
+{
+  "CatalogRef.Организации": {
+    "type_id": "c92a1124-c41e-42a4-bda7-3bbac9c6039e",
+    "file": "/home/kan/Документы/develop/open-bsl/target/diagnostics/buh-native-config-1015/native-xml/Catalogs/Организации.xml",
+    "sha256": "37526b5a6e5c3a471bac58dc62e03522b87619f238be93746db19431cad24d8b",
+    "generated_type_xml": "<ns0:GeneratedType xmlns:ns0=\"http://v8.1c.ru/8.3/xcf/readable\" name=\"CatalogRef.Организации\" category=\"Ref\">\n\t\t\t\t<ns0:TypeId>c92a1124-c41e-42a4-bda7-3bbac9c6039e</ns0:TypeId>\n\t\t\t\t<ns0:ValueId>0debd38f-7da5-48f7-aeec-88faf8dc5960</ns0:ValueId>\n\t\t\t</ns0:GeneratedType>\n\t\t\t"
+  },
+  "CatalogRef.Пользователи": {
+    "type_id": "bb356e79-e8e6-4912-8561-ad29cca2604f",
+    "file": "/home/kan/Документы/develop/open-bsl/target/diagnostics/buh-native-config-1015/native-xml/Catalogs/Пользователи.xml",
+    "sha256": "f2fdcca30c91db9a8cb26038ffc35beadb253ac2677da5509541cdb374da2f70",
+    "generated_type_xml": "<ns0:GeneratedType xmlns:ns0=\"http://v8.1c.ru/8.3/xcf/readable\" name=\"CatalogRef.Пользователи\" category=\"Ref\">\n\t\t\t\t<ns0:TypeId>bb356e79-e8e6-4912-8561-ad29cca2604f</ns0:TypeId>\n\t\t\t\t<ns0:ValueId>e8ef95ad-e879-4f82-8a57-b8a3e5117612</ns0:ValueId>\n\t\t\t</ns0:GeneratedType>\n\t\t\t"
+  },
+  "ChartOfAccountsRef.Хозрасчетный": {
+    "type_id": "6f58a5c7-f511-498f-abeb-390cf5afab39",
+    "file": "/home/kan/Документы/develop/open-bsl/target/diagnostics/buh-native-config-1015/native-xml/ChartsOfAccounts/Хозрасчетный.xml",
+    "sha256": "87c74bf02c42d3b4a414ad387f2ce26ff1b63a0fa6fe80d1ab0cbd7a370e1a1b",
+    "generated_type_xml": "<ns0:GeneratedType xmlns:ns0=\"http://v8.1c.ru/8.3/xcf/readable\" name=\"ChartOfAccountsRef.Хозрасчетный\" category=\"Ref\">\n\t\t\t\t<ns0:TypeId>6f58a5c7-f511-498f-abeb-390cf5afab39</ns0:TypeId>\n\t\t\t\t<ns0:ValueId>184fdc4d-971f-4257-93da-2ed68c8246d7</ns0:ValueId>\n\t\t\t</ns0:GeneratedType>\n\t\t\t"
+  },
+  "Characteristic.ВидыСубконтоХозрасчетные": {
+    "type_id": "ffbe8ea3-ce5f-4118-842e-03a6fafc1d42",
+    "file": "/home/kan/Документы/develop/open-bsl/target/diagnostics/buh-native-config-1015/native-xml/ChartsOfCharacteristicTypes/ВидыСубконтоХозрасчетные.xml",
+    "sha256": "b37f46dc0ebef5f7c4f5611256f7af017c8fe9bed000b490c71091757bc247e7",
+    "generated_type_xml": "<ns0:GeneratedType xmlns:ns0=\"http://v8.1c.ru/8.3/xcf/readable\" name=\"Characteristic.ВидыСубконтоХозрасчетные\" category=\"Characteristic\">\n\t\t\t\t<ns0:TypeId>ffbe8ea3-ce5f-4118-842e-03a6fafc1d42</ns0:TypeId>\n\t\t\t\t<ns0:ValueId>2913090d-5296-40bb-ad8d-d788c5e4b482</ns0:ValueId>\n\t\t\t</ns0:GeneratedType>\n\t\t\t"
+  },
+  "CatalogRef.ПодразделенияОрганизаций": {
+    "type_id": "7c6a7e8d-9204-47b1-8619-ea42fa2be95b",
+    "file": "/home/kan/Документы/develop/open-bsl/target/diagnostics/buh-native-config-1015/native-xml/Catalogs/ПодразделенияОрганизаций.xml",
+    "sha256": "031262c946e434abecffa3de77d0a0f94fe4bbf32b47a0c8bf8eceb435cb54d1",
+    "generated_type_xml": "<ns0:GeneratedType xmlns:ns0=\"http://v8.1c.ru/8.3/xcf/readable\" name=\"CatalogRef.ПодразделенияОрганизаций\" category=\"Ref\">\n\t\t\t\t<ns0:TypeId>7c6a7e8d-9204-47b1-8619-ea42fa2be95b</ns0:TypeId>\n\t\t\t\t<ns0:ValueId>f8cc2a63-0ec6-4134-94c5-b74e78d6d1a6</ns0:ValueId>\n\t\t\t</ns0:GeneratedType>\n\t\t\t"
+  },
+  "CatalogRef.ОсновныеСредства": {
+    "type_id": "1433c81a-03ff-4319-91c9-379dad7ac0e9",
+    "file": "/home/kan/Документы/develop/open-bsl/target/diagnostics/buh-native-config-1015/native-xml/Catalogs/ОсновныеСредства.xml",
+    "sha256": "887740c6d9fab09fac1d23f11ed1a421adc554992904f719bad61b7ce428ae77",
+    "generated_type_xml": "<ns0:GeneratedType xmlns:ns0=\"http://v8.1c.ru/8.3/xcf/readable\" name=\"CatalogRef.ОсновныеСредства\" category=\"Ref\">\n\t\t\t\t<ns0:TypeId>1433c81a-03ff-4319-91c9-379dad7ac0e9</ns0:TypeId>\n\t\t\t\t<ns0:ValueId>e35223e2-d4f5-4a9a-9889-4b3f08d8a60f</ns0:ValueId>\n\t\t\t</ns0:GeneratedType>\n\t\t\t"
+  },
+  "EnumRef.ВидыЦенностей": {
+    "type_id": "dbf39d25-a355-4360-aa57-0fb16c0a8915",
+    "file": "/home/kan/Документы/develop/open-bsl/target/diagnostics/buh-native-config-1015/native-xml/Enums/ВидыЦенностей.xml",
+    "sha256": "bb3cc0f1bace13bbbc04cd4727bf52a869571c0c61b74b99317949620b3eef05",
+    "generated_type_xml": "<ns0:GeneratedType xmlns:ns0=\"http://v8.1c.ru/8.3/xcf/readable\" name=\"EnumRef.ВидыЦенностей\" category=\"Ref\">\n\t\t\t\t<ns0:TypeId>dbf39d25-a355-4360-aa57-0fb16c0a8915</ns0:TypeId>\n\t\t\t\t<ns0:ValueId>a0467a28-dbc0-4957-9ca3-b6ad0792759b</ns0:ValueId>\n\t\t\t</ns0:GeneratedType>\n\t\t\t"
+  },
+  "EnumRef.НДСКодыОперацийПоОбъектамНедвижимости": {
+    "type_id": "d079b49a-3bd1-4e4a-a1f2-9e0e7ecbb621",
+    "file": "/home/kan/Документы/develop/open-bsl/target/diagnostics/buh-native-config-1015/native-xml/Enums/НДСКодыОперацийПоОбъектамНедвижимости.xml",
+    "sha256": "1a1320fcabb1bbb7e4e744068be43b119ee1dc02e9edb45a0c7a01576cbb8d3c",
+    "generated_type_xml": "<ns0:GeneratedType xmlns:ns0=\"http://v8.1c.ru/8.3/xcf/readable\" name=\"EnumRef.НДСКодыОперацийПоОбъектамНедвижимости\" category=\"Ref\">\n\t\t\t\t<ns0:TypeId>d079b49a-3bd1-4e4a-a1f2-9e0e7ecbb621</ns0:TypeId>\n\t\t\t\t<ns0:ValueId>5804c418-3e61-4205-ab2e-9b7f66a7ea80</ns0:ValueId>\n\t\t\t</ns0:GeneratedType>\n\t\t\t"
+  },
+  "CatalogRef.Контрагенты": {
+    "type_id": "9f6206b2-1ed6-423c-9b08-fd4978930c49",
+    "file": "/home/kan/Документы/develop/open-bsl/target/diagnostics/buh-native-config-1015/native-xml/Catalogs/Контрагенты.xml",
+    "sha256": "b342e11a92f516c0846b6e513ec9c6b684f8a7f5f6828182c4e620fa5b0ad903",
+    "generated_type_xml": "<ns0:GeneratedType xmlns:ns0=\"http://v8.1c.ru/8.3/xcf/readable\" name=\"CatalogRef.Контрагенты\" category=\"Ref\">\n\t\t\t\t<ns0:TypeId>9f6206b2-1ed6-423c-9b08-fd4978930c49</ns0:TypeId>\n\t\t\t\t<ns0:ValueId>4de6f07e-51ba-4906-8f3e-e0b45534c095</ns0:ValueId>\n\t\t\t</ns0:GeneratedType>\n\t\t\t"
+  },
+  "DocumentRef.АвансовыйОтчет": {
+    "type_id": "11d29058-eb85-46e1-a8d4-47c8f22ccf5d",
+    "file": "/home/kan/Документы/develop/open-bsl/target/diagnostics/buh-native-config-1015/native-xml/Documents/АвансовыйОтчет.xml",
+    "sha256": "1f45af93c4caed2ad05baaa023ba56c335c3abd629827238203783803eb0ed39",
+    "generated_type_xml": "<ns0:GeneratedType xmlns:ns0=\"http://v8.1c.ru/8.3/xcf/readable\" name=\"DocumentRef.АвансовыйОтчет\" category=\"Ref\">\n\t\t\t\t<ns0:TypeId>11d29058-eb85-46e1-a8d4-47c8f22ccf5d</ns0:TypeId>\n\t\t\t\t<ns0:ValueId>0c2bef37-a758-41ca-969c-9aaac6d85c85</ns0:ValueId>\n\t\t\t</ns0:GeneratedType>\n\t\t\t"
+  },
+  "DocumentRef.ГТДИмпорт": {
+    "type_id": "132c67ba-e87a-42ec-ba5a-19a511ceed01",
+    "file": "/home/kan/Документы/develop/open-bsl/target/diagnostics/buh-native-config-1015/native-xml/Documents/ГТДИмпорт.xml",
+    "sha256": "79c3b4f99d0915dbbbcbab877b251eef688f9849d9005ccdb090f7d6a32f5c0b",
+    "generated_type_xml": "<ns0:GeneratedType xmlns:ns0=\"http://v8.1c.ru/8.3/xcf/readable\" name=\"DocumentRef.ГТДИмпорт\" category=\"Ref\">\n\t\t\t\t<ns0:TypeId>132c67ba-e87a-42ec-ba5a-19a511ceed01</ns0:TypeId>\n\t\t\t\t<ns0:ValueId>e3fd4954-d0d4-4605-b1e9-0a31a289a4f6</ns0:ValueId>\n\t\t\t</ns0:GeneratedType>\n\t\t\t"
+  },
+  "DocumentRef.ВыкупПредметовЛизинга": {
+    "type_id": "152b6850-ab7f-4f51-a90a-f5d8f1e8bf26",
+    "file": "/home/kan/Документы/develop/open-bsl/target/diagnostics/buh-native-config-1015/native-xml/Documents/ВыкупПредметовЛизинга.xml",
+    "sha256": "eb850da78d4aaa954e057f26ac36df67e8069763af3fc4381cafa7d158b3b56b",
+    "generated_type_xml": "<ns0:GeneratedType xmlns:ns0=\"http://v8.1c.ru/8.3/xcf/readable\" name=\"DocumentRef.ВыкупПредметовЛизинга\" category=\"Ref\">\n\t\t\t\t<ns0:TypeId>152b6850-ab7f-4f51-a90a-f5d8f1e8bf26</ns0:TypeId>\n\t\t\t\t<ns0:ValueId>adf97f3f-46cf-4e9a-9f30-df7f8cda4a1e</ns0:ValueId>\n\t\t\t</ns0:GeneratedType>\n\t\t\t"
+  },
+  "DocumentRef.СчетФактураВыданный": {
+    "type_id": "1a6af560-80a7-4602-9b53-255b19fcc220",
+    "file": "/home/kan/Документы/develop/open-bsl/target/diagnostics/buh-native-config-1015/native-xml/Documents/СчетФактураВыданный.xml",
+    "sha256": "256aea9530e4fad9032029e3ab137d566c3ea80f185ffbbf30cc62ff4e27f65e",
+    "generated_type_xml": "<ns0:GeneratedType xmlns:ns0=\"http://v8.1c.ru/8.3/xcf/readable\" name=\"DocumentRef.СчетФактураВыданный\" category=\"Ref\">\n\t\t\t\t<ns0:TypeId>1a6af560-80a7-4602-9b53-255b19fcc220</ns0:TypeId>\n\t\t\t\t<ns0:ValueId>aaf1ed22-dd6f-4c87-b9d6-1adb81a7a115</ns0:ValueId>\n\t\t\t</ns0:GeneratedType>\n\t\t\t"
+  },
+  "DocumentRef.ДокументРасчетовСКонтрагентом": {
+    "type_id": "2665dc01-7967-44fe-bc39-e88850a0d8fb",
+    "file": "/home/kan/Документы/develop/open-bsl/target/diagnostics/buh-native-config-1015/native-xml/Documents/ДокументРасчетовСКонтрагентом.xml",
+    "sha256": "37555c96d1f2cfdc220293b1183f7fe73b44dd7d30b8a1330291c09d743d89df",
+    "generated_type_xml": "<ns0:GeneratedType xmlns:ns0=\"http://v8.1c.ru/8.3/xcf/readable\" name=\"DocumentRef.ДокументРасчетовСКонтрагентом\" category=\"Ref\">\n\t\t\t\t<ns0:TypeId>2665dc01-7967-44fe-bc39-e88850a0d8fb</ns0:TypeId>\n\t\t\t\t<ns0:ValueId>bc93ec6b-9be8-48ad-ab9c-f4cd9ed403d0</ns0:ValueId>\n\t\t\t</ns0:GeneratedType>\n\t\t\t"
+  },
+  "DocumentRef.ПринятиеКУчетуОС": {
+    "type_id": "2c975178-194b-4a42-8785-b696eeaf42be",
+    "file": "/home/kan/Документы/develop/open-bsl/target/diagnostics/buh-native-config-1015/native-xml/Documents/ПринятиеКУчетуОС.xml",
+    "sha256": "7b7d1af47b5d354562871331c4798329ad212bdaa9071633027436f2f750b720",
+    "generated_type_xml": "<ns0:GeneratedType xmlns:ns0=\"http://v8.1c.ru/8.3/xcf/readable\" name=\"DocumentRef.ПринятиеКУчетуОС\" category=\"Ref\">\n\t\t\t\t<ns0:TypeId>2c975178-194b-4a42-8785-b696eeaf42be</ns0:TypeId>\n\t\t\t\t<ns0:ValueId>70c976de-d123-412f-90b6-f766dbc71337</ns0:ValueId>\n\t\t\t</ns0:GeneratedType>\n\t\t\t"
+  },
+  "DocumentRef.ПоступлениеНМА": {
+    "type_id": "54af216c-4752-4c6b-b158-f7ffd25abdbd",
+    "file": "/home/kan/Документы/develop/open-bsl/target/diagnostics/buh-native-config-1015/native-xml/Documents/ПоступлениеНМА.xml",
+    "sha256": "c4b20bb763d08605ccef20c094f4e039b9c6b04209d560b243fd8fc155e144a6",
+    "generated_type_xml": "<ns0:GeneratedType xmlns:ns0=\"http://v8.1c.ru/8.3/xcf/readable\" name=\"DocumentRef.ПоступлениеНМА\" category=\"Ref\">\n\t\t\t\t<ns0:TypeId>54af216c-4752-4c6b-b158-f7ffd25abdbd</ns0:TypeId>\n\t\t\t\t<ns0:ValueId>bb2eded7-6ab3-43ed-ada8-55aa8c7de886</ns0:ValueId>\n\t\t\t</ns0:GeneratedType>\n\t\t\t"
+  },
+  "DocumentRef.ПоступлениеТоваровУслуг": {
+    "type_id": "57289853-6dd7-4527-87a8-a23fa8981f5f",
+    "file": "/home/kan/Документы/develop/open-bsl/target/diagnostics/buh-native-config-1015/native-xml/Documents/ПоступлениеТоваровУслуг.xml",
+    "sha256": "5bfa8ec8a273bea3c22a9c97bfbcd479917119c353c64689ca7a1630245a9b13",
+    "generated_type_xml": "<ns0:GeneratedType xmlns:ns0=\"http://v8.1c.ru/8.3/xcf/readable\" name=\"DocumentRef.ПоступлениеТоваровУслуг\" category=\"Ref\">\n\t\t\t\t<ns0:TypeId>57289853-6dd7-4527-87a8-a23fa8981f5f</ns0:TypeId>\n\t\t\t\t<ns0:ValueId>075f8757-5441-467c-9b2c-40cecea83771</ns0:ValueId>\n\t\t\t</ns0:GeneratedType>\n\t\t\t"
+  },
+  "DocumentRef.МодернизацияОС": {
+    "type_id": "5ce4aa00-68b0-469d-9329-d4b1bf9b936f",
+    "file": "/home/kan/Документы/develop/open-bsl/target/diagnostics/buh-native-config-1015/native-xml/Documents/МодернизацияОС.xml",
+    "sha256": "4cdbb434d57a7eede3140d1c6cf75934056f8e36e5eb0b7542dcac9a903ec456",
+    "generated_type_xml": "<ns0:GeneratedType xmlns:ns0=\"http://v8.1c.ru/8.3/xcf/readable\" name=\"DocumentRef.МодернизацияОС\" category=\"Ref\">\n\t\t\t\t<ns0:TypeId>5ce4aa00-68b0-469d-9329-d4b1bf9b936f</ns0:TypeId>\n\t\t\t\t<ns0:ValueId>c52b6536-4b85-4b00-9afb-e524419eaa43</ns0:ValueId>\n\t\t\t</ns0:GeneratedType>\n\t\t\t"
+  },
+  "DocumentRef.ОтчетКомиссионераОПродажах": {
+    "type_id": "74dd18fb-dcfe-4dd2-ab8f-d954337f4afc",
+    "file": "/home/kan/Документы/develop/open-bsl/target/diagnostics/buh-native-config-1015/native-xml/Documents/ОтчетКомиссионераОПродажах.xml",
+    "sha256": "7e713c95448b184821099826e0ae10a4c0f014c276fe737de03890ea1d8e9b8e",
+    "generated_type_xml": "<ns0:GeneratedType xmlns:ns0=\"http://v8.1c.ru/8.3/xcf/readable\" name=\"DocumentRef.ОтчетКомиссионераОПродажах\" category=\"Ref\">\n\t\t\t\t<ns0:TypeId>74dd18fb-dcfe-4dd2-ab8f-d954337f4afc</ns0:TypeId>\n\t\t\t\t<ns0:ValueId>c0cd3fd3-823e-4eb3-80f0-731c7684e1cb</ns0:ValueId>\n\t\t\t</ns0:GeneratedType>\n\t\t\t"
+  },
+  "DocumentRef.СчетФактураПолученный": {
+    "type_id": "817bc68f-5b2f-4a4e-acfa-70fa10954779",
+    "file": "/home/kan/Документы/develop/open-bsl/target/diagnostics/buh-native-config-1015/native-xml/Documents/СчетФактураПолученный.xml",
+    "sha256": "2dbd671c225ec62df3762541802bf61d910a39a87a5d33c3131d7a734dd79b64",
+    "generated_type_xml": "<ns0:GeneratedType xmlns:ns0=\"http://v8.1c.ru/8.3/xcf/readable\" name=\"DocumentRef.СчетФактураПолученный\" category=\"Ref\">\n\t\t\t\t<ns0:TypeId>817bc68f-5b2f-4a4e-acfa-70fa10954779</ns0:TypeId>\n\t\t\t\t<ns0:ValueId>2dc5ebd0-f814-445e-8a59-4ef87755e845</ns0:ValueId>\n\t\t\t</ns0:GeneratedType>\n\t\t\t"
+  },
+  "DocumentRef.ПоступлениеИзПереработки": {
+    "type_id": "92f12fbe-d2e7-41cf-90e4-3ca3ceffbbc7",
+    "file": "/home/kan/Документы/develop/open-bsl/target/diagnostics/buh-native-config-1015/native-xml/Documents/ПоступлениеИзПереработки.xml",
+    "sha256": "7f09b6c4c465d9fe1610da9dec959a8fb00ae81fc4272380e13d81f1e7ef6074",
+    "generated_type_xml": "<ns0:GeneratedType xmlns:ns0=\"http://v8.1c.ru/8.3/xcf/readable\" name=\"DocumentRef.ПоступлениеИзПереработки\" category=\"Ref\">\n\t\t\t\t<ns0:TypeId>92f12fbe-d2e7-41cf-90e4-3ca3ceffbbc7</ns0:TypeId>\n\t\t\t\t<ns0:ValueId>013b22f0-f573-49bf-a4fa-f37d06262c51</ns0:ValueId>\n\t\t\t</ns0:GeneratedType>\n\t\t\t"
+  },
+  "DocumentRef.ОтражениеНДСКВычету": {
+    "type_id": "c6f830a7-53f7-4c14-8e19-821595c8e0b0",
+    "file": "/home/kan/Документы/develop/open-bsl/target/diagnostics/buh-native-config-1015/native-xml/Documents/ОтражениеНДСКВычету.xml",
+    "sha256": "2c3bccd1c41c33dcd5789f97305754887f7c78f444fc831cef042c8e0f68e27d",
+    "generated_type_xml": "<ns0:GeneratedType xmlns:ns0=\"http://v8.1c.ru/8.3/xcf/readable\" name=\"DocumentRef.ОтражениеНДСКВычету\" category=\"Ref\">\n\t\t\t\t<ns0:TypeId>c6f830a7-53f7-4c14-8e19-821595c8e0b0</ns0:TypeId>\n\t\t\t\t<ns0:ValueId>3d67df1e-ab59-4ace-ae96-385e33fcd548</ns0:ValueId>\n\t\t\t</ns0:GeneratedType>\n\t\t\t"
+  },
+  "DocumentRef.НачислениеНДСпоСМРхозспособом": {
+    "type_id": "d8daa1cc-479a-422e-9b22-50ee811812e0",
+    "file": "/home/kan/Документы/develop/open-bsl/target/diagnostics/buh-native-config-1015/native-xml/Documents/НачислениеНДСпоСМРхозспособом.xml",
+    "sha256": "c11ba25b9afa7bdcdb03bb322b79343c949028e0840e5684cd491c348f28e37f",
+    "generated_type_xml": "<ns0:GeneratedType xmlns:ns0=\"http://v8.1c.ru/8.3/xcf/readable\" name=\"DocumentRef.НачислениеНДСпоСМРхозспособом\" category=\"Ref\">\n\t\t\t\t<ns0:TypeId>d8daa1cc-479a-422e-9b22-50ee811812e0</ns0:TypeId>\n\t\t\t\t<ns0:ValueId>b306a979-0e00-4e5a-a891-b8b21412cd5e</ns0:ValueId>\n\t\t\t</ns0:GeneratedType>\n\t\t\t"
+  },
+  "DocumentRef.ПоступлениеДопРасходов": {
+    "type_id": "f1ef5b5c-fc7d-4bac-8a38-a20ca8d1580d",
+    "file": "/home/kan/Документы/develop/open-bsl/target/diagnostics/buh-native-config-1015/native-xml/Documents/ПоступлениеДопРасходов.xml",
+    "sha256": "f46b9aed5993f79bd43e5635596b8257fb34dfe46a4de64ebe380dc24f35bfbf",
+    "generated_type_xml": "<ns0:GeneratedType xmlns:ns0=\"http://v8.1c.ru/8.3/xcf/readable\" name=\"DocumentRef.ПоступлениеДопРасходов\" category=\"Ref\">\n\t\t\t\t<ns0:TypeId>f1ef5b5c-fc7d-4bac-8a38-a20ca8d1580d</ns0:TypeId>\n\t\t\t\t<ns0:ValueId>047eb679-1acb-4bbb-b57c-06cc172566d7</ns0:ValueId>\n\t\t\t</ns0:GeneratedType>\n\t\t\t"
+  },
+  "EnumRef.СтавкиНДС": {
+    "type_id": "d3a0be91-8172-4fd4-9de8-6c72c72127b1",
+    "file": "/home/kan/Документы/develop/open-bsl/target/diagnostics/buh-native-config-1015/native-xml/Enums/СтавкиНДС.xml",
+    "sha256": "b2c23e161d4e9b526669d113554eab4737fefffe0fec9f3f142776b17e54e59e",
+    "generated_type_xml": "<ns0:GeneratedType xmlns:ns0=\"http://v8.1c.ru/8.3/xcf/readable\" name=\"EnumRef.СтавкиНДС\" category=\"Ref\">\n\t\t\t\t<ns0:TypeId>d3a0be91-8172-4fd4-9de8-6c72c72127b1</ns0:TypeId>\n\t\t\t\t<ns0:ValueId>04b5517d-1301-47e4-ae25-5f7662f84885</ns0:ValueId>\n\t\t\t</ns0:GeneratedType>\n\t\t\t"
+  }
+}

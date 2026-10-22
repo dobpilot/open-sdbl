@@ -1,0 +1,6 @@
+{
+  "exit_code": 0,
+  "rows": 752,
+  "exact_same_projection_table_and_hashes_as_parent": true,
+  "baseline": "/tmp/open-sdbl-report-directions-batch-1016/after.tsv"
+}

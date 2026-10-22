@@ -1,0 +1,17 @@
+{
+  "command": [
+    "/opt/1cv8/x86_64/8.3.27.2342/1cv8",
+    "ENTERPRISE",
+    "/F",
+    "/tmp/sdbl-extension-rights-evidence-1013/missing-users4-ib",
+    "/N",
+    "Target",
+    "/RunModeManagedApplication",
+    "/DisableStartupDialogs",
+    "/Out",
+    "/tmp/sdbl-extension-rights-evidence-1013/missing-target-managed.log"
+  ],
+  "exit": 0,
+  "seconds": 2.06,
+  "completed_oracle": true
+}

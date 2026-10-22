@@ -1,0 +1,4 @@
+
+thread 'main' (37) panicked at /home/kan/Документы/develop/open-bsl/docs/research/fixtures/buh-report-events-sections-1016/public-verifier.rs:36:60:
+SDK должен восстановить полный состав частей
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace

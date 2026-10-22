@@ -1,3 +1,6 @@
+#[path = "balance_temporal.rs"]
+mod balance_temporal;
+
 use std::cell::RefCell;
 use std::collections::BTreeSet;
 
@@ -187,6 +190,7 @@ pub(super) fn compile_accumulation_relation(
             active_column,
             period_column,
             record_kind.expect("a balance register has RecordKind"),
+            fields,
             restriction,
             dialect,
         );
@@ -1235,6 +1239,7 @@ fn compile_accumulation_balance_relation(
     active_column: &QueryableColumn,
     movement_period: &QueryableColumn,
     record_kind: &QueryableColumn,
+    fields: &[QueryableField],
     restriction: Option<&SourceRestriction<'_>>,
     dialect: SqlDialect,
 ) -> Result<CompiledSourceRelation, QueryDiagnostic> {
@@ -1245,19 +1250,31 @@ fn compile_accumulation_balance_relation(
         resource_fields,
         virtual_table.token,
     )?;
+    let temporal = balance_temporal::compile(
+        virtual_table.arguments.first().and_then(Option::as_ref),
+        catalog,
+        snapshot,
+        fields,
+        movement_period,
+        dialect,
+    )?;
     let boundary = virtual_table.arguments.first().and_then(Option::as_ref);
     let condition = virtual_table.arguments.get(1).and_then(Option::as_ref);
-    let boundary = boundary
-        .map(|expression| {
-            compile_virtual_period_literal(
-                expression,
-                virtual_table,
-                "period boundary",
-                catalog,
-                dialect,
-            )
-        })
-        .transpose()?;
+    let boundary = if let Some(temporal) = &temporal {
+        Some(temporal.date.clone())
+    } else {
+        boundary
+            .map(|expression| {
+                compile_virtual_period_literal(
+                    expression,
+                    virtual_table,
+                    "period boundary",
+                    catalog,
+                    dialect,
+                )
+            })
+            .transpose()?
+    };
     let totals_condition = compile_accumulation_condition(
         condition.as_slice(),
         source,
@@ -1290,6 +1307,7 @@ fn compile_accumulation_balance_relation(
         )?;
         compile_historical_balance_sql(
             &boundary,
+            temporal.as_ref().map(|cut| cut.before.as_str()),
             totals,
             dimension_fields,
             resource_fields,
@@ -1636,6 +1654,7 @@ fn compile_current_balance_sql(
 #[allow(clippy::too_many_arguments)]
 fn compile_historical_balance_sql(
     boundary: &str,
+    temporal_before: Option<&str>,
     totals: BalanceTotals<'_>,
     dimension_fields: &[QueryableField],
     resource_fields: &[QueryableField],
@@ -1701,9 +1720,13 @@ fn compile_historical_balance_sql(
         dialect.qualified_column(Some("__movement_base"), &active_column.physical_name),
         dialect.boolean_literal(true)
     )];
-    movement_predicates.push(format!(
-        "(({anchor_period} <= {boundary} AND {movement_period} >= {anchor_period} AND {movement_period} < {boundary}) OR ({anchor_period} > {boundary} AND {movement_period} >= {boundary} AND {movement_period} < {anchor_period}))"
-    ));
+    // Итоги на якоре содержат движения строго до него. Для момента нужна
+    // та же коррекция, но принадлежность границе учитывает и регистратора.
+    movement_predicates.push(if let Some(before) = temporal_before {
+        format!("(({anchor_period} <= {boundary} AND {movement_period} >= {anchor_period} AND ({before})) OR ({anchor_period} > {boundary} AND NOT ({before}) AND {movement_period} < {anchor_period}))")
+    } else {
+        format!("(({anchor_period} <= {boundary} AND {movement_period} >= {anchor_period} AND {movement_period} < {boundary}) OR ({anchor_period} > {boundary} AND {movement_period} >= {boundary} AND {movement_period} < {anchor_period}))")
+    });
     if let Some(condition) = movement_condition {
         movement_predicates.push(condition.to_owned());
     }

@@ -1,0 +1,50 @@
+[
+  {
+    "label": "own-pg-start",
+    "command": [
+      "pg_ctl",
+      "-D",
+      "/tmp/sdbl-dynamic-native-control-1013/pg-en",
+      "-l",
+      "/tmp/sdbl-stored-value-text-native-1013/pg.log",
+      "-o",
+      "-h 127.0.0.1 -p 55439 -k /tmp",
+      "start"
+    ],
+    "exit": 0
+  },
+  {
+    "label": "create-storage-db",
+    "command": [
+      "/opt/1cv8/x86_64/8.3.27.2342/ibcmd",
+      "infobase",
+      "create",
+      "--dbms=PostgreSQL",
+      "--db-server=127.0.0.1 port=55439",
+      "--db-name=sdbl_storage_native",
+      "--db-user=sdbl_control",
+      "--create-database",
+      "--locale=en_US",
+      "--data=/tmp/sdbl-stored-value-text-native-1013/pg-native-data",
+      "--load=/tmp/sdbl-stored-value-text-native-1013/pg-control.cf"
+    ],
+    "exit": 0
+  },
+  {
+    "label": "apply-storage-db",
+    "command": [
+      "/opt/1cv8/x86_64/8.3.27.2342/ibcmd",
+      "config",
+      "apply",
+      "--dbms=PostgreSQL",
+      "--db-server=127.0.0.1 port=55439",
+      "--db-name=sdbl_storage_native",
+      "--db-user=sdbl_control",
+      "--data=/tmp/sdbl-stored-value-text-native-1013/pg-native-data",
+      "--dynamic=disable",
+      "--session-terminate=disable",
+      "--force"
+    ],
+    "exit": 0
+  }
+]

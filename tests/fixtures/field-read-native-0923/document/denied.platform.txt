@@ -1,0 +1,6 @@
+USER=DocFieldsDenied
+FULLNAME=Native DocFieldsDenied
+PRIVILEGED=NO
+READ=NO
+QUERY=ERROR:{DataProcessor.Замеры.Form.Форма.Form(40)}: Ошибка при вызове метода контекста (Execute): Недостаточно прав для работы с таблицей "Document.ЗамерДокумента"
+FIND=ERROR:{DataProcessor.Замеры.Form.Форма.Form(53)}: Ошибка при вызове метода контекста (FindByAttribute): Нарушение прав доступа!

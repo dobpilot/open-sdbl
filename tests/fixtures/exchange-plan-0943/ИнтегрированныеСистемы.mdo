@@ -1,0 +1,255 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mdclass:ExchangePlan xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:core="http://g5.1c.ru/v8/dt/mcore" xmlns:mdclass="http://g5.1c.ru/v8/dt/metadata/mdclass" uuid="d4becac6-bf5f-4947-a734-c702d399d5fc" thisNode="d17f2d15-ec6b-4b5c-a0b2-63f83a687098">
+  <producedTypes>
+    <objectType typeId="0936af5b-79e9-4e36-96e6-8b27d6f3b467" valueTypeId="3fdb160e-3926-49d5-b035-0ab3b9f6efb8"/>
+    <refType typeId="8400e199-1e16-4c61-ac57-4987acd8db6c" valueTypeId="7f99eae6-64ad-4808-b1c8-4d176f935212"/>
+    <selectionType typeId="5efb3a52-622d-4e25-83f3-61137bf652d3" valueTypeId="3d50254c-87d9-408b-aa3e-ff7948f887e7"/>
+    <listType typeId="111c79a1-c080-4256-a63a-e0ef42f72b08" valueTypeId="e3238736-3358-4a64-a860-c523fa1a9981"/>
+    <managerType typeId="0333b9e7-b500-4b26-adce-97c9a3b09d97" valueTypeId="c47c407b-4151-45c6-b4c2-4649958feee4"/>
+  </producedTypes>
+  <name>ИнтегрированныеСистемы</name>
+  <synonym>
+    <key>ru</key>
+    <value>Интегрированные прикладные решения</value>
+  </synonym>
+  <useStandardCommands>true</useStandardCommands>
+  <inputByString>ExchangePlan.ИнтегрированныеСистемы.StandardAttribute.Description</inputByString>
+  <inputByString>ExchangePlan.ИнтегрированныеСистемы.StandardAttribute.Code</inputByString>
+  <fullTextSearchOnInputByString>DontUse</fullTextSearchOnInputByString>
+  <standardAttributes>
+    <dataHistory>Use</dataHistory>
+    <name>ExchangeDate</name>
+    <fillValue xsi:type="core:UndefinedValue"/>
+    <minValue xsi:type="core:UndefinedValue"/>
+    <maxValue xsi:type="core:UndefinedValue"/>
+  </standardAttributes>
+  <standardAttributes>
+    <dataHistory>Use</dataHistory>
+    <name>ThisNode</name>
+    <fillValue xsi:type="core:UndefinedValue"/>
+    <fullTextSearch>Use</fullTextSearch>
+    <minValue xsi:type="core:UndefinedValue"/>
+    <maxValue xsi:type="core:UndefinedValue"/>
+  </standardAttributes>
+  <standardAttributes>
+    <dataHistory>Use</dataHistory>
+    <name>ReceivedNo</name>
+    <fillValue xsi:type="core:UndefinedValue"/>
+    <fullTextSearch>Use</fullTextSearch>
+    <minValue xsi:type="core:UndefinedValue"/>
+    <maxValue xsi:type="core:UndefinedValue"/>
+  </standardAttributes>
+  <standardAttributes>
+    <dataHistory>Use</dataHistory>
+    <name>SentNo</name>
+    <fillValue xsi:type="core:UndefinedValue"/>
+    <fullTextSearch>Use</fullTextSearch>
+    <minValue xsi:type="core:UndefinedValue"/>
+    <maxValue xsi:type="core:UndefinedValue"/>
+  </standardAttributes>
+  <standardAttributes>
+    <dataHistory>Use</dataHistory>
+    <name>Ref</name>
+    <fillValue xsi:type="core:UndefinedValue"/>
+    <fullTextSearch>Use</fullTextSearch>
+    <minValue xsi:type="core:UndefinedValue"/>
+    <maxValue xsi:type="core:UndefinedValue"/>
+  </standardAttributes>
+  <standardAttributes>
+    <dataHistory>Use</dataHistory>
+    <name>DeletionMark</name>
+    <fillValue xsi:type="core:UndefinedValue"/>
+    <fullTextSearch>Use</fullTextSearch>
+    <minValue xsi:type="core:UndefinedValue"/>
+    <maxValue xsi:type="core:UndefinedValue"/>
+  </standardAttributes>
+  <standardAttributes>
+    <dataHistory>Use</dataHistory>
+    <name>Description</name>
+    <fillValue xsi:type="core:UndefinedValue"/>
+    <fillChecking>ShowError</fillChecking>
+    <fullTextSearch>Use</fullTextSearch>
+    <minValue xsi:type="core:UndefinedValue"/>
+    <maxValue xsi:type="core:UndefinedValue"/>
+  </standardAttributes>
+  <standardAttributes>
+    <dataHistory>Use</dataHistory>
+    <name>Code</name>
+    <fillValue xsi:type="core:UndefinedValue"/>
+    <fillChecking>ShowError</fillChecking>
+    <fullTextSearch>Use</fullTextSearch>
+    <minValue xsi:type="core:UndefinedValue"/>
+    <maxValue xsi:type="core:UndefinedValue"/>
+  </standardAttributes>
+  <createOnInput>DontUse</createOnInput>
+  <dataLockControlMode>Managed</dataLockControlMode>
+  <fullTextSearch>Use</fullTextSearch>
+  <objectPresentation>
+    <key>ru</key>
+    <value>Интегрированное прикладное решение</value>
+  </objectPresentation>
+  <explanation>
+    <key>ru</key>
+    <value>Интегрированные прикладные решения на платформе 1С:Предприятие, использующие средства бесшовной интеграции</value>
+  </explanation>
+  <codeLength>3</codeLength>
+  <codeAllowedLength>Variable</codeAllowedLength>
+  <descriptionLength>150</descriptionLength>
+  <content>
+    <mdObject>Catalog.ДокументыПредприятия</mdObject>
+  </content>
+  <content>
+    <mdObject>Catalog.Контрагенты</mdObject>
+  </content>
+  <content>
+    <mdObject>InformationRegister.ТекущиеСостоянияДокументов</mdObject>
+  </content>
+  <content>
+    <mdObject>Catalog.Мероприятия</mdObject>
+  </content>
+  <defaultPresentation>AsDescription</defaultPresentation>
+  <editType>InDialog</editType>
+  <choiceMode>BothWays</choiceMode>
+  <defaultObjectForm>ExchangePlan.ИнтегрированныеСистемы.Form.ФормаУзла</defaultObjectForm>
+  <attributes uuid="1e74bab7-dcee-4112-9e56-132faffce56c">
+    <name>АдресВебСервиса</name>
+    <synonym>
+      <key>ru</key>
+      <value>Адрес веб-сервиса</value>
+    </synonym>
+    <type>
+      <types>String</types>
+      <stringQualifiers>
+        <length>1024</length>
+      </stringQualifiers>
+    </type>
+    <minValue xsi:type="core:UndefinedValue"/>
+    <maxValue xsi:type="core:UndefinedValue"/>
+    <fillValue xsi:type="core:StringValue"/>
+  </attributes>
+  <attributes uuid="5737d959-b812-45a3-9312-b88f4aee684b">
+    <name>АдресХостаВнешнихНавигационныхСсылок</name>
+    <synonym>
+      <key>ru</key>
+      <value>Адрес хоста внешних навигационных ссылок</value>
+    </synonym>
+    <type>
+      <types>String</types>
+      <stringQualifiers>
+        <length>1024</length>
+      </stringQualifiers>
+    </type>
+    <minValue xsi:type="core:UndefinedValue"/>
+    <maxValue xsi:type="core:UndefinedValue"/>
+    <fillValue xsi:type="core:UndefinedValue"/>
+  </attributes>
+  <attributes uuid="34ccf388-90e9-4eee-a7a1-422906e975fb">
+    <name>Идентификатор</name>
+    <synonym>
+      <key>ru</key>
+      <value>Идентификатор</value>
+    </synonym>
+    <type>
+      <types>String</types>
+      <stringQualifiers>
+        <length>36</length>
+      </stringQualifiers>
+    </type>
+    <minValue xsi:type="core:UndefinedValue"/>
+    <maxValue xsi:type="core:UndefinedValue"/>
+    <fillValue xsi:type="core:StringValue"/>
+    <fullTextSearch>Use</fullTextSearch>
+    <dataHistory>Use</dataHistory>
+  </attributes>
+  <attributes uuid="d04c13ef-737b-47b2-9ffe-c2142514403d">
+    <name>ПоддерживаетПравилаЗагрузкиДанныхВДО</name>
+    <synonym>
+      <key>ru</key>
+      <value>Поддерживает правила загрузки данных в 1С:Документооборот</value>
+    </synonym>
+    <type>
+      <types>Boolean</types>
+    </type>
+    <minValue xsi:type="core:UndefinedValue"/>
+    <maxValue xsi:type="core:UndefinedValue"/>
+    <fillValue xsi:type="core:UndefinedValue"/>
+    <fullTextSearch>Use</fullTextSearch>
+    <dataHistory>Use</dataHistory>
+  </attributes>
+  <attributes uuid="71db3b01-caf1-4965-9af3-8f8b853345d4">
+    <name>СопоставлятьСотрудниковПоДолжности</name>
+    <synonym>
+      <key>ru</key>
+      <value>Сопоставлять сотрудников по должности</value>
+    </synonym>
+    <type>
+      <types>Boolean</types>
+    </type>
+    <minValue xsi:type="core:UndefinedValue"/>
+    <maxValue xsi:type="core:UndefinedValue"/>
+    <fillValue xsi:type="core:UndefinedValue"/>
+    <fullTextSearch>Use</fullTextSearch>
+    <dataHistory>Use</dataHistory>
+  </attributes>
+  <attributes uuid="ac417619-f336-4876-862a-3739beecb7c3">
+    <name>СопоставлятьСотрудниковПоПодразделению</name>
+    <synonym>
+      <key>ru</key>
+      <value>Сопоставлять сотрудников по подразделению</value>
+    </synonym>
+    <type>
+      <types>Boolean</types>
+    </type>
+    <minValue xsi:type="core:UndefinedValue"/>
+    <maxValue xsi:type="core:UndefinedValue"/>
+    <fillValue xsi:type="core:UndefinedValue"/>
+    <fullTextSearch>Use</fullTextSearch>
+    <dataHistory>Use</dataHistory>
+  </attributes>
+  <attributes uuid="d547d6b0-1a0d-48cf-86da-3b731ec93f69">
+    <name>ТипРасположенияХостаВнешнихНавигационныхСсылок</name>
+    <synonym>
+      <key>ru</key>
+      <value>Тип расположения хоста внешних навигационных ссылок</value>
+    </synonym>
+    <type>
+      <types>EnumRef.ТипыРасположенияИнформационнойБазы</types>
+    </type>
+    <minValue xsi:type="core:UndefinedValue"/>
+    <maxValue xsi:type="core:UndefinedValue"/>
+    <fillValue xsi:type="core:UndefinedValue"/>
+  </attributes>
+  <attributes uuid="e0e412d5-0748-4d4b-8190-213b866a2b87">
+    <name>УзелДляСинхронизацииДанных</name>
+    <synonym>
+      <key>ru</key>
+      <value>Узел для синхронизации данных</value>
+    </synonym>
+    <type>
+      <types>ExchangePlanRef</types>
+    </type>
+    <minValue xsi:type="core:UndefinedValue"/>
+    <maxValue xsi:type="core:UndefinedValue"/>
+    <fillValue xsi:type="core:UndefinedValue"/>
+    <fullTextSearch>Use</fullTextSearch>
+    <dataHistory>Use</dataHistory>
+  </attributes>
+  <forms uuid="bc223ca6-7f8d-43a7-9712-f33b5e136968">
+    <name>АдресХостаВнешнихНавигационныхСсылок</name>
+    <synonym>
+      <key>ru</key>
+      <value>Адрес хоста внешних навигационных ссылок</value>
+    </synonym>
+    <usePurposes>PersonalComputer</usePurposes>
+    <usePurposes>MobileDevice</usePurposes>
+  </forms>
+  <forms uuid="eb88b52b-f1e5-4400-9ea6-269bdab6a70d">
+    <name>ФормаУзла</name>
+    <synonym>
+      <key>ru</key>
+      <value>Форма узла</value>
+    </synonym>
+    <usePurposes>PersonalComputer</usePurposes>
+    <usePurposes>MobileDevice</usePurposes>
+  </forms>
+</mdclass:ExchangePlan>

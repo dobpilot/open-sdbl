@@ -1,0 +1,62 @@
+[
+  {
+    "case": "root-read",
+    "pid": 456777,
+    "command": [
+      "/opt/1cv8/x86_64/8.3.27.2342/1cv8c",
+      "ENTERPRISE",
+      "/N",
+      "OpenBslSettingsAdmin",
+      "/WS",
+      "http://127.0.0.1:55440/",
+      "/C",
+      "root-read",
+      "/RunModeManagedApplication",
+      "/DisableStartupDialogs",
+      "/Out",
+      "/home/kan/\u0414\u043e\u043a\u0443\u043c\u0435\u043d\u0442\u044b/develop/open-bsl/target/diagnostics/system-settings-native-1015/root-read.runtime.log"
+    ],
+    "exit": 0,
+    "seconds": 7.37
+  },
+  {
+    "case": "A-read",
+    "pid": 457308,
+    "command": [
+      "/opt/1cv8/x86_64/8.3.27.2342/1cv8c",
+      "ENTERPRISE",
+      "/N",
+      "OpenBslSettingsAdmin",
+      "/WS",
+      "http://127.0.0.1:55440/",
+      "/C",
+      "A-read",
+      "/RunModeManagedApplication",
+      "/DisableStartupDialogs",
+      "/Out",
+      "/home/kan/\u0414\u043e\u043a\u0443\u043c\u0435\u043d\u0442\u044b/develop/open-bsl/target/diagnostics/system-settings-native-1015/A-read.runtime.log"
+    ],
+    "exit": 0,
+    "seconds": 7.37
+  },
+  {
+    "case": "B-read",
+    "pid": 457515,
+    "command": [
+      "/opt/1cv8/x86_64/8.3.27.2342/1cv8c",
+      "ENTERPRISE",
+      "/N",
+      "OpenBslSettingsAdmin",
+      "/WS",
+      "http://127.0.0.1:55440/",
+      "/C",
+      "B-read",
+      "/RunModeManagedApplication",
+      "/DisableStartupDialogs",
+      "/Out",
+      "/home/kan/\u0414\u043e\u043a\u0443\u043c\u0435\u043d\u0442\u044b/develop/open-bsl/target/diagnostics/system-settings-native-1015/B-read.runtime.log"
+    ],
+    "exit": 0,
+    "seconds": 7.37
+  }
+]

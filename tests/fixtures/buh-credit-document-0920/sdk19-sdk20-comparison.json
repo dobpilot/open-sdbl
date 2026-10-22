@@ -1,0 +1,9 @@
+{
+  "native_documents": 455,
+  "affected_documents_restored": 20,
+  "affected_attributes_typed": 188,
+  "modern_documents_unchanged": 384,
+  "modern_typed_attributes_unchanged": 8496,
+  "other_legacy_documents_unchanged": 51,
+  "note": "Descriptor counts and known types checked against native XML membership; exact type/qualifier comparison is separately required in focused native regression."
+}

@@ -1,0 +1,31 @@
+[
+  {
+    "name": "ControlAdmin",
+    "uuid": "0f618a99-d28c-4bf5-b329-4129462b46f0",
+    "full": true
+  },
+  {
+    "name": "ReadOwner",
+    "uuid": "e204b458-3b1b-4fe3-adf2-1e8a85a55ea5",
+    "read": true,
+    "defaults": false
+  },
+  {
+    "name": "NoRead",
+    "uuid": "3a269236-4b86-43cc-8be5-0fc6e042c7b8",
+    "read": false,
+    "defaults": false
+  },
+  {
+    "name": "DefaultsOnly",
+    "uuid": "64637e5a-e1b5-445a-9ef9-662cf41dc82b",
+    "read": false,
+    "defaults": true
+  },
+  {
+    "name": "ReadDefaults",
+    "uuid": "f879c7a8-2c55-4814-86b0-6deba5a3b672",
+    "read": true,
+    "defaults": true
+  }
+]

@@ -29,11 +29,34 @@ mod tests;
 
 pub(super) struct MsSqlMetadataSource<'session> {
     session: &'session mut MsSqlSession,
+    indexed_stream_abandoned: bool,
+    transaction_unfinished: bool,
 }
 
 impl<'session> MsSqlMetadataSource<'session> {
     pub(super) fn new(session: &'session mut MsSqlSession) -> Self {
-        Self { session }
+        Self {
+            session,
+            indexed_stream_abandoned: false,
+            transaction_unfinished: false,
+        }
+    }
+
+    fn finish_transaction(&mut self) {
+        if self.session.is_dead() {
+            self.session.poison_and_drop();
+        }
+        self.transaction_unfinished = false;
+    }
+}
+
+impl Drop for MsSqlMetadataSource<'_> {
+    fn drop(&mut self) {
+        if self.transaction_unfinished {
+            // Cancellation bypasses async error handling. An unfinished BEGIN,
+            // read or COMMIT may still own a transaction or a TDS response.
+            self.session.poison_and_drop();
+        }
     }
 }
 
@@ -79,6 +102,7 @@ async fn selected_mssql_resource(
 
 impl MetadataSource for MsSqlMetadataSource<'_> {
     async fn begin_readonly(&mut self) -> Result<(), DbError> {
+        self.transaction_unfinished = true;
         self.session.execute_batch("BEGIN TRANSACTION").await
     }
 
@@ -97,6 +121,139 @@ impl MetadataSource for MsSqlMetadataSource<'_> {
             *flag = required_mssql_i32(row, index, "storage layout flag")?;
         }
         Ok(StorageLayout::from_flags(flags))
+    }
+
+    async fn read_indexed_resources(
+        &mut self,
+        layout: &StorageLayout,
+        names: &[String],
+        extension: bool,
+        limits: Limits,
+    ) -> Result<Vec<ConfigResource>, DbError> {
+        if names.is_empty() {
+            return Ok(Vec::new());
+        }
+        let base = if extension {
+            MsSqlMetadataQueries::extension_resources(layout)
+                .ok_or_else(|| DbError::Data("ConfigCAS resource store is unavailable".into()))?
+        } else {
+            MsSqlMetadataQueries::config_all(layout)
+        };
+        let query = crate::indexed::sql(base, names, true);
+        let totals_query = crate::indexed::totals_sql(base, names, true);
+        let totals = mssql_rows(
+            self.session.client_mut()?,
+            limits,
+            "MsSql indexed resource totals",
+            &totals_query,
+        )
+        .await?;
+        let totals = exactly_one_mssql_row(&totals, "indexed resource totals")?;
+        check_retention_totals(
+            limits,
+            unsigned_progress_total(
+                required_mssql_i64(totals, 0, "resource count")?,
+                "resource count",
+            )?,
+            unsigned_progress_total(
+                required_mssql_i64(totals, 1, "compressed byte count")?,
+                "compressed byte count",
+            )?,
+        )?;
+        let read = query_timeout(limits, "MsSql indexed resources", async {
+            let rows = self
+                .session
+                .client_mut()?
+                .simple_query(query)
+                .await
+                .map_err(DbError::mssql_query)?
+                .into_row_stream();
+            let parts = rows.map(|row| {
+                let row = row.map_err(DbError::mssql_query)?;
+                Ok((
+                    required_mssql_string(&row, 0, "resource name")?,
+                    required_mssql_i32(&row, 1, "resource part")?,
+                    required_mssql_bytes(&row, 2, "resource bytes")?,
+                ))
+            });
+            let mut held = 0;
+            let parts = parts.map(|part| crate::indexed::bound_part(part, &mut held, limits));
+            collect_bounded_resources(assemble_parts(parts), limits, &mut NoProgress).await
+        })
+        .await;
+        match read {
+            Ok(resources) => crate::indexed::ordered(names, resources),
+            Err(error) => {
+                // Прерванный TDS-поток не переиспользуется: при тайм-ауте,
+                // лимите или повреждённых частях соединение теряется.
+                self.session.poison_and_drop();
+                self.indexed_stream_abandoned = true;
+                Err(error)
+            }
+        }
+    }
+
+    async fn read_configuration_resource_names(
+        &mut self,
+        _layout: &StorageLayout,
+    ) -> Result<Vec<String>, DbError> {
+        let limits = self.session.limits();
+        let read = query_timeout(limits, "MsSql Config filenames", async {
+            let rows = self
+                .session
+                .client_mut()?
+                .simple_query(crate::metadata_inputs::names_sql(true))
+                .await
+                .map_err(DbError::mssql_query)?
+                .into_row_stream();
+            crate::metadata_inputs::collect_names(
+                rows.map(|row| {
+                    let row = row.map_err(DbError::mssql_query)?;
+                    required_mssql_string(&row, 0, "Config filename")
+                }),
+                limits,
+            )
+            .await
+        })
+        .await;
+        if read.is_err() {
+            self.session.poison_and_drop();
+            self.indexed_stream_abandoned = true;
+        }
+        read
+    }
+
+    async fn read_bounded_extension_restructures(
+        &mut self,
+        layout: &StorageLayout,
+    ) -> Result<Vec<Vec<u8>>, DbError> {
+        let Some(query) = MsSqlMetadataQueries::extension_restructure(layout) else {
+            return Ok(Vec::new());
+        };
+        let limits = self.session.limits();
+        let read = query_timeout(limits, "MsSql extension structures", async {
+            let rows = self
+                .session
+                .client_mut()?
+                .simple_query(query)
+                .await
+                .map_err(DbError::mssql_query)?
+                .into_row_stream();
+            crate::metadata_inputs::collect_restructures(
+                rows.map(|row| {
+                    let row = row.map_err(DbError::mssql_query)?;
+                    required_mssql_bytes(&row, 0, "extension restructure payload")
+                }),
+                limits,
+            )
+            .await
+        })
+        .await;
+        if read.is_err() {
+            self.session.poison_and_drop();
+            self.indexed_stream_abandoned = true;
+        }
+        read
     }
 
     async fn read_db_names(
@@ -450,14 +607,23 @@ impl MetadataSource for MsSqlMetadataSource<'_> {
     }
 
     async fn commit_readonly(&mut self) -> Result<(), DbError> {
-        match self.session.execute_batch("COMMIT TRANSACTION").await {
+        let result = match self.session.execute_batch("COMMIT TRANSACTION").await {
             Ok(()) => Ok(()),
             Err(error) => Err(self.session.rollback_after_error(error).await),
-        }
+        };
+        self.finish_transaction();
+        result
     }
 
     async fn rollback_readonly(&mut self, original: DbError) -> DbError {
-        self.session.rollback_after_error(original).await
+        if self.indexed_stream_abandoned || !self.transaction_unfinished {
+            // A failed stream already closed the connection, or COMMIT's
+            // error path already finished cleanup. Preserve the original error.
+            return original;
+        }
+        let error = self.session.rollback_after_error(original).await;
+        self.finish_transaction();
+        error
     }
 }
 
@@ -562,10 +728,10 @@ impl MsSqlSession {
     }
 
     /// Whether the session can no longer be used: a failure poisoned it,
-    /// or a streaming read was stopped and the connection carrying the
-    /// statement was dropped to end it.
+    /// or a streaming read or metadata acquisition was cancelled and the
+    /// connection carrying the statement was dropped to end it.
     #[must_use]
     pub const fn is_dead(&self) -> bool {
-        self.poisoned
+        self.poisoned || self.transaction_operation_pending
     }
 }

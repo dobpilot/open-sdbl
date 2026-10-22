@@ -1,0 +1,56 @@
+[
+  {
+    "case": "off-write",
+    "pid": 462146,
+    "exit": 0,
+    "seconds": 7.37
+  },
+  {
+    "case": "on-a-write",
+    "pid": 462669,
+    "exit": 0,
+    "seconds": 7.37
+  },
+  {
+    "case": "on-b-write",
+    "pid": 462841,
+    "exit": 0,
+    "seconds": 7.37
+  },
+  {
+    "case": "off-read",
+    "pid": 463018,
+    "exit": 0,
+    "seconds": 7.37
+  },
+  {
+    "case": "on-a-read",
+    "pid": 463451,
+    "exit": 0,
+    "seconds": 7.37
+  },
+  {
+    "case": "on-inactive-read",
+    "pid": 463639,
+    "exit": 0,
+    "seconds": 7.37
+  },
+  {
+    "case": "off-no-value-read",
+    "pid": 463844,
+    "exit": 0,
+    "seconds": 7.37
+  },
+  {
+    "case": "off-inactive-read",
+    "pid": 464018,
+    "exit": 0,
+    "seconds": 7.37
+  },
+  {
+    "case": "off-unset-use-read",
+    "pid": 464202,
+    "exit": 0,
+    "seconds": 7.37
+  }
+]

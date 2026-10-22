@@ -146,7 +146,8 @@ impl DatabaseSession {
     pub async fn cancel_query(&mut self, cancellation: QueryCancellation) -> Result<(), DbError> {
         match (self, cancellation) {
             (Self::Postgres(session), QueryCancellation::Postgres(token)) => {
-                session.cancel_query(token).await
+                session.cancel_query(token).await?;
+                session.rollback_after_cancellation().await
             }
             (Self::MsSql(session), QueryCancellation::MsSql) => {
                 session.cancel_and_reconnect().await
@@ -154,6 +155,58 @@ impl DatabaseSession {
             _ => Err(DbError::Database(
                 "database session changed while cancelling a query".to_owned(),
             )),
+        }
+    }
+
+    /// Начинает невложенную транзакцию чтения на принадлежащем сеансу соединении.
+    ///
+    /// Чтения `query` и `query_each` используют её до явного завершения.
+    /// Ошибка чтения откатывает транзакцию; неудачная очистка закрывает соединение.
+    /// Получение метаданных и конфигурации внутри неё отклоняется.
+    /// PostgreSQL проверяет `READ COMMITTED READ ONLY`; SQL Server сохраняет
+    /// прежнее требование пользователя с правами только для чтения.
+    /// Прерванный future делает соединение непригодным для повторного использования.
+    /// Закрытие или освобождение сеанса разрывает соединение и откатывает работу на сервере.
+    ///
+    /// # Errors
+    /// Возвращает ошибку состояния сеанса, сервера или тайм-аута.
+    pub async fn begin_read_only_transaction(&mut self) -> Result<(), DbError> {
+        match self {
+            Self::Postgres(session) => session.begin_read_only_transaction().await,
+            Self::MsSql(session) => session.begin_read_only_transaction().await,
+        }
+    }
+
+    /// Завершает явную транзакцию на принадлежащем сеансу соединении.
+    ///
+    /// # Errors
+    /// Возвращает ошибку состояния сеанса, сервера или тайм-аута.
+    pub async fn commit_transaction(&mut self) -> Result<(), DbError> {
+        match self {
+            Self::Postgres(session) => session.commit_transaction().await,
+            Self::MsSql(session) => session.commit_transaction().await,
+        }
+    }
+
+    /// Откатывает явную транзакцию на принадлежащем сеансу соединении.
+    ///
+    /// # Errors
+    /// Возвращает ошибку состояния сеанса, сервера или тайм-аута.
+    pub async fn rollback_transaction(&mut self) -> Result<(), DbError> {
+        match self {
+            Self::Postgres(session) => session.rollback_transaction().await,
+            Self::MsSql(session) => session.rollback_transaction().await,
+        }
+    }
+
+    /// Проверяет состояние явной транзакции на сервере.
+    ///
+    /// # Errors
+    /// Возвращает ошибку состояния сеанса, сервера или тайм-аута.
+    pub async fn transaction_active(&mut self) -> Result<bool, DbError> {
+        match self {
+            Self::Postgres(session) => session.transaction_active().await,
+            Self::MsSql(session) => session.transaction_active().await,
         }
     }
 
@@ -208,6 +261,86 @@ impl DatabaseSession {
         match self {
             Self::Postgres(session) => session.layout(),
             Self::MsSql(session) => session.layout(),
+        }
+    }
+
+    /// Выполняет обнаружение через провайдер; см. [`crate::PostgresSession::configuration_metadata_inputs`].
+    ///
+    /// # Errors
+    /// Возвращает ошибку сеанса, схемы, запроса, декодирования или ограничения.
+    pub async fn configuration_metadata_inputs(
+        &mut self,
+    ) -> Result<crate::ConfigurationMetadataInputs, DbError> {
+        match self {
+            Self::Postgres(session) => session.configuration_metadata_inputs().await,
+            Self::MsSql(session) => session.configuration_metadata_inputs().await,
+        }
+    }
+
+    /// Выполняет обнаружение через провайдер; см. [`crate::PostgresSession::configuration_resource_names`].
+    ///
+    /// # Errors
+    /// Возвращает ошибку сеанса, схемы, запроса, декодирования или ограничения.
+    pub async fn configuration_resource_names(&mut self) -> Result<Vec<String>, DbError> {
+        match self {
+            Self::Postgres(session) => session.configuration_resource_names().await,
+            Self::MsSql(session) => session.configuration_resource_names().await,
+        }
+    }
+
+    /// Читает физические структуры расширений без `Config` и `ConfigCAS`.
+    /// Результат ограничен существующими бюджетами хранения и распаковки.
+    ///
+    /// # Errors
+    /// Возвращает ошибку сеанса, запроса, лимита или декодирования структуры.
+    pub async fn configuration_extension_metadata(
+        &mut self,
+    ) -> Result<Vec<open_sdbl::metadata::ExtensionMetadata>, DbError> {
+        match self {
+            Self::Postgres(session) => session.configuration_extension_metadata().await,
+            Self::MsSql(session) => session.configuration_extension_metadata().await,
+        }
+    }
+
+    /// Выполняет адресное чтение через провайдер; см. [`crate::PostgresSession::configuration_bootstrap`].
+    ///
+    /// # Errors
+    /// Возвращает ошибку сеанса, ресурса, запроса, селектора или ограничения.
+    pub async fn configuration_bootstrap(
+        &mut self,
+        selector: &mut dyn ConfigSelector,
+    ) -> Result<crate::ConfigurationBootstrap, DbError> {
+        match self {
+            Self::Postgres(session) => session.configuration_bootstrap(selector).await,
+            Self::MsSql(session) => session.configuration_bootstrap(selector).await,
+        }
+    }
+
+    /// Выполняет адресное чтение через провайдер; см. [`crate::PostgresSession::configuration_resources`].
+    ///
+    /// # Errors
+    /// Возвращает ошибку сеанса, ресурса, запроса, селектора или ограничения.
+    pub async fn configuration_resources(
+        &mut self,
+        names: &[&str],
+    ) -> Result<Vec<crate::pipeline::ConfigResource>, DbError> {
+        match self {
+            Self::Postgres(session) => session.configuration_resources(names).await,
+            Self::MsSql(session) => session.configuration_resources(names).await,
+        }
+    }
+
+    /// Выполняет адресное чтение через провайдер; см. [`crate::PostgresSession::extension_resources`].
+    ///
+    /// # Errors
+    /// Возвращает ошибку сеанса, ресурса, запроса, селектора или ограничения.
+    pub async fn extension_resources(
+        &mut self,
+        keys: &[open_sdbl::metadata::ContentKey],
+    ) -> Result<Vec<crate::pipeline::ConfigResource>, DbError> {
+        match self {
+            Self::Postgres(session) => session.extension_resources(keys).await,
+            Self::MsSql(session) => session.extension_resources(keys).await,
         }
     }
 

@@ -1,0 +1,8 @@
+{
+  "EnumRef.ТипыНаправленийСдачиОтчетности": {
+    "type_id": "8a20267d-5c6a-451a-a8a6-2774b0761f66",
+    "file": "/home/kan/Документы/develop/open-bsl/target/diagnostics/buh-native-config-1015/native-xml/Enums/ТипыНаправленийСдачиОтчетности.xml",
+    "sha256": "37a1bf3c313c3545be01eb27c34c71b0c63391084aaf96b3bae7ae9fc65a9647",
+    "generated_type_xml": "<ns0:GeneratedType xmlns:ns0=\"http://v8.1c.ru/8.3/xcf/readable\" name=\"EnumRef.ТипыНаправленийСдачиОтчетности\" category=\"Ref\">\n\t\t\t\t<ns0:TypeId>8a20267d-5c6a-451a-a8a6-2774b0761f66</ns0:TypeId>\n\t\t\t\t<ns0:ValueId>db0e7801-768a-43a9-a583-301901451356</ns0:ValueId>\n\t\t\t</ns0:GeneratedType>\n\t\t\t"
+  }
+}

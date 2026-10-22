@@ -1,0 +1,225 @@
+{
+  "scope": "synthetic tag-admission controls, not native profiles; no shape/slot/type/identity/name changes",
+  "controls": [
+    {
+      "name": "synthetic-section-tags3",
+      "tree_changes": [
+        {
+          "path": [
+            3,
+            2,
+            0,
+            1,
+            5,
+            1,
+            0
+          ],
+          "before": "2",
+          "after": "3"
+        },
+        {
+          "path": [
+            3,
+            3,
+            0,
+            1,
+            5,
+            1,
+            0
+          ],
+          "before": "2",
+          "after": "3"
+        }
+      ],
+      "descriptors": 23,
+      "known_declarations": 10,
+      "owner_parts_known": true,
+      "field_memberships_known": 0
+    },
+    {
+      "name": "synthetic-section-and-field-tags3",
+      "tree_changes": [
+        {
+          "path": [
+            3,
+            2,
+            0,
+            1,
+            5,
+            1,
+            0
+          ],
+          "before": "2",
+          "after": "3"
+        },
+        {
+          "path": [
+            3,
+            2,
+            2,
+            2,
+            0,
+            1,
+            1,
+            1,
+            0
+          ],
+          "before": "2",
+          "after": "3"
+        },
+        {
+          "path": [
+            3,
+            2,
+            2,
+            3,
+            0,
+            1,
+            1,
+            1,
+            0
+          ],
+          "before": "2",
+          "after": "3"
+        },
+        {
+          "path": [
+            3,
+            2,
+            2,
+            4,
+            0,
+            1,
+            1,
+            1,
+            0
+          ],
+          "before": "2",
+          "after": "3"
+        },
+        {
+          "path": [
+            3,
+            2,
+            2,
+            5,
+            0,
+            1,
+            1,
+            1,
+            0
+          ],
+          "before": "2",
+          "after": "3"
+        },
+        {
+          "path": [
+            3,
+            2,
+            2,
+            6,
+            0,
+            1,
+            1,
+            1,
+            0
+          ],
+          "before": "2",
+          "after": "3"
+        },
+        {
+          "path": [
+            3,
+            2,
+            2,
+            7,
+            0,
+            1,
+            1,
+            1,
+            0
+          ],
+          "before": "2",
+          "after": "3"
+        },
+        {
+          "path": [
+            3,
+            3,
+            0,
+            1,
+            5,
+            1,
+            0
+          ],
+          "before": "2",
+          "after": "3"
+        },
+        {
+          "path": [
+            3,
+            3,
+            2,
+            2,
+            0,
+            1,
+            1,
+            1,
+            0
+          ],
+          "before": "2",
+          "after": "3"
+        },
+        {
+          "path": [
+            3,
+            3,
+            2,
+            3,
+            0,
+            1,
+            1,
+            1,
+            0
+          ],
+          "before": "2",
+          "after": "3"
+        },
+        {
+          "path": [
+            3,
+            3,
+            2,
+            4,
+            0,
+            1,
+            1,
+            1,
+            0
+          ],
+          "before": "2",
+          "after": "3"
+        },
+        {
+          "path": [
+            3,
+            3,
+            2,
+            5,
+            0,
+            1,
+            1,
+            1,
+            0
+          ],
+          "before": "2",
+          "after": "3"
+        }
+      ],
+      "descriptors": 23,
+      "known_declarations": 20,
+      "owner_parts_known": true,
+      "field_memberships_known": 2
+    }
+  ]
+}

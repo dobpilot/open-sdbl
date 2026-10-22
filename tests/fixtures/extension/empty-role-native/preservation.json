@@ -1,0 +1,12 @@
+{
+  "role": "2bc105dd-b388-436d-9410-a756e3415d30",
+  "compressed_sha256": "6c0258240de5d3cb1dbb7e1e3af6220ead8bad77119517a285bdc804fb5e8a3d",
+  "inflated_sha256": "d69d5275774096db7cc733a99d434a1b2529f627b4c23f74c3d2a29c47951a21",
+  "preserved": true,
+  "rights_resource_added": false,
+  "modified": [
+    "26c30ece-33b5-498a-b409-a91a046ba66b",
+    "versions"
+  ],
+  "packer": "v8unpack 51473807dc8f874e9b06d84f466fff0861f3c4ac"
+}

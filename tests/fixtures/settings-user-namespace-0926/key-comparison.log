@@ -1,0 +1,8 @@
+WARNING: password file "/dev/null" is not a plain file
+|f|f
+ControlAdmin|t|f
+GhostUser|f|f
+SettingsAdmin|f|f
+SettingsDataAdmin|f|f
+SettingsNone|f|f
+SettingsSave|f|f

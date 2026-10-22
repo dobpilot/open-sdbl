@@ -1,0 +1,65 @@
+{
+  "source": "original BUH Config read-only, exact owner/child UUID prefixes",
+  "resources": [
+    {
+      "resource": "254f6ccd-0451-4231-91c9-4abe57b647be",
+      "bytes": 205,
+      "sha256": "09d7d44bae818aab83f298a39b1569a69065f5070c9750ccf8cee64e246a6cd3"
+    },
+    {
+      "resource": "254f6ccd-0451-4231-91c9-4abe57b647be.0",
+      "bytes": 1900,
+      "sha256": "a12f61ab331c3cbc6cd947eaaca3128069f4467169ab95e24d87654d8306b1a2"
+    },
+    {
+      "resource": "4507a92e-abb6-4329-88b2-3429bc694bc6",
+      "bytes": 782,
+      "sha256": "980b486fa50f486f84c473ce383ec4d64588ee93fbc75c4fd90d4222c4cfb06a"
+    },
+    {
+      "resource": "4507a92e-abb6-4329-88b2-3429bc694bc6.0",
+      "bytes": 5499,
+      "sha256": "b0cd61836eb278213efc804bb1cefeb6f1afef04c8fb3b3f63d27b9353769eb9"
+    },
+    {
+      "resource": "4507a92e-abb6-4329-88b2-3429bc694bc6.2",
+      "bytes": 515,
+      "sha256": "a0ca4c59c5401a6f2ba9eb5e9cdc46c82cf89778955db18b7e9f5a481a84b88c"
+    },
+    {
+      "resource": "59aadc03-adbc-481f-89bc-d7f391789522",
+      "bytes": 149,
+      "sha256": "a4e7b010d509d8f08b70f9fcc844d2abfc2a7b0a0c37c70a6b09615ae9348f9c"
+    },
+    {
+      "resource": "59aadc03-adbc-481f-89bc-d7f391789522.0",
+      "bytes": 5240,
+      "sha256": "082c2574fed2df9a155cdf4b35edd09eef998cab75d20a5371a8ed446fd28667"
+    },
+    {
+      "resource": "ea0843f4-60fb-4d44-abf4-0021867c636b",
+      "bytes": 189,
+      "sha256": "a0beea15fee455c3194a39df4b0fce26139b5ae3f460b8aecd7071db90bc7734"
+    },
+    {
+      "resource": "ea0843f4-60fb-4d44-abf4-0021867c636b.0",
+      "bytes": 2200,
+      "sha256": "b6a68d5bdd2fef42f6a286dff57c8f18363104f2208ef9cc8ce1dd8bdf30c25f"
+    },
+    {
+      "resource": "efb6b3b6-d57b-469f-a7c2-f4e0308d0c7f",
+      "bytes": 200,
+      "sha256": "290a19f906b88758e32910a0346795eee938b55280ae85da6a58f04dfd44cc7b"
+    },
+    {
+      "resource": "efb6b3b6-d57b-469f-a7c2-f4e0308d0c7f.0",
+      "bytes": 52624,
+      "sha256": "f7f1745417674a7331e39a6113416802ff1ad1c7201ee861f5238926628d64ea"
+    },
+    {
+      "resource": "versions",
+      "bytes": 2895646,
+      "sha256": "21ba0d1a4a8216049250f65367a93233bdc3923574f7498104e3421d175f998a"
+    }
+  ]
+}

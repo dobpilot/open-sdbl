@@ -1,0 +1,48 @@
+{
+  "platform": "8.3.27.2342",
+  "native_control": "CF via existing v8unpack then native LoadCfg and DumpConfigToFiles in new own filebase",
+  "v8unpack": "51473807dc8f874e9b06d84f466fff0861f3c4ac",
+  "source": "original BUH exact owner and declared child UUID resources, read-only",
+  "files": {
+    "red-receipt.log": {
+      "bytes": 1058,
+      "sha256": "13a4ce59d2b8cef895da5d42b47de07b07429fa1bf13d05f2f187cb8f7d9fc5d"
+    },
+    "README.md": {
+      "bytes": 3460,
+      "sha256": "f24c0488fd936fb8e216111d24a2c4aee1a1aa4dfc14a4bf5372a3795d6cf6e3"
+    },
+    "index-consistency.json": {
+      "bytes": 195,
+      "sha256": "2be206a62b59608a8874b32b7333f4c799aac407d26a44a8ddbf973120d44efc"
+    },
+    "native-receipts.json": {
+      "bytes": 1258,
+      "sha256": "983ff7613b1230483f3ba4c45b3ab95ff50a1eb046068dcf22af3997b4b5c021"
+    },
+    "original-resources.json": {
+      "bytes": 2183,
+      "sha256": "e9cb1a0044b0a889193590ef34d012b8609cde76f9e63a87c693216acf3faafa"
+    },
+    "native-oracle.json": {
+      "bytes": 2353,
+      "sha256": "460782db64428aeb4028de6c4378871247f0dba2ffa81af4f1ecbbca56d55013"
+    },
+    "owner.xml": {
+      "bytes": 6259,
+      "sha256": "b45e5d1b936c15e66decd1042aff659f804cc8f2baac519f009f843a006f2ba2"
+    },
+    "control.cf": {
+      "bytes": 98477,
+      "sha256": "38f1755e8e5c94b6b22c81f4122081546c23d636d253b49f78398d31a0afd345"
+    },
+    "owner.config": {
+      "bytes": 2131,
+      "sha256": "39896f9351c117171d41175e387cef0e03b89b0e741dc6f666acce436fec1b15"
+    },
+    "owner.deflate": {
+      "bytes": 782,
+      "sha256": "980b486fa50f486f84c473ce383ec4d64588ee93fbc75c4fd90d4222c4cfb06a"
+    }
+  }
+}

@@ -1,0 +1,17 @@
+{
+  "class": "38/51",
+  "owner_identity": "1/7",
+  "own_attributes": 9,
+  "sections": 1,
+  "section_fields": 18,
+  "qualified_type_rows": 32,
+  "reference_xmls": 14,
+  "all_own_and_section_membership_order_names_types_and_qualifiers_match_xml": true,
+  "sdk_descriptors": 29,
+  "sdk_known_declarations": 0,
+  "sdk_document_attributes": null,
+  "sdk_document_tabular_sections": null,
+  "sdk_field_declarations": 0,
+  "causal_control_declarations": 27,
+  "causal_control_qualified_type_rows": 32
+}

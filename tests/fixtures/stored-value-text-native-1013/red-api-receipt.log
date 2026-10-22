@@ -1,0 +1,15 @@
+   Compiling open-sdbl v0.9.15 (/tmp/open-sdbl-stored-value-text-draft-1013)
+error[E0432]: unresolved import `open_sdbl::metadata::decode_stored_value_text`
+ --> tests/stored_value_text.rs:3:48
+  |
+3 | use open_sdbl::metadata::{decode_stored_value, decode_stored_value_text, parse_serialized, MetadataErrorKind};
+  |                                                ^^^^^^^^^^^^^^^^^^^^^^^^ no `decode_stored_value_text` in `metadata`
+  |
+help: a similar name exists in the module
+  |
+3 - use open_sdbl::metadata::{decode_stored_value, decode_stored_value_text, parse_serialized, MetadataErrorKind};
+3 + use open_sdbl::metadata::{decode_stored_value, decode_stored_value, parse_serialized, MetadataErrorKind};
+  |
+
+For more information about this error, try `rustc --explain E0432`.
+error: could not compile `open-sdbl` (test "stored_value_text") due to 1 previous error

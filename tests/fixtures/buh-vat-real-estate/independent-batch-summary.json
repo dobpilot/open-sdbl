@@ -1,0 +1,376 @@
+{
+  "documents": 455,
+  "changed_count": 13,
+  "unchanged_count": 442,
+  "non37_unchanged": 441,
+  "changed_native_sections": 10,
+  "changed_native_fields": 66,
+  "all_changed_section_membership_order_names_type_presence_match_xml": true,
+  "scope_limit": "Batch verifies membership/type presence and projection hashes, full qualifiers independently verified for reached owner only",
+  "changed": [
+    {
+      "before": {
+        "owner": "133ad3fb-7f61-4ebe-b013-298b8f66c2d6",
+        "name": "АвизоПрочееВходящее",
+        "class": "37",
+        "class_len": "50",
+        "native_sections": "1",
+        "sdk_sections": "None",
+        "native_fields": "14",
+        "known_field_types": "0",
+        "section_membership_match": "false",
+        "field_membership_names_match": "false",
+        "projection_hash": "ef7207b5d16ea062"
+      },
+      "after": {
+        "owner": "133ad3fb-7f61-4ebe-b013-298b8f66c2d6",
+        "name": "АвизоПрочееВходящее",
+        "class": "37",
+        "class_len": "50",
+        "native_sections": "1",
+        "sdk_sections": "1",
+        "native_fields": "14",
+        "known_field_types": "14",
+        "section_membership_match": "true",
+        "field_membership_names_match": "true",
+        "projection_hash": "6de9448c9cc259a2"
+      }
+    },
+    {
+      "before": {
+        "owner": "2bbf6336-4040-4670-802c-555c6594cba5",
+        "name": "АвизоПрочееИсходящее",
+        "class": "37",
+        "class_len": "50",
+        "native_sections": "1",
+        "sdk_sections": "None",
+        "native_fields": "14",
+        "known_field_types": "0",
+        "section_membership_match": "false",
+        "field_membership_names_match": "false",
+        "projection_hash": "b394bb35db822572"
+      },
+      "after": {
+        "owner": "2bbf6336-4040-4670-802c-555c6594cba5",
+        "name": "АвизоПрочееИсходящее",
+        "class": "37",
+        "class_len": "50",
+        "native_sections": "1",
+        "sdk_sections": "1",
+        "native_fields": "14",
+        "known_field_types": "14",
+        "section_membership_match": "true",
+        "field_membership_names_match": "true",
+        "projection_hash": "acb9edb7275d153e"
+      }
+    },
+    {
+      "before": {
+        "owner": "c5a2db66-da7e-4191-b273-85267e5f1e17",
+        "name": "ВосстановлениеНДСПоОбъектамНедвижимости",
+        "class": "37",
+        "class_len": "50",
+        "native_sections": "2",
+        "sdk_sections": "None",
+        "native_fields": "24",
+        "known_field_types": "0",
+        "section_membership_match": "false",
+        "field_membership_names_match": "false",
+        "projection_hash": "17b61a69416c5119"
+      },
+      "after": {
+        "owner": "c5a2db66-da7e-4191-b273-85267e5f1e17",
+        "name": "ВосстановлениеНДСПоОбъектамНедвижимости",
+        "class": "37",
+        "class_len": "50",
+        "native_sections": "2",
+        "sdk_sections": "2",
+        "native_fields": "24",
+        "known_field_types": "24",
+        "section_membership_match": "true",
+        "field_membership_names_match": "true",
+        "projection_hash": "31aa11c95c58faf5"
+      }
+    },
+    {
+      "before": {
+        "owner": "b1f3ffeb-ed13-454f-b193-a7deffb8afde",
+        "name": "ВыработкаМатериалов",
+        "class": "37",
+        "class_len": "50",
+        "native_sections": "1",
+        "sdk_sections": "None",
+        "native_fields": "2",
+        "known_field_types": "0",
+        "section_membership_match": "false",
+        "field_membership_names_match": "false",
+        "projection_hash": "b0954ecef4dcd3cf"
+      },
+      "after": {
+        "owner": "b1f3ffeb-ed13-454f-b193-a7deffb8afde",
+        "name": "ВыработкаМатериалов",
+        "class": "37",
+        "class_len": "50",
+        "native_sections": "1",
+        "sdk_sections": "1",
+        "native_fields": "2",
+        "known_field_types": "2",
+        "section_membership_match": "true",
+        "field_membership_names_match": "true",
+        "projection_hash": "5254430bd25358b0"
+      }
+    },
+    {
+      "before": {
+        "owner": "846ac7ab-0b59-4e95-a8e8-e1ccb83620ea",
+        "name": "ВыработкаНМА",
+        "class": "37",
+        "class_len": "50",
+        "native_sections": "1",
+        "sdk_sections": "None",
+        "native_fields": "2",
+        "known_field_types": "0",
+        "section_membership_match": "false",
+        "field_membership_names_match": "false",
+        "projection_hash": "ecfa31416c49a87a"
+      },
+      "after": {
+        "owner": "846ac7ab-0b59-4e95-a8e8-e1ccb83620ea",
+        "name": "ВыработкаНМА",
+        "class": "37",
+        "class_len": "50",
+        "native_sections": "1",
+        "sdk_sections": "1",
+        "native_fields": "2",
+        "known_field_types": "2",
+        "section_membership_match": "true",
+        "field_membership_names_match": "true",
+        "projection_hash": "d6785c802d03d1a2"
+      }
+    },
+    {
+      "before": {
+        "owner": "1d13b946-7d1b-49df-b8cb-d50a7e93045c",
+        "name": "ЗаявкаНаВыпускКиЗГИСМ",
+        "class": "37",
+        "class_len": "50",
+        "native_sections": "0",
+        "sdk_sections": "None",
+        "native_fields": "0",
+        "known_field_types": "0",
+        "section_membership_match": "false",
+        "field_membership_names_match": "true",
+        "projection_hash": "97bdc0cbc74a4fa2"
+      },
+      "after": {
+        "owner": "1d13b946-7d1b-49df-b8cb-d50a7e93045c",
+        "name": "ЗаявкаНаВыпускКиЗГИСМ",
+        "class": "37",
+        "class_len": "50",
+        "native_sections": "0",
+        "sdk_sections": "0",
+        "native_fields": "0",
+        "known_field_types": "0",
+        "section_membership_match": "true",
+        "field_membership_names_match": "true",
+        "projection_hash": "5b2923a3eee0d598"
+      }
+    },
+    {
+      "before": {
+        "owner": "cc9f962f-a4fe-4a9a-bb3b-6479d699e372",
+        "name": "ИзменениеСпециальногоКоэффициентаНМА",
+        "class": "37",
+        "class_len": "50",
+        "native_sections": "1",
+        "sdk_sections": "None",
+        "native_fields": "2",
+        "known_field_types": "0",
+        "section_membership_match": "false",
+        "field_membership_names_match": "false",
+        "projection_hash": "f1f159921ebddc40"
+      },
+      "after": {
+        "owner": "cc9f962f-a4fe-4a9a-bb3b-6479d699e372",
+        "name": "ИзменениеСпециальногоКоэффициентаНМА",
+        "class": "37",
+        "class_len": "50",
+        "native_sections": "1",
+        "sdk_sections": "1",
+        "native_fields": "2",
+        "known_field_types": "2",
+        "section_membership_match": "true",
+        "field_membership_names_match": "true",
+        "projection_hash": "383bcd4c0b98de1d"
+      }
+    },
+    {
+      "before": {
+        "owner": "e6069d11-a84a-48a8-84ab-d1aa0cdf1c4b",
+        "name": "ИзменениеСпособовОтраженияРасходовПоАмортизацииНМА",
+        "class": "37",
+        "class_len": "50",
+        "native_sections": "1",
+        "sdk_sections": "None",
+        "native_fields": "1",
+        "known_field_types": "0",
+        "section_membership_match": "false",
+        "field_membership_names_match": "false",
+        "projection_hash": "4bce384d2d1855be"
+      },
+      "after": {
+        "owner": "e6069d11-a84a-48a8-84ab-d1aa0cdf1c4b",
+        "name": "ИзменениеСпособовОтраженияРасходовПоАмортизацииНМА",
+        "class": "37",
+        "class_len": "50",
+        "native_sections": "1",
+        "sdk_sections": "1",
+        "native_fields": "1",
+        "known_field_types": "1",
+        "section_membership_match": "true",
+        "field_membership_names_match": "true",
+        "projection_hash": "ea3c4c10e31f7585"
+      }
+    },
+    {
+      "before": {
+        "owner": "a2346c81-d46c-4a8f-98d0-ace4ebe06484",
+        "name": "Партия",
+        "class": "37",
+        "class_len": "50",
+        "native_sections": "0",
+        "sdk_sections": "None",
+        "native_fields": "0",
+        "known_field_types": "0",
+        "section_membership_match": "false",
+        "field_membership_names_match": "true",
+        "projection_hash": "eec5ab3cf53dde86"
+      },
+      "after": {
+        "owner": "a2346c81-d46c-4a8f-98d0-ace4ebe06484",
+        "name": "Партия",
+        "class": "37",
+        "class_len": "50",
+        "native_sections": "0",
+        "sdk_sections": "0",
+        "native_fields": "0",
+        "known_field_types": "0",
+        "section_membership_match": "true",
+        "field_membership_names_match": "true",
+        "projection_hash": "a826a18d6a1e77c2"
+      }
+    },
+    {
+      "before": {
+        "owner": "260804f8-97ee-4bb3-a1b5-767b8704ce07",
+        "name": "ПартияМатериаловВЭксплуатации",
+        "class": "37",
+        "class_len": "50",
+        "native_sections": "0",
+        "sdk_sections": "None",
+        "native_fields": "0",
+        "known_field_types": "0",
+        "section_membership_match": "false",
+        "field_membership_names_match": "true",
+        "projection_hash": "ecf8eb42cf93529d"
+      },
+      "after": {
+        "owner": "260804f8-97ee-4bb3-a1b5-767b8704ce07",
+        "name": "ПартияМатериаловВЭксплуатации",
+        "class": "37",
+        "class_len": "50",
+        "native_sections": "0",
+        "sdk_sections": "0",
+        "native_fields": "0",
+        "known_field_types": "0",
+        "section_membership_match": "true",
+        "field_membership_names_match": "true",
+        "projection_hash": "d9140e3c29ba29b1"
+      }
+    },
+    {
+      "before": {
+        "owner": "e87a1b44-e013-486f-a342-30864315ac9e",
+        "name": "ПереоценкаТоваровВРознице",
+        "class": "37",
+        "class_len": "50",
+        "native_sections": "1",
+        "sdk_sections": "None",
+        "native_fields": "6",
+        "known_field_types": "0",
+        "section_membership_match": "false",
+        "field_membership_names_match": "false",
+        "projection_hash": "665159ff95f5d897"
+      },
+      "after": {
+        "owner": "e87a1b44-e013-486f-a342-30864315ac9e",
+        "name": "ПереоценкаТоваровВРознице",
+        "class": "37",
+        "class_len": "50",
+        "native_sections": "1",
+        "sdk_sections": "1",
+        "native_fields": "6",
+        "known_field_types": "6",
+        "section_membership_match": "true",
+        "field_membership_names_match": "true",
+        "projection_hash": "4ad717e48038f41b"
+      }
+    },
+    {
+      "before": {
+        "owner": "b92db82f-cc9a-4940-91e6-6c0a21700966",
+        "name": "ПлатежноеТребование",
+        "class": "37",
+        "class_len": "50",
+        "native_sections": "0",
+        "sdk_sections": "None",
+        "native_fields": "0",
+        "known_field_types": "0",
+        "section_membership_match": "false",
+        "field_membership_names_match": "true",
+        "projection_hash": "11accbf245ee3b20"
+      },
+      "after": {
+        "owner": "b92db82f-cc9a-4940-91e6-6c0a21700966",
+        "name": "ПлатежноеТребование",
+        "class": "37",
+        "class_len": "50",
+        "native_sections": "0",
+        "sdk_sections": "0",
+        "native_fields": "0",
+        "known_field_types": "0",
+        "section_membership_match": "true",
+        "field_membership_names_match": "true",
+        "projection_hash": "728b985d898f32ff"
+      }
+    },
+    {
+      "before": {
+        "owner": "4005ff36-517f-46e8-968f-5ba8cdccbf8f",
+        "name": "УстановкаПорядкаЗакрытияПодразделений",
+        "class": "37",
+        "class_len": "50",
+        "native_sections": "1",
+        "sdk_sections": "None",
+        "native_fields": "1",
+        "known_field_types": "0",
+        "section_membership_match": "false",
+        "field_membership_names_match": "false",
+        "projection_hash": "982851026c042011"
+      },
+      "after": {
+        "owner": "4005ff36-517f-46e8-968f-5ba8cdccbf8f",
+        "name": "УстановкаПорядкаЗакрытияПодразделений",
+        "class": "37",
+        "class_len": "50",
+        "native_sections": "1",
+        "sdk_sections": "1",
+        "native_fields": "1",
+        "known_field_types": "1",
+        "section_membership_match": "true",
+        "field_membership_names_match": "true",
+        "projection_hash": "4c692e4bcc6a79c7"
+      }
+    }
+  ]
+}

@@ -1,0 +1,40 @@
+[
+  {
+    "role_id": "849f034e-85dc-4515-aae6-240c1e0d46d9",
+    "role_name": "ИнтерактивноеОткрытиеВнешнихОтчетовИОбработок",
+    "setForNewObjects": false,
+    "setForAttributesByDefault": "true",
+    "owner_explicit_rights": {},
+    "owner_Read_granted_by_existing_SDK_rule": false,
+    "attribute_entry_present": false
+  },
+  {
+    "role_id": "76702e9e-fa7a-4b98-befa-f9b37db2dae0",
+    "role_name": "АдминистраторСистемы",
+    "setForNewObjects": false,
+    "setForAttributesByDefault": "true",
+    "owner_explicit_rights": {},
+    "owner_Read_granted_by_existing_SDK_rule": false,
+    "attribute_entry_present": false
+  },
+  {
+    "role_id": "e5c73637-e8d6-47e0-9c15-2fa1802ee5b0",
+    "role_name": "ПолныеПрава",
+    "setForNewObjects": true,
+    "setForAttributesByDefault": "true",
+    "owner_explicit_rights": {
+      "InteractiveDelete": "false",
+      "InteractiveDeletePredefinedData": "false",
+      "InteractiveSetDeletionMarkPredefinedData": "false",
+      "InteractiveClearDeletionMarkPredefinedData": "false",
+      "InteractiveDeleteMarkedPredefinedData": "false"
+    },
+    "owner_Read_granted_by_existing_SDK_rule": true,
+    "attribute_entry_present": false
+  },
+  {
+    "role_id": "2bc105dd-b388-436d-9410-a756e3415d30",
+    "role_name": "ДемоПроф_ОбщиеПрава",
+    "native_base_xml": "absent; possible extension role, not inferred"
+  }
+]

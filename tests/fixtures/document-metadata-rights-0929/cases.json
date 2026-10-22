@@ -1,0 +1,55 @@
+{
+  "source_runner": "docs/research/fixtures/document-owner-read-right-1019/native-verification/run.py",
+  "cases": [
+    {
+      "id": "owner",
+      "target": "Метаданные.Документы.ЗамерДокумента",
+      "standard": "Неопределено"
+    },
+    {
+      "id": "number.ru",
+      "target": "Метаданные.Документы.ЗамерДокумента",
+      "standard": "\"Номер\""
+    },
+    {
+      "id": "number.en",
+      "target": "Метаданные.Документы.ЗамерДокумента",
+      "standard": "\"Number\""
+    },
+    {
+      "id": "date.ru",
+      "target": "Метаданные.Документы.ЗамерДокумента",
+      "standard": "\"Дата\""
+    },
+    {
+      "id": "date.en",
+      "target": "Метаданные.Документы.ЗамерДокумента",
+      "standard": "\"Date\""
+    },
+    {
+      "id": "attribute",
+      "target": "Метаданные.Документы.ЗамерДокумента.Реквизиты.Заполняемый",
+      "standard": "Неопределено"
+    }
+  ],
+  "rights": [
+    "Read",
+    "View"
+  ],
+  "operations": [
+    "AccessRight",
+    "VerifyAccessRights"
+  ],
+  "privilege": [
+    false,
+    true
+  ],
+  "profiles": [
+    "DocFieldsReadOff",
+    "DocFieldsReadOn",
+    "DocFieldsDenied"
+  ],
+  "expected_rows_per_profile": 48,
+  "expected_total_rows": 144,
+  "scope": "Existing metadata access-right requirements; measurement only, no SDK or host grant implementation changed."
+}

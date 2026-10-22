@@ -128,6 +128,62 @@ impl ParameterDate {
     }
 }
 
+/// Типизированная ссылка параметра в физическом порядке `RRRef`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ParameterReference {
+    /// Объект приобретённых метаданных, задающий вид ссылки.
+    pub object: ObjectId,
+    /// Физические байты ссылки; нули означают пустую ссылку данного вида.
+    pub id: [u8; 16],
+}
+
+/// Момент времени: неизменяемая дата и необязательная типизированная ссылка.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ParameterPointInTime {
+    /// Дата в календарном представлении, до смещения года хранения.
+    pub date: ParameterDate,
+    /// Отсутствие ссылки отличается от пустой ссылки конкретного вида.
+    pub reference: Option<ParameterReference>,
+}
+
+/// Значение, на котором установлена временная граница.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ParameterBoundaryValue {
+    /// Граница секунды целиком.
+    Date(ParameterDate),
+    /// Граница конкретного регистратора внутри секунды.
+    PointInTime(ParameterPointInTime),
+}
+
+/// Включение значения, на котором установлена граница.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BoundaryKind {
+    /// Включить значение на границе.
+    Including,
+    /// Исключить значение на границе.
+    Excluding,
+}
+
+/// Явная временная граница аргумента виртуальной таблицы остатков.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ParameterBoundary {
+    /// Дата или момент времени, сохраняемые без потери ссылки.
+    pub value: ParameterBoundaryValue,
+    /// Правило включения границы.
+    pub kind: BoundaryKind,
+}
+
+impl ParameterBoundary {
+    /// Создаёт включающую границу, как однопараметровый конструктор платформы.
+    #[must_use]
+    pub const fn new(value: ParameterBoundaryValue) -> Self {
+        Self {
+            value,
+            kind: BoundaryKind::Including,
+        }
+    }
+}
+
 /// The value bound to a `&Имя` query parameter.
 ///
 /// Values are inlined into generated SQL as typed literals of the target
@@ -152,6 +208,10 @@ pub enum ParameterValue {
     String(String),
     /// A date and time; MSSQL applies the backend year offset.
     Date(ParameterDate),
+    /// Момент времени для временного аргумента таблицы остатков.
+    PointInTime(ParameterPointInTime),
+    /// Включающая или исключающая временная граница остатков.
+    Boundary(ParameterBoundary),
     /// A 16-byte 1C reference to a row of `object`.
     Reference {
         /// The metadata object the reference points to.
@@ -159,6 +219,8 @@ pub enum ParameterValue {
         /// The physical `RRRef` bytes.
         id: [u8; 16],
     },
+    /// Канонический UUID; физический порядок байтов выбирает диалект.
+    Uuid(Guid),
     /// Raw bytes rendered as a binary literal; compared like a `0x…` literal.
     Binary(Vec<u8>),
     /// A list of scalar values for `В (&Список)`.
@@ -362,6 +424,7 @@ pub struct CompileOptions<'a> {
     restrictions: &'a [AccessRestriction],
     decisions: &'a [AccessDecision],
     totals_level: bool,
+    ordinary_row_checks: bool,
 }
 
 impl Default for CompileOptions<'_> {
@@ -381,7 +444,27 @@ impl<'a> CompileOptions<'a> {
             restrictions: &[],
             decisions: &[],
             totals_level: false,
+            ordinary_row_checks: false,
         }
+    }
+
+    /// Включает измеренную проверку запрещённых остатков обычного запроса.
+    ///
+    /// Требует подготовку в `RestrictionMode::Restricted`. Поддержаны только
+    /// простые чтения текущих остатков PostgreSQL с равенством измерения.
+    /// Неподдержанная форма возвращает диагностический отказ. Потребитель
+    /// обязан проверить `CompiledQuery::forbidden_row_column` во всех строках
+    /// до преобразования или выдачи результата. `РАЗРЕШЕННЫЕ` сохраняет фильтрацию.
+    #[must_use]
+    pub const fn ordinary_row_checks(mut self, enabled: bool) -> Self {
+        self.ordinary_row_checks = enabled;
+        self
+    }
+
+    /// Включена ли проверка запрещённых строк обычного запроса.
+    #[must_use]
+    pub const fn ordinary_row_checks_enabled(&self) -> bool {
+        self.ordinary_row_checks
     }
 
     /// Appends a numeric `__level` column to statements with `ИТОГИ`,
@@ -488,6 +571,8 @@ pub(super) struct Parameters<'a> {
     session: &'a [QueryParameter],
     conditions: &'a [(Guid, bool)],
     bound: bool,
+    // В ограничении прямой `&Имя` принадлежит сеансу, а не запросу.
+    session_only: bool,
 }
 
 impl<'a> Parameters<'a> {
@@ -497,6 +582,7 @@ impl<'a> Parameters<'a> {
             session: session.values(),
             conditions: &session.separation_conditions,
             bound: true,
+            session_only: false,
         }
     }
 
@@ -506,6 +592,7 @@ impl<'a> Parameters<'a> {
             session: &[],
             conditions: &[],
             bound: false,
+            session_only: false,
         }
     }
 
@@ -517,6 +604,7 @@ impl<'a> Parameters<'a> {
             session: self.session,
             conditions: self.conditions,
             bound: self.bound,
+            session_only: true,
         }
     }
 
@@ -569,7 +657,7 @@ impl<'a> Parameters<'a> {
                     name,
                     token,
                     format!("parameter {:?} has no value", token.lexeme),
-                    false,
+                    self.session_only,
                 )
             })
     }

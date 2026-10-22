@@ -1,0 +1,53 @@
+{
+  "class_tag": "53",
+  "class_len": 58,
+  "owner_identity_tag": "1",
+  "owner_identity_len": 9,
+  "owner_reference": [
+    "0",
+    "0",
+    "b5697377-16f3-4e8c-b65b-1742fbe55dd0"
+  ],
+  "owner_name": "НаправленияСдачиОтчетности",
+  "owner_synonym": [
+    "1",
+    "ru",
+    "Направления сдачи отчетности"
+  ],
+  "owner_comment": "Сведения о доступных направлениях сдачи отчетности",
+  "native_comment_equals_xml": true,
+  "owner_flags_and_tail": [
+    "0",
+    "1",
+    "f440939a-f130-413b-9c9a-2b18c4af69c6",
+    "2"
+  ],
+  "section_collection": "932159f9-95b2-4e76-a8dd-8849fe5c5ded",
+  "native_section_count": 0,
+  "native_own_attribute_count": 4,
+  "all_child_comments_empty": true,
+  "all_child_identity_flags_zero": true,
+  "all_child_wrapper_tail_flags": [
+    [
+      "1",
+      "0",
+      "1"
+    ],
+    [
+      "1",
+      "0",
+      "1"
+    ],
+    [
+      "1",
+      "0",
+      "1"
+    ],
+    [
+      "1",
+      "0",
+      "1"
+    ]
+  ],
+  "generated_type_and_value_ids_verified": 10
+}

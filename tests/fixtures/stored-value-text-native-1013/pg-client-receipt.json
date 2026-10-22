@@ -1,0 +1,1 @@
+{"pid": 2147302, "command": ["/opt/1cv8/x86_64/8.3.27.2342/1cv8c", "ENTERPRISE", "/WS", "http://127.0.0.1:55440/", "/RunModeManagedApplication", "/DisableStartupDialogs", "/Out", "/tmp/sdbl-stored-value-text-native-1013/pg-runtime.log"], "exit": 0}

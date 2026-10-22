@@ -198,7 +198,7 @@ fn wraps_a_restricted_source_in_a_derived_table_with_dereference_and_session_val
     let compiled = compile_both(&snapshot, source, &options).unwrap();
     assert!(
         compiled.sql.contains(
-            "FROM (SELECT \"__restricted\".\"_idrref\" AS \"_idrref\", \"__restricted\".\"_code\" AS \"_code\", \"__restricted\".\"_date_time\" AS \"_date_time\", \"__restricted\".\"_fld54\" AS \"_fld54\" FROM \"_reference53\" AS \"__restricted\" LEFT JOIN \"_reference57\" AS \"__ref1\" ON \"__restricted\".\"_fld54\" = \"__ref1\".\"_idrref\" WHERE ((\"__ref1\".\"_code\" = 'HQ') OR (\"__restricted\".\"_code\" = 'free'))) AS \"p\""
+            "FROM (SELECT \"__restricted\".\"_idrref\" AS \"_idrref\", \"__restricted\".\"_code\" AS \"_code\", \"__restricted\".\"_date_time\" AS \"_date_time\", \"__restricted\".\"_fld54\" AS \"_fld54\" FROM \"_reference53\" AS \"__restricted\" LEFT JOIN \"_reference57\" AS \"__ref1\" ON \"__restricted\".\"_fld54\" = \"__ref1\".\"_idrref\" WHERE (((rtrim(CAST(\"__ref1\".\"_code\" AS text), ' ') COLLATE \"C\") = (rtrim(CAST('HQ' AS text), ' ') COLLATE \"C\")) OR ((rtrim(CAST(\"__restricted\".\"_code\" AS text), ' ') COLLATE \"C\") = (rtrim(CAST('free' AS text), ' ') COLLATE \"C\")))) AS \"p\""
         ),
         "{}",
         compiled.sql
@@ -430,7 +430,7 @@ fn resolves_session_parameters_after_query_parameters() {
 
     let fallback =
         compile_both(&snapshot, source, &CompileOptions::new().session(&session)).unwrap();
-    assert!(fallback.sql.ends_with("WHERE (\"__src\".\"_code\" = 'S')"));
+    assert!(fallback.sql.ends_with("WHERE ((rtrim(CAST(\"__src\".\"_code\" AS text), ' ') COLLATE \"C\") = (rtrim(CAST('S' AS text), ' ') COLLATE \"C\"))"));
 
     let query = [QueryParameter::new(
         "код",
@@ -445,7 +445,7 @@ fn resolves_session_parameters_after_query_parameters() {
     assert!(
         overridden
             .sql
-            .ends_with("WHERE (\"__src\".\"_code\" = 'Q')")
+            .ends_with("WHERE ((rtrim(CAST(\"__src\".\"_code\" AS text), ' ') COLLATE \"C\") = (rtrim(CAST('Q' AS text), ' ') COLLATE \"C\"))")
     );
 
     let missing = compile_both(&snapshot, source, &CompileOptions::new()).unwrap_err();
@@ -478,7 +478,7 @@ fn resolves_session_parameters_after_query_parameters() {
     )
     .unwrap();
     assert!(visible.sql.contains(
-        "WHERE (\"__restricted\".\"_code\" = 'S')) AS \"__src\" WHERE (\"__src\".\"_code\" = 'Q')"
+        "WHERE ((rtrim(CAST(\"__restricted\".\"_code\" AS text), ' ') COLLATE \"C\") = (rtrim(CAST('S' AS text), ' ') COLLATE \"C\"))) AS \"__src\" WHERE ((rtrim(CAST(\"__src\".\"_code\" AS text), ' ') COLLATE \"C\") = (rtrim(CAST('Q' AS text), ' ') COLLATE \"C\"))"
     ));
 }
 
@@ -619,7 +619,7 @@ fn keeps_nested_queries_of_a_restriction_unrestricted() {
     .unwrap();
 
     assert!(compiled.sql.contains(
-        "WHERE (\"__restricted\".\"_idrref\" IN (SELECT \"О\".\"_idrref\" AS \"Ссылка\" FROM \"_reference57\" AS \"О\" WHERE (\"О\".\"_code\" = 'HQ')))) AS \"p\""
+        "WHERE (\"__restricted\".\"_idrref\" IN (SELECT \"О\".\"_idrref\" AS \"Ссылка\" FROM \"_reference57\" AS \"О\" WHERE ((rtrim(CAST(\"О\".\"_code\" AS text), ' ') COLLATE \"C\") = (rtrim(CAST('HQ' AS text), ' ') COLLATE \"C\"))))) AS \"p\""
     ), "{}", compiled.sql);
     assert!(compiled.sql.contains(
         "LEFT JOIN (SELECT \"__restricted\".\"_idrref\" AS \"_idrref\", \"__restricted\".\"_code\" AS \"_code\", \"__restricted\".\"_date_time\" AS \"_date_time\" FROM \"_reference57\" AS \"__restricted\" WHERE (\"__restricted\".\"_code\" <> 'hidden')) AS \"o\""
@@ -718,7 +718,7 @@ fn accepts_the_platform_form_of_a_restriction_with_the_current_table_qualifier()
     assert!(
         correlated
             .sql
-            .contains("WHERE (\"К\".\"_code\" = \"__restricted\".\"_code\")"),
+            .contains("WHERE ((rtrim(CAST(\"К\".\"_code\" AS text), ' ') COLLATE \"C\") = (rtrim(CAST(\"__restricted\".\"_code\" AS text), ' ') COLLATE \"C\"))"),
         "{}",
         correlated.sql
     );
@@ -739,7 +739,7 @@ fn accepts_the_platform_form_of_a_restriction_with_the_current_table_qualifier()
     .unwrap();
     assert!(
         joined.sql.contains(
-            "FROM \"_reference53\" AS \"__restricted\" WHERE EXISTS (SELECT 1 FROM (VALUES (1)) AS \"__restriction_row\"(\"__row\") LEFT JOIN \"_reference53\" AS \"К\" ON (\"К\".\"_code\" = \"__restricted\".\"_code\") WHERE (\"К\".\"_code\" = 'A'))"
+            "FROM \"_reference53\" AS \"__restricted\" WHERE EXISTS (SELECT 1 FROM (VALUES (1)) AS \"__restriction_row\"(\"__row\") LEFT JOIN \"_reference53\" AS \"К\" ON ((rtrim(CAST(\"К\".\"_code\" AS text), ' ') COLLATE \"C\") = (rtrim(CAST(\"__restricted\".\"_code\" AS text), ' ') COLLATE \"C\")) WHERE ((rtrim(CAST(\"К\".\"_code\" AS text), ' ') COLLATE \"C\") = (rtrim(CAST('A' AS text), ' ') COLLATE \"C\")))"
         ),
         "{}",
         joined.sql

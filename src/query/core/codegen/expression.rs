@@ -1535,6 +1535,7 @@ pub(super) fn compile_composite_projection(
 /// One physical member of a composite result: the suffix its output label
 /// carries, the rendered value and the kind of that column.
 pub(super) struct CompositeMember {
+    pub(super) type_tag: Option<u8>,
     pub(super) suffix: &'static str,
     pub(super) sql: String,
     pub(super) kind: ColumnKind,
@@ -1689,6 +1690,18 @@ pub(super) fn compile_composite_alternatives(
     let mut members = suffixes
         .iter()
         .map(|suffix| CompositeMember {
+            type_tag: {
+                let mut values = tags
+                    .iter()
+                    .filter(|(member, _)| member == suffix)
+                    .map(|(_, tag)| tag.tag());
+                let first = values.next().unwrap_or(super::projection::UNAVAILABLE_TAG);
+                Some(if values.all(|tag| tag == first) {
+                    first
+                } else {
+                    255
+                })
+            },
             suffix,
             sql: render(suffix),
             kind: composite_member_kind(suffix),
@@ -1708,6 +1721,7 @@ pub(super) fn compile_composite_alternatives(
     }
     tag_sql.push_str(" END");
     members.push(CompositeMember {
+        type_tag: None,
         suffix: "_TYPE",
         sql: tag_sql,
         kind: ColumnKind::Binary { length: Some(1) },
@@ -2438,6 +2452,35 @@ fn compile_logical_or_value(
     }
 }
 
+/// The measured PostgreSQL equality policy, shared by both source contexts.
+pub(super) enum ScalarStringEquality {
+    Strings,
+    Incompatible,
+}
+
+impl ScalarStringEquality {
+    pub(super) fn for_kinds(left: &ColumnKind, right: &ColumnKind) -> Option<Self> {
+        use ColumnKind::{Boolean, DateTime, Number, String};
+        match (left, right) {
+            (String { .. }, String { .. }) => Some(Self::Strings),
+            (String { .. }, Number { .. } | Boolean | DateTime)
+            | (Number { .. } | Boolean | DateTime, String { .. }) => Some(Self::Incompatible),
+            _ => None,
+        }
+    }
+
+    pub(super) fn render(self, left: &str, right: &str) -> String {
+        match self {
+            Self::Strings => format!(
+                "((rtrim(CAST({left} AS text), ' ') COLLATE \"C\") = (rtrim(CAST({right} AS text), ' ') COLLATE \"C\"))"
+            ),
+            Self::Incompatible => {
+                format!("(CASE WHEN {left} IS NULL OR {right} IS NULL THEN NULL ELSE FALSE END)")
+            }
+        }
+    }
+}
+
 fn compile_binary_expression(
     expression: &Expression<'_, '_>,
     context: &mut CompilationContext<'_, '_>,
@@ -2469,6 +2512,28 @@ fn compile_binary_expression(
         && let Some(sql) = compile_composite_comparison(left, right, operator, context)?
     {
         return Ok(sql);
+    }
+    // Compare complete operands before flattening arithmetic spines. A binary
+    // left operand must receive the same policy as a binary right operand.
+    if context.dialect == SqlDialect::Postgres
+        && let Expression::Binary {
+            left,
+            operator,
+            right,
+        } = expression
+        && operator.lexeme == "="
+        && !matches!(left.as_ref(), Expression::Case { .. })
+        && !matches!(right.as_ref(), Expression::Case { .. })
+    {
+        let left_kind = value_operand_kind(left, context)?;
+        let right_kind = value_operand_kind(right, context)?;
+        if let Some(equality) = ScalarStringEquality::for_kinds(&left_kind, &right_kind) {
+            // Resolve both operands even for an incompatible comparison, so
+            // authorization and row restrictions cannot be bypassed by FALSE.
+            let left = compile_expression(left, context)?;
+            let right = compile_expression(right, context)?;
+            return Ok(equality.render(&left, &right));
+        }
     }
     // The platform concatenates strings with `+` and refuses to mix a
     // string with another type there, measured on the probe base.
@@ -2787,7 +2852,10 @@ fn composite_operand_of_value(
         ParameterValue::Null => TypeValue::Null,
         ParameterValue::Reference { .. }
         | ParameterValue::Binary(_)
+        | ParameterValue::Uuid(_)
         | ParameterValue::List(_)
+        | ParameterValue::PointInTime(_)
+        | ParameterValue::Boundary(_)
         | ParameterValue::Table { .. } => {
             return Ok(None);
         }
@@ -4133,31 +4201,7 @@ pub(super) fn single_column_at<'field>(
     }
 }
 
-type BinaryTerm<'expression, 'tokens, 'source> = (
-    &'tokens Token<'source>,
-    &'expression Expression<'tokens, 'source>,
-);
-
-pub(super) fn left_binary_spine<'expression, 'tokens, 'source>(
-    expression: &'expression Expression<'tokens, 'source>,
-) -> (
-    &'expression Expression<'tokens, 'source>,
-    Vec<BinaryTerm<'expression, 'tokens, 'source>>,
-) {
-    let mut leftmost = expression;
-    let mut terms = Vec::new();
-    while let Expression::Binary {
-        left,
-        operator,
-        right,
-    } = leftmost
-    {
-        terms.push((*operator, right.as_ref()));
-        leftmost = left.as_ref();
-    }
-    terms.reverse();
-    (leftmost, terms)
-}
+pub(super) use crate::query::core::ast::left_binary_spine;
 
 pub(super) fn binary_operator_sql<'source>(
     operator: &Token<'source>,

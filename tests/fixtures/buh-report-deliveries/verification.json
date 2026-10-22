@@ -1,0 +1,14 @@
+{
+  "class": "53/58",
+  "owner_identity": "1/9",
+  "own_attributes": 16,
+  "sections": 1,
+  "section_fields": 2,
+  "qualified_type_rows": 18,
+  "reference_xmls": 5,
+  "all_own_and_section_membership_order_names_types_and_qualifiers_match_xml": true,
+  "sdk_descriptors": 20,
+  "sdk_known_declarations": 0,
+  "sdk_catalog_attributes": null,
+  "native_generated_type_and_value_ids_located": 14
+}

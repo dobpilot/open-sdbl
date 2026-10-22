@@ -1,0 +1,63 @@
+[
+  {
+    "check": "fmt",
+    "command": [
+      "cargo",
+      "fmt",
+      "--all",
+      "--",
+      "--check"
+    ],
+    "exit": 0,
+    "seconds": 1.11
+  },
+  {
+    "check": "clippy",
+    "command": [
+      "cargo",
+      "clippy",
+      "--offline",
+      "--workspace",
+      "--all-targets",
+      "--",
+      "-D",
+      "warnings"
+    ],
+    "exit": 0,
+    "seconds": 5.9
+  },
+  {
+    "check": "tests",
+    "command": [
+      "cargo",
+      "test",
+      "--offline",
+      "--workspace"
+    ],
+    "exit": 0,
+    "seconds": 435.56
+  },
+  {
+    "check": "rustdoc",
+    "command": [
+      "cargo",
+      "doc",
+      "--offline",
+      "--workspace",
+      "--no-deps"
+    ],
+    "exit": 0,
+    "seconds": 3.01
+  },
+  {
+    "check": "openspec",
+    "command": [
+      "openspec",
+      "validate",
+      "--all",
+      "--strict"
+    ],
+    "exit": 0,
+    "seconds": 1.08
+  }
+]

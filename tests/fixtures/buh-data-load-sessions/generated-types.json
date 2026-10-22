@@ -1,0 +1,47 @@
+[
+  {
+    "name": "CatalogObject.СеансыЗагрузкиДанныхВнешнихСистем",
+    "TypeId": "d4850f1d-a2ac-4bb7-8c93-bc80ec742bc7",
+    "ValueId": "8ef46559-5d44-4d5d-b782-e3475e45843e",
+    "native_class_positions": [
+      1,
+      2
+    ]
+  },
+  {
+    "name": "CatalogRef.СеансыЗагрузкиДанныхВнешнихСистем",
+    "TypeId": "5c4d15ad-dc53-4c92-bf1a-979249e0f552",
+    "ValueId": "d9a7645f-ffd1-4bc5-9ebb-3ed00f2879d3",
+    "native_class_positions": [
+      3,
+      4
+    ]
+  },
+  {
+    "name": "CatalogSelection.СеансыЗагрузкиДанныхВнешнихСистем",
+    "TypeId": "3184fd87-dede-436c-a82e-e9c7a33638c6",
+    "ValueId": "1105d980-654f-4dd0-a566-f931aedb7052",
+    "native_class_positions": [
+      5,
+      6
+    ]
+  },
+  {
+    "name": "CatalogList.СеансыЗагрузкиДанныхВнешнихСистем",
+    "TypeId": "102c81ca-268e-41ac-b752-f08584beea1d",
+    "ValueId": "4a4c98bf-7b8f-4e08-b1cc-84445d3f290c",
+    "native_class_positions": [
+      7,
+      8
+    ]
+  },
+  {
+    "name": "CatalogManager.СеансыЗагрузкиДанныхВнешнихСистем",
+    "TypeId": "cd2ff56c-0c74-4965-b03b-95c886430c30",
+    "ValueId": "b48b0a07-69d4-43cb-8815-cda9f01ccc59",
+    "native_class_positions": [
+      34,
+      35
+    ]
+  }
+]

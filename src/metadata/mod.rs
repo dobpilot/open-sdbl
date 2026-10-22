@@ -8,12 +8,14 @@
 //! through [`crate::metadata::MetadataError::offset_unit`].
 
 mod config;
+mod container;
 mod db_names;
 mod deflate;
 mod extension;
 mod extension_structure;
 mod guid;
 mod identity;
+mod metadata_right;
 mod normalize;
 mod queries;
 mod resolve;
@@ -24,6 +26,8 @@ mod users;
 mod value;
 mod value_storage;
 
+pub use container::{DecodedCommonSetting, decode_common_setting, read_container_entry};
+
 pub use config::{
     AccumulationRegisterKind, AttributeIndexing, BusinessProcessNumberSettings,
     BusinessProcessRoutePoint, BusinessProcessStandardAttributeFillChecking, CatalogAttributeUse,
@@ -32,19 +36,20 @@ pub use config::{
     CommonAttributeCandidate, CommonAttributeConditionalSeparation, CommonAttributeContentEntry,
     CommonAttributeContentUse, CommonAttributeRuntimeContentEntry, CommonAttributeSeparation,
     CommonAttributeUsage, CommonAttributeUse, ConfigCriterion, ConfigDeclaredType,
-    ConfigDescriptor, ConfigFieldPurpose, ConfigFillingValue, ConfigPredefinedValue,
-    DataSeparationSettings, DocumentNumberPeriodicity, DocumentNumberSettings,
-    DocumentNumberingSettings, FillChecking, FunctionalOptionLocation,
-    InformationRegisterPeriodicity, InformationRegisterWriteMode, ParsedConfigResource,
-    PredefinedSource, SeparatedDataUse, Synonym, parse_config_criterion, parse_config_descriptor,
-    parse_config_descriptors, parse_config_predefined_values, parse_config_resource_bounded,
+    ConfigDescriptor, ConfigFieldPurpose, ConfigFillingValue, ConfigHeader, ConfigPredefinedValue,
+    ConfigSectionIdentity, ConfigTypeIdentity, ConfigValueIdentity, DataSeparationSettings,
+    DocumentNumberPeriodicity, DocumentNumberSettings, DocumentNumberingSettings, FillChecking,
+    FunctionalOptionLocation, InformationRegisterPeriodicity, InformationRegisterWriteMode,
+    ParsedConfigResource, PredefinedSource, SeparatedDataUse, Synonym, parse_config_criterion,
+    parse_config_descriptor, parse_config_descriptors, parse_config_header_bounded,
+    parse_config_predefined_values, parse_config_resource_bounded,
 };
 pub use db_names::{DbNameEntry, DbNames, MetadataKind, parse_db_names};
 pub use deflate::{DEFAULT_OUTPUT_LIMIT, inflate_raw_deflate, inflate_raw_deflate_bounded};
 pub use extension::{
     ContentKey, ExtensionFieldRestructure, ExtensionInfo, ExtensionResource, ExtensionRestructure,
     extension_metadata_from_restructure, extension_root_key, parse_extension_index,
-    parse_extension_info, parse_extension_restructure,
+    parse_extension_info, parse_extension_restructure, parse_extension_restructure_bounded,
 };
 pub use extension_structure::{
     ConfigurationExtensionPurpose, ExtensionCatalog, ExtensionClass, ExtensionObject,
@@ -53,6 +58,10 @@ pub use extension_structure::{
 };
 pub use guid::Guid;
 pub use identity::{AttributeId, FieldId, LookupError, ObjectId, StandardFieldId};
+pub use metadata_right::{
+    MetadataRightApplicability, MetadataRightError, ResolvedMetadataRight,
+    resolve_document_attribute_right, resolve_metadata_right,
+};
 pub(crate) use normalize::normalize_standard_field_name;
 pub use normalize::{
     LogicalField, collapse_logical_fields, normalize_index_key, recase_postgres_identifier,
@@ -63,10 +72,11 @@ pub use queries::{
 pub use resolve::{
     AllowedLength, ExtensionMetadata, IndexComparison, LiveColumn, LiveIndex, LiveTable,
     MetadataCriterion, MetadataField, MetadataObject, MetadataSnapshot, MetadataValue,
-    ResolutionFinding, ResolutionReport, ResolvedMetadata, SnapshotFingerprint, resolve_metadata,
-    resolve_metadata_with_criteria, resolve_metadata_with_extensions,
-    resolve_metadata_with_predefined_values,
-    resolve_metadata_with_predefined_values_and_extensions,
+    ReferenceTypeSet, ResolutionFinding, ResolutionReport, ResolvedMetadata, RuntimeMetadataFacts,
+    SnapshotFingerprint, resolve_metadata, resolve_metadata_with_criteria,
+    resolve_metadata_with_extensions, resolve_metadata_with_predefined_values,
+    resolve_metadata_with_predefined_values_and_extensions, resolve_selected_metadata,
+    resolve_selected_runtime_metadata,
 };
 pub use roles::{
     GrantedRight, ObjectMember, ObjectRights, ROLES_COLLECTION, Restriction, RestrictionTemplate,
@@ -80,7 +90,8 @@ pub use schema::{
 pub use users::{InfoBaseUser, UserData, UserRow, decode_user_data};
 pub use value::{Value, parse_serialized, parse_serialized_sequence};
 pub use value_storage::{
-    StoredValueRef, decode_stored_value, entry_string, parse_stored_value_ref, stored_map_entries,
+    StoredValueRef, decode_stored_value, decode_stored_value_text, entry_string,
+    parse_stored_value_ref, stored_map_entries,
 };
 
 use std::fmt;
@@ -228,3 +239,5 @@ mod tests {
 }
 
 mod route_points;
+
+pub(crate) mod settings_storage;

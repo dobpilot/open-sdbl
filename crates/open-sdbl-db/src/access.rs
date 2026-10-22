@@ -31,6 +31,10 @@ use crate::session::{DatabaseDialect, DatabaseSession};
 #[path = "tests/access.rs"]
 mod tests;
 
+#[cfg(test)]
+#[path = "tests/metadata_right_cache.rs"]
+mod metadata_right_cache_tests;
+
 /// The users of a base, the rights of its roles, and the current user.
 pub struct AccessStore {
     catalog: RoleCatalog,
@@ -130,6 +134,79 @@ impl AccessStore {
             .find(|user| user.name.to_lowercase() == name.to_lowercase())
     }
 
+    /// Вычисляет применимое право метаданных по полному приобретённому набору ролей.
+    ///
+    /// Метод не читает БД, не применяет привилегированный режим и не заменяет
+    /// SQL/RLS-авторизацию. Сначала проверяет полноту всех ролей, затем объединяет
+    /// результаты целых ролей; разрешения родителя и реквизита не смешиваются.
+    ///
+    /// # Errors
+    ///
+    /// Возвращает [`DbError::Data`] при непрочитанных или недоступных правах роли,
+    /// а также для структурно неприменимого права. Эти ошибки не являются отказом.
+    pub fn metadata_right(
+        &self,
+        roles: &[Guid],
+        target: &open_sdbl::metadata::ResolvedMetadataRight,
+    ) -> Result<bool, DbError> {
+        self.evaluate_metadata_right(roles, target, false)
+    }
+
+    /// Вычисляет право для `VerifyAccessRights` по полному кешу ролей.
+    ///
+    /// Сохраняет измеренное отличие независимых прав дочерних объектов от
+    /// [`Self::metadata_right`]. Обработка неприменимости, привилегий и журнала
+    /// остаётся у потребителя, метод не выполняет SQL.
+    ///
+    /// # Errors
+    ///
+    /// Возвращает [`DbError::Data`] для неприменимого права, неполного кеша
+    /// или неподдержанного сочетания независимых и default-прав.
+    pub fn metadata_right_for_verification(
+        &self,
+        roles: &[Guid],
+        target: &open_sdbl::metadata::ResolvedMetadataRight,
+    ) -> Result<bool, DbError> {
+        self.evaluate_metadata_right(roles, target, true)
+    }
+
+    fn evaluate_metadata_right(
+        &self,
+        roles: &[Guid],
+        target: &open_sdbl::metadata::ResolvedMetadataRight,
+        verification: bool,
+    ) -> Result<bool, DbError> {
+        if target.applicability() == open_sdbl::metadata::MetadataRightApplicability::NotApplicable
+        {
+            return Err(DbError::Data(
+                "metadata right is not applicable to this target".to_owned(),
+            ));
+        }
+        let mut unknown = self.unreadable_rights(roles);
+        unknown.extend(self.missing_rights(roles));
+        if !unknown.is_empty() {
+            return Err(DbError::Data(format!(
+                "metadata right needs complete role rights: {}",
+                unknown
+                    .iter()
+                    .map(|role| self.role_name(role))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            )));
+        }
+        let mut granted = false;
+        for role in self.rights_of(roles) {
+            let result = if verification {
+                target.granted_for_verification(role)
+            } else {
+                target.granted_by(role)
+            };
+            // Даже разрешение другой роли не скрывает неподдержанную семантику.
+            granted |= result.map_err(|error| DbError::Data(error.to_string()))?;
+        }
+        Ok(granted)
+    }
+
     /// The rights of the roles, in the given order, skipping roles whose
     /// rights are not read.
     pub fn rights_of(&self, roles: &[Guid]) -> Vec<&RoleRights> {
@@ -167,10 +244,14 @@ impl AccessStore {
 /// и известными типами читаются через `Read` регистра независимо от `View`
 /// и default-флагов. Это не разрешает стандартные поля и не отменяет RLS.
 ///
+/// Измеренные поля независимого регистра сведений и ссылка/собственные
+/// реквизиты документа читаются через `Read` владельца при проверенных
+/// коллекциях и настройках. Неизмеренные стандартные поля не разрешаются.
+///
 /// # Errors
 ///
-/// Returns [`DbError::Data`] if the user or any role rights are absent, a
-/// field cannot be resolved or matched safely, or no role grants its read.
+/// Возвращает [`DbError::Data`], если пользователь или права роли отсутствуют,
+/// поле не разрешается однозначно либо ни одна роль не разрешает чтение.
 pub fn check_user_field_access(
     store: &AccessStore,
     snapshot: &MetadataSnapshot,
@@ -240,6 +321,12 @@ pub fn check_user_field_access(
             }
             Some(MetadataKind::AccumulationRegister) => {
                 verified_accumulation_field(snapshot, &object.guid, used.field)
+            }
+            Some(MetadataKind::InformationRegister) => {
+                verified_information_register_field(snapshot, &object.guid, used.field)
+            }
+            Some(MetadataKind::Document) => {
+                verified_document_field(snapshot, &object.guid, used.field)
             }
             _ => false,
         };
@@ -350,6 +437,95 @@ fn verified_catalog_field(snapshot: &MetadataSnapshot, object: &Guid, field: Fie
         }
         _ => false,
     }
+}
+
+// Нативные контроли `field-read-native-0923` подтверждают `Read` владельца
+// для измерений, ресурсов и периода регистра сведений. Полные коллекции,
+// известные настройки и типы не позволяют принять чужой или неизвестный член.
+fn verified_information_register_field(
+    snapshot: &MetadataSnapshot,
+    object: &Guid,
+    field: FieldId,
+) -> bool {
+    use open_sdbl::metadata::{
+        InformationRegisterPeriodicity, InformationRegisterWriteMode, StandardFieldId,
+    };
+    let Some(owner) = snapshot
+        .descriptors()
+        .iter()
+        .find(|d| &d.object_guid == object && &d.resource_guid == object)
+    else {
+        return false;
+    };
+    let (
+        Some(dimensions),
+        Some(resources),
+        Some(InformationRegisterWriteMode::Independent),
+        Some(periodicity),
+    ) = (
+        &owner.information_register_dimensions,
+        &owner.information_register_resources,
+        owner.information_register_write_mode,
+        owner.information_register_periodicity,
+    )
+    else {
+        return false;
+    };
+    match field {
+        FieldId::Standard(StandardFieldId::Period) => {
+            periodicity == InformationRegisterPeriodicity::Day
+        }
+        FieldId::Metadata(id) => {
+            dimensions
+                .iter()
+                .chain(resources)
+                .any(|guid| guid.to_bytes() == id.as_bytes())
+                && verified_declared_field(snapshot, object, id)
+        }
+        _ => false,
+    }
+}
+
+// В нативном документе измерены ссылка и собственный строковый реквизит.
+// Остальные стандартные поля и табличные части не получают разрешения
+// по аналогии; существующие явные права членов проверяются после отображения.
+fn verified_document_field(snapshot: &MetadataSnapshot, object: &Guid, field: FieldId) -> bool {
+    use open_sdbl::metadata::StandardFieldId;
+    let Some(owner) = snapshot
+        .descriptors()
+        .iter()
+        .find(|d| &d.object_guid == object && &d.resource_guid == object)
+    else {
+        return false;
+    };
+    let Some(own) = owner.document_attributes.as_ref() else {
+        return false;
+    };
+    if owner.document_number.is_none() || owner.document_numbering.is_none() {
+        return false;
+    }
+    match field {
+        FieldId::Standard(StandardFieldId::Id) => true,
+        FieldId::Metadata(id) => {
+            own.iter().any(|guid| guid.to_bytes() == id.as_bytes())
+                && verified_declared_field(snapshot, object, id)
+        }
+        _ => false,
+    }
+}
+
+fn verified_declared_field(
+    snapshot: &MetadataSnapshot,
+    object: &Guid,
+    id: open_sdbl::metadata::AttributeId,
+) -> bool {
+    snapshot.descriptors().iter().any(|d| {
+        d.object_guid.to_bytes() == id.as_bytes()
+            && &d.resource_guid == object
+            && d.declared_types
+                .as_ref()
+                .is_some_and(|types| !types.is_empty())
+    })
 }
 
 // Нативные измерения `native-0910` подтверждают чтение измерений и ресурсов

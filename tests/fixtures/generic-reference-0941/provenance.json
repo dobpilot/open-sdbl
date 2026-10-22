@@ -1,0 +1,13 @@
+{
+  "database": "demo",
+  "source": "SDK read-only Config acquisition",
+  "owner": "4062674a-4a81-494d-82bc-4984cd7c7903",
+  "producer": "1C 8.3.27.2342 native Configurator export; EDT 2026.1.3+25 import",
+  "field": "ЗначениеПустойСсылки",
+  "observed": "native file types expand to 353 existing ORM reference descriptors, ORM DB column type list currently empty",
+  "files_sha256": {
+    "Catalog.xml": "df869942641d57973465e0247a5b9d178dd808b50c08b3e41617c25c0e9383c4",
+    "Catalog.mdo": "8d9dc587066911612a97f97a81fe2e73a1b7be5aac91b453f0312a4c64862f50",
+    "config.deflate": "89b80533f9db2affa4fb365dd1736b5c19d3cd077c2387c9f8a08c1af0f240c3"
+  }
+}

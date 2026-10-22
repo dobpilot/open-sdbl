@@ -1,0 +1,37 @@
+[
+  {
+    "label": "create",
+    "exit_code": 0,
+    "seconds": 1.52
+  },
+  {
+    "label": "dump",
+    "exit_code": 0,
+    "seconds": 7.53
+  },
+  {
+    "label": "load",
+    "exit_code": 0,
+    "seconds": 1.57
+  },
+  {
+    "label": "cf",
+    "exit_code": 0,
+    "seconds": 1.57
+  },
+  {
+    "label": "canonical",
+    "exit_code": 0,
+    "seconds": 1.57
+  },
+  {
+    "label": "enterprise",
+    "exit_code": 0,
+    "seconds": 1.52
+  },
+  {
+    "label": "dt",
+    "exit_code": 0,
+    "seconds": 1.57
+  }
+]

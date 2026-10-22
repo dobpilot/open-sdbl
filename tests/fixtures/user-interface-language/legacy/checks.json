@@ -1,0 +1,52 @@
+[
+  {
+    "check": "initdb",
+    "exit_code": 0,
+    "seconds": 1.17
+  },
+  {
+    "check": "pg-start",
+    "exit_code": 0,
+    "seconds": 0.11
+  },
+  {
+    "check": "restore",
+    "exit_code": 0,
+    "seconds": 3.77
+  },
+  {
+    "check": "export",
+    "exit_code": 0,
+    "seconds": 2.07
+  },
+  {
+    "check": "import",
+    "exit_code": 0,
+    "seconds": 2.02
+  },
+  {
+    "check": "apply",
+    "exit_code": 0,
+    "seconds": 2.02
+  },
+  {
+    "check": "prepare-verified-records",
+    "exit_code": 0,
+    "seconds": 0.21
+  },
+  {
+    "check": "client-37",
+    "exit_code": 0,
+    "seconds": 7.52
+  },
+  {
+    "check": "client-31",
+    "exit_code": 0,
+    "seconds": 7.37
+  },
+  {
+    "check": "pg-stop",
+    "exit_code": 0,
+    "seconds": 0.11
+  }
+]

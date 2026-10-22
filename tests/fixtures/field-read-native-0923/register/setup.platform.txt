@@ -1,0 +1,6 @@
+setup.row	written
+setup.user	ControlAdmin
+setup.user	ReadOwner
+setup.user	NoRead
+setup.user	DefaultsOnly
+setup.user	ReadDefaults

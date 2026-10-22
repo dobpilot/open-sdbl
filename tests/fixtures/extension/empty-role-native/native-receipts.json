@@ -1,0 +1,46 @@
+[
+  {
+    "label": "create",
+    "command": [
+      "/opt/1cv8/x86_64/8.3.27.2342/ibcmd",
+      "infobase",
+      "create",
+      "--db-path=/tmp/sdbl-extension-rights-evidence-1013/native-ib",
+      "--create-database"
+    ],
+    "exit": 0,
+    "seconds": 2.07
+  },
+  {
+    "label": "load-cf",
+    "command": [
+      "/opt/1cv8/x86_64/8.3.27.2342/1cv8",
+      "DESIGNER",
+      "/F",
+      "/tmp/sdbl-extension-rights-evidence-1013/native-ib",
+      "/LoadCfg",
+      "/tmp/sdbl-extension-rights-evidence-1013/preserved-role.cf",
+      "/DisableStartupDialogs",
+      "/Out",
+      "/tmp/sdbl-extension-rights-evidence-1013/load-cf.log"
+    ],
+    "exit": 0,
+    "seconds": 7.57
+  },
+  {
+    "label": "dump-xml",
+    "command": [
+      "/opt/1cv8/x86_64/8.3.27.2342/1cv8",
+      "DESIGNER",
+      "/F",
+      "/tmp/sdbl-extension-rights-evidence-1013/native-ib",
+      "/DumpConfigToFiles",
+      "/tmp/sdbl-extension-rights-evidence-1013/native-xml",
+      "/DisableStartupDialogs",
+      "/Out",
+      "/tmp/sdbl-extension-rights-evidence-1013/dump-xml.log"
+    ],
+    "exit": 0,
+    "seconds": 1.47
+  }
+]

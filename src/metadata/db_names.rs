@@ -257,6 +257,31 @@ impl DbNames {
         }
     }
 
+    /// Сохраняет авторитетные индексы полей и разделителей при выборе записей.
+    pub(crate) fn select_entries(&self, keep: impl Fn(&DbNameEntry) -> bool) -> Self {
+        let entries = self
+            .entries
+            .iter()
+            .filter(|entry| keep(entry))
+            .cloned()
+            .collect::<Vec<_>>();
+        let numbers = entries
+            .iter()
+            .filter(|entry| entry.alias == "Fld")
+            .map(|entry| entry.number)
+            .collect::<HashSet<_>>();
+        Self {
+            entries,
+            fields: self
+                .fields
+                .iter()
+                .filter(|(number, _)| numbers.contains(number))
+                .map(|(number, guid)| (*number, guid.clone()))
+                .collect(),
+            separators: self.separators.intersection(&numbers).copied().collect(),
+        }
+    }
+
     /// Returns every valid entry in source order, including platform-owned ones.
     #[must_use]
     pub fn entries(&self) -> &[DbNameEntry] {

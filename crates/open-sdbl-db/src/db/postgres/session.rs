@@ -200,6 +200,9 @@ pub struct PostgresSession {
     /// The storage layout the last metadata read detected.
     pub(super) layout: Option<StorageLayout>,
     pub(super) limits: Limits,
+    explicit_transaction: Option<String>,
+    pub(super) transaction_operation_pending: bool,
+    pub(super) transaction_poisoned: bool,
 }
 
 impl PostgresSession {
@@ -289,7 +292,167 @@ impl PostgresSession {
             socks5_password,
             layout: None,
             limits,
+            explicit_transaction: None,
+            transaction_operation_pending: false,
+            transaction_poisoned: false,
         })
+    }
+
+    fn ensure_transaction_usable(&mut self) -> Result<(), DbError> {
+        if self.transaction_operation_pending {
+            // Прерванный future мог оставить команду на сервере незавершённой.
+            self.transaction_poisoned = true;
+            self.explicit_transaction = None;
+            self.driver.abort();
+        }
+        if self.transaction_poisoned || self.client.is_closed() {
+            return Err(DbError::SessionClosed);
+        }
+        Ok(())
+    }
+
+    fn reject_explicit_acquisition(&mut self) -> Result<(), DbError> {
+        self.ensure_transaction_usable()?;
+        if self.explicit_transaction.is_some() {
+            return Err(DbError::Database(
+                "metadata acquisition during an explicit transaction is unsupported".into(),
+            ));
+        }
+        Ok(())
+    }
+
+    async fn transaction_batch(&mut self, sql: &str, label: &str) -> Result<(), DbError> {
+        self.ensure_transaction_usable()?;
+        self.transaction_operation_pending = true;
+        let result = query_timeout(self.limits, label, async {
+            self.client.batch_execute(sql).await.map_err(DbError::from)
+        })
+        .await;
+        self.transaction_operation_pending = false;
+        result
+    }
+
+    async fn explicit_state(&mut self) -> Result<String, DbError> {
+        self.ensure_transaction_usable()?;
+        self.transaction_operation_pending = true;
+        let result = query_timeout(self.limits, "PostgreSQL transaction-state verification", async {
+            let row = self.client.query_one("SELECT txid_current()::text, current_setting('transaction_read_only'), current_setting('transaction_isolation')", &[]).await?;
+            let id: String = row.try_get(0)?;
+            let read_only: String = row.try_get(1)?;
+            let isolation: String = row.try_get(2)?;
+            if read_only != "on" || isolation != "read committed" {
+                return Err(DbError::Database(format!("unsafe PostgreSQL transaction mode: read_only={read_only:?}, isolation={isolation:?}")));
+            }
+            Ok(id)
+        }).await;
+        self.transaction_operation_pending = false;
+        result
+    }
+
+    async fn explicit_cleanup(&mut self, original: DbError) -> DbError {
+        self.explicit_transaction = None;
+        if self
+            .transaction_batch("ROLLBACK", "PostgreSQL transaction rollback")
+            .await
+            .is_err()
+        {
+            self.transaction_poisoned = true;
+            self.driver.abort();
+        }
+        original
+    }
+
+    /// Начинает невложенную транзакцию `READ COMMITTED READ ONLY` на этом соединении.
+    ///
+    /// # Errors
+    /// Возвращает ошибку состояния, сервера или тайм-аута; неудачный запуск откатывается.
+    pub async fn begin_read_only_transaction(&mut self) -> Result<(), DbError> {
+        self.ensure_transaction_usable()?;
+        if self.explicit_transaction.is_some() {
+            return Err(DbError::Database(
+                "an explicit transaction is already active".into(),
+            ));
+        }
+        if let Err(error) = self
+            .transaction_batch(
+                "BEGIN ISOLATION LEVEL READ COMMITTED READ ONLY",
+                "PostgreSQL transaction start",
+            )
+            .await
+        {
+            return Err(self.explicit_cleanup(error).await);
+        }
+        match self.explicit_state().await {
+            Ok(id) => {
+                self.explicit_transaction = Some(id);
+                Ok(())
+            }
+            Err(error) => Err(self.explicit_cleanup(error).await),
+        }
+    }
+
+    /// Проверяет состояние и идентичность явной транзакции на сервере.
+    ///
+    /// # Errors
+    /// Возвращает ошибку закрытого соединения, тайм-аута или изменённого состояния сервера.
+    pub async fn transaction_active(&mut self) -> Result<bool, DbError> {
+        self.ensure_transaction_usable()?;
+        let Some(expected) = self.explicit_transaction.clone() else {
+            return Ok(false);
+        };
+        match self.explicit_state().await {
+            Ok(actual) if actual == expected => Ok(true),
+            Ok(_) => Err(self
+                .explicit_cleanup(DbError::Database(
+                    "explicit PostgreSQL transaction changed on the server".into(),
+                ))
+                .await),
+            Err(error) => Err(self.explicit_cleanup(error).await),
+        }
+    }
+
+    /// Завершает явную транзакцию на этом соединении.
+    ///
+    /// # Errors
+    /// Возвращает ошибку при отсутствии транзакции, отказе сервера или тайм-ауте.
+    pub async fn commit_transaction(&mut self) -> Result<(), DbError> {
+        if !self.transaction_active().await? {
+            return Err(DbError::Database(
+                "no explicit transaction is active".into(),
+            ));
+        }
+        match self
+            .transaction_batch("COMMIT", "PostgreSQL transaction commit")
+            .await
+        {
+            Ok(()) => {
+                self.explicit_transaction = None;
+                Ok(())
+            }
+            Err(error) => Err(self.explicit_cleanup(error).await),
+        }
+    }
+
+    /// Откатывает явную транзакцию на этом соединении.
+    ///
+    /// # Errors
+    /// Возвращает ошибку при отсутствии транзакции или неудаче очистки соединения.
+    pub async fn rollback_transaction(&mut self) -> Result<(), DbError> {
+        self.ensure_transaction_usable()?;
+        if self.explicit_transaction.is_none() {
+            return Err(DbError::Database(
+                "no explicit transaction is active".into(),
+            ));
+        }
+        self.explicit_transaction = None;
+        let result = self
+            .transaction_batch("ROLLBACK", "PostgreSQL transaction rollback")
+            .await;
+        if result.is_err() {
+            self.transaction_poisoned = true;
+            self.driver.abort();
+        }
+        result
     }
 
     /// The limits this session applies to everything it does.
@@ -303,6 +466,7 @@ impl PostgresSession {
         &mut self,
         progress: &mut dyn MetadataProgress,
     ) -> Result<(MetadataSnapshot, ResolutionReport), DbError> {
+        self.reject_explicit_acquisition()?;
         let limits = self.limits;
         let transaction = query_timeout(limits, "PostgreSQL transaction start", async {
             self.client
@@ -330,6 +494,7 @@ impl PostgresSession {
         &mut self,
         progress: &mut dyn MetadataProgress,
     ) -> Result<AcquiredConfiguration, DbError> {
+        self.reject_explicit_acquisition()?;
         let limits = self.limits;
         let transaction = query_timeout(limits, "PostgreSQL transaction start", async {
             self.client
@@ -360,6 +525,7 @@ impl PostgresSession {
         progress: &mut dyn MetadataProgress,
         selector: &mut dyn ConfigSelector,
     ) -> Result<AcquiredConfiguration, DbError> {
+        self.reject_explicit_acquisition()?;
         let limits = self.limits;
         let transaction = query_timeout(limits, "PostgreSQL transaction start", async {
             self.client
@@ -379,6 +545,178 @@ impl PostgresSession {
         .await?;
         self.layout = Some(acquired.layout);
         Ok(acquired)
+    }
+
+    /// Читает физические индексы без `Config`, `ConfigCAS` и подробных объектов.
+    /// Результат хранится у потребителя и переиспользуется при гидратации без SQL.
+    /// Повторный явный вызов заново читает индексы; атомарный снимок не обещается.
+    ///
+    /// # Errors
+    /// Возвращает ошибку сеанса, схемы, запроса, декодирования или тайм-аута.
+    pub async fn configuration_metadata_inputs(
+        &mut self,
+    ) -> Result<crate::ConfigurationMetadataInputs, DbError> {
+        self.reject_explicit_acquisition()?;
+        let known = self.layout;
+        let limits = self.limits();
+        let transaction = query_timeout(limits, "PostgreSQL transaction start", async {
+            self.client
+                .build_transaction()
+                .isolation_level(IsolationLevel::ReadCommitted)
+                .read_only(true)
+                .start()
+                .await
+                .map_err(DbError::from)
+        })
+        .await?;
+        let mut source = PostgresMetadataSource::new(transaction, limits);
+        let acquired = crate::metadata_inputs::acquire_inputs(&mut source, known).await?;
+        drop(source);
+        self.layout = Some(acquired.layout);
+        Ok(acquired)
+    }
+
+    /// Читает только уникальные имена `Config`, без `BinaryData`.
+    /// Количество и суммарный UTF-8 размер ограничены пределами удержания.
+    ///
+    /// # Errors
+    /// Возвращает ошибку сеанса, запроса, лимита либо тайм-аута.
+    pub async fn configuration_resource_names(&mut self) -> Result<Vec<String>, DbError> {
+        self.reject_explicit_acquisition()?;
+        let known = self.layout;
+        let limits = self.limits();
+        let transaction = query_timeout(limits, "PostgreSQL transaction start", async {
+            self.client
+                .build_transaction()
+                .isolation_level(IsolationLevel::ReadCommitted)
+                .read_only(true)
+                .start()
+                .await
+                .map_err(DbError::from)
+        })
+        .await?;
+        let mut source = PostgresMetadataSource::new(transaction, limits);
+        let (layout, names) = crate::metadata_inputs::acquire_names(&mut source, known).await?;
+        drop(source);
+        self.layout = Some(layout);
+        Ok(names)
+    }
+
+    /// Читает физические структуры расширений без `Config` и `ConfigCAS`.
+    /// Результат ограничен существующими бюджетами хранения и распаковки.
+    ///
+    /// # Errors
+    /// Возвращает ошибку сеанса, запроса, лимита или декодирования структуры.
+    pub async fn configuration_extension_metadata(
+        &mut self,
+    ) -> Result<Vec<open_sdbl::metadata::ExtensionMetadata>, DbError> {
+        self.reject_explicit_acquisition()?;
+        let known = self.layout;
+        let limits = self.limits();
+        let transaction = query_timeout(limits, "PostgreSQL transaction start", async {
+            self.client
+                .build_transaction()
+                .isolation_level(IsolationLevel::ReadCommitted)
+                .read_only(true)
+                .start()
+                .await
+                .map_err(DbError::from)
+        })
+        .await?;
+        let mut source = PostgresMetadataSource::new(transaction, limits);
+        let (layout, names) =
+            crate::metadata_inputs::acquire_extensions(&mut source, known).await?;
+        drop(source);
+        self.layout = Some(layout);
+        Ok(names)
+    }
+
+    /// Приобретает только `root`, описатель конфигурации и каталог расширений.
+    /// Вызывает `root_resource_name` и `configure`, но не `retain`.
+    /// Не читает `ConfigCAS`, `DBNames`, `SchemaStorage` и каталог таблиц.
+    /// Последующие вызовы не образуют атомарного снимка с этим чтением.
+    ///
+    /// # Errors
+    /// Возвращает ошибку сеанса, запроса, селектора, сборки частей или лимита.
+    pub async fn configuration_bootstrap(
+        &mut self,
+        selector: &mut dyn ConfigSelector,
+    ) -> Result<crate::ConfigurationBootstrap, DbError> {
+        self.reject_explicit_acquisition()?;
+        let known = self.layout;
+        let limits = self.limits();
+        let transaction = query_timeout(limits, "PostgreSQL transaction start", async {
+            self.client
+                .build_transaction()
+                .isolation_level(IsolationLevel::ReadCommitted)
+                .read_only(true)
+                .start()
+                .await
+                .map_err(DbError::from)
+        })
+        .await?;
+        let mut source = PostgresMetadataSource::new(transaction, limits);
+        let acquired = crate::indexed::bootstrap(&mut source, known, selector, limits).await?;
+        drop(source);
+        self.layout = Some(acquired.layout);
+        Ok(acquired)
+    }
+
+    /// Читает только перечисленные ресурсы `Config`, не вызывая селектор.
+    /// Повторы устраняются с сохранением порядка; концевые пробелы имён удаляются.
+    /// Пустой список не обращается к таблице ресурсов.
+    ///
+    /// # Errors
+    /// Возвращает ошибку сеанса, отсутствующего ресурса, частей, запроса или лимита.
+    pub async fn configuration_resources(
+        &mut self,
+        names: &[&str],
+    ) -> Result<Vec<crate::pipeline::ConfigResource>, DbError> {
+        self.read_resources(names, false).await
+    }
+
+    /// Читает только ресурсы `ConfigCAS` с указанными ключами содержимого.
+    /// Логические имена переводятся в ключи существующим `parse_extension_index`.
+    ///
+    /// # Errors
+    /// Возвращает ошибку сеанса, отсутствующего ресурса, частей, запроса или лимита.
+    pub async fn extension_resources(
+        &mut self,
+        keys: &[open_sdbl::metadata::ContentKey],
+    ) -> Result<Vec<crate::pipeline::ConfigResource>, DbError> {
+        let keys = crate::indexed::keys(keys);
+        let names = keys.iter().map(String::as_str).collect::<Vec<_>>();
+        self.read_resources(&names, true).await
+    }
+
+    async fn read_resources(
+        &mut self,
+        requested: &[&str],
+        extension: bool,
+    ) -> Result<Vec<crate::pipeline::ConfigResource>, DbError> {
+        self.reject_explicit_acquisition()?;
+        let limits = self.limits();
+        let names = crate::indexed::names(requested, limits)?;
+        if names.is_empty() {
+            return Ok(Vec::new());
+        }
+        let known = self.layout;
+        let transaction = query_timeout(limits, "PostgreSQL transaction start", async {
+            self.client
+                .build_transaction()
+                .isolation_level(IsolationLevel::ReadCommitted)
+                .read_only(true)
+                .start()
+                .await
+                .map_err(DbError::from)
+        })
+        .await?;
+        let mut source = PostgresMetadataSource::new(transaction, limits);
+        let (layout, resources) =
+            crate::indexed::resources(&mut source, known, &names, extension, limits).await?;
+        drop(source);
+        self.layout = Some(layout);
+        Ok(resources)
     }
 
     /// The storage layout of the base, known after a metadata read.
@@ -415,6 +753,23 @@ impl PostgresSession {
         column_count: usize,
         on_row: impl FnMut(Vec<Cell>) -> Result<RowFlow, DbError>,
     ) -> Result<(), DbError> {
+        self.ensure_transaction_usable()?;
+        if self.explicit_transaction.is_some() {
+            self.transaction_active().await?;
+            self.transaction_operation_pending = true;
+            let read = query_timeout(self.limits, "PostgreSQL query", async {
+                let parameters = std::iter::empty::<&(dyn ToSql + Sync)>();
+                let rows = self.client.query_raw(sql, parameters).await?;
+                let decoded = rows.map(move |row| decode_postgres_row(row, column_count));
+                drive_rows(decoded, on_row).await
+            })
+            .await;
+            self.transaction_operation_pending = false;
+            return match read {
+                Ok(_) => self.transaction_active().await.map(|_| ()),
+                Err(error) => Err(self.explicit_cleanup(error).await),
+            };
+        }
         let limits = self.limits;
         let transaction = query_timeout(limits, "PostgreSQL transaction start", async {
             self.client
@@ -520,6 +875,13 @@ impl PostgresSession {
             }
         })
         .await
+    }
+
+    pub(crate) async fn rollback_after_cancellation(&mut self) -> Result<(), DbError> {
+        if self.explicit_transaction.is_some() {
+            self.rollback_transaction().await?;
+        }
+        Ok(())
     }
 
     /// Closes the session, giving the driver time to wind down.

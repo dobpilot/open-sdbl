@@ -1,0 +1,7 @@
+loaded_rights=0; named_descriptors=0
+
+thread 'main' (1610784) panicked at src/main.rs:15:5:
+assertion `left == right` failed: complete native role without a rights subobject must load its measured empty rights
+  left: 0
+ right: 1
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace

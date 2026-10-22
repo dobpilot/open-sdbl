@@ -57,6 +57,8 @@ pub struct MsSqlSession {
     /// The storage layout the last metadata read detected.
     pub(super) layout: Option<StorageLayout>,
     pub(super) limits: Limits,
+    explicit_transaction: bool,
+    pub(super) transaction_operation_pending: bool,
 }
 
 impl MsSqlSession {
@@ -74,6 +76,111 @@ impl MsSqlSession {
             )?,
         };
         Self::connect_with_secrets(connection, secrets, limits).await
+    }
+
+    fn ensure_transaction_usable(&mut self) -> Result<(), DbError> {
+        if self.transaction_operation_pending {
+            self.poison_and_drop();
+        }
+        self.ensure_usable()
+    }
+
+    fn reject_explicit_acquisition(&mut self) -> Result<(), DbError> {
+        self.ensure_transaction_usable()?;
+        if self.explicit_transaction {
+            return Err(DbError::Database(
+                "metadata acquisition during an explicit transaction is unsupported".into(),
+            ));
+        }
+        Ok(())
+    }
+
+    /// Начинает невложенную транзакцию на этом соединении с прежними ограничениями чтения.
+    /// Для запрета записи на SQL Server необходим пользователь только для чтения.
+    ///
+    /// # Errors
+    /// Возвращает ошибку состояния, сервера или тайм-аута.
+    pub async fn begin_read_only_transaction(&mut self) -> Result<(), DbError> {
+        self.ensure_transaction_usable()?;
+        if self.explicit_transaction {
+            return Err(DbError::Database(
+                "an explicit transaction is already active".into(),
+            ));
+        }
+        self.transaction_operation_pending = true;
+        let result = self.execute_batch("BEGIN TRANSACTION").await;
+        self.transaction_operation_pending = false;
+        if let Err(error) = result {
+            return Err(self.rollback_after_error(error).await);
+        }
+        self.explicit_transaction = true;
+        self.transaction_active().await.map(|_| ())
+    }
+
+    /// Проверяет глубину явной транзакции на сервере.
+    ///
+    /// # Errors
+    /// Возвращает ошибку закрытого соединения или неизвестного состояния сервера.
+    pub async fn transaction_active(&mut self) -> Result<bool, DbError> {
+        self.ensure_transaction_usable()?;
+        if !self.explicit_transaction {
+            return Ok(false);
+        }
+        self.transaction_operation_pending = true;
+        let result = self.transaction_count().await;
+        self.transaction_operation_pending = false;
+        match result {
+            Ok(1) => Ok(true),
+            Ok(_) => Err(self
+                .rollback_after_error(DbError::Database(
+                    "explicit MSSQL transaction changed on the server".into(),
+                ))
+                .await),
+            Err(error) => Err(self.rollback_after_error(error).await),
+        }
+    }
+
+    /// Завершает явную транзакцию на этом соединении.
+    ///
+    /// # Errors
+    /// Возвращает ошибку при отсутствии транзакции, отказе сервера или тайм-ауте.
+    pub async fn commit_transaction(&mut self) -> Result<(), DbError> {
+        if !self.transaction_active().await? {
+            return Err(DbError::Database(
+                "no explicit transaction is active".into(),
+            ));
+        }
+        self.transaction_operation_pending = true;
+        let result = self.execute_batch("COMMIT TRANSACTION").await;
+        self.transaction_operation_pending = false;
+        match result {
+            Ok(()) => {
+                self.explicit_transaction = false;
+                Ok(())
+            }
+            Err(error) => Err(self.rollback_after_error(error).await),
+        }
+    }
+
+    /// Откатывает явную транзакцию на этом соединении.
+    ///
+    /// # Errors
+    /// Возвращает ошибку при отсутствии транзакции или неудаче очистки соединения.
+    pub async fn rollback_transaction(&mut self) -> Result<(), DbError> {
+        self.ensure_transaction_usable()?;
+        if !self.explicit_transaction {
+            return Err(DbError::Database(
+                "no explicit transaction is active".into(),
+            ));
+        }
+        self.transaction_operation_pending = true;
+        let result = self.execute_batch("ROLLBACK TRANSACTION").await;
+        self.transaction_operation_pending = false;
+        self.explicit_transaction = false;
+        if result.is_err() {
+            self.poison_and_drop();
+        }
+        result
     }
 
     /// The limits this session applies to everything it does.
@@ -153,6 +260,8 @@ impl MsSqlSession {
             secrets,
             layout: None,
             limits,
+            explicit_transaction: false,
+            transaction_operation_pending: false,
         };
         session
             .execute_batch(
@@ -308,10 +417,12 @@ impl MsSqlSession {
     }
 
     pub(super) async fn rollback_after_error(&mut self, original: DbError) -> DbError {
+        self.explicit_transaction = false;
         if should_disconnect_after_mssql_error(&original) {
             self.poison_and_drop();
             return original;
         }
+        self.transaction_operation_pending = true;
         let rollback = self
             .execute_batch("IF @@TRANCOUNT > 0 ROLLBACK TRANSACTION")
             .await
@@ -323,6 +434,7 @@ impl MsSqlSession {
         } else {
             Ok(0)
         };
+        self.transaction_operation_pending = false;
         match apply_mssql_cleanup(&mut self.poisoned, rollback, transaction_count) {
             Ok(()) => original,
             Err(cleanup) => DbError::Database(format!(
@@ -333,6 +445,8 @@ impl MsSqlSession {
 
     pub(super) fn poison_and_drop(&mut self) {
         self.poisoned = true;
+        self.explicit_transaction = false;
+        self.transaction_operation_pending = false;
         drop(self.client.take());
     }
 
@@ -342,6 +456,7 @@ impl MsSqlSession {
         &mut self,
         progress: &mut dyn MetadataProgress,
     ) -> Result<(MetadataSnapshot, ResolutionReport), DbError> {
+        self.reject_explicit_acquisition()?;
         let (snapshot, layout, report) =
             acquire_metadata(&mut MsSqlMetadataSource::new(self), progress).await?;
         self.layout = Some(layout);
@@ -355,6 +470,7 @@ impl MsSqlSession {
         &mut self,
         progress: &mut dyn MetadataProgress,
     ) -> Result<AcquiredConfiguration, DbError> {
+        self.reject_explicit_acquisition()?;
         let acquired = acquire_configuration(&mut MsSqlMetadataSource::new(self), progress).await?;
         self.layout = Some(acquired.layout);
         Ok(acquired)
@@ -370,11 +486,131 @@ impl MsSqlSession {
         progress: &mut dyn MetadataProgress,
         selector: &mut dyn ConfigSelector,
     ) -> Result<AcquiredConfiguration, DbError> {
+        self.reject_explicit_acquisition()?;
         let acquired =
             acquire_selected_configuration(&mut MsSqlMetadataSource::new(self), progress, selector)
                 .await?;
         self.layout = Some(acquired.layout);
         Ok(acquired)
+    }
+
+    /// Читает физические индексы без `Config`, `ConfigCAS` и подробных объектов.
+    /// Результат хранится у потребителя и переиспользуется при гидратации без SQL.
+    /// Повторный явный вызов заново читает индексы; атомарный снимок не обещается.
+    ///
+    /// # Errors
+    /// Возвращает ошибку сеанса, схемы, запроса, декодирования или тайм-аута.
+    pub async fn configuration_metadata_inputs(
+        &mut self,
+    ) -> Result<crate::ConfigurationMetadataInputs, DbError> {
+        self.reject_explicit_acquisition()?;
+        let known = self.layout;
+        let mut source = MsSqlMetadataSource::new(self);
+        let acquired = crate::metadata_inputs::acquire_inputs(&mut source, known).await?;
+        drop(source);
+        self.layout = Some(acquired.layout);
+        Ok(acquired)
+    }
+
+    /// Читает только уникальные имена `Config`, без `BinaryData`.
+    /// Количество и суммарный UTF-8 размер ограничены пределами удержания.
+    ///
+    /// # Errors
+    /// Возвращает ошибку сеанса, запроса, лимита либо тайм-аута.
+    pub async fn configuration_resource_names(&mut self) -> Result<Vec<String>, DbError> {
+        self.reject_explicit_acquisition()?;
+        let known = self.layout;
+        let mut source = MsSqlMetadataSource::new(self);
+        let (layout, names) = crate::metadata_inputs::acquire_names(&mut source, known).await?;
+        drop(source);
+        self.layout = Some(layout);
+        Ok(names)
+    }
+
+    /// Читает физические структуры расширений без `Config` и `ConfigCAS`.
+    /// Результат ограничен существующими бюджетами хранения и распаковки.
+    ///
+    /// # Errors
+    /// Возвращает ошибку сеанса, запроса, лимита или декодирования структуры.
+    pub async fn configuration_extension_metadata(
+        &mut self,
+    ) -> Result<Vec<open_sdbl::metadata::ExtensionMetadata>, DbError> {
+        self.reject_explicit_acquisition()?;
+        let known = self.layout;
+        let mut source = MsSqlMetadataSource::new(self);
+        let (layout, names) =
+            crate::metadata_inputs::acquire_extensions(&mut source, known).await?;
+        drop(source);
+        self.layout = Some(layout);
+        Ok(names)
+    }
+
+    /// Приобретает только `root`, описатель конфигурации и каталог расширений.
+    /// Вызывает `root_resource_name` и `configure`, но не `retain`.
+    /// Не читает `ConfigCAS`, `DBNames`, `SchemaStorage` и каталог таблиц.
+    /// Последующие вызовы не образуют атомарного снимка с этим чтением.
+    ///
+    /// # Errors
+    /// Возвращает ошибку сеанса, запроса, селектора, сборки частей или лимита.
+    pub async fn configuration_bootstrap(
+        &mut self,
+        selector: &mut dyn ConfigSelector,
+    ) -> Result<crate::ConfigurationBootstrap, DbError> {
+        self.reject_explicit_acquisition()?;
+        let known = self.layout;
+        let limits = self.limits();
+        let mut source = MsSqlMetadataSource::new(self);
+        let acquired = crate::indexed::bootstrap(&mut source, known, selector, limits).await?;
+        drop(source);
+        self.layout = Some(acquired.layout);
+        Ok(acquired)
+    }
+
+    /// Читает только перечисленные ресурсы `Config`, не вызывая селектор.
+    /// Повторы устраняются с сохранением порядка; концевые пробелы имён удаляются.
+    /// Пустой список не обращается к таблице ресурсов.
+    ///
+    /// # Errors
+    /// Возвращает ошибку сеанса, отсутствующего ресурса, частей, запроса или лимита.
+    pub async fn configuration_resources(
+        &mut self,
+        names: &[&str],
+    ) -> Result<Vec<crate::pipeline::ConfigResource>, DbError> {
+        self.read_resources(names, false).await
+    }
+
+    /// Читает только ресурсы `ConfigCAS` с указанными ключами содержимого.
+    /// Логические имена переводятся в ключи существующим `parse_extension_index`.
+    ///
+    /// # Errors
+    /// Возвращает ошибку сеанса, отсутствующего ресурса, частей, запроса или лимита.
+    pub async fn extension_resources(
+        &mut self,
+        keys: &[open_sdbl::metadata::ContentKey],
+    ) -> Result<Vec<crate::pipeline::ConfigResource>, DbError> {
+        let keys = crate::indexed::keys(keys);
+        let names = keys.iter().map(String::as_str).collect::<Vec<_>>();
+        self.read_resources(&names, true).await
+    }
+
+    async fn read_resources(
+        &mut self,
+        requested: &[&str],
+        extension: bool,
+    ) -> Result<Vec<crate::pipeline::ConfigResource>, DbError> {
+        self.reject_explicit_acquisition()?;
+        let limits = self.limits();
+        let names = crate::indexed::names(requested, limits)?;
+        if names.is_empty() {
+            return Ok(Vec::new());
+        }
+        let known = self.layout;
+        let mut source = MsSqlMetadataSource::new(self);
+        let (layout, resources) =
+            crate::indexed::resources(&mut source, known, &names, extension, limits).await?;
+        drop(source);
+        self.layout = Some(layout);
+        Ok(resources)
     }
 
     /// The storage layout of the base, known after a metadata read.
@@ -424,7 +660,14 @@ impl MsSqlSession {
         column_count: usize,
         on_row: impl FnMut(Vec<Cell>) -> Result<RowFlow, DbError>,
     ) -> Result<(), DbError> {
-        self.execute_batch("BEGIN TRANSACTION").await?;
+        self.ensure_transaction_usable()?;
+        let explicit = self.explicit_transaction;
+        if explicit {
+            self.transaction_active().await?;
+        } else {
+            self.execute_batch("BEGIN TRANSACTION").await?;
+        }
+        self.transaction_operation_pending = true;
         let limits = self.limits;
         let client = self.client_mut()?;
         let result = query_timeout(limits, "MSSQL user query", async {
@@ -438,7 +681,9 @@ impl MsSqlSession {
             drive_rows(decoded, on_row).await
         })
         .await;
+        self.transaction_operation_pending = false;
         match result {
+            Ok(ReadEnd::Exhausted) if explicit => self.transaction_active().await.map(|_| ()),
             // The statement ran out: the stream is between messages only
             // if it was abandoned, so a finished read commits as before.
             Ok(ReadEnd::Exhausted) => match self.execute_batch("COMMIT TRANSACTION").await {

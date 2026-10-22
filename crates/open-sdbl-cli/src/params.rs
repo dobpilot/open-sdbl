@@ -273,6 +273,7 @@ pub(crate) fn kind_label(value: &ParameterValue) -> String {
         ParameterValue::String(_) => "String".to_owned(),
         ParameterValue::Date(_) => "DateTime".to_owned(),
         ParameterValue::Reference { .. } => "Reference".to_owned(),
+        ParameterValue::Uuid(_) => "Uuid".to_owned(),
         ParameterValue::Binary(bytes) => format!("Binary[{}]", bytes.len()),
         ParameterValue::List(items) => format!("List[{}]", items.len()),
         ParameterValue::Table { columns, rows } => {

@@ -1,0 +1,348 @@
+{
+  "catalogs": 752,
+  "changed_count": 12,
+  "unchanged_count": 740,
+  "modern_unchanged": 727,
+  "changed_native_sections": 3,
+  "changed_native_fields": 7,
+  "all_changed_membership_order_names_and_type_presence_match_native_xml": true,
+  "scope_limit": "All-catalog membership/type-presence regression; complete qualifiers independently verified for actual reached owner only",
+  "changed": [
+    {
+      "before": {
+        "owner": "8321d69b-1813-453f-ac0f-b5b0b950de21",
+        "name": "ВидыНалоговыхОрганов",
+        "class": "53",
+        "class_len": "58",
+        "native_sections": "0",
+        "sdk_sections": "None",
+        "native_fields": "0",
+        "known_field_types": "0",
+        "section_membership_match": "false",
+        "field_membership_names_match": "true",
+        "projection_hash": "d1ff9e4370669e02"
+      },
+      "after": {
+        "owner": "8321d69b-1813-453f-ac0f-b5b0b950de21",
+        "name": "ВидыНалоговыхОрганов",
+        "class": "53",
+        "class_len": "58",
+        "native_sections": "0",
+        "sdk_sections": "0",
+        "native_fields": "0",
+        "known_field_types": "0",
+        "section_membership_match": "true",
+        "field_membership_names_match": "true",
+        "projection_hash": "f9aed259f6eeae59"
+      }
+    },
+    {
+      "before": {
+        "owner": "7f3acf40-4f84-4609-81d4-7880af67bd14",
+        "name": "НалоговыеОрганы",
+        "class": "53",
+        "class_len": "58",
+        "native_sections": "1",
+        "sdk_sections": "None",
+        "native_fields": "1",
+        "known_field_types": "0",
+        "section_membership_match": "false",
+        "field_membership_names_match": "false",
+        "projection_hash": "d3613692bb703b0f"
+      },
+      "after": {
+        "owner": "7f3acf40-4f84-4609-81d4-7880af67bd14",
+        "name": "НалоговыеОрганы",
+        "class": "53",
+        "class_len": "58",
+        "native_sections": "1",
+        "sdk_sections": "1",
+        "native_fields": "1",
+        "known_field_types": "1",
+        "section_membership_match": "true",
+        "field_membership_names_match": "true",
+        "projection_hash": "a454b9fb5b9797bf"
+      }
+    },
+    {
+      "before": {
+        "owner": "83fa6f59-390a-4e3d-bb4a-50179b77e856",
+        "name": "ОтправкиОтчетности",
+        "class": "53",
+        "class_len": "58",
+        "native_sections": "1",
+        "sdk_sections": "None",
+        "native_fields": "2",
+        "known_field_types": "0",
+        "section_membership_match": "false",
+        "field_membership_names_match": "false",
+        "projection_hash": "9471bfdc3cfd4744"
+      },
+      "after": {
+        "owner": "83fa6f59-390a-4e3d-bb4a-50179b77e856",
+        "name": "ОтправкиОтчетности",
+        "class": "53",
+        "class_len": "58",
+        "native_sections": "1",
+        "sdk_sections": "1",
+        "native_fields": "2",
+        "known_field_types": "2",
+        "section_membership_match": "true",
+        "field_membership_names_match": "true",
+        "projection_hash": "6e7e53c295719921"
+      }
+    },
+    {
+      "before": {
+        "owner": "71ec2ce6-eadc-4e9d-b12d-5168fb3eca48",
+        "name": "ПараметрыТиповойОперации",
+        "class": "53",
+        "class_len": "58",
+        "native_sections": "0",
+        "sdk_sections": "None",
+        "native_fields": "0",
+        "known_field_types": "0",
+        "section_membership_match": "false",
+        "field_membership_names_match": "true",
+        "projection_hash": "d38ab5064f6216a5"
+      },
+      "after": {
+        "owner": "71ec2ce6-eadc-4e9d-b12d-5168fb3eca48",
+        "name": "ПараметрыТиповойОперации",
+        "class": "53",
+        "class_len": "58",
+        "native_sections": "0",
+        "sdk_sections": "0",
+        "native_fields": "0",
+        "known_field_types": "0",
+        "section_membership_match": "true",
+        "field_membership_names_match": "true",
+        "projection_hash": "4124bc7e02d505b2"
+      }
+    },
+    {
+      "before": {
+        "owner": "e86073bc-9a4c-4887-bb7f-b7b7cb9f335d",
+        "name": "ПравилаРегулярныхПлатежей",
+        "class": "53",
+        "class_len": "58",
+        "native_sections": "0",
+        "sdk_sections": "None",
+        "native_fields": "0",
+        "known_field_types": "0",
+        "section_membership_match": "false",
+        "field_membership_names_match": "true",
+        "projection_hash": "3ae5271e73b6870d"
+      },
+      "after": {
+        "owner": "e86073bc-9a4c-4887-bb7f-b7b7cb9f335d",
+        "name": "ПравилаРегулярныхПлатежей",
+        "class": "53",
+        "class_len": "58",
+        "native_sections": "0",
+        "sdk_sections": "0",
+        "native_fields": "0",
+        "known_field_types": "0",
+        "section_membership_match": "true",
+        "field_membership_names_match": "true",
+        "projection_hash": "250a10a817f970d1"
+      }
+    },
+    {
+      "before": {
+        "owner": "ab31c678-d202-4ed8-8aa5-508c9668382e",
+        "name": "СерверыДокументооборота",
+        "class": "53",
+        "class_len": "58",
+        "native_sections": "0",
+        "sdk_sections": "None",
+        "native_fields": "0",
+        "known_field_types": "0",
+        "section_membership_match": "false",
+        "field_membership_names_match": "true",
+        "projection_hash": "3caf73a82237ccf3"
+      },
+      "after": {
+        "owner": "ab31c678-d202-4ed8-8aa5-508c9668382e",
+        "name": "СерверыДокументооборота",
+        "class": "53",
+        "class_len": "58",
+        "native_sections": "0",
+        "sdk_sections": "0",
+        "native_fields": "0",
+        "known_field_types": "0",
+        "section_membership_match": "true",
+        "field_membership_names_match": "true",
+        "projection_hash": "145760d8af3bf182"
+      }
+    },
+    {
+      "before": {
+        "owner": "4132dc03-17a4-4287-b1fc-a67d57fa8ea2",
+        "name": "СобытияОтправкиОтчетности",
+        "class": "53",
+        "class_len": "58",
+        "native_sections": "1",
+        "sdk_sections": "None",
+        "native_fields": "4",
+        "known_field_types": "0",
+        "section_membership_match": "false",
+        "field_membership_names_match": "false",
+        "projection_hash": "fd64eec366d58bec"
+      },
+      "after": {
+        "owner": "4132dc03-17a4-4287-b1fc-a67d57fa8ea2",
+        "name": "СобытияОтправкиОтчетности",
+        "class": "53",
+        "class_len": "58",
+        "native_sections": "1",
+        "sdk_sections": "1",
+        "native_fields": "4",
+        "known_field_types": "4",
+        "section_membership_match": "true",
+        "field_membership_names_match": "true",
+        "projection_hash": "5aef4633284b2331"
+      }
+    },
+    {
+      "before": {
+        "owner": "df76cd5c-d2b9-4f1f-bac5-c67f3735f168",
+        "name": "Субконто",
+        "class": "53",
+        "class_len": "58",
+        "native_sections": "0",
+        "sdk_sections": "None",
+        "native_fields": "0",
+        "known_field_types": "0",
+        "section_membership_match": "false",
+        "field_membership_names_match": "true",
+        "projection_hash": "76423002a09998a7"
+      },
+      "after": {
+        "owner": "df76cd5c-d2b9-4f1f-bac5-c67f3735f168",
+        "name": "Субконто",
+        "class": "53",
+        "class_len": "58",
+        "native_sections": "0",
+        "sdk_sections": "0",
+        "native_fields": "0",
+        "known_field_types": "0",
+        "section_membership_match": "true",
+        "field_membership_names_match": "true",
+        "projection_hash": "d1246d1c93ce5487"
+      }
+    },
+    {
+      "before": {
+        "owner": "e3f576c6-45f3-42a6-902f-089318814226",
+        "name": "ТерриторииОсуществленияТорговойДеятельности",
+        "class": "53",
+        "class_len": "58",
+        "native_sections": "0",
+        "sdk_sections": "None",
+        "native_fields": "0",
+        "known_field_types": "0",
+        "section_membership_match": "false",
+        "field_membership_names_match": "true",
+        "projection_hash": "4d8519e69af1194d"
+      },
+      "after": {
+        "owner": "e3f576c6-45f3-42a6-902f-089318814226",
+        "name": "ТерриторииОсуществленияТорговойДеятельности",
+        "class": "53",
+        "class_len": "58",
+        "native_sections": "0",
+        "sdk_sections": "0",
+        "native_fields": "0",
+        "known_field_types": "0",
+        "section_membership_match": "true",
+        "field_membership_names_match": "true",
+        "projection_hash": "ec3e0494ecb94b45"
+      }
+    },
+    {
+      "before": {
+        "owner": "b9d23254-b65b-4327-ade6-452590223e1d",
+        "name": "УдалитьВидыАлкогольнойПродукции",
+        "class": "53",
+        "class_len": "58",
+        "native_sections": "0",
+        "sdk_sections": "None",
+        "native_fields": "0",
+        "known_field_types": "0",
+        "section_membership_match": "false",
+        "field_membership_names_match": "true",
+        "projection_hash": "243a9bb463d62348"
+      },
+      "after": {
+        "owner": "b9d23254-b65b-4327-ade6-452590223e1d",
+        "name": "УдалитьВидыАлкогольнойПродукции",
+        "class": "53",
+        "class_len": "58",
+        "native_sections": "0",
+        "sdk_sections": "0",
+        "native_fields": "0",
+        "known_field_types": "0",
+        "section_membership_match": "true",
+        "field_membership_names_match": "true",
+        "projection_hash": "4e14b93310bf4fc5"
+      }
+    },
+    {
+      "before": {
+        "owner": "20eb759c-283d-47b9-bf8f-cb9c2fcbeba5",
+        "name": "УдалитьНастройкиОбменаДанными",
+        "class": "53",
+        "class_len": "58",
+        "native_sections": "0",
+        "sdk_sections": "None",
+        "native_fields": "0",
+        "known_field_types": "0",
+        "section_membership_match": "false",
+        "field_membership_names_match": "true",
+        "projection_hash": "7fef25cb7466ab8d"
+      },
+      "after": {
+        "owner": "20eb759c-283d-47b9-bf8f-cb9c2fcbeba5",
+        "name": "УдалитьНастройкиОбменаДанными",
+        "class": "53",
+        "class_len": "58",
+        "native_sections": "0",
+        "sdk_sections": "0",
+        "native_fields": "0",
+        "known_field_types": "0",
+        "section_membership_match": "true",
+        "field_membership_names_match": "true",
+        "projection_hash": "53f077fd4b7879d4"
+      }
+    },
+    {
+      "before": {
+        "owner": "e56e5b66-98f1-477f-a842-6ab70d6b76f9",
+        "name": "УдалитьОснованияВыслугиЛет",
+        "class": "53",
+        "class_len": "58",
+        "native_sections": "0",
+        "sdk_sections": "None",
+        "native_fields": "0",
+        "known_field_types": "0",
+        "section_membership_match": "false",
+        "field_membership_names_match": "true",
+        "projection_hash": "f1682ae897a8c96c"
+      },
+      "after": {
+        "owner": "e56e5b66-98f1-477f-a842-6ab70d6b76f9",
+        "name": "УдалитьОснованияВыслугиЛет",
+        "class": "53",
+        "class_len": "58",
+        "native_sections": "0",
+        "sdk_sections": "0",
+        "native_fields": "0",
+        "known_field_types": "0",
+        "section_membership_match": "true",
+        "field_membership_names_match": "true",
+        "projection_hash": "5b44d41157df6fb5"
+      }
+    }
+  ]
+}

@@ -1780,7 +1780,7 @@ fn compiles_a_russian_catalog_query_through_authoritative_metadata() {
     assert_eq!(labels(&compiled), ["Код", "ProbeAttribute"]);
     assert_eq!(
         compiled.sql,
-        "SELECT \"p\".\"_code\"::text AS \"Код\", \"p\".\"_fld54\" AS \"ProbeAttribute\" FROM \"_reference53\" AS \"p\" WHERE (\"p\".\"_code\" = 'A') ORDER BY \"p\".\"_code\" ASC LIMIT 5"
+        "SELECT \"p\".\"_code\"::text AS \"Код\", \"p\".\"_fld54\" AS \"ProbeAttribute\" FROM \"_reference53\" AS \"p\" WHERE ((rtrim(CAST(\"p\".\"_code\" AS text), ' ') COLLATE \"C\") = (rtrim(CAST('A' AS text), ' ') COLLATE \"C\")) ORDER BY \"p\".\"_code\" ASC LIMIT 5"
     );
 }
 
@@ -2447,7 +2447,7 @@ fn dereferences_a_reference_property_with_one_reused_left_join() {
     assert_eq!(compiled.sql.matches(" LEFT JOIN ").count(), 1);
     assert_eq!(
         compiled.sql,
-        "SELECT \"__ref1\".\"_code\"::text AS \"ОрганизацияКод\" FROM \"_reference53\" AS \"__src\" LEFT JOIN \"_reference57\" AS \"__ref1\" ON \"__src\".\"_fld54\" = \"__ref1\".\"_idrref\" WHERE (\"__ref1\".\"_code\" = 'A') ORDER BY \"__ref1\".\"_code\" ASC"
+        "SELECT \"__ref1\".\"_code\"::text AS \"ОрганизацияКод\" FROM \"_reference53\" AS \"__src\" LEFT JOIN \"_reference57\" AS \"__ref1\" ON \"__src\".\"_fld54\" = \"__ref1\".\"_idrref\" WHERE ((rtrim(CAST(\"__ref1\".\"_code\" AS text), ' ') COLLATE \"C\") = (rtrim(CAST('A' AS text), ' ') COLLATE \"C\")) ORDER BY \"__ref1\".\"_code\" ASC"
     );
 }
 
@@ -3988,7 +3988,7 @@ fn compiles_case_expressions_in_projections_and_predicates() {
         ]
     );
     assert!(postgres.sql.contains(
-        "(CASE WHEN \"__src\".\"_fld77\" THEN 'Да' WHEN (\"__src\".\"_code\" = 'A') THEN 'A' ELSE 'Нет' END)::text AS \"Статус\""
+        "(CASE WHEN \"__src\".\"_fld77\" THEN 'Да' WHEN ((rtrim(CAST(\"__src\".\"_code\" AS text), ' ') COLLATE \"C\") = (rtrim(CAST('A' AS text), ' ') COLLATE \"C\")) THEN 'A' ELSE 'Нет' END)::text AS \"Статус\""
     ));
     assert!(
         postgres
@@ -4411,7 +4411,7 @@ fn compiles_scalar_parameters_on_both_dialects() {
         "SELECT 15.50 AS \"N\", ('A''B')::text AS \"S\", TIMESTAMP '2024-01-01 00:00:00' AS \"D\", NULL AS \"Z\" FROM"
     ));
     assert!(postgres.sql.ends_with(
-        "WHERE ((((\"__src\".\"_code\" = 'A''B') AND (\"__src\".\"_date_time\" >= TIMESTAMP '2024-01-01 00:00:00')) AND TRUE) AND (\"__src\".\"_fld77\" = TRUE))"
+        "WHERE (((((rtrim(CAST(\"__src\".\"_code\" AS text), ' ') COLLATE \"C\") = (rtrim(CAST('A''B' AS text), ' ') COLLATE \"C\")) AND (\"__src\".\"_date_time\" >= TIMESTAMP '2024-01-01 00:00:00')) AND TRUE) AND (\"__src\".\"_fld77\" = TRUE))"
     ));
 
     let mssql =
@@ -4666,7 +4666,7 @@ fn diagnoses_parameter_binding_failures() {
             )]),
         )
         .unwrap();
-    assert!(bound.sql.ends_with("WHERE (\"__src\".\"_code\" = 'X')"));
+    assert!(bound.sql.ends_with("WHERE ((rtrim(CAST(\"__src\".\"_code\" AS text), ' ') COLLATE \"C\") = (rtrim(CAST('X' AS text), ' ') COLLATE \"C\"))"));
     assert!(matches!(
         prepared.compile(&snapshot, &[]),
         Err(error) if error.kind() == QueryDiagnosticKind::Parameter
@@ -5733,7 +5733,7 @@ fn keeps_temporary_tables_across_batches_and_failures() {
 
     // The definition froze the parameter, so reading it needs no values.
     let read = postgres_batch(&mut session, &snapshot, "ВЫБРАТЬ Т.Имя ИЗ ВТ КАК Т;");
-    assert!(read.contains("WHERE (\"__src\".\"_code\" = 'A')"));
+    assert!(read.contains("WHERE ((rtrim(CAST(\"__src\".\"_code\" AS text), ' ') COLLATE \"C\") = (rtrim(CAST('A' AS text), ' ') COLLATE \"C\"))"));
 
     let before = session
         .tables()
@@ -6194,7 +6194,7 @@ fn dereferences_references_inside_join_conditions() {
             .sql
             .contains("LEFT JOIN \"_reference57\" AS \"__left_ref1\" ON")
     );
-    assert!(extra.sql.contains("(\"__left_ref1\".\"_code\" = 'A')"));
+    assert!(extra.sql.contains("((rtrim(CAST(\"__left_ref1\".\"_code\" AS text), ' ') COLLATE \"C\") = (rtrim(CAST('A' AS text), ' ') COLLATE \"C\"))"));
 
     // A dereference of an earlier source inside a later condition groups
     // that earlier source.
@@ -6342,7 +6342,7 @@ fn casts_character_expressions_to_text_on_postgres() {
     .unwrap();
     for needle in [
         "(COALESCE(\"__src\".\"_code\", 'нет'))::text AS \"Е\"",
-        "(CASE WHEN (\"__src\".\"_code\" = 'A') THEN \"__src\".\"_code\" ELSE 'B' END)::text AS \"Р\"",
+        "(CASE WHEN ((rtrim(CAST(\"__src\".\"_code\" AS text), ' ') COLLATE \"C\") = (rtrim(CAST('A' AS text), ' ') COLLATE \"C\")) THEN \"__src\".\"_code\" ELSE 'B' END)::text AS \"Р\"",
     ] {
         assert!(compiled.sql.contains(needle), "{needle}\n{}", compiled.sql);
     }
@@ -6411,7 +6411,7 @@ fn orders_by_computed_expressions() {
     .unwrap();
     assert!(
         compiled.sql.ends_with(
-            "ORDER BY CASE WHEN (\"__src\".\"_code\" = 'A') THEN 0 ELSE 1 END ASC, COALESCE(\"__src\".\"_code\", '') DESC"
+            "ORDER BY CASE WHEN ((rtrim(CAST(\"__src\".\"_code\" AS text), ' ') COLLATE \"C\") = (rtrim(CAST('A' AS text), ' ') COLLATE \"C\")) THEN 0 ELSE 1 END ASC, COALESCE(\"__src\".\"_code\", '') DESC"
         ),
         "{}",
         compiled.sql
@@ -6555,7 +6555,7 @@ fn negation_binds_looser_than_a_comparison() {
     assert!(
         compiled
             .sql
-            .ends_with("WHERE (NOT (\"Т\".\"_code\" = 'а'))"),
+            .ends_with("WHERE (NOT ((rtrim(CAST(\"Т\".\"_code\" AS text), ' ') COLLATE \"C\") = (rtrim(CAST('а' AS text), ' ') COLLATE \"C\")))"),
         "{}",
         compiled.sql
     );
@@ -6571,7 +6571,7 @@ fn negation_binds_looser_than_a_comparison() {
     assert!(
         conjunction
             .sql
-            .ends_with("WHERE ((NOT (\"Т\".\"_code\" = 'а')) AND (\"Т\".\"_code\" = 'б'))"),
+            .ends_with("WHERE ((NOT ((rtrim(CAST(\"Т\".\"_code\" AS text), ' ') COLLATE \"C\") = (rtrim(CAST('а' AS text), ' ') COLLATE \"C\"))) AND ((rtrim(CAST(\"Т\".\"_code\" AS text), ' ') COLLATE \"C\") = (rtrim(CAST('б' AS text), ' ') COLLATE \"C\")))"),
         "{}",
         conjunction.sql
     );

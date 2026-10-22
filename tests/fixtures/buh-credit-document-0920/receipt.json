@@ -1,0 +1,17 @@
+{
+  "database": "buh",
+  "platform_version": "8.3.27.2342",
+  "sdk_version": "0.9.19",
+  "owner_id": "2633b0d5-2818-4fa0-abe9-6e801e63c9c7",
+  "xml_own_attributes": 23,
+  "xml_tabular_sections": 0,
+  "sdk_document_attributes": null,
+  "sdk_all_23_attribute_declared_types": null,
+  "reached_attribute": "Состояние",
+  "reached_attribute_id": "8dfde2d3-bdfa-444a-86fb-f0f7d01be822",
+  "known_class_shape": "40/53",
+  "own_header_shape": "2/8",
+  "attribute_wrapper_shape": "5/5",
+  "attribute_body_shape": "27/23",
+  "attribute_identity_shape": "2/8"
+}

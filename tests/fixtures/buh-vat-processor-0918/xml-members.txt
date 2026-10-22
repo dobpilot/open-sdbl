@@ -1,0 +1,16 @@
+attribute=d335af30-73f9-450d-b53b-31f71542b51e; name=Организация
+attribute=fdff4019-ddeb-40c8-8b94-2dcdb330f42e; name=Контрагент
+attribute=1025b5ea-1143-41f2-906b-6171537dcc84; name=НалоговыйПериод
+attribute=e91c170f-5f64-4ad5-83db-0cbcd1ab3b72; name=УчетнаяЗапись
+section=2ae21ef8-238c-4425-b1fc-82832ea2cb52; name=ЗапросыПоставщикам
+section.attribute=b644d7f9-8858-42df-bd7a-1e8403479757; name=Отправлять
+section.attribute=e6caab54-aa68-4c2b-9b24-b16ad46bcde2; name=Контрагент
+section.attribute=2d19966e-973c-4592-96fb-af6ae4ac6388; name=Реестр
+section.attribute=08ab9a2f-0c5f-47bf-ac63-3e9a45a6290c; name=ЭлектроннаяПочта
+section.attribute=d242c220-0780-426f-8293-ec2a6771effa; name=ДатаЗапроса
+section.attribute=4668d509-86f6-4986-ad9c-c9855116d16e; name=СтатусЗапроса
+section.attribute=69320438-6dcb-4e57-81d4-708baf787fa7; name=Сумма
+section.attribute=415122f1-4954-46fd-a121-c3c35aa3ad4b; name=СуммаНДС
+section.attribute=9fc6b350-c7d7-4c92-ab45-9475fce02010; name=ИдентификаторЗапроса
+section.attribute=a1a20910-358f-47c3-bdf3-045cd66cdfbc; name=ОтборЗапросаПоставщикам
+section.attribute=9bc69426-f332-4b58-814f-2f67ff9c79d3; name=ОписаниеОшибки

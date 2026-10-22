@@ -202,6 +202,8 @@ pub(crate) fn compile_presentation_lookup(
         dialect.quote_identifier(alias),
     );
     Ok(CompiledQuery {
+        forbidden_row_column: None,
+        logical_projection: None,
         sql,
         columns: vec![
             CompiledColumn::new(
@@ -262,7 +264,21 @@ pub(crate) fn compile_batch(
             .with_restrictions(restrictions, decisions)
             .with_mode(mode)
             .with_totals_level(options.totals_level_enabled());
-    let compiled = compile_batch_ast(&ast, snapshot, &mut presentations, manager)?;
+    let checked = if options.ordinary_row_checks_enabled() {
+        super::ordinary::compile_checked(&ast, snapshot, options, dialect, manager, mode)?
+    } else {
+        None
+    };
+    let compiled = match checked {
+        Some(compiled) => Some(compiled),
+        None => compile_batch_ast(&ast, snapshot, &mut presentations, manager)?,
+    };
+    if compiled
+        .as_ref()
+        .is_some_and(|query| query.forbidden_row_column.is_some())
+    {
+        return Ok(compiled);
+    }
     if let Some(unused) = (0..restrictions.len())
         .find(|index| !presentations.used_restrictions.contains(index))
         .map(|index| &restrictions[index])
@@ -309,7 +325,11 @@ where
     // missing session parameter in a later statement must not cause a
     // retry to execute an earlier placement twice.
     let mut preflight = manager.clone();
-    let _ = compile_batch(source, snapshot, options, dialect, &mut preflight, mode)?;
+    if let Some(compiled) = compile_batch(source, snapshot, options, dialect, &mut preflight, mode)?
+        && compiled.forbidden_row_column.is_some()
+    {
+        return Ok(MaterializedBatchResult::Query(compiled));
+    }
     let tokens = tokenize(source)
         .map_err(QueryDiagnostic::from)?
         .into_iter()

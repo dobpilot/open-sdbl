@@ -1,0 +1,13 @@
+{
+  "class": "37/50",
+  "owner_identity": "1/7",
+  "own_attributes": 10,
+  "sections": 2,
+  "section_fields": 24,
+  "qualified_type_rows": 48,
+  "reference_xmls": 25,
+  "all_own_and_section_membership_order_names_types_and_qualifiers_match_xml": true,
+  "sdk_descriptors": 37,
+  "sdk_known_declarations": 0,
+  "sdk_document_attributes": null
+}

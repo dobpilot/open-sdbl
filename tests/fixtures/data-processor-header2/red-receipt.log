@@ -1,0 +1,23 @@
+   Compiling open-sdbl v0.9.15 (/tmp/open-sdbl-data-processor-header2-fix-1013)
+    Finished `test` profile [unoptimized] target(s) in 0.18s
+     Running tests/data_processor_header2.rs (/tmp/open-sdbl-enum-header19-fix-1013/target/debug/deps/data_processor_header2-a5c87e5b9c5c1058)
+
+running 2 tests
+test exact_native_legacy_owner_retains_order_types_and_empty_sections ... FAILED
+test malformed_legacy_identity_and_declaration_remain_unknown ... ok
+
+failures:
+
+---- exact_native_legacy_owner_retains_order_types_and_empty_sections stdout ----
+
+thread 'exact_native_legacy_owner_retains_order_types_and_empty_sections' (60) panicked at tests/data_processor_header2.rs:11:50:
+called `Option::unwrap()` on a `None` value
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    exact_native_legacy_owner_retains_order_types_and_empty_sections
+
+test result: FAILED. 1 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+error: test failed, to rerun pass `-p open-sdbl --test data_processor_header2`

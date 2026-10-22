@@ -1,0 +1,18 @@
+{
+  "platform": "8.3.27.2342",
+  "source": "own native CF/XML and read-only original UNF PostgreSQL Config resource",
+  "files": {
+    "README.md": "72f448ca040ce08c9e5ec6ace2a905eb8b16df316655957eab254339393aa47b",
+    "members.tsv": "0f309f9b3855b1ce34511918a23b2605d036c753ddcf9eeaa615cf6f71de4b6e",
+    "unf.config": "fbdd8fff57dc1d9a3871d96b29fd924e9a4149c8285a900465a6c1e1d5efdafe",
+    "unf.deflate": "5bbcd1b9fe8185739ce25d1cbebf7f5716ca03ee21303e2abca471cde6f39b3b",
+    "empty.xml": "80a4a3e76cd6ed52da6d54131198dca344fc567054688d158c75bffcdec0dcc8",
+    "empty.cf": "1ecb998cb861bdf77862ca1ac1fb25246a72d13ca0978e7f6b6fdd5b275865a3",
+    "empty.config": "8d3d8e5985e17796fb6d82bb31586faf8e9425db7dc5c07a2ab863c1141694c6",
+    "empty.deflate": "e181e90476eaad55b2cd2882c2105fcbb49ee6e4ba5b8555602e23a5dc0f97cf",
+    "\u0417\u0430\u043c\u0435\u0440\u041e\u0442\u0447\u0435\u0442\u0430.xml": "3f9028f50da8ca2032cb8e1d69053a8efd716feee3f0a5690cb56b67cadc0854",
+    "\u0417\u0430\u043c\u0435\u0440\u041e\u0442\u0447\u0435\u0442\u0430.deflate": "fc1152de8ceea95fedb751ec0d49ba13cd405c284ee757986f6bf913e99bc78f",
+    "\u0417\u0430\u043c\u0435\u0440\u041e\u0442\u0447\u0435\u0442\u0430.config": "d731e765be3a9794fe01c688b0db38d1187120bfc491ffc0cd63a995ee805d7f",
+    "control.cf": "880424ba538925ab0bfb381bf7f783f97de6f6ed6e63dfca974f4a957c03528e"
+  }
+}

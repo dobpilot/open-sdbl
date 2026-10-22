@@ -1,0 +1,166 @@
+{
+  "documents": 455,
+  "changed_rows": 5,
+  "changed_profiles": {
+    "38/51": 5
+  },
+  "restored_native_attributes": 35,
+  "changes": [
+    {
+      "before": {
+        "owner_id": "9b4c9d1d-e584-4125-a2a8-5f1004f0ba31",
+        "name": "УдалитьЗаявкаНаОткрытиеСчетов",
+        "xml_attributes": "14",
+        "class_tag": "38",
+        "class_len": "51",
+        "header_tag": "1",
+        "header_len": "7",
+        "sdk_attributes": "None",
+        "found_attribute_descriptors": "14",
+        "typed_attribute_descriptors": "0",
+        "attribute_shapes": "w4/5:h1/7=14"
+      },
+      "after": {
+        "owner_id": "9b4c9d1d-e584-4125-a2a8-5f1004f0ba31",
+        "name": "УдалитьЗаявкаНаОткрытиеСчетов",
+        "xml_attributes": "14",
+        "class_tag": "38",
+        "class_len": "51",
+        "header_tag": "1",
+        "header_len": "7",
+        "sdk_attributes": "14",
+        "found_attribute_descriptors": "14",
+        "typed_attribute_descriptors": "14",
+        "attribute_shapes": "w4/5:h1/7=14"
+      }
+    },
+    {
+      "before": {
+        "owner_id": "0ebd6b91-5521-4922-8460-5ead88dd6012",
+        "name": "УдалитьОтражениеЗарплатыВУчете",
+        "xml_attributes": "5",
+        "class_tag": "38",
+        "class_len": "51",
+        "header_tag": "1",
+        "header_len": "7",
+        "sdk_attributes": "None",
+        "found_attribute_descriptors": "5",
+        "typed_attribute_descriptors": "0",
+        "attribute_shapes": "w4/5:h1/7=5"
+      },
+      "after": {
+        "owner_id": "0ebd6b91-5521-4922-8460-5ead88dd6012",
+        "name": "УдалитьОтражениеЗарплатыВУчете",
+        "xml_attributes": "5",
+        "class_tag": "38",
+        "class_len": "51",
+        "header_tag": "1",
+        "header_len": "7",
+        "sdk_attributes": "5",
+        "found_attribute_descriptors": "5",
+        "typed_attribute_descriptors": "5",
+        "attribute_shapes": "w4/5:h1/7=5"
+      }
+    },
+    {
+      "before": {
+        "owner_id": "39b1b6f4-5fe1-4e8b-9121-ff966a28fa74",
+        "name": "УдалитьРегистрацияОплатыНДСВБюджет",
+        "xml_attributes": "4",
+        "class_tag": "38",
+        "class_len": "51",
+        "header_tag": "1",
+        "header_len": "7",
+        "sdk_attributes": "None",
+        "found_attribute_descriptors": "4",
+        "typed_attribute_descriptors": "0",
+        "attribute_shapes": "w4/5:h1/7=4"
+      },
+      "after": {
+        "owner_id": "39b1b6f4-5fe1-4e8b-9121-ff966a28fa74",
+        "name": "УдалитьРегистрацияОплатыНДСВБюджет",
+        "xml_attributes": "4",
+        "class_tag": "38",
+        "class_len": "51",
+        "header_tag": "1",
+        "header_len": "7",
+        "sdk_attributes": "4",
+        "found_attribute_descriptors": "4",
+        "typed_attribute_descriptors": "4",
+        "attribute_shapes": "w4/5:h1/7=4"
+      }
+    },
+    {
+      "before": {
+        "owner_id": "0ecb08b7-1157-46e4-bb42-c2ee0dc12fa6",
+        "name": "УстановкаЦенНоменклатуры",
+        "xml_attributes": "5",
+        "class_tag": "38",
+        "class_len": "51",
+        "header_tag": "1",
+        "header_len": "7",
+        "sdk_attributes": "None",
+        "found_attribute_descriptors": "5",
+        "typed_attribute_descriptors": "0",
+        "attribute_shapes": "w4/5:h1/7=5"
+      },
+      "after": {
+        "owner_id": "0ecb08b7-1157-46e4-bb42-c2ee0dc12fa6",
+        "name": "УстановкаЦенНоменклатуры",
+        "xml_attributes": "5",
+        "class_tag": "38",
+        "class_len": "51",
+        "header_tag": "1",
+        "header_len": "7",
+        "sdk_attributes": "5",
+        "found_attribute_descriptors": "5",
+        "typed_attribute_descriptors": "5",
+        "attribute_shapes": "w4/5:h1/7=5"
+      }
+    },
+    {
+      "before": {
+        "owner_id": "642117be-dba4-4c6c-b5e7-c2821543a830",
+        "name": "ФормированиеЗаписейКнигиПродаж",
+        "xml_attributes": "7",
+        "class_tag": "38",
+        "class_len": "51",
+        "header_tag": "1",
+        "header_len": "7",
+        "sdk_attributes": "None",
+        "found_attribute_descriptors": "7",
+        "typed_attribute_descriptors": "0",
+        "attribute_shapes": "w4/5:h1/7=7"
+      },
+      "after": {
+        "owner_id": "642117be-dba4-4c6c-b5e7-c2821543a830",
+        "name": "ФормированиеЗаписейКнигиПродаж",
+        "xml_attributes": "7",
+        "class_tag": "38",
+        "class_len": "51",
+        "header_tag": "1",
+        "header_len": "7",
+        "sdk_attributes": "7",
+        "found_attribute_descriptors": "7",
+        "typed_attribute_descriptors": "7",
+        "attribute_shapes": "w4/5:h1/7=7"
+      }
+    }
+  ],
+  "unchanged_rows": 450,
+  "changed_rows_native_guid_order_matches": true,
+  "unchanged_modern_and_other_rows": 450,
+  "remaining_unknown_summary": {
+    "known_memberships": 409,
+    "unknown_memberships": 46,
+    "unknown_class38_51": 32,
+    "unknown_class37_50": 14,
+    "class38_owner_nonempty_comments": 10,
+    "class38_any_child_nonempty_comments": 31,
+    "class38_owner_or_child_nonempty_comments": 32,
+    "class38_nonzero_owner_flags": 0,
+    "class38_any_nonzero_member_flags": 0,
+    "class38_any_empty_patterns": 0,
+    "scope": "Diagnostic observations only; current shared identity remains strict and no further profile support is added."
+  }
+}

@@ -1,0 +1,17 @@
+{
+  "class": "40/53",
+  "owner_identity": "2/8",
+  "own_attributes": 10,
+  "sections": 2,
+  "section_fields": 10,
+  "qualified_type_rows": 20,
+  "reference_xmls": 11,
+  "all_own_and_section_membership_order_names_types_and_qualifiers_match_xml": true,
+  "sdk_descriptors": 23,
+  "sdk_known_declarations": 10,
+  "sdk_document_attributes_count": 10,
+  "sdk_document_tabular_sections": null,
+  "sdk_section_field_memberships_known": 0,
+  "sdk_field_declarations_known": 0,
+  "generated_type_and_value_ids_verified": 18
+}

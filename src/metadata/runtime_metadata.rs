@@ -12,6 +12,44 @@ use super::{
     InformationRegisterPeriodicity, InformationRegisterWriteMode, Value,
 };
 
+// Парные нативные CF/XML подтверждают отчёт 19/18 и обработку 17/12.
+// Старая обработка 16/12 сохраняет свой отдельно измеренный заголовок.
+fn report_class<'a>(value: &'a Value, resource: &Guid) -> Option<&'a [Value]> {
+    let root = list(value)?;
+    let class = root.get(1).and_then(list)?;
+    if class.len() != 18
+        || !list(&class[3]).is_some_and(|w| w.len() == 2 && atom(&w[0]) == Some("0"))
+        || at(value, &[1, 3, 1]).and_then(object_header).as_ref() != Some(resource)
+        || ![1, 2, 12, 13, 14]
+            .iter()
+            .all(|i| guid(&class[*i]).is_some())
+    {
+        return None;
+    }
+    Some(class)
+}
+
+fn processor_class<'a>(value: &'a Value, resource: &Guid, legacy: bool) -> Option<&'a [Value]> {
+    let root = list(value)?;
+    let class = root.get(1).and_then(list)?;
+    if (legacy && class.first().and_then(atom) != Some("16"))
+        || class.len() != 12
+        || !list(&class[3]).is_some_and(|w| w.len() == 2 && atom(&w[0]) == Some("0"))
+        || (if legacy {
+            at(value, &[1, 3, 1]).and_then(legacy_data_processor::identity)
+        } else {
+            at(value, &[1, 3, 1]).and_then(object_header)
+        })
+        .as_ref()
+            != Some(resource)
+        || (legacy && guid(&class[4]).is_none())
+        || ![1, 2, 7, 8, 9].iter().all(|i| guid(&class[*i]).is_some())
+    {
+        return None;
+    }
+    Some(class)
+}
+
 fn list(v: &Value) -> Option<&[Value]> {
     v.as_list()
 }
@@ -73,6 +111,30 @@ fn object_header(v: &Value) -> Option<Guid> {
     }
     let id = guid(&reference[2])?;
     (!id.is_nil()).then_some(id)
+}
+
+// Измеренная форма заголовка частей текущего документа проверяется локально:
+// общий `header` и ранее поддержанные формы `object_header` не расширяем.
+fn current40_header2(value: &Value) -> Option<Guid> {
+    let values = list(value)?;
+    if values.len() != 8
+        || atom(&values[0]) != Some("2")
+        || values[4].as_string() != Some("")
+        || atom(&values[5]) != Some("0")
+        || atom(&values[6]) != Some("0")
+        || !guid(&values[7])?.is_nil()
+    {
+        return None;
+    }
+    let synonyms = list(&values[3])?;
+    if synonyms.len() != 3
+        || atom(&synonyms[0]) != Some("1")
+        || synonyms[1].as_string() != Some("ru")
+        || synonyms[2].as_string()?.is_empty()
+    {
+        return None;
+    }
+    object_header(value)
 }
 
 fn declaration(v: &Value) -> Option<Vec<ConfigDeclaredType>> {
@@ -145,6 +207,21 @@ fn membership(rows: &[Value], path: &[usize]) -> Option<Vec<Guid>> {
     }
     Some(ids)
 }
+fn owner_reference(value: &Value) -> Option<Guid> {
+    let reference = list(value)?;
+    if reference.len() != 3
+        || reference[0].as_string() != Some("#")
+        || atom(&reference[1]) != Some("157fa490-4ce9-11d4-9415-008048da11f9")
+    {
+        return None;
+    }
+    let target = list(&reference[2])?;
+    if target.len() != 2 || atom(&target[0]) != Some("1") {
+        return None;
+    }
+    guid(&target[1]).filter(|id| !id.is_nil())
+}
+
 fn owners(v: &Value) -> Option<Vec<Guid>> {
     let p = list(v)?;
     if atom(p.first()?) != Some("0") || p.get(1)?.as_u32()? as usize != p.len() - 2 {
@@ -152,24 +229,157 @@ fn owners(v: &Value) -> Option<Vec<Guid>> {
     }
     let mut ids = Vec::new();
     for entry in &p[2..] {
-        let e = list(entry)?;
-        if e.len() != 3
-            || e[0].as_string() != Some("#")
-            || atom(&e[1]) != Some("157fa490-4ce9-11d4-9415-008048da11f9")
-        {
-            return None;
-        }
-        let target = list(&e[2])?;
-        if target.len() != 2 || atom(&target[0]) != Some("1") {
-            return None;
-        }
-        let id = guid(&target[1])?;
-        if id.is_nil() || ids.contains(&id) {
+        let id = owner_reference(entry)?;
+        if ids.contains(&id) {
             return None;
         }
         ids.push(id);
     }
     Some(ids)
+}
+
+// Нативные CF/XML подтверждают оболочку ссылки состава и внутренний
+// список владельцев; неизвестные формы не дают частичного результата.
+fn functional_option_content(value: &Value) -> Option<()> {
+    let content = list(value)?;
+    if atom(content.first()?) != Some("0")
+        || content.get(1)?.as_u32()? as usize != content.len() - 2
+    {
+        return None;
+    }
+    for entry in &content[2..] {
+        let entry = list(entry)?;
+        if entry.len() != 3
+            || entry[0].as_string() != Some("#")
+            || atom(&entry[1]) != Some("3ea29ea5-66f6-4e3b-8595-d8940db766a2")
+        {
+            return None;
+        }
+        let target = list(&entry[2])?;
+        if target.len() != 2 || atom(&target[0]) != Some("0") {
+            return None;
+        }
+        owner_reference(&target[1])?;
+    }
+    Some(())
+}
+
+// Нативные CF/XML подтверждают отдельный старый заголовок опции и
+// строковые комментарии. Общие заголовки остальных классов не расширяем.
+fn project_legacy_functional_option(
+    value: &Value,
+    resource: &Guid,
+    descriptors: &mut [ConfigDescriptor],
+) -> Option<()> {
+    let root = list(value)?;
+    let class = list(root.get(1)?)?;
+    if root.len() != 3
+        || atom(&root[0]) != Some("1")
+        || atom(&root[2]) != Some("0")
+        || class.len() != 5
+        || atom(&class[0]) != Some("2")
+    {
+        return None;
+    }
+    let id = legacy_data_processor::identity_with_text_comment(&class[1])?;
+    if &id != resource || descriptors.iter().filter(|d| d.object_guid == id).count() != 1 {
+        return None;
+    }
+    functional_option_content(&class[3])?;
+    let location = guid(&class[2])?;
+    let mode = flag(&class[4])?;
+    let owner = descriptors.iter_mut().find(|d| d.object_guid == id)?;
+    owner.functional_option_location_guid = Some(location.clone());
+    owner.functional_option_privileged_get_mode = Some(mode);
+    if location.is_nil() {
+        owner.functional_option_location = Some(FunctionalOptionLocation::Absent);
+    }
+    Some(())
+}
+
+fn legacy_enum_header(value: &Value) -> Option<Guid> {
+    let header = list(value)?;
+    if header.len() != 5
+        || atom(&header[0]) != Some("0")
+        || header[2].as_string()?.is_empty()
+        || header[4].as_string().is_none()
+    {
+        return None;
+    }
+    let reference = list(&header[1])?;
+    if reference.len() != 3 || atom(&reference[0]) != Some("0") || atom(&reference[1]) != Some("0")
+    {
+        return None;
+    }
+    guid(&reference[2]).filter(|id| !id.is_nil())
+}
+
+fn legacy_enum_reference(root: &[Value], class: &[Value], resource: &Guid) -> Option<Guid> {
+    // Неизменённый Config из BUH загружен нативной платформой в собственный CF:
+    // обратный XML подтверждает Ref на позиции 1 и Manager на позиции 3.
+    // Это профиль Enum с заголовком версии 0, а не любой объект класса 19.
+    if root.len() != 7
+        || atom(&root[0]) != Some("1")
+        || atom(&root[2]) != Some("4")
+        || class.len() != 20
+        || flag(&class[6]).is_none()
+        || !matches!(atom(&class[11]), Some("1" | "2"))
+        || atom(&class[12]) != Some("1")
+        || ![1, 2, 3, 4, 7, 8]
+            .iter()
+            .all(|i| guid(&class[*i]).is_some_and(|id| !id.is_nil()))
+        || ![9, 10, 13, 14]
+            .iter()
+            .all(|i| guid(&class[*i]).is_some_and(|id| id.is_nil()))
+        || !class[15..19]
+            .iter()
+            .all(|v| list(v).is_some_and(|v| v.len() == 1 && atom(&v[0]) == Some("0")))
+        || !list(&class[19]).is_some_and(|v| {
+            v.len() == 2
+                && atom(&v[0]) == Some("0")
+                && list(&v[1]).is_some_and(|v| v.len() == 1 && atom(&v[0]) == Some("0"))
+        })
+    {
+        return None;
+    }
+    let wrapper = list(&class[5])?;
+    if wrapper.len() != 2
+        || atom(&wrapper[0]) != Some("0")
+        || legacy_enum_header(&wrapper[1]).as_ref() != Some(resource)
+    {
+        return None;
+    }
+    for (row, collection) in root[3..6].iter().zip([
+        "33f2e54b-37ce-4a7a-a569-b648d7aa4634",
+        "3daea016-69b7-4ed4-9453-127911372fe6",
+        "6d8d73a7-ba29-401d-9032-3872ec2d6433",
+    ]) {
+        let row = list(row)?;
+        if row.len() != 2 || atom(&row[0]) != Some(collection) || atom(&row[1]) != Some("0") {
+            return None;
+        }
+    }
+    let values = list(&root[6])?;
+    if atom(values.first()?) != Some("bee0a08c-07eb-40c0-8544-5c364c171465")
+        || values.get(1)?.as_u32()? as usize != values.len() - 2
+    {
+        return None;
+    }
+    let mut ids = std::collections::HashSet::new();
+    for row in &values[2..] {
+        let row = list(row)?;
+        if row.len() != 2 || atom(&row[1]) != Some("0") {
+            return None;
+        }
+        let wrapper = list(&row[0])?;
+        if wrapper.len() != 2
+            || atom(&wrapper[0]) != Some("0")
+            || !ids.insert(legacy_enum_header(&wrapper[1])?)
+        {
+            return None;
+        }
+    }
+    guid(&class[1])
 }
 
 fn fill_checking(value: &Value) -> Option<FillChecking> {
@@ -349,22 +559,38 @@ pub(super) fn project(value: &Value, resource: &Guid, descriptors: &mut [ConfigD
     let Some(kind) = class.first().and_then(atom) else {
         return;
     };
+    if kind == "1"
+        && root.len() == 3
+        && atom(&root[2]) == Some("0")
+        && class.len() == 2
+        && let Some(typed) = list(&class[1])
+        && typed.len() == 3
+        && atom(&typed[0]) == Some("2")
+        && list(&typed[1]).is_some_and(|header| header.len() == 9 && atom(&header[0]) == Some("3"))
+        && object_header(&typed[1]).as_ref() == Some(resource)
+        && descriptors
+            .iter()
+            .filter(|d| &d.object_guid == resource)
+            .count()
+            == 1
+    {
+        // Нативные Config/XML/EDT параметра сеанса подтверждают Pattern
+        // рядом с собственным заголовком. Чужие вложенные типы не ищем;
+        // неизвестный член декларации не публикует её известный префикс.
+        if let Some(d) = descriptors.iter_mut().find(|d| &d.object_guid == resource) {
+            d.declared_types = declaration(&typed[2]);
+        }
+        return;
+    }
+    if kind == "14" {
+        let _ = project_legacy_boolean_constant(value, resource, descriptors);
+        return;
+    }
     if matches!(kind, "30" | "33") && class.get(1).and_then(list).is_some() {
         // XML-вход и Config, скомпилированный настоящей 1С, подтверждают
         // Object на 3/4 и Ref на 5/6. Полный блок и длины сверены отдельно;
         // неизвестная форма не возвращается к GUID типа объекта.
-        let (length, guid_end) = if kind == "30" { (49, 15) } else { (52, 13) };
-        let reference = (|| {
-            if class.len() != length
-                || list(&class[1])?.len() != 9
-                || header(&class[1]).as_ref() != Some(resource)
-                || !matches!(atom(&class[2]), Some("0" | "1"))
-                || !class[3..guid_end].iter().all(|v| guid(v).is_some())
-            {
-                return None;
-            }
-            guid(&class[5]).filter(|id| !id.is_nil())
-        })();
+        let reference = business_reference(class, resource).filter(|id| !id.is_nil());
         if let Some(d) = descriptors.iter_mut().find(|d| &d.object_guid == resource) {
             d.object_reference_type = reference;
             if kind == "30" && d.object_reference_type.is_some() {
@@ -378,10 +604,23 @@ pub(super) fn project(value: &Value, resource: &Guid, descriptors: &mut [ConfigD
         return;
     }
     if kind == "2"
+        && class
+            .get(1)
+            .and_then(list)
+            .is_some_and(|header| header.len() == 7)
+    {
+        let _ = project_legacy_functional_option(value, resource, descriptors);
+        return;
+    }
+    if kind == "2"
+        && root.len() == 3
+        && atom(&root[2]) == Some("0")
         && class.len() == 5
-        && header(&class[1]).as_ref() == Some(resource)
-        && list(&class[3])
-            .is_some_and(|v| v.len() == 2 && atom(&v[0]) == Some("0") && atom(&v[1]) == Some("0"))
+        && list(&class[1]).is_some_and(|header| header.len() == 9)
+        && object_header(&class[1]).as_ref() == Some(resource)
+        && functional_option_content(&class[3]).is_some()
+        && guid(&class[2]).is_some()
+        && flag(&class[4]).is_some()
     {
         if let Some(d) = descriptors.iter_mut().find(|d| &d.object_guid == resource) {
             d.functional_option_location_guid = guid(&class[2]);
@@ -427,11 +666,27 @@ pub(super) fn project(value: &Value, resource: &Guid, descriptors: &mut [ConfigD
         }
         return;
     }
+    // Нативная CF/XML-пара BUH подтверждает отдельную старую форму обработки.
+    // Её заголовки не расширяют правила остальных классов Config.
+    if kind == "16" && class.len() == 12 {
+        legacy_data_processor::project(value, resource, descriptors);
+        return;
+    }
     if kind == "16"
         && class.len() == 17
         && at(value, &[1, 1, 1, 1]).and_then(header).as_ref() == Some(resource)
     {
         attribute_bodies(value, descriptors);
+        return;
+    }
+    if kind == "19" {
+        if let Some(reference) = legacy_enum_reference(root, class, resource) {
+            if let Some(d) = descriptors.iter_mut().find(|d| &d.object_guid == resource) {
+                d.object_reference_type = Some(reference);
+            }
+            return;
+        }
+        project_report(value, resource, descriptors);
         return;
     }
     if kind == "17" {
@@ -440,6 +695,186 @@ pub(super) fn project(value: &Value, resource: &Guid, descriptors: &mut [ConfigD
     }
     if kind == "28" {
         project_accumulation_register(value, resource, descriptors);
+        return;
+    }
+    if kind == "37" && class.len() == 51 {
+        project_exchange_plan(value, resource, descriptors);
+        return;
+    }
+    if matches!(kind, "37" | "38") {
+        let (class_len, own_profile, section_profile) = if kind == "37" {
+            (
+                50,
+                DocumentAttributeProfile::Legacy37,
+                LegacySectionProfile::Document37,
+            )
+        } else {
+            (
+                51,
+                DocumentAttributeProfile::Legacy38,
+                LegacySectionProfile::Document38,
+            )
+        };
+        // Старая форма документа проверяется отдельно и не проходит через
+        // общий обход реквизитов: повреждённая коллекция не публикует префикс.
+        if class.len() != class_len
+            || !class[1..9].iter().all(|v| guid(v).is_some())
+            || !list(&class[9]).is_some_and(|v| v.len() == 2 && atom(&v[0]) == Some("0"))
+            || at(value, &[1, 9, 1])
+                .and_then(legacy_data_processor::identity)
+                .as_ref()
+                != Some(resource)
+            || (kind == "37"
+                && descriptors
+                    .iter()
+                    .filter(|d| &d.object_guid == resource)
+                    .count()
+                    != 1)
+        {
+            return;
+        }
+        let ids = document_attributes(root, descriptors, resource, own_profile);
+        let sections = ids.as_ref().and_then(|own_attributes| {
+            legacy_document_sections(root, descriptors, resource, own_attributes, section_profile)
+        });
+        if let Some(d) = descriptors.iter_mut().find(|d| &d.object_guid == resource) {
+            d.document_attributes = ids;
+            d.document_tabular_sections = sections;
+        }
+        return;
+    }
+    if kind == "54" {
+        // Старая форма справочника подтверждена целой нативной CF/XML-парой.
+        // Её собственные реквизиты не расширяют общие правила заголовков.
+        if class.len() != 59
+            || !class[1..9].iter().all(|v| guid(v).is_some())
+            || !list(&class[9]).is_some_and(|v| v.len() == 2 && atom(&v[0]) == Some("0"))
+            || at(value, &[1, 9, 1])
+                .and_then(legacy_data_processor::identity)
+                .as_ref()
+                != Some(resource)
+            || descriptors
+                .iter()
+                .filter(|d| &d.object_guid == resource)
+                .count()
+                != 1
+        {
+            return;
+        }
+        let staged = staged_document_attributes(
+            root,
+            descriptors,
+            "cf4abea7-37b2-11d4-940f-008048da11f9",
+            DocumentAttributeProfile::Legacy54Catalog,
+        );
+        let Some(staged) = staged else {
+            return;
+        };
+        if staged.iter().any(|(id, _)| id == resource) {
+            return;
+        }
+        let ids = staged.iter().map(|(id, _)| id.clone()).collect();
+        for (id, types) in staged {
+            descriptors
+                .iter_mut()
+                .find(|d| d.object_guid == id)
+                .unwrap()
+                .declared_types = Some(types);
+        }
+        let owner = descriptors
+            .iter_mut()
+            .find(|d| &d.object_guid == resource)
+            .unwrap();
+        owner.catalog_attributes = Some(ids);
+        // Измерена только пустая коллекция: неизвестные строки частей
+        // не превращаются в якобы полный пустой состав.
+        owner.catalog_tabular_sections = collection(root, "932159f9-95b2-4e76-a8dd-8849fe5c5ded")
+            .filter(|rows| rows.is_empty())
+            .map(|_| Vec::new());
+        return;
+    }
+    if kind == "53" {
+        // Старая форма справочника сверена с целой нативной CF/XML-парой.
+        // Проверяем её локально: общий заголовок и современный путь не меняются.
+        let recognized = (|| {
+            if class.len() != 58 || !class[1..9].iter().all(|v| guid(v).is_some()) {
+                return None;
+            }
+            let wrapper = list(&class[9])?;
+            if wrapper.len() != 2 || atom(&wrapper[0]) != Some("0") {
+                return None;
+            }
+            let identity = list(&wrapper[1])?;
+            if identity.len() != 9
+                || atom(&identity[0]) != Some("1")
+                || identity[2].as_string()?.is_empty()
+                || identity[4].as_string().is_none()
+                || atom(&identity[5]) != Some("0")
+                || atom(&identity[6]) != Some("1")
+                || guid(&identity[7])?.is_nil()
+                || atom(&identity[8]) != Some("2")
+            {
+                return None;
+            }
+            let synonym = list(&identity[3])?;
+            if synonym.len() != 3
+                || atom(&synonym[0]) != Some("1")
+                || synonym[1].as_string() != Some("ru")
+                || synonym[2].as_string()?.is_empty()
+            {
+                return None;
+            }
+            let reference = list(&identity[1])?;
+            if reference.len() != 3
+                || atom(&reference[0]) != Some("0")
+                || atom(&reference[1]) != Some("0")
+                || guid(&reference[2]).as_ref() != Some(resource)
+                || descriptors
+                    .iter()
+                    .filter(|d| &d.object_guid == resource)
+                    .count()
+                    != 1
+            {
+                return None;
+            }
+            Some(())
+        })();
+        if recognized.is_none() {
+            return;
+        }
+        let Some(fields) = staged_document_attributes(
+            root,
+            descriptors,
+            "cf4abea7-37b2-11d4-940f-008048da11f9",
+            DocumentAttributeProfile::Legacy53Catalog,
+        ) else {
+            return;
+        };
+        if fields.iter().any(|(id, _)| id == resource) {
+            return;
+        }
+        // Ни один тип не публикуется до проверки всего собственного состава.
+        let ids = fields.iter().map(|(id, _)| id.clone()).collect::<Vec<_>>();
+        for (id, types) in fields {
+            descriptors
+                .iter_mut()
+                .find(|d| d.object_guid == id)
+                .unwrap()
+                .declared_types = Some(types);
+        }
+        let sections = legacy_document_sections(
+            root,
+            descriptors,
+            resource,
+            &ids,
+            LegacySectionProfile::Catalog53,
+        );
+        let owner = descriptors
+            .iter_mut()
+            .find(|d| &d.object_guid == resource)
+            .unwrap();
+        owner.catalog_attributes = Some(ids);
+        owner.catalog_tabular_sections = sections;
         return;
     }
     attribute_fill_checking(value, descriptors);
@@ -466,14 +901,17 @@ pub(super) fn project(value: &Value, resource: &Guid, descriptors: &mut [ConfigD
         return;
     }
     if kind == "0" {
-        // Определяемый тип УНФ: GUID типа, GUID значения, заголовок, Pattern.
-        if class.len() != 5 || at(value, &[1, 3]).and_then(header).as_ref() != Some(resource) {
+        let Some(class) = defined_type_class(value, resource) else {
             return;
-        }
+        };
         if let Some(d) = descriptors.iter_mut().find(|d| &d.object_guid == resource) {
             d.defined_type_id = guid(&class[1]);
             d.declared_types = declaration(&class[4]);
         }
+        return;
+    }
+    if kind == "32" {
+        legacy_news_characteristic::project(value, resource, descriptors);
         return;
     }
     if kind == "34" {
@@ -492,28 +930,8 @@ pub(super) fn project(value: &Value, resource: &Guid, descriptors: &mut [ConfigD
                 value_types: declaration(&class[18])?,
             })
         })();
-        let rows = collection(root, "31182525-9346-4595-81f8-6f91a72ebe06");
         attribute_bodies(value, descriptors);
-        let ids = rows
-            .filter(|rows| {
-                rows.iter().all(|row| {
-                    list(row).is_some_and(|row| row.len() == 2)
-                        && at(row, &[0]).and_then(list).is_some_and(|body| {
-                            body.len() == 8 && body.first().and_then(atom) == Some("3")
-                        })
-                        && at(row, &[0, 1]).and_then(list).is_some_and(|body| {
-                            body.len() == 23 && body.first().and_then(atom) == Some("27")
-                        })
-                })
-            })
-            .and_then(|rows| membership(rows, &[0, 1, 1, 1]))
-            .filter(|ids| {
-                ids.iter().all(|id| {
-                    descriptors
-                        .iter()
-                        .any(|d| &d.object_guid == id && d.declared_types.is_some())
-                })
-            });
+        let ids = complete_attributes(root, "31182525-9346-4595-81f8-6f91a72ebe06", descriptors);
         if let Some(d) = descriptors.iter_mut().find(|d| &d.object_guid == resource) {
             d.characteristic_settings = settings;
             d.characteristic_attributes = ids;
@@ -559,11 +977,90 @@ pub(super) fn project(value: &Value, resource: &Guid, descriptors: &mut [ConfigD
             _ => None,
         };
     }
+    if kind == "56" && class.len() == 61 {
+        // Нативная CF/XML-пара подтверждает эту форму заголовков отдельно.
+        // Полный состав уже известен: добавляем только целиком проверенные
+        // декларации, не меняя права, стандартные поля и прежние настройки.
+        let recognized = (|| {
+            let wrapper = list(&class[9])?;
+            if wrapper.len() != 2 || atom(&wrapper[0]) != Some("0") {
+                return None;
+            }
+            let identity = list(&wrapper[1])?;
+            if identity.len() != 10
+                || atom(&identity[0]) != Some("2")
+                || identity[4].as_string() != Some("")
+                || atom(&identity[5]) != Some("0")
+                || atom(&identity[6]) != Some("1")
+                || atom(&identity[7]) != Some("f440939a-f130-413b-9c9a-2b18c4af69c6")
+                || atom(&identity[8]) != Some("2")
+                || !guid(&identity[9])?.is_nil()
+            {
+                return None;
+            }
+            let synonym = list(&identity[3])?;
+            if synonym.len() != 3
+                || atom(&synonym[0]) != Some("1")
+                || synonym[1].as_string() != Some("ru")
+                || synonym[2].as_string()?.is_empty()
+            {
+                return None;
+            }
+            object_header(&wrapper[1])
+        })();
+        if recognized.as_ref() == Some(resource)
+            && class[1..9].iter().all(|v| guid(v).is_some())
+            && descriptors
+                .iter()
+                .filter(|d| &d.object_guid == resource)
+                .count()
+                == 1
+        {
+            if let Some(staged) = staged_document_attributes(
+                root,
+                descriptors,
+                "cf4abea7-37b2-11d4-940f-008048da11f9",
+                DocumentAttributeProfile::Current56Header2Catalog,
+            ) {
+                let ids = staged.iter().map(|(id, _)| id.clone()).collect::<Vec<_>>();
+                let complete = descriptors
+                    .iter()
+                    .find(|d| &d.object_guid == resource)
+                    .and_then(|d| d.catalog_attributes.as_ref())
+                    == Some(&ids);
+                if complete && !ids.contains(resource) {
+                    for (id, types) in staged {
+                        descriptors
+                            .iter_mut()
+                            .find(|d| d.object_guid == id)
+                            .unwrap()
+                            .declared_types = Some(types);
+                    }
+                }
+            }
+            return;
+        }
+    }
     if !matches!(kind, "40" | "56" | "57")
         || (kind == "56" && class.len() != 61)
         || class.len() < 10
         || !class[1..9].iter().all(|v| guid(v).is_some())
-        || at(value, &[1, 9, 1]).and_then(header).as_ref() != Some(resource)
+        || at(value, &[1, 9, 1])
+            .and_then(|v| {
+                if kind == "40" && class.len() == 53 {
+                    let identity = list(v)?;
+                    matches!(
+                        (identity.first().and_then(atom), identity.len()),
+                        (Some("2"), 8) | (Some("3"), 9)
+                    )
+                    .then(|| object_header(v))
+                    .flatten()
+                } else {
+                    header(v)
+                }
+            })
+            .as_ref()
+            != Some(resource)
     {
         return;
     }
@@ -573,13 +1070,48 @@ pub(super) fn project(value: &Value, resource: &Guid, descriptors: &mut [ConfigD
         "cf4abea7-37b2-11d4-940f-008048da11f9"
     };
     let rows = collection(root, own_id);
-    let ids = rows.and_then(|rows| membership(rows, &[0, 1, 1, 1]));
+    let ids = if kind == "40" && class.len() == 53 {
+        document_attributes(
+            root,
+            descriptors,
+            resource,
+            DocumentAttributeProfile::Current40,
+        )
+    } else {
+        rows.and_then(|rows| membership(rows, &[0, 1, 1, 1]))
+    };
     let parts = if kind == "40" {
         collection(root, "21c53e09-8950-4b5e-a6a0-1054f1bbc274")
             .and_then(|rows| membership(rows, &[0, 1, 5, 1]))
     } else {
         None
     };
+    // Новая форма — только запасной путь для неизвестных частей при полном
+    // собственном составе. Уже известный результат современного пути сохраняем.
+    let parts = parts.or_else(|| {
+        if kind != "40"
+            || class.len() != 53
+            || at(value, &[1, 9, 1]).and_then(current40_header2).as_ref() != Some(resource)
+            || descriptors
+                .iter()
+                .filter(|d| &d.object_guid == resource)
+                .count()
+                != 1
+        {
+            return None;
+        }
+        let own = ids.as_deref()?;
+        if own.contains(resource) {
+            return None;
+        }
+        legacy_document_sections(
+            root,
+            descriptors,
+            resource,
+            own,
+            LegacySectionProfile::Current40Header2,
+        )
+    });
     if let Some(d) = descriptors.iter_mut().find(|d| &d.object_guid == resource) {
         if matches!(kind, "56" | "57") {
             d.catalog_owners = class.get(12).and_then(owners);
@@ -676,6 +1208,358 @@ pub(super) fn project(value: &Value, resource: &Guid, descriptors: &mut [ConfigD
             d.declared_types = at(row, &[0, 1, 1, 2]).and_then(declaration);
         }
     }
+}
+
+#[derive(Clone, Copy)]
+enum DocumentAttributeProfile {
+    Current40,
+    Current40Header2Section,
+    Current56Header2Catalog,
+    Legacy37,
+    Legacy38,
+    Legacy38Section,
+    Legacy53Catalog,
+    Legacy54Catalog,
+    Legacy53CatalogSection,
+}
+
+// Собственный состав проверяется целиком до публикации типов и членства.
+// Профиль выбирается только после проверки владельца по нативной CF/XML-паре;
+// заголовки старой формы не расширяют общий `header` или современный профиль.
+fn staged_document_attributes(
+    root: &[Value],
+    descriptors: &[ConfigDescriptor],
+    collection_id: &str,
+    profile: DocumentAttributeProfile,
+) -> Option<Vec<(Guid, Vec<ConfigDeclaredType>)>> {
+    let rows = collection(root, collection_id)?;
+    let mut fields = Vec::with_capacity(rows.len());
+    for row in rows {
+        let row = list(row)?;
+        if row.len() != 2 {
+            return None;
+        }
+        let wrapper = list(&row[0])?;
+        let wrapper_shape = (wrapper.first().and_then(atom), wrapper.len());
+        let supported_wrapper = match profile {
+            DocumentAttributeProfile::Current40 => {
+                matches!(wrapper_shape, (Some("5"), 5) | (Some("6"), 7))
+            }
+            DocumentAttributeProfile::Current56Header2Catalog => {
+                wrapper_shape == (Some("5"), 6)
+                    && atom(&wrapper[2]) == Some("0")
+                    && atom(&wrapper[3]) == Some("0")
+                    && atom(&wrapper[4]) == Some("1")
+                    && atom(&wrapper[5]) == Some("1")
+            }
+            DocumentAttributeProfile::Current40Header2Section => {
+                wrapper_shape == (Some("8"), 5)
+                    && atom(&wrapper[2]) == Some("0")
+                    && atom(&wrapper[3]) == Some("1")
+                    && atom(&wrapper[4]) == Some("1")
+            }
+            DocumentAttributeProfile::Legacy37 => {
+                wrapper_shape == (Some("3"), 4)
+                    && matches!(atom(&wrapper[2]), Some("0" | "2"))
+                    && atom(&wrapper[3]) == Some("1")
+            }
+            DocumentAttributeProfile::Legacy38 => wrapper_shape == (Some("4"), 5),
+            DocumentAttributeProfile::Legacy38Section => wrapper_shape == (Some("7"), 5),
+            DocumentAttributeProfile::Legacy53Catalog => wrapper_shape == (Some("3"), 5),
+            DocumentAttributeProfile::Legacy54Catalog => {
+                wrapper_shape == (Some("4"), 6)
+                    && matches!(atom(&wrapper[2]), Some("0" | "1"))
+                    && atom(&wrapper[3]) == Some("0")
+                    && atom(&wrapper[4]) == Some("1")
+                    && atom(&wrapper[5]) == Some("1")
+            }
+            DocumentAttributeProfile::Legacy53CatalogSection => {
+                wrapper_shape == (Some("6"), 4)
+                    && matches!(atom(&wrapper[2]), Some("0" | "1"))
+                    && atom(&wrapper[3]) == Some("1")
+            }
+        };
+        if !supported_wrapper {
+            return None;
+        }
+        let body = list(&wrapper[1])?;
+        if body.len() != 23 || atom(&body[0]) != Some("27") {
+            return None;
+        }
+        let typed = list(&body[1])?;
+        if typed.len() != 3 || atom(&typed[0]) != Some("2") {
+            return None;
+        }
+        let id = match profile {
+            DocumentAttributeProfile::Current40Header2Section
+            | DocumentAttributeProfile::Current56Header2Catalog => current40_header2(&typed[1])?,
+            DocumentAttributeProfile::Current40 => {
+                let identity = list(&typed[1])?;
+                if !matches!(
+                    (identity.first().and_then(atom), identity.len()),
+                    (Some("2"), 8) | (Some("3"), 9)
+                ) {
+                    return None;
+                }
+                object_header(&typed[1])?
+            }
+            DocumentAttributeProfile::Legacy38 => {
+                legacy_data_processor::identity_with_text_comment(&typed[1])?
+            }
+            DocumentAttributeProfile::Legacy37
+            | DocumentAttributeProfile::Legacy38Section
+            | DocumentAttributeProfile::Legacy53Catalog
+            | DocumentAttributeProfile::Legacy54Catalog
+            | DocumentAttributeProfile::Legacy53CatalogSection => {
+                legacy_data_processor::identity(&typed[1])?
+            }
+        };
+        if fields.iter().any(|(seen, _)| seen == &id)
+            || descriptors.iter().filter(|d| d.object_guid == id).count() != 1
+        {
+            return None;
+        }
+        let types = declaration(&typed[2])?;
+        if types.is_empty() {
+            return None;
+        }
+        fields.push((id, types));
+    }
+    Some(fields)
+}
+
+fn document_attributes(
+    root: &[Value],
+    descriptors: &mut [ConfigDescriptor],
+    resource: &Guid,
+    profile: DocumentAttributeProfile,
+) -> Option<Vec<Guid>> {
+    let fields = staged_document_attributes(
+        root,
+        descriptors,
+        "45e46cbc-3e24-4165-8b7b-cc98a6f80211",
+        profile,
+    )?;
+    if matches!(profile, DocumentAttributeProfile::Legacy37)
+        && fields.iter().any(|(id, _)| id == resource)
+    {
+        return None;
+    }
+    let ids = fields.iter().map(|(id, _)| id.clone()).collect();
+    for (id, types) in fields {
+        descriptors
+            .iter_mut()
+            .find(|d| d.object_guid == id)?
+            .declared_types = Some(types);
+    }
+    Some(ids)
+}
+
+// В отличие от современного пути, весь новый набор частей публикуется сразу:
+// ошибка в последнем поле не оставляет типы полей первых частей.
+#[derive(Clone, Copy)]
+enum LegacySectionProfile {
+    Current40Header2,
+    Document37,
+    Document38,
+    Catalog53,
+}
+
+fn legacy_document_sections(
+    root: &[Value],
+    descriptors: &mut [ConfigDescriptor],
+    resource: &Guid,
+    own_attributes: &[Guid],
+    profile: LegacySectionProfile,
+) -> Option<Vec<Guid>> {
+    let (collection_id, wrapper_len, field_profile) = match profile {
+        LegacySectionProfile::Current40Header2 => (
+            "21c53e09-8950-4b5e-a6a0-1054f1bbc274",
+            2,
+            DocumentAttributeProfile::Current40Header2Section,
+        ),
+        LegacySectionProfile::Document37 => (
+            "21c53e09-8950-4b5e-a6a0-1054f1bbc274",
+            2,
+            DocumentAttributeProfile::Legacy53CatalogSection,
+        ),
+        LegacySectionProfile::Document38 => (
+            "21c53e09-8950-4b5e-a6a0-1054f1bbc274",
+            2,
+            DocumentAttributeProfile::Legacy38Section,
+        ),
+        LegacySectionProfile::Catalog53 => (
+            "932159f9-95b2-4e76-a8dd-8849fe5c5ded",
+            3,
+            DocumentAttributeProfile::Legacy53CatalogSection,
+        ),
+    };
+    let rows = collection(root, collection_id)?;
+    let mut parts = Vec::with_capacity(rows.len());
+    let mut staged_fields = Vec::new();
+    // Часть или её поле не могут переиспользовать описатель владельца
+    // либо собственного реквизита и переписать его при общей публикации.
+    let mut identities = vec![resource.clone()];
+    identities.extend_from_slice(own_attributes);
+    for row in rows {
+        let row = list(row)?;
+        if row.len() != 3 || atom(&row[1]) != Some("1") {
+            return None;
+        }
+        let wrapper = list(&row[0])?;
+        if wrapper.len() != wrapper_len
+            || atom(&wrapper[0]) != Some("1")
+            || (wrapper_len == 3 && atom(&wrapper[2]) != Some("0"))
+        {
+            return None;
+        }
+        let body = list(&wrapper[1])?;
+        if body.len() != 9
+            || atom(&body[0]) != Some("11")
+            || !body[1..5].iter().all(|v| guid(v).is_some())
+        {
+            return None;
+        }
+        let identity_wrapper = list(&body[5])?;
+        if identity_wrapper.len() != 2 || atom(&identity_wrapper[0]) != Some("0") {
+            return None;
+        }
+        let id = match profile {
+            LegacySectionProfile::Current40Header2 => current40_header2(&identity_wrapper[1])?,
+            _ => legacy_data_processor::identity(&identity_wrapper[1])?,
+        };
+        if identities.contains(&id)
+            || descriptors.iter().filter(|d| d.object_guid == id).count() != 1
+        {
+            return None;
+        }
+        identities.push(id.clone());
+        let fields = staged_document_attributes(
+            row,
+            descriptors,
+            "888744e1-b616-11d4-9436-004095e12fc7",
+            field_profile,
+        )?;
+        let mut field_ids = Vec::with_capacity(fields.len());
+        for (field_id, types) in fields {
+            if identities.contains(&field_id) {
+                return None;
+            }
+            identities.push(field_id.clone());
+            field_ids.push(field_id.clone());
+            staged_fields.push((field_id, types));
+        }
+        parts.push((id, field_ids));
+    }
+    let ids = parts.iter().map(|(id, _)| id.clone()).collect();
+    for (id, types) in staged_fields {
+        descriptors
+            .iter_mut()
+            .find(|d| d.object_guid == id)?
+            .declared_types = Some(types);
+    }
+    for (id, fields) in parts {
+        descriptors
+            .iter_mut()
+            .find(|d| d.object_guid == id)?
+            .tabular_section_attributes = Some(fields);
+    }
+    Some(ids)
+}
+
+// Целая нативная CF/XML-пара подтверждает только Boolean-константу класса
+// 14/12. Проверяем локальную форму, не расширяя общие заголовки и грамматику.
+fn project_legacy_boolean_constant(
+    value: &Value,
+    resource: &Guid,
+    descriptors: &mut [ConfigDescriptor],
+) -> Option<()> {
+    let root = list(value)?;
+    let class = list(root.get(1)?)?;
+    let body = list(class.get(1)?)?;
+    let typed = list(body.get(1)?)?;
+    if root.len() != 3
+        || atom(&root[0]) != Some("1")
+        || atom(&root[2]) != Some("0")
+        || class.len() != 12
+        || atom(&class[0]) != Some("14")
+        || !class[2..6]
+            .iter()
+            .all(|v| guid(v).is_some_and(|id| !id.is_nil()))
+        || atom(&class[6]) != Some("1")
+        || atom(&class[7]) != Some("0")
+        || at(value, &[1, 8]).and_then(list).map(<[Value]>::len) != Some(1)
+        || at(value, &[1, 8, 0]).and_then(atom) != Some("0")
+        || at(value, &[1, 9]).and_then(list).map(<[Value]>::len) != Some(1)
+        || at(value, &[1, 9, 0]).and_then(atom) != Some("0")
+        || !guid(&class[10]).is_some_and(|id| id.is_nil())
+        || atom(&class[11]) != Some("0")
+        || body.len() != 23
+        || atom(&body[0]) != Some("27")
+        || typed.len() != 3
+        || atom(&typed[0]) != Some("2")
+    {
+        return None;
+    }
+    for index in [2, 5, 7, 10, 13, 17, 20, 21, 22] {
+        if atom(&body[index]) != Some("0") {
+            return None;
+        }
+    }
+    if body[6].as_string() != Some("")
+        || atom(&body[12]) != Some("2")
+        || !guid(&body[11]).is_some_and(|id| id.is_nil())
+    {
+        return None;
+    }
+    for (index, expected) in [
+        (3, &["0"][..]),
+        (4, &["0"][..]),
+        (14, &["5004", "0"][..]),
+        (15, &["3", "0", "0"][..]),
+        (16, &["0", "0"][..]),
+        (18, &["0"][..]),
+    ] {
+        let values = list(&body[index])?;
+        if values.len() != expected.len()
+            || !values
+                .iter()
+                .zip(expected)
+                .all(|(v, s)| atom(v) == Some(*s))
+        {
+            return None;
+        }
+    }
+    for index in [8, 9] {
+        let values = list(&body[index])?;
+        if values.len() != 1 || values[0].as_string() != Some("U") {
+            return None;
+        }
+    }
+    let filling = list(&body[19])?;
+    if filling.len() != 2
+        || filling[0].as_string() != Some("S")
+        || filling[1].as_string() != Some("")
+    {
+        return None;
+    }
+    let id = legacy_data_processor::identity(&typed[1])?;
+    if &id != resource || descriptors.iter().filter(|d| d.object_guid == id).count() != 1 {
+        return None;
+    }
+    let types = declaration(&typed[2])?;
+    if types.len() != 1
+        || types[0].tag != "B"
+        || types[0].reference.is_some()
+        || !types[0].qualifiers.is_empty()
+    {
+        return None;
+    }
+    descriptors
+        .iter_mut()
+        .find(|d| d.object_guid == id)?
+        .declared_types = Some(types);
+    Some(())
 }
 
 fn attribute_bodies(value: &Value, descriptors: &mut [ConfigDescriptor]) {
@@ -802,6 +1686,7 @@ pub(super) fn resolve_named_types(descriptors: &mut [ConfigDescriptor]) {
             [
                 d.business_process_tabular_sections.as_ref(),
                 d.data_processor_tabular_sections.as_ref(),
+                d.report_tabular_sections.as_ref(),
             ]
         })
         .flatten()
@@ -817,8 +1702,11 @@ pub(super) fn resolve_named_types(descriptors: &mut [ConfigDescriptor]) {
             d.tabular_section_attributes = None;
         }
         for ids in [
+            &mut d.document_attributes,
             &mut d.business_process_attributes,
             &mut d.data_processor_attributes,
+            &mut d.report_attributes,
+            &mut d.exchange_plan_attributes,
             &mut d.accumulation_register_dimensions,
             &mut d.accumulation_register_resources,
             &mut d.information_register_dimensions,
@@ -848,8 +1736,38 @@ fn complete_attributes(
 ) -> Option<Vec<Guid>> {
     let rows = collection(root, collection_id)?;
     let wrapper = match collection_id {
+        // Полная нативная CF/XML-пара BUH подтверждает также оболочку 2/5.
+        // Выбор первой строки требует однородности всей коллекции ниже.
+        "87c988de-ecbf-413b-87b0-b9516df05e28"
+            if rows
+                .first()
+                .and_then(|row| at(row, &[0]))
+                .and_then(list)
+                .is_some_and(|body| {
+                    body.len() == 5 && body.first().and_then(atom) == Some("2")
+                }) =>
+        {
+            ("2", 5)
+        }
         "87c988de-ecbf-413b-87b0-b9516df05e28" => ("3", 7),
-        "ec6bb5e5-b7a8-4d75-bec9-658107a699cf" | "5d24a9d1-098e-11d6-b9b8-0050bae0a95d" => ("0", 2),
+        // Нативная CF/XML-пара ПВХ BUH подтверждает однородную оболочку 2/6.
+        "31182525-9346-4595-81f8-6f91a72ebe06"
+            if rows
+                .first()
+                .and_then(|row| at(row, &[0]))
+                .and_then(list)
+                .is_some_and(|body| {
+                    body.len() == 6 && body.first().and_then(atom) == Some("2")
+                }) =>
+        {
+            ("2", 6)
+        }
+        "31182525-9346-4595-81f8-6f91a72ebe06" => ("3", 8),
+        "ec6bb5e5-b7a8-4d75-bec9-658107a699cf"
+        | "7e7123e0-29e2-11d6-a3c7-0050bae0a776"
+        | "c339c860-29e2-11d6-a3c7-0050bae0a776"
+        | "5d24a9d1-098e-11d6-b9b8-0050bae0a95d" => ("0", 2),
+        "1a1b4fea-e093-470d-94ff-1d2f16cda2ab" => ("4", 7),
         "888744e1-b616-11d4-9436-004095e12fc7" => ("8", 5),
         "b64d9a43-1642-11d6-a3c7-0050bae0a776" => ("8", 6),
         "b64d9a41-1642-11d6-a3c7-0050bae0a776" => ("5", 3),
@@ -880,38 +1798,15 @@ fn complete_attributes(
         .then_some(ids)
 }
 
-fn project_data_processor(value: &Value, resource: &Guid, descriptors: &mut [ConfigDescriptor]) {
-    let Some(root) = list(value) else {
-        return;
-    };
-    let Some(class) = root.get(1).and_then(list) else {
-        return;
-    };
-    // Парные нативные CF/XML подтверждают класс 17/12, объект на позиции 1,
-    // менеджер на 7 и отдельные коллекции собственных реквизитов и частей.
-    if class.len() != 12
-        || !list(&class[3]).is_some_and(|w| w.len() == 2 && atom(&w[0]) == Some("0"))
-        || at(value, &[1, 3, 1]).and_then(object_header).as_ref() != Some(resource)
-        || ![1, 2, 7, 8, 9].iter().all(|i| guid(&class[*i]).is_some())
-    {
-        return;
-    }
-    attribute_bodies(value, descriptors);
-    attribute_fill_checking(value, descriptors);
-    let attributes = complete_attributes(root, "ec6bb5e5-b7a8-4d75-bec9-658107a699cf", descriptors);
-    let rows = collection(root, "2bcef0d1-0981-11d6-b9b8-0050bae0a95d").filter(|rows| {
-        rows.iter().all(|row| {
-            list(row).is_some_and(|r| r.len() == 3)
-                && at(row, &[0])
-                    .and_then(list)
-                    .is_some_and(|w| w.len() == 2 && atom(&w[0]) == Some("0"))
-                && at(row, &[0, 1]).and_then(list).is_some_and(|b| {
-                    b.len() == 9
-                        && atom(&b[0]) == Some("11")
-                        && b[1..5].iter().all(|v| guid(v).is_some())
-                })
-        })
-    });
+// Нативные отчёт и обработка используют одинаковую форму части 11/9 и реквизита 27/23.
+fn complete_object_sections(
+    root: &[Value],
+    section_collection: &str,
+    field_collection: &str,
+    descriptors: &mut [ConfigDescriptor],
+) -> Option<Vec<Guid>> {
+    let rows = collection(root, section_collection)
+        .filter(|rows| rows.iter().all(|row| section_body(row, 2, "0").is_some()));
     let sections = rows
         .and_then(|r| membership(r, &[0, 1, 5, 1]))
         .filter(|ids| {
@@ -923,18 +1818,164 @@ fn project_data_processor(value: &Value, resource: &Guid, descriptors: &mut [Con
             let Some(id) = at(row, &[0, 1, 5, 1]).and_then(header) else {
                 continue;
             };
-            let fields = list(row).and_then(|r| {
-                complete_attributes(r, "5d24a9d1-098e-11d6-b9b8-0050bae0a95d", descriptors)
-            });
+            let fields =
+                list(row).and_then(|r| complete_attributes(r, field_collection, descriptors));
             if let Some(d) = descriptors.iter_mut().find(|d| d.object_guid == id) {
                 d.tabular_section_attributes = fields;
             }
         }
     }
+    sections
+}
+
+// Неизменённый ресурс обработки и обратная нативная XML-выгрузка подтверждают
+// только собственные реквизиты этой формы; заголовки отчётов и частей не расширяем.
+fn legacy_data_processor_attributes(
+    value: &Value,
+    root: &[Value],
+    descriptors: &mut [ConfigDescriptor],
+) -> Option<Vec<Guid>> {
+    let owner_header = at(value, &[1, 3, 1]).and_then(list)?;
+    if owner_header.len() != 8 || atom(&owner_header[0]) != Some("2") {
+        return None;
+    }
+    let rows = collection(root, "ec6bb5e5-b7a8-4d75-bec9-658107a699cf")?;
+    let mut attributes = Vec::with_capacity(rows.len());
+    for row in rows {
+        let row = list(row)?;
+        if row.len() != 2 || atom(&row[1]) != Some("0") {
+            return None;
+        }
+        let wrapper = list(&row[0])?;
+        if wrapper.len() != 2 || atom(&wrapper[0]) != Some("0") {
+            return None;
+        }
+        let body = list(&wrapper[1])?;
+        if body.len() != 23 || atom(&body[0]) != Some("27") {
+            return None;
+        }
+        let typed = list(&body[1])?;
+        if typed.len() != 3 || atom(&typed[0]) != Some("2") {
+            return None;
+        }
+        let identity = list(&typed[1])?;
+        if identity.len() != 8
+            || atom(&identity[0]) != Some("2")
+            || identity[4].as_string().is_none()
+            || atom(&identity[5]) != Some("0")
+            || atom(&identity[6]) != Some("0")
+            || !guid(&identity[7]).is_some_and(|id| id.is_nil())
+        {
+            return None;
+        }
+        let synonyms = list(&identity[3])?;
+        if synonyms.len() != 3
+            || atom(&synonyms[0]) != Some("1")
+            || synonyms[1].as_string() != Some("ru")
+            || synonyms[2].as_string().is_none_or(str::is_empty)
+        {
+            return None;
+        }
+        let id = object_header(&typed[1])?;
+        if attributes.iter().any(|(seen, _, _)| seen == &id)
+            || descriptors.iter().filter(|d| d.object_guid == id).count() != 1
+        {
+            return None;
+        }
+        // Нативные CF/XML обработки конвертации подтверждают пустой `Pattern`:
+        // это известная пустая декларация, а не ошибка чтения или семантика `Any`.
+        let types = declaration(&typed[2])?;
+        attributes.push((id, types, body));
+    }
+    let ids = attributes.iter().map(|(id, _, _)| id.clone()).collect();
+    for (id, types, body) in attributes {
+        let descriptor = descriptors.iter_mut().find(|d| d.object_guid == id)?;
+        descriptor.declared_types = Some(types);
+        descriptor.fill_from_filling_value = flag(&body[20]);
+        descriptor.filling_value = filling(&body[19]);
+    }
+    Some(ids)
+}
+
+fn project_data_processor(value: &Value, resource: &Guid, descriptors: &mut [ConfigDescriptor]) {
+    let Some(root) = list(value) else {
+        return;
+    };
+    let Some(class) = root.get(1).and_then(list) else {
+        return;
+    };
+    if processor_class(value, resource, false).is_none() {
+        return;
+    }
+    attribute_bodies(value, descriptors);
+    attribute_fill_checking(value, descriptors);
+    let attributes = complete_attributes(root, "ec6bb5e5-b7a8-4d75-bec9-658107a699cf", descriptors)
+        .or_else(|| legacy_data_processor_attributes(value, root, descriptors));
+    let sections = complete_object_sections(
+        root,
+        "2bcef0d1-0981-11d6-b9b8-0050bae0a95d",
+        "5d24a9d1-098e-11d6-b9b8-0050bae0a95d",
+        descriptors,
+    );
     if let Some(d) = descriptors.iter_mut().find(|d| &d.object_guid == resource) {
         d.data_processor_attributes = attributes;
         d.data_processor_tabular_sections = sections;
         d.data_processor_object_type = guid(&class[1]).filter(|id| !id.is_nil());
+    }
+}
+
+fn project_exchange_plan(value: &Value, resource: &Guid, descriptors: &mut [ConfigDescriptor]) {
+    let Some(root) = list(value) else {
+        return;
+    };
+    let Some(class) = root.get(1).and_then(list) else {
+        return;
+    };
+    // Парные нативные Config/XML/EDT подтверждают план обмена 37/51:
+    // его собственный заголовок расположен после одиннадцати GUID типов.
+    // Документ 37/50 имеет другую форму и сюда не попадает.
+    if class.len() != 51
+        || atom(&class[0]) != Some("37")
+        || !class[1..12].iter().all(|v| guid(v).is_some())
+        || object_header(&class[12]).as_ref() != Some(resource)
+        || descriptors
+            .iter()
+            .filter(|d| &d.object_guid == resource)
+            .count()
+            != 1
+    {
+        return;
+    }
+    attribute_bodies(value, descriptors);
+    let attributes = complete_attributes(root, "1a1b4fea-e093-470d-94ff-1d2f16cda2ab", descriptors);
+    if let Some(owner) = descriptors.iter_mut().find(|d| &d.object_guid == resource) {
+        owner.exchange_plan_attributes = attributes;
+    }
+}
+
+fn project_report(value: &Value, resource: &Guid, descriptors: &mut [ConfigDescriptor]) {
+    let Some(root) = list(value) else {
+        return;
+    };
+    let Some(class) = root.get(1).and_then(list) else {
+        return;
+    };
+    if report_class(value, resource).is_none() {
+        return;
+    }
+    attribute_bodies(value, descriptors);
+    attribute_fill_checking(value, descriptors);
+    let attributes = complete_attributes(root, "7e7123e0-29e2-11d6-a3c7-0050bae0a776", descriptors);
+    let sections = complete_object_sections(
+        root,
+        "b077d780-29e2-11d6-a3c7-0050bae0a776",
+        "c339c860-29e2-11d6-a3c7-0050bae0a776",
+        descriptors,
+    );
+    if let Some(d) = descriptors.iter_mut().find(|d| &d.object_guid == resource) {
+        d.report_attributes = attributes;
+        d.report_tabular_sections = sections;
+        d.report_object_type = guid(&class[1]).filter(|id| !id.is_nil());
     }
 }
 
@@ -957,19 +1998,8 @@ fn project_business_process(value: &Value, resource: &Guid, descriptors: &mut [C
     attribute_bodies(value, descriptors);
     attribute_fill_checking(value, descriptors);
     let attributes = complete_attributes(root, "87c988de-ecbf-413b-87b0-b9516df05e28", descriptors);
-    let section_rows = collection(root, "a3fe6537-d787-40f7-8a06-419d2f0c1cfd").filter(|rows| {
-        rows.iter().all(|row| {
-            list(row).is_some_and(|row| row.len() == 3)
-                && at(row, &[0]).and_then(list).is_some_and(|wrapper| {
-                    wrapper.len() == 3 && wrapper.first().and_then(atom) == Some("1")
-                })
-                && at(row, &[0, 1]).and_then(list).is_some_and(|body| {
-                    body.len() == 9
-                        && body.first().and_then(atom) == Some("11")
-                        && body[1..5].iter().all(|v| guid(v).is_some())
-                })
-        })
-    });
+    let section_rows = collection(root, "a3fe6537-d787-40f7-8a06-419d2f0c1cfd")
+        .filter(|rows| rows.iter().all(|row| section_body(row, 3, "1").is_some()));
     let sections = section_rows
         .and_then(|rows| membership(rows, &[0, 1, 5, 1]))
         .filter(|ids| {
@@ -1436,3 +2466,309 @@ const COMMON_ROOT_COLLECTIONS: [&[&str]; 7] = [
     &["5274d9fc-9c3a-4a71-8f5e-a0db8ab23de5"],
     &["bf3420b0-f6f9-41a0-b83a-fe9d4ab0b65d"],
 ];
+
+#[cfg(test)]
+#[path = "report_metadata_tests.rs"]
+mod report_metadata_tests;
+
+#[cfg(test)]
+#[path = "legacy_business_process_tests.rs"]
+mod legacy_business_process_tests;
+
+#[cfg(test)]
+#[path = "legacy_buh_processor_tests.rs"]
+mod legacy_buh_processor_tests;
+
+#[path = "legacy_data_processor.rs"]
+mod legacy_data_processor;
+
+#[cfg(test)]
+#[path = "buh_characteristic_tests.rs"]
+mod buh_characteristic_tests;
+
+#[cfg(test)]
+#[path = "buh_credit_document_tests.rs"]
+mod buh_credit_document_tests;
+
+#[cfg(test)]
+#[path = "legacy_conversion_empty_types_tests.rs"]
+mod legacy_conversion_empty_types_tests;
+
+#[cfg(test)]
+#[path = "legacy_news_characteristic_tests.rs"]
+mod legacy_news_characteristic_tests;
+
+#[path = "legacy_news_characteristic.rs"]
+mod legacy_news_characteristic;
+
+#[cfg(test)]
+#[path = "legacy_sales_book_document_tests.rs"]
+mod legacy_sales_book_document_tests;
+
+#[cfg(test)]
+#[path = "legacy_sales_book_sections_tests.rs"]
+mod legacy_sales_book_sections_tests;
+
+#[cfg(test)]
+#[path = "legacy_report_deliveries_tests.rs"]
+mod legacy_report_deliveries_tests;
+
+#[cfg(test)]
+#[path = "legacy_report_event_sections_tests.rs"]
+mod legacy_report_event_sections_tests;
+
+#[cfg(test)]
+#[path = "legacy_report_directions_comment_tests.rs"]
+mod legacy_report_directions_comment_tests;
+
+#[cfg(test)]
+#[path = "legacy_vat_real_estate_tests.rs"]
+mod legacy_vat_real_estate_tests;
+
+#[cfg(test)]
+#[path = "current40_header2_sections_tests.rs"]
+mod current40_header2_sections_tests;
+
+#[cfg(test)]
+#[path = "legacy38_own_comment_tests.rs"]
+mod legacy38_own_comment_tests;
+
+#[cfg(test)]
+#[path = "legacy54_catalog_tests.rs"]
+mod legacy54_catalog_tests;
+
+#[cfg(test)]
+#[path = "current56_catalog_types_tests.rs"]
+mod current56_catalog_types_tests;
+
+#[cfg(test)]
+#[path = "legacy14_boolean_constant_tests.rs"]
+mod legacy14_boolean_constant_tests;
+
+#[cfg(test)]
+#[path = "legacy_functional_option_mode_tests.rs"]
+mod legacy_functional_option_mode_tests;
+
+// Полная измеренная форма общая для подробного и декларационного путей.
+fn business_reference(class: &[Value], resource: &Guid) -> Option<Guid> {
+    let (length, end) = match class.first().and_then(atom)? {
+        "30" => (49, 15),
+        "33" => (52, 13),
+        _ => return None,
+    };
+    if class.len() != length
+        || list(&class[1])?.len() != 9
+        || header(&class[1]).as_ref() != Some(resource)
+        || !matches!(atom(&class[2]), Some("0" | "1"))
+        || !class[3..end].iter().all(|v| guid(v).is_some())
+    {
+        return None;
+    }
+    guid(&class[5])
+}
+
+fn section_body<'a>(row: &'a Value, wrapper_len: usize, marker: &str) -> Option<&'a [Value]> {
+    let row = list(row)?;
+    if row.len() != 3 {
+        return None;
+    }
+    let wrapper = list(&row[0])?;
+    if wrapper.len() != wrapper_len || atom(&wrapper[0]) != Some(marker) {
+        return None;
+    }
+    let body = list(&wrapper[1])?;
+    (body.len() == 9
+        && atom(&body[0]) == Some("11")
+        && body[1..5].iter().all(|v| guid(v).is_some()))
+    .then_some(body)
+}
+
+/// Коллекции, чьи сырые заголовки нужны обнаружению; реквизиты не удерживаются.
+pub(super) fn identity_collection(id: &str) -> bool {
+    matches!(
+        id,
+        "21c53e09-8950-4b5e-a6a0-1054f1bbc274"
+            | "a3fe6537-d787-40f7-8a06-419d2f0c1cfd"
+            | "2bcef0d1-0981-11d6-b9b8-0050bae0a95d"
+            | "b077d780-29e2-11d6-a3c7-0050bae0a776"
+            | "bee0a08c-07eb-40c0-8544-5c364c171465"
+    )
+}
+
+// Определяемый тип УНФ/БУХ: GUID типа, GUID значения, собственный заголовок и Pattern.
+// Один измеренный предикат сохраняет согласованность полной проекции и заголовка.
+fn defined_type_class<'a>(value: &'a Value, resource: &Guid) -> Option<&'a [Value]> {
+    let class = at(value, &[1]).and_then(list)?;
+    (class.len() == 5
+        && class.first().and_then(atom) == Some("0")
+        // Нативная пара Config/XML БУХ подтверждает старый заголовок 1/7;
+        // используем строгую проверку этой формы только внутри определяемого типа.
+        && header(&class[3])
+            .or_else(|| legacy_data_processor::identity(&class[3]))
+            .as_ref()
+            == Some(resource))
+    .then_some(class)
+}
+
+pub(super) fn project_header_identity(value: &Value, projected: &mut super::ConfigHeader) {
+    let resource = &projected.object_guid;
+    projected.defined_type = defined_type_class(value, resource)
+        .and_then(|class| guid(&class[1]))
+        .map_or(
+            super::ConfigTypeIdentity::Unknown,
+            super::ConfigTypeIdentity::measured,
+        );
+    use super::ConfigTypeIdentity::{self, Unknown};
+    let Some(root) = list(value) else {
+        return;
+    };
+    let Some(class) = root.get(1).and_then(list) else {
+        return;
+    };
+    let kind = class.first().and_then(atom);
+    let mut reference = if kind == Some("19")
+        || (matches!(kind, Some("30" | "33")) && class.get(1).and_then(list).is_some())
+    {
+        Unknown
+    } else {
+        // Та же измеренная позиция, которую использует потоковый ConfigParser.
+        let position = if kind == Some("20") { 1 } else { 3 };
+        class
+            .get(position)
+            .and_then(guid)
+            .map_or(Unknown, ConfigTypeIdentity::measured)
+    };
+    if kind == Some("19")
+        && let Some(id) = legacy_enum_reference(root, class, resource)
+    {
+        reference = ConfigTypeIdentity::measured(id);
+    }
+    if matches!(kind, Some("30" | "33")) && class.get(1).and_then(list).is_some() {
+        reference =
+            business_reference(class, resource).map_or(Unknown, ConfigTypeIdentity::measured);
+    }
+    let object = match kind {
+        Some("16") => processor_class(value, resource, true).and_then(|c| guid(&c[1])),
+        Some("17") => processor_class(value, resource, false).and_then(|c| guid(&c[1])),
+        Some("19") => report_class(value, resource).and_then(|c| guid(&c[1])),
+        Some("30")
+            if class.len() == 49
+                && header(&class[1]).as_ref() == Some(resource)
+                && matches!(atom(&class[2]), Some("0" | "1"))
+                && class[3..15].iter().all(|v| guid(v).is_some()) =>
+        {
+            guid(&class[3])
+        }
+        _ => None,
+    }
+    .map_or(Unknown, ConfigTypeIdentity::measured);
+    let section_id = match kind {
+        Some("37" | "38" | "40") => Some("21c53e09-8950-4b5e-a6a0-1054f1bbc274"),
+        Some("30") => Some("a3fe6537-d787-40f7-8a06-419d2f0c1cfd"),
+        Some("16" | "17") => Some("2bcef0d1-0981-11d6-b9b8-0050bae0a95d"),
+        Some("19") if matches!(object, ConfigTypeIdentity::Known(_)) => {
+            Some("b077d780-29e2-11d6-a3c7-0050bae0a776")
+        }
+        _ => None,
+    };
+    let sections = section_id.and_then(|id| {
+        let rows = collection(root, id)?;
+        let mut sections = Vec::new();
+        for row in rows {
+            let identity = if kind == Some("40") {
+                // Современный путь использует именно это членство, не код оболочки.
+                at(row, &[0, 1, 5, 1])?
+            } else {
+                let (wrapper_len, marker) = match kind {
+                    Some("30") => (3, "1"),
+                    Some("37" | "38") => (2, "1"),
+                    _ => (2, "0"),
+                };
+                let body = section_body(row, wrapper_len, marker)?;
+                let identity_wrapper = list(&body[5])?;
+                if identity_wrapper.len() != 2 || atom(&identity_wrapper[0]) != Some("0") {
+                    return None;
+                }
+                &identity_wrapper[1]
+            };
+            let id = header(identity)
+                .or_else(|| current40_header2(identity))
+                .or_else(|| legacy_data_processor::identity(identity))?;
+            if &id == resource
+                || sections
+                    .iter()
+                    .any(|s: &super::ConfigSectionIdentity| s.object_guid == id)
+            {
+                return None;
+            }
+            let name = list(identity)?.get(2)?.as_string()?.to_owned();
+            sections.push(super::ConfigSectionIdentity {
+                object_guid: id,
+                name,
+                generated_types: None,
+            });
+        }
+        Some(sections)
+    });
+    projected.synonyms = own_synonyms(value, resource).unwrap_or_default();
+    projected.route_point_reference_type = if kind == Some("30")
+        && business_reference(class, resource).is_some_and(|id| !id.is_nil())
+    {
+        class
+            .get(13)
+            .and_then(guid)
+            .map_or(Unknown, ConfigTypeIdentity::measured)
+    } else {
+        Unknown
+    };
+    projected.enumeration_values = collection(root, "bee0a08c-07eb-40c0-8544-5c364c171465")
+        .and_then(|rows| {
+            let mut values = Vec::new();
+            for row in rows {
+                let row = list(row)?;
+                if row.len() != 2 || atom(&row[1]) != Some("0") {
+                    return None;
+                }
+                let wrapper = list(&row[0])?;
+                if wrapper.len() != 2 || atom(&wrapper[0]) != Some("0") {
+                    return None;
+                }
+                let identity = &wrapper[1];
+                let fields = list(identity)?;
+                // Тот же self-reference/name/synonym заголовок, которому
+                // потоковый декодер назначает роль значения этой коллекции.
+                let id = super::config::value_identity(fields.get(1..4)?)?;
+                if values
+                    .iter()
+                    .any(|v: &super::ConfigValueIdentity| v.object_guid == id)
+                {
+                    return None;
+                }
+                values.push(super::ConfigValueIdentity {
+                    object_guid: id,
+                    name: fields.get(2)?.as_string()?.into(),
+                    synonyms: super::config::parse_synonyms(fields.get(3)?),
+                });
+            }
+            Some(values)
+        });
+    projected.reference_type = reference;
+    projected.object_type = object;
+    projected.sections = sections;
+}
+
+fn own_synonyms(value: &Value, resource: &Guid) -> Option<Vec<super::Synonym>> {
+    let values = list(value)?;
+    for window in values.windows(3) {
+        if super::config::value_identity(window).as_ref() == Some(resource) {
+            return Some(super::config::parse_synonyms(&window[2]));
+        }
+    }
+    values
+        .iter()
+        .find_map(|value| own_synonyms(value, resource))
+}
+
+#[cfg(test)]
+#[path = "exchange_plan_members_tests.rs"]
+mod exchange_plan_members_tests;

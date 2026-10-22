@@ -8,6 +8,8 @@
 //! a UTF-8 byte-order mark in front, raw-deflated when the field
 //! compresses its value.
 
+use std::borrow::Cow;
+
 use super::deflate::inflate_raw_deflate_bounded;
 use super::value::{Value, parse_serialized};
 use super::{MetadataError, MetadataErrorKind};
@@ -57,31 +59,90 @@ fn malformed(message: &str) -> MetadataError {
     )
 }
 
-/// Decodes the content of a stored value into its brace-serialized tree.
-///
-/// `content` is every part of `binarydata` for the key, in the order of
-/// their offsets, concatenated.
-///
-/// # Errors
-///
-/// Returns [`MetadataError`] when the content is shorter than its header,
-/// is neither the serialization nor a deflate stream of one, or is not
-/// valid UTF-8.
-pub fn decode_stored_value(content: &[u8], limit: usize) -> Result<Value, MetadataError> {
+// Общая распаковка сохраняет прежнее распознавание тела после десятибайтовой
+// оболочки. Поля длины и версии оболочки здесь не получают новой интерпретации.
+fn decoded_stored_value_content(
+    content: &[u8],
+    limit: usize,
+) -> Result<Cow<'_, [u8]>, MetadataError> {
+    if content.starts_with(MARKER) {
+        return Err(malformed("reference is not stored-value content"));
+    }
     let body = content
         .get(CONTENT_HEADER..)
         .ok_or_else(|| malformed("content shorter than its header"))?;
-    let body = body.strip_prefix(&[0xef, 0xbb, 0xbf]).unwrap_or(body);
-    if body.first() == Some(&b'{') {
-        return parse_serialized(body);
+    let serialized = body.strip_prefix(&[0xef, 0xbb, 0xbf]).unwrap_or(body);
+    if serialized.first() == Some(&b'{') {
+        if body.len() > limit {
+            return Err(malformed("decoded content exceeds its byte limit"));
+        }
+        return Ok(Cow::Borrowed(body));
     }
-    // A compressed field keeps the same serialization, deflated.
-    let inflated = inflate_raw_deflate_bounded(body, limit)
+    let inflated = inflate_raw_deflate_bounded(serialized, limit)
         .map_err(|error| malformed(&format!("content is not the serialization: {error}")))?;
-    let inflated = inflated
-        .strip_prefix(&[0xef, 0xbb, 0xbf])
-        .unwrap_or(&inflated);
-    parse_serialized(inflated)
+    Ok(Cow::Owned(inflated))
+}
+
+/// Возвращает UTF-8 текст внутренней сериализации хранилища без начального BOM.
+///
+/// `content` содержит встроенные байты значения либо уже объединённые части
+/// внешнего содержимого. Ссылка `STORHDR` содержимым не является; функция
+/// не читает `binarydata` и не выполняет других операций ввода-вывода.
+///
+/// `limit` ограничивает распакованное тело в байтах, включая возможный BOM
+/// и исключая десятибайтовую оболочку. Размер входного среза отдельно не
+/// ограничивается: его память принадлежит вызывающему коду. Несжатый текст
+/// заимствуется из входа, сжатый использует выделенную распаковщиком память.
+/// Поля версии и объявленной длины оболочки не получают дополнительных проверок.
+///
+/// Текст не разбирается в дерево и не сериализуется повторно. Проверку полной
+/// грамматики и поддержанных видов значений выполняет вызывающий декодер;
+/// [`decode_stored_value`] дополнительно использует существующий парсер дерева.
+///
+/// # Errors
+///
+/// Возвращает [`MetadataError`] для внешней ссылки вместо содержимого,
+/// короткой оболочки, повреждённого DEFLATE или UTF-8 и превышения `limit`.
+/// Корректность полной грамматики сериализации эта функция не гарантирует.
+pub fn decode_stored_value_text(
+    content: &[u8],
+    limit: usize,
+) -> Result<Cow<'_, str>, MetadataError> {
+    match decoded_stored_value_content(content, limit)? {
+        Cow::Borrowed(bytes) => {
+            let bytes = bytes.strip_prefix(&[0xef, 0xbb, 0xbf]).unwrap_or(bytes);
+            std::str::from_utf8(bytes)
+                .map(Cow::Borrowed)
+                .map_err(|error| {
+                    MetadataError::utf8(error.valid_up_to(), "metadata is not valid UTF-8")
+                })
+        }
+        Cow::Owned(mut bytes) => {
+            if bytes.starts_with(&[0xef, 0xbb, 0xbf]) {
+                bytes.drain(..3);
+            }
+            String::from_utf8(bytes).map(Cow::Owned).map_err(|error| {
+                MetadataError::utf8(
+                    error.utf8_error().valid_up_to(),
+                    "metadata is not valid UTF-8",
+                )
+            })
+        }
+    }
+}
+
+/// Разбирает содержимое хранилища существующим парсером внутренней сериализации.
+///
+/// `content` содержит встроенное значение либо объединённые части `binarydata`
+/// в порядке смещений. Распаковка общая с [`decode_stored_value_text`]; её
+/// ограничения входа, выходной длины и внешних ссылок применяются также здесь.
+///
+/// # Errors
+///
+/// Возвращает [`MetadataError`] при повреждённой оболочке, DEFLATE или UTF-8,
+/// превышении `limit`, внешней ссылке вместо содержимого или ошибке грамматики.
+pub fn decode_stored_value(content: &[u8], limit: usize) -> Result<Value, MetadataError> {
+    parse_serialized(&decoded_stored_value_content(content, limit)?)
 }
 
 /// The entries of a serialized `Соответствие`: the value is a record

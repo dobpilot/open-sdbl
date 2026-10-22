@@ -1,0 +1,23 @@
+   Compiling open-sdbl v0.9.20 (/tmp/open-sdbl-report-deliveries-review)
+    Finished `test` profile [unoptimized] target(s) in 3.14s
+     Running unittests src/lib.rs (/home/kan/Документы/develop/open-bsl/target/open-sdbl-report-deliveries-review-agent/debug/deps/open_sdbl-4aae15254d7c1c95)
+
+running 2 tests
+test metadata::runtime_metadata::legacy_report_deliveries_tests::native_report_deliveries_preserves_all_sixteen_xml_qualified_attributes ... FAILED
+test metadata::runtime_metadata::legacy_report_deliveries_tests::malformed_legacy_catalog_never_publishes_an_attribute_prefix ... ok
+
+failures:
+
+---- metadata::runtime_metadata::legacy_report_deliveries_tests::native_report_deliveries_preserves_all_sixteen_xml_qualified_attributes stdout ----
+
+thread 'metadata::runtime_metadata::legacy_report_deliveries_tests::native_report_deliveries_preserves_all_sixteen_xml_qualified_attributes' (82) panicked at src/metadata/legacy_report_deliveries_tests.rs:11:127:
+called `Option::unwrap()` on a `None` value
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    metadata::runtime_metadata::legacy_report_deliveries_tests::native_report_deliveries_preserves_all_sixteen_xml_qualified_attributes
+
+test result: FAILED. 1 passed; 1 failed; 0 ignored; 0 measured; 152 filtered out; finished in 0.08s
+
+error: test failed, to rerun pass `-p open-sdbl --lib`

@@ -1,0 +1,3 @@
+# Native expectation provenance
+
+Identities, ordering, names, scalar types and qualifier values come from the retained Designer XML. Reference identities are retained unchanged from the paired native Config resource: ValueListType 4772b3b4-f4a3-49c0-a1a5-8cb5961511a3, ValueTable acf6192e-81ca-46ef-93a6-5a6968b78663, ValueTree e603c0f2-92fb-4d47-8f38-a44a381cf235, ExchangePlanRef 0a52f9de-73ea-4507-81e8-66217bead73a. Variable strings with zero XML length use the native S tag with no explicit qualifiers. Empty Type elements match native empty Pattern declarations. This records metadata only and specifies no runtime assignment semantics.

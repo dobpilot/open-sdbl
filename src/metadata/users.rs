@@ -25,6 +25,13 @@ pub struct UserData {
     pub full_name: String,
     /// The roles, by identifier, in record order.
     pub roles: Vec<Guid>,
+    /// Полный список строковых разделителей измеренного формата записи.
+    /// `Some` с пустым списком означает известное отсутствие привязок;
+    /// `None` означает неподдержанный или неполный формат.
+    pub data_separation: Option<Vec<(String, String)>>,
+    /// UUID выбранного интерфейсного языка измеренной записи.
+    /// `Some` с nil означает отсутствие выбора; `None` — неизвестный формат.
+    pub interface_language: Option<Guid>,
 }
 
 /// One user of the information base: the row of `v8users` with its
@@ -184,5 +191,81 @@ pub fn decode_user_data(blob: &[u8]) -> Result<UserData, MetadataError> {
         name: string_at(1),
         full_name: string_at(3),
         roles,
+        data_separation: decode_data_separation(fields),
+        interface_language: decode_interface_language(fields),
     })
 }
+
+// Позиция блока подтверждена нативным чтением собственных записей форм
+// 31/32/37/38. Счётчик необязательного поля и хвост проверяются отдельно:
+// простое совпадение длины не доказывает целостность записи.
+fn decode_data_separation(fields: &[Value]) -> Option<Vec<(String, String)>> {
+    let count = usize::try_from(fields.get(17)?.as_u32()?).ok()?;
+    let optional_count =
+        usize::try_from(fields.get(30usize.checked_add(count)?)?.as_u32()?).ok()?;
+    if optional_count > 1 {
+        return None;
+    }
+    let suffix_start = 31usize.checked_add(count)?.checked_add(optional_count)?;
+    if optional_count == 1 {
+        fields.get(31usize.checked_add(count)?)?.as_string()?;
+    }
+    let suffix = fields.get(suffix_start..)?;
+    match suffix {
+        [] => {}
+        [first, second, third, fourth, fifth, sixth]
+            if [first, third, fourth, fifth]
+                .iter()
+                .all(|value| value.as_u32() == Some(0))
+                && second.as_string().is_some()
+                && sixth.as_string().is_some() => {}
+        _ => return None,
+    }
+    if fields.get(5)?.as_list().is_none()
+        || [4, 6].iter().any(|index| {
+            fields[*index]
+                .as_scalar()
+                .and_then(|value| Guid::from_str(value).ok())
+                .is_none()
+        })
+    {
+        return None;
+    }
+    let mut bindings = Vec::new();
+    for field in fields.get(18..18usize.checked_add(count)?)? {
+        let pair = field.as_list()?;
+        let [name, value] = pair else { return None };
+        let name = name.as_string()?;
+        let value = value.as_string()?;
+        if name.is_empty() || bindings.iter().any(|(existing, _)| existing == name) {
+            return None;
+        }
+        bindings.push((name.to_owned(), value.to_owned()));
+    }
+    Some(bindings)
+}
+
+#[cfg(test)]
+#[path = "users_separation_tests.rs"]
+mod separation_tests;
+
+// Позиция языка измерена для собственных полных форм 31, 37 и 38
+// без разделителей. Проверка структуры ниже отвергает неизвестные хвосты.
+fn decode_interface_language(fields: &[Value]) -> Option<Guid> {
+    if !matches!(fields.len(), 31 | 37 | 38) || fields.get(17)?.as_u32()? != 0 {
+        return None;
+    }
+    decode_data_separation(fields)?;
+    let Value::Atom(language) = fields.get(6)? else {
+        return None;
+    };
+    Guid::from_str(language).ok()
+}
+
+#[cfg(test)]
+#[path = "users_language_tests.rs"]
+mod language_tests;
+
+#[cfg(test)]
+#[path = "users_legacy_language_tests.rs"]
+mod legacy_language_tests;

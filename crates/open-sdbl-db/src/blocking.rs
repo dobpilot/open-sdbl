@@ -59,6 +59,55 @@ pub(crate) trait SessionOperations: Sized {
         roles: &[Guid],
     ) -> Result<Vec<Guid>, DbError>;
 
+    async fn configuration_metadata_inputs(
+        &mut self,
+    ) -> Result<crate::ConfigurationMetadataInputs, DbError> {
+        Err(DbError::Data(
+            "test session does not support physical discovery".into(),
+        ))
+    }
+
+    async fn configuration_resource_names(&mut self) -> Result<Vec<String>, DbError> {
+        Err(DbError::Data(
+            "test session does not support physical discovery".into(),
+        ))
+    }
+
+    async fn configuration_extension_metadata(
+        &mut self,
+    ) -> Result<Vec<open_sdbl::metadata::ExtensionMetadata>, DbError> {
+        Err(DbError::Data(
+            "test session does not support physical discovery".into(),
+        ))
+    }
+
+    async fn configuration_bootstrap(
+        &mut self,
+        _selector: &mut dyn ConfigSelector,
+    ) -> Result<crate::ConfigurationBootstrap, DbError> {
+        Err(DbError::Data(
+            "test session does not support indexed reads".into(),
+        ))
+    }
+
+    async fn configuration_resources(
+        &mut self,
+        _names: &[&str],
+    ) -> Result<Vec<crate::pipeline::ConfigResource>, DbError> {
+        Err(DbError::Data(
+            "test session does not support indexed reads".into(),
+        ))
+    }
+
+    async fn extension_resources(
+        &mut self,
+        _keys: &[open_sdbl::metadata::ContentKey],
+    ) -> Result<Vec<crate::pipeline::ConfigResource>, DbError> {
+        Err(DbError::Data(
+            "test session does not support indexed reads".into(),
+        ))
+    }
+
     async fn configuration_selected(
         &mut self,
         progress: &mut dyn MetadataProgress,
@@ -110,6 +159,43 @@ impl SessionOperations for DatabaseSession {
         roles: &[Guid],
     ) -> Result<Vec<Guid>, DbError> {
         ensure_rights(store, self, roles).await
+    }
+
+    async fn configuration_metadata_inputs(
+        &mut self,
+    ) -> Result<crate::ConfigurationMetadataInputs, DbError> {
+        Self::configuration_metadata_inputs(self).await
+    }
+
+    async fn configuration_resource_names(&mut self) -> Result<Vec<String>, DbError> {
+        Self::configuration_resource_names(self).await
+    }
+
+    async fn configuration_extension_metadata(
+        &mut self,
+    ) -> Result<Vec<open_sdbl::metadata::ExtensionMetadata>, DbError> {
+        Self::configuration_extension_metadata(self).await
+    }
+
+    async fn configuration_bootstrap(
+        &mut self,
+        selector: &mut dyn ConfigSelector,
+    ) -> Result<crate::ConfigurationBootstrap, DbError> {
+        Self::configuration_bootstrap(self, selector).await
+    }
+
+    async fn configuration_resources(
+        &mut self,
+        names: &[&str],
+    ) -> Result<Vec<crate::pipeline::ConfigResource>, DbError> {
+        Self::configuration_resources(self, names).await
+    }
+
+    async fn extension_resources(
+        &mut self,
+        keys: &[open_sdbl::metadata::ContentKey],
+    ) -> Result<Vec<crate::pipeline::ConfigResource>, DbError> {
+        Self::extension_resources(self, keys).await
     }
 
     async fn configuration_selected(
@@ -212,6 +298,49 @@ impl<S: SessionOperations> BlockingDriver<S> {
     ) -> Result<Vec<Guid>, DbError> {
         let (runtime, session) = self.open()?;
         runtime.block_on(session.ensure_rights(store, roles))
+    }
+
+    pub(crate) fn configuration_metadata_inputs(
+        &mut self,
+    ) -> Result<crate::ConfigurationMetadataInputs, DbError> {
+        let (runtime, session) = self.open()?;
+        runtime.block_on(session.configuration_metadata_inputs())
+    }
+
+    pub(crate) fn configuration_resource_names(&mut self) -> Result<Vec<String>, DbError> {
+        let (runtime, session) = self.open()?;
+        runtime.block_on(session.configuration_resource_names())
+    }
+
+    pub(crate) fn configuration_extension_metadata(
+        &mut self,
+    ) -> Result<Vec<open_sdbl::metadata::ExtensionMetadata>, DbError> {
+        let (runtime, session) = self.open()?;
+        runtime.block_on(session.configuration_extension_metadata())
+    }
+
+    pub(crate) fn configuration_bootstrap(
+        &mut self,
+        selector: &mut dyn ConfigSelector,
+    ) -> Result<crate::ConfigurationBootstrap, DbError> {
+        let (runtime, session) = self.open()?;
+        runtime.block_on(session.configuration_bootstrap(selector))
+    }
+
+    pub(crate) fn configuration_resources(
+        &mut self,
+        names: &[&str],
+    ) -> Result<Vec<crate::pipeline::ConfigResource>, DbError> {
+        let (runtime, session) = self.open()?;
+        runtime.block_on(session.configuration_resources(names))
+    }
+
+    pub(crate) fn extension_resources(
+        &mut self,
+        keys: &[open_sdbl::metadata::ContentKey],
+    ) -> Result<Vec<crate::pipeline::ConfigResource>, DbError> {
+        let (runtime, session) = self.open()?;
+        runtime.block_on(session.extension_resources(keys))
     }
 
     pub(crate) fn configuration_selected(
@@ -334,6 +463,42 @@ impl BlockingDatabaseSession {
         BlockingDriver::connect(connection, credentials, limits).map(|driver| Self { driver })
     }
 
+    /// Выполняет [`DatabaseSession::begin_read_only_transaction`] на собственном соединении и runtime.
+    ///
+    /// # Errors
+    /// Возвращает ошибку асинхронной операции, [`DbError::SessionClosed`] или [`DbError::AsyncContext`].
+    pub fn begin_read_only_transaction(&mut self) -> Result<(), DbError> {
+        let (runtime, session) = self.driver.open()?;
+        runtime.block_on(session.begin_read_only_transaction())
+    }
+
+    /// Выполняет [`DatabaseSession::commit_transaction`] на собственном соединении и runtime.
+    ///
+    /// # Errors
+    /// Возвращает ошибку асинхронной операции, [`DbError::SessionClosed`] или [`DbError::AsyncContext`].
+    pub fn commit_transaction(&mut self) -> Result<(), DbError> {
+        let (runtime, session) = self.driver.open()?;
+        runtime.block_on(session.commit_transaction())
+    }
+
+    /// Выполняет [`DatabaseSession::rollback_transaction`] на собственном соединении и runtime.
+    ///
+    /// # Errors
+    /// Возвращает ошибку асинхронной операции, [`DbError::SessionClosed`] или [`DbError::AsyncContext`].
+    pub fn rollback_transaction(&mut self) -> Result<(), DbError> {
+        let (runtime, session) = self.driver.open()?;
+        runtime.block_on(session.rollback_transaction())
+    }
+
+    /// Выполняет [`DatabaseSession::transaction_active`] на собственном соединении и runtime.
+    ///
+    /// # Errors
+    /// Возвращает ошибку асинхронной операции, [`DbError::SessionClosed`] или [`DbError::AsyncContext`].
+    pub fn transaction_active(&mut self) -> Result<bool, DbError> {
+        let (runtime, session) = self.driver.open()?;
+        runtime.block_on(session.transaction_active())
+    }
+
     /// Reads the whole configuration of the base, as
     /// [`DatabaseSession::configuration`] does.
     ///
@@ -376,6 +541,73 @@ impl BlockingDatabaseSession {
     ///
     /// # Errors
     ///
+    /// Синхронно выполняет [`DatabaseSession::configuration_metadata_inputs`] на принадлежащем соединении.
+    ///
+    /// # Errors
+    /// Возвращает `SessionClosed` после закрытия, `AsyncContext` внутри runtime
+    /// либо ошибку соответствующего асинхронного обнаружения.
+    pub fn configuration_metadata_inputs(
+        &mut self,
+    ) -> Result<crate::ConfigurationMetadataInputs, DbError> {
+        self.driver.configuration_metadata_inputs()
+    }
+
+    /// Синхронно выполняет [`DatabaseSession::configuration_resource_names`] на принадлежащем соединении.
+    ///
+    /// # Errors
+    /// Возвращает `SessionClosed` после закрытия, `AsyncContext` внутри runtime
+    /// либо ошибку соответствующего асинхронного обнаружения.
+    pub fn configuration_resource_names(&mut self) -> Result<Vec<String>, DbError> {
+        self.driver.configuration_resource_names()
+    }
+
+    /// Читает физические структуры расширений без `Config` и `ConfigCAS`.
+    /// Результат ограничен существующими бюджетами хранения и распаковки.
+    ///
+    /// # Errors
+    /// Возвращает ошибку сеанса, запроса, лимита или декодирования структуры.
+    pub fn configuration_extension_metadata(
+        &mut self,
+    ) -> Result<Vec<open_sdbl::metadata::ExtensionMetadata>, DbError> {
+        self.driver.configuration_extension_metadata()
+    }
+
+    /// Синхронно выполняет [`DatabaseSession::configuration_bootstrap`] на принадлежащем соединении.
+    ///
+    /// # Errors
+    /// Возвращает `SessionClosed` после закрытия, `AsyncContext` внутри runtime
+    /// или ошибку соответствующего асинхронного чтения.
+    pub fn configuration_bootstrap(
+        &mut self,
+        selector: &mut dyn ConfigSelector,
+    ) -> Result<crate::ConfigurationBootstrap, DbError> {
+        self.driver.configuration_bootstrap(selector)
+    }
+
+    /// Синхронно выполняет [`DatabaseSession::configuration_resources`] на принадлежащем соединении.
+    ///
+    /// # Errors
+    /// Возвращает `SessionClosed` после закрытия, `AsyncContext` внутри runtime
+    /// или ошибку соответствующего асинхронного чтения.
+    pub fn configuration_resources(
+        &mut self,
+        names: &[&str],
+    ) -> Result<Vec<crate::pipeline::ConfigResource>, DbError> {
+        self.driver.configuration_resources(names)
+    }
+
+    /// Синхронно выполняет [`DatabaseSession::extension_resources`] на принадлежащем соединении.
+    ///
+    /// # Errors
+    /// Возвращает `SessionClosed` после закрытия, `AsyncContext` внутри runtime
+    /// или ошибку соответствующего асинхронного чтения.
+    pub fn extension_resources(
+        &mut self,
+        keys: &[open_sdbl::metadata::ContentKey],
+    ) -> Result<Vec<crate::pipeline::ConfigResource>, DbError> {
+        self.driver.extension_resources(keys)
+    }
+
     /// Answers what [`DatabaseSession::configuration_selected`] answers,
     /// [`DbError::SessionClosed`] or [`DbError::AsyncContext`].
     pub fn configuration_selected(
@@ -467,3 +699,11 @@ impl fmt::Debug for BlockingDatabaseSession {
             .finish()
     }
 }
+
+#[cfg(test)]
+#[path = "tests/indexed_blocking.rs"]
+mod indexed_tests;
+
+#[cfg(test)]
+#[path = "tests/metadata_inputs_blocking.rs"]
+mod metadata_inputs_tests;

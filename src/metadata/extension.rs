@@ -4,7 +4,7 @@ use super::config::ConfigDescriptor;
 use super::db_names::{DbNameEntry, DbNames};
 use super::schema::SchemaStorage;
 use super::value::{Value, parse_serialized, parse_serialized_sequence};
-use super::{ExtensionMetadata, Guid, MetadataError, MetadataErrorKind, inflate_raw_deflate};
+use super::{ExtensionMetadata, Guid, MetadataError, MetadataErrorKind};
 
 /// The decoded extension restructure: recognized fields plus malformed
 /// records that resemble a field declaration but could not be interpreted.
@@ -37,13 +37,25 @@ pub struct ExtensionFieldRestructure {
 /// `<guid>,{...}` pair, optionally raw-DEFLATE compressed and optionally
 /// carrying a UTF-8 byte-order mark. Each extension attribute appears as a
 /// `{<guid>,"Fld<N>","<type>","<name>",...}` record anywhere in the tree.
+/// The decoded resource is limited to 256 MiB, as with the default DEFLATE decoder.
 ///
 /// # Errors
 ///
 /// Returns [`MetadataError`] when the resource cannot be decoded as the
-/// brace-serialized restructure format.
+/// brace-serialized restructure format or exceeds the decoded-byte limit.
 pub fn parse_extension_restructure(resource: &[u8]) -> Result<ExtensionRestructure, MetadataError> {
-    let text = decode_restructure_text(resource)?;
+    parse_extension_restructure_bounded(resource, super::deflate::DEFAULT_OUTPUT_LIMIT)
+}
+
+/// Декодирует структуру расширения с пределом распакованных байтов.
+///
+/// # Errors
+/// Возвращает ошибку распаковки, превышения предела или сериализации.
+pub fn parse_extension_restructure_bounded(
+    resource: &[u8],
+    decoded_limit: usize,
+) -> Result<ExtensionRestructure, MetadataError> {
+    let text = decode_restructure_text(resource, decoded_limit)?;
     let wrapped = format!("{{{}}}", text.trim_start_matches('\u{feff}'));
     let value = parse_serialized(wrapped.as_bytes())?;
     let mut restructure = ExtensionRestructure::default();
@@ -106,6 +118,10 @@ pub fn extension_metadata_from_restructure(
             data_processor_attributes: None,
             data_processor_tabular_sections: None,
             data_processor_object_type: None,
+            report_attributes: None,
+            exchange_plan_attributes: None,
+            report_tabular_sections: None,
+            report_object_type: None,
             business_process_tabular_sections: None,
             business_process_standard_fill_checking: None,
             business_process_object_type: None,
@@ -154,14 +170,20 @@ pub fn extension_metadata_from_restructure(
     }
 }
 
-fn decode_restructure_text(resource: &[u8]) -> Result<String, MetadataError> {
+fn decode_restructure_text(resource: &[u8], decoded_limit: usize) -> Result<String, MetadataError> {
     let stripped = resource.strip_prefix(b"\xef\xbb\xbf").unwrap_or(resource);
     if stripped.first() == Some(&b'{') || stripped.iter().take(8).all(u8::is_ascii_graphic) {
         if let Ok(text) = std::str::from_utf8(stripped) {
+            if stripped.len() > decoded_limit {
+                return Err(MetadataError::new(
+                    MetadataErrorKind::Serialization,
+                    "extension restructure exceeds decoded byte limit",
+                ));
+            }
             return Ok(text.to_owned());
         }
     }
-    let inflated = inflate_raw_deflate(resource)?;
+    let inflated = super::inflate_raw_deflate_bounded(resource, decoded_limit)?;
     let stripped = inflated
         .strip_prefix(b"\xef\xbb\xbf")
         .unwrap_or(&inflated)
@@ -238,6 +260,50 @@ fn reference_target(sql_type: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn enforces_explicit_limits_for_plaintext_and_compressed_restructures() {
+        let text = b"{root,{}}";
+        // One final uncompressed DEFLATE block carrying the same valid text.
+        let len = u16::try_from(text.len()).unwrap();
+        let mut compressed = vec![1];
+        compressed.extend_from_slice(&len.to_le_bytes());
+        compressed.extend_from_slice(&(!len).to_le_bytes());
+        compressed.extend_from_slice(text);
+        for resource in [text.as_slice(), compressed.as_slice()] {
+            assert!(parse_extension_restructure_bounded(resource, text.len()).is_ok());
+            let error = parse_extension_restructure_bounded(resource, text.len() - 1).unwrap_err();
+            assert!(error.message().contains("limit"), "{error}");
+        }
+    }
+
+    #[test]
+    fn default_decoder_rejects_compressed_output_above_256_mib() {
+        // A fixed-Huffman block: one space followed by distance-one matches.
+        // Its encoded size is under 2 MiB; only the decoder allocates the
+        // bounded output. No large fixture or compression dependency is needed.
+        let mut compressed = Vec::new();
+        let mut bit_count = 0;
+        let mut push = |bits: u16, count: usize| {
+            for bit in 0..count {
+                if bit_count % 8 == 0 {
+                    compressed.push(0);
+                }
+                *compressed.last_mut().unwrap() |= (((bits >> bit) & 1) as u8) << (bit_count % 8);
+                bit_count += 1;
+            }
+        };
+        push(3, 3); // final fixed-Huffman block
+        push(0b00001010, 8); // literal space: reversed fixed code 0x50
+        for _ in 0..=super::super::deflate::DEFAULT_OUTPUT_LIMIT / 258 {
+            push(0b10100011, 8); // symbol 285: length 258
+            push(0, 5); // distance 1
+        }
+        push(0, 7); // end of block
+        let error = parse_extension_restructure(&compressed).unwrap_err();
+        assert_eq!(error.kind(), MetadataErrorKind::Deflate);
+        assert!(error.message().contains("268435456 byte limit"), "{error}");
+    }
 
     fn fixture() -> Vec<u8> {
         std::fs::read("tests/fixtures/service_tables/extension_attrs/restruct_reference14574.txt")

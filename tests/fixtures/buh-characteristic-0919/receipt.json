@@ -1,0 +1,13 @@
+{
+  "database": "buh",
+  "owner_id": "1055d15b-8cb5-4ff0-a526-7fd20a08a96c",
+  "platform_version": "8.3.27.2342",
+  "sdk_version": "0.9.18",
+  "xml_attribute_count": 28,
+  "sdk_owner_characteristic_attributes": null,
+  "reached_attribute_id": "73cc5b8b-4cba-4988-b2c6-d974dde9723d",
+  "reached_attribute_name": "ВидСвойства",
+  "observed_rows": "28 rows, outer wrapper tag2/length6, inner body tag27/length23",
+  "original_startup_exit": 1,
+  "original_startup_seconds": 221.1
+}

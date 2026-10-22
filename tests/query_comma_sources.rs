@@ -36,7 +36,7 @@ fn renders_comma_sources_as_a_cross_join_chain() {
     let compiled = postgres(&snapshot, query);
     assert_contains(
         &compiled.sql,
-        "FROM \"_reference53\" AS \"p\" CROSS JOIN \"_reference57\" AS \"o\" WHERE (\"p\".\"_code\" = \"o\".\"_code\")",
+        "FROM \"_reference53\" AS \"p\" CROSS JOIN \"_reference57\" AS \"o\" WHERE ((rtrim(CAST(\"p\".\"_code\" AS text), ' ') COLLATE \"C\") = (rtrim(CAST(\"o\".\"_code\" AS text), ' ') COLLATE \"C\"))",
     );
     assert_eq!(compiled.columns.len(), 2);
     let mssql = compile(&snapshot, MsSqlBackend::new(0).unwrap(), query).unwrap();

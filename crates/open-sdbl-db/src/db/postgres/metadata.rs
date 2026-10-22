@@ -154,6 +154,102 @@ impl MetadataSource for PostgresMetadataSource<'_> {
         Ok(StorageLayout::from_flags(flags))
     }
 
+    async fn read_indexed_resources(
+        &mut self,
+        layout: &StorageLayout,
+        names: &[String],
+        extension: bool,
+        limits: Limits,
+    ) -> Result<Vec<ConfigResource>, DbError> {
+        if names.is_empty() {
+            return Ok(Vec::new());
+        }
+        let base = if extension {
+            PostgresMetadataQueries::extension_resources(layout)
+                .ok_or_else(|| DbError::Data("ConfigCAS resource store is unavailable".into()))?
+        } else {
+            PostgresMetadataQueries::config_all(layout)
+        };
+        let query = crate::indexed::sql(base, names, false);
+        let totals_query = crate::indexed::totals_sql(base, names, false);
+        let totals = query_timeout(limits, "Postgres indexed resource totals", async {
+            self.transaction()?
+                .query_one(&totals_query, &[])
+                .await
+                .map_err(DbError::from)
+        })
+        .await?;
+        check_retention_totals(
+            limits,
+            unsigned_progress_total(totals.try_get(0)?, "resource count")?,
+            unsigned_progress_total(totals.try_get(1)?, "compressed byte count")?,
+        )?;
+        query_timeout(limits, "Postgres indexed resources", async {
+            let parameters = std::iter::empty::<&(dyn ToSql + Sync)>();
+            let rows = self.transaction()?.query_raw(&query, parameters).await?;
+            let parts = rows.map(|row| {
+                let row = row?;
+                Ok((
+                    row.try_get::<_, String>(0)?,
+                    row.try_get::<_, i32>(1)?,
+                    row.try_get::<_, Vec<u8>>(2)?,
+                ))
+            });
+            let mut held = 0;
+            let parts = parts.map(|part| crate::indexed::bound_part(part, &mut held, limits));
+            let resources =
+                collect_bounded_resources(assemble_parts(parts), limits, &mut NoProgress).await?;
+            crate::indexed::ordered(names, resources)
+        })
+        .await
+    }
+
+    async fn read_configuration_resource_names(
+        &mut self,
+        _layout: &StorageLayout,
+    ) -> Result<Vec<String>, DbError> {
+        let limits = self.limits;
+        query_timeout(limits, "Postgres Config filenames", async {
+            let parameters = std::iter::empty::<&(dyn ToSql + Sync)>();
+            let rows = self
+                .transaction()?
+                .query_raw(crate::metadata_inputs::names_sql(false), parameters)
+                .await?;
+            crate::metadata_inputs::collect_names(
+                rows.map(|row| {
+                    let row = row?;
+                    row.try_get::<_, String>(0).map_err(DbError::from)
+                }),
+                limits,
+            )
+            .await
+        })
+        .await
+    }
+
+    async fn read_bounded_extension_restructures(
+        &mut self,
+        layout: &StorageLayout,
+    ) -> Result<Vec<Vec<u8>>, DbError> {
+        let Some(query) = PostgresMetadataQueries::extension_restructure(layout) else {
+            return Ok(Vec::new());
+        };
+        let limits = self.limits;
+        query_timeout(limits, "Postgres extension structures", async {
+            let parameters = std::iter::empty::<&(dyn ToSql + Sync)>();
+            let rows = self.transaction()?.query_raw(query, parameters).await?;
+            crate::metadata_inputs::collect_restructures(
+                rows.map(|row| {
+                    let row = row?;
+                    row.try_get::<_, Vec<u8>>(0).map_err(DbError::from)
+                }),
+                limits,
+            )
+            .await
+        })
+        .await
+    }
+
     async fn read_db_names(
         &mut self,
         layout: &StorageLayout,
@@ -539,7 +635,7 @@ pub(super) fn decode_catalog_rows(rows: Vec<Row>) -> Result<Vec<LiveTable>, DbEr
 
 impl PostgresSession {
     pub(crate) fn is_closed(&self) -> bool {
-        self.client.is_closed()
+        self.client.is_closed() || self.transaction_poisoned || self.transaction_operation_pending
     }
 
     pub(crate) fn cancellation(&self) -> tokio_postgres::CancelToken {

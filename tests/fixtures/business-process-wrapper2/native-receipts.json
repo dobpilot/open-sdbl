@@ -1,0 +1,49 @@
+[
+  {
+    "label": "create-own-ib",
+    "pid": 4159,
+    "command": [
+      "/opt/1cv8/x86_64/8.3.27.2342/ibcmd",
+      "infobase",
+      "create",
+      "--db-path=/home/kan/\u0414\u043e\u043a\u0443\u043c\u0435\u043d\u0442\u044b/develop/open-bsl/target/diagnostics/buh-native-config-1015/native-ib",
+      "--create-database"
+    ],
+    "exit": 0,
+    "seconds": 2.02
+  },
+  {
+    "label": "load-complete-cf",
+    "pid": 4422,
+    "command": [
+      "/opt/1cv8/x86_64/8.3.27.2342/1cv8",
+      "DESIGNER",
+      "/F",
+      "/home/kan/\u0414\u043e\u043a\u0443\u043c\u0435\u043d\u0442\u044b/develop/open-bsl/target/diagnostics/buh-native-config-1015/native-ib",
+      "/LoadCfg",
+      "/home/kan/\u0414\u043e\u043a\u0443\u043c\u0435\u043d\u0442\u044b/develop/open-bsl/target/diagnostics/buh-native-config-1015/original-config.cf",
+      "/DisableStartupDialogs",
+      "/Out",
+      "/home/kan/\u0414\u043e\u043a\u0443\u043c\u0435\u043d\u0442\u044b/develop/open-bsl/target/diagnostics/buh-native-config-1015/load-complete-cf.log"
+    ],
+    "exit": 0,
+    "seconds": 51.68
+  },
+  {
+    "label": "dump-complete-xml",
+    "pid": 5139,
+    "command": [
+      "/opt/1cv8/x86_64/8.3.27.2342/1cv8",
+      "DESIGNER",
+      "/F",
+      "/home/kan/\u0414\u043e\u043a\u0443\u043c\u0435\u043d\u0442\u044b/develop/open-bsl/target/diagnostics/buh-native-config-1015/native-ib",
+      "/DumpConfigToFiles",
+      "/home/kan/\u0414\u043e\u043a\u0443\u043c\u0435\u043d\u0442\u044b/develop/open-bsl/target/diagnostics/buh-native-config-1015/native-xml",
+      "/DisableStartupDialogs",
+      "/Out",
+      "/home/kan/\u0414\u043e\u043a\u0443\u043c\u0435\u043d\u0442\u044b/develop/open-bsl/target/diagnostics/buh-native-config-1015/dump-complete-xml.log"
+    ],
+    "exit": 0,
+    "seconds": 217.06
+  }
+]

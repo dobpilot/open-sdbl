@@ -1,0 +1,164 @@
+{
+  "status": "native-measured",
+  "pairs": [
+    {
+      "case": "date.before",
+      "manager": "0",
+      "query": "0"
+    },
+    {
+      "case": "date.raw",
+      "manager": "0",
+      "query": "0"
+    },
+    {
+      "case": "date.default",
+      "manager": "111",
+      "query": "111"
+    },
+    {
+      "case": "date.after",
+      "manager": "111",
+      "query": "111"
+    },
+    {
+      "case": "date.include",
+      "manager": "111",
+      "query": "111"
+    },
+    {
+      "case": "date.exclude",
+      "manager": "0",
+      "query": "0"
+    },
+    {
+      "case": "point.0.raw",
+      "manager": "0",
+      "query": "0"
+    },
+    {
+      "case": "point.0.default",
+      "manager": "1",
+      "query": "1"
+    },
+    {
+      "case": "point.0.include",
+      "manager": "1",
+      "query": "1"
+    },
+    {
+      "case": "point.0.exclude",
+      "manager": "0",
+      "query": "0"
+    },
+    {
+      "case": "point.1.raw",
+      "manager": "1",
+      "query": "1"
+    },
+    {
+      "case": "point.1.default",
+      "manager": "11",
+      "query": "11"
+    },
+    {
+      "case": "point.1.include",
+      "manager": "11",
+      "query": "11"
+    },
+    {
+      "case": "point.1.exclude",
+      "manager": "1",
+      "query": "1"
+    },
+    {
+      "case": "point.2.raw",
+      "manager": "11",
+      "query": "11"
+    },
+    {
+      "case": "point.2.default",
+      "manager": "111",
+      "query": "111"
+    },
+    {
+      "case": "point.2.include",
+      "manager": "111",
+      "query": "111"
+    },
+    {
+      "case": "point.2.exclude",
+      "manager": "11",
+      "query": "11"
+    },
+    {
+      "case": "empty.0.raw",
+      "manager": "0",
+      "query": "0"
+    },
+    {
+      "case": "empty.0.default",
+      "manager": "111",
+      "query": "111"
+    },
+    {
+      "case": "empty.0.include",
+      "manager": "111",
+      "query": "111"
+    },
+    {
+      "case": "empty.0.exclude",
+      "manager": "0",
+      "query": "0"
+    },
+    {
+      "case": "empty.1.raw",
+      "manager": "0",
+      "query": "0"
+    },
+    {
+      "case": "empty.1.default",
+      "manager": "111",
+      "query": "111"
+    },
+    {
+      "case": "empty.1.include",
+      "manager": "111",
+      "query": "111"
+    },
+    {
+      "case": "empty.1.exclude",
+      "manager": "0",
+      "query": "0"
+    },
+    {
+      "case": "empty.2.raw",
+      "manager": "0",
+      "query": "0"
+    },
+    {
+      "case": "empty.2.default",
+      "manager": "111",
+      "query": "111"
+    },
+    {
+      "case": "empty.2.include",
+      "manager": "111",
+      "query": "111"
+    },
+    {
+      "case": "empty.2.exclude",
+      "manager": "0",
+      "query": "0"
+    }
+  ],
+  "matched_pairs": 30,
+  "observations": 60,
+  "notes": [
+    "Point raw excludes own movement, Including includes it, Excluding excludes it.",
+    "Three documents same date, two same kind + one second kind, weights1/10/100.",
+    "Absent and typed-empty references distinct as values but all measured empty boundary forms act date-wise: Including includes all equal-second movements.",
+    "Only balance period supported by this evidence; no turnover or arbitrary metadata reference claims.",
+    "Default one-argument Boundary matches explicit Including for date, all three nonempty document moments, absent reference and both typed-empty references. This is balance-argument output, not extrapolation to properties/Compare/expression positions."
+  ]
+}

@@ -1,0 +1,30 @@
+   Compiling system-settings-codec-control v0.0.0 (/tmp/open-bsl-system-settings-codec-1015)
+    Finished `dev` profile [unoptimized] target(s) in 0.10s
+     Running `target/system-settings-codec-1015/debug/system-settings-codec-control '/home/kan/Документы/develop/open-bsl/docs/research/fixtures/system-settings-native-1015'`
+system.scalar.0={"N",29}
+system.scalar.2={"N",31}
+system.scalar.4={"N",37}
+system.storage.1={"#",4238019d-7e49-4fc9-91db-b6b951d5cf8e,
+{1,
+{
+{"S","Probe"},
+{"N",73}
+}
+}
+}
+system.storage.3={"#",4238019d-7e49-4fc9-91db-b6b951d5cf8e,
+{1,
+{
+{"S","Probe"},
+{"N",73}
+}
+}
+}
+system.storage.5={"#",4238019d-7e49-4fc9-91db-b6b951d5cf8e,
+{1,
+{
+{"S","Probe"},
+{"N",73}
+}
+}
+}

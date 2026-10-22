@@ -208,7 +208,7 @@ fn filters_a_plain_source_by_the_session_value_before_the_query_filter() {
     );
     assert_eq!(
         sql,
-        "SELECT \"Т\".\"_idrref\" AS \"Ссылка\" FROM \"_reference53\" AS \"Т\" WHERE \"Т\".\"_fld56\" = 7 AND \"Т\".\"_fld57\" = 7 AND (\"Т\".\"_fld54\" = 'x')"
+        "SELECT \"Т\".\"_idrref\" AS \"Ссылка\" FROM \"_reference53\" AS \"Т\" WHERE \"Т\".\"_fld56\" = 7 AND \"Т\".\"_fld57\" = 7 AND ((rtrim(CAST(\"Т\".\"_fld54\" AS text), ' ') COLLATE \"C\") = (rtrim(CAST('x' AS text), ' ') COLLATE \"C\"))"
     );
     let mssql = compile(
         &snapshot,
@@ -260,7 +260,10 @@ fn a_shared_separator_defaults_to_the_empty_value_and_falls_back_to_its_name() {
         postgres_sql(
             &snapshot,
             source,
-            &session(&[("ИспользованиеРазделителя", ParameterValue::Boolean(true))])
+            &session(&[
+                ("ИспользованиеРазделителя", ParameterValue::Boolean(true)),
+                ("ЗначениеРазделителя", number(0)),
+            ])
         ),
         "SELECT \"Т\".\"_idrref\" AS \"Ссылка\" FROM \"_reference53\" AS \"Т\" WHERE \"Т\".\"_fld56\" = 0 AND \"Т\".\"_fld57\" = 0"
     );
@@ -317,7 +320,7 @@ fn places_predicates_by_join_shape() {
     );
     assert_eq!(
         left,
-        "SELECT \"Т\".\"_idrref\" AS \"Ссылка\", \"П\".\"_fld54\"::text AS \"Артикул\", \"__left_ref1\".\"_fld54\"::text AS \"А\" FROM \"_reference53\" AS \"Т\" LEFT JOIN \"_reference53\" AS \"П\" ON \"Т\".\"_fld55rref\" = \"П\".\"_idrref\" AND \"П\".\"_fld56\" = 7 AND \"П\".\"_fld57\" = 7 LEFT JOIN \"_reference53\" AS \"__left_ref1\" ON \"Т\".\"_fld55rref\" = \"__left_ref1\".\"_idrref\" AND \"__left_ref1\".\"_fld56\" = 7 AND \"__left_ref1\".\"_fld57\" = 7 WHERE \"Т\".\"_fld56\" = 7 AND \"Т\".\"_fld57\" = 7 AND (\"Т\".\"_fld54\" = 'x')"
+        "SELECT \"Т\".\"_idrref\" AS \"Ссылка\", \"П\".\"_fld54\"::text AS \"Артикул\", \"__left_ref1\".\"_fld54\"::text AS \"А\" FROM \"_reference53\" AS \"Т\" LEFT JOIN \"_reference53\" AS \"П\" ON \"Т\".\"_fld55rref\" = \"П\".\"_idrref\" AND \"П\".\"_fld56\" = 7 AND \"П\".\"_fld57\" = 7 LEFT JOIN \"_reference53\" AS \"__left_ref1\" ON \"Т\".\"_fld55rref\" = \"__left_ref1\".\"_idrref\" AND \"__left_ref1\".\"_fld56\" = 7 AND \"__left_ref1\".\"_fld57\" = 7 WHERE \"Т\".\"_fld56\" = 7 AND \"Т\".\"_fld57\" = 7 AND ((rtrim(CAST(\"Т\".\"_fld54\" AS text), ' ') COLLATE \"C\") = (rtrim(CAST('x' AS text), ' ') COLLATE \"C\"))"
     );
 
     let right = postgres_sql(

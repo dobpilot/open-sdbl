@@ -20,6 +20,11 @@ pub enum DbError {
     Metadata(MetadataError),
     /// Data a database returned that does not match what was expected.
     Data(String),
+    /// Для безопасного разрешения выбранных объектов не приобретены описатели.
+    ConfigurationDescriptorsMissing {
+        /// GUID недостающих описателей в детерминированном порядке, без повторов.
+        objects: Vec<open_sdbl::metadata::Guid>,
+    },
     /// A restriction needs a session parameter whose value is absent.
     MissingSessionParameter {
         /// The parameter name as written in the restriction.
@@ -132,6 +137,16 @@ impl fmt::Display for DbError {
                 "{operation} timed out after {:.3} seconds",
                 duration.as_secs_f64()
             ),
+            Self::ConfigurationDescriptorsMissing { objects } => {
+                write!(formatter, "configuration descriptors are missing: ")?;
+                for (index, guid) in objects.iter().enumerate() {
+                    if index != 0 {
+                        formatter.write_str(", ")?;
+                    }
+                    guid.fmt(formatter)?;
+                }
+                Ok(())
+            }
             Self::Data(message) | Self::Database(message) => formatter.write_str(message),
             Self::MissingSessionParameter { name, context } => {
                 write!(
@@ -152,7 +167,8 @@ impl std::error::Error for DbError {
             Self::Io(_, error) => Some(error),
             Self::Metadata(error) => Some(error),
             Self::MsSql { source, .. } => Some(source),
-            Self::Data(_)
+            Self::ConfigurationDescriptorsMissing { .. }
+            | Self::Data(_)
             | Self::MissingSessionParameter { .. }
             | Self::Database(_)
             | Self::DatabaseTimeout { .. }

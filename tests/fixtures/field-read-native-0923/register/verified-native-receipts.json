@@ -1,0 +1,45 @@
+{
+  "platform": "8.3.27.2342",
+  "profiles": [
+    {
+      "path": "profiles/ReadOwner.platform.txt",
+      "sha256": "f4c423d7c1016bb2a109d3538ddd96a7a3aaaa6a353dd64b74502ec17d86dea2",
+      "read_allowed": true
+    },
+    {
+      "path": "profiles/NoRead.platform.txt",
+      "sha256": "17ceaa153c5a5e60543381f71a35db58a07c81784a038adba4039650a61bd774",
+      "read_allowed": false
+    },
+    {
+      "path": "profiles/DefaultsOnly.platform.txt",
+      "sha256": "28b116e320c4944e30cff828c6c54f669b494ccef9692f0da2c680de9442250f",
+      "read_allowed": false
+    },
+    {
+      "path": "profiles/ReadDefaults.platform.txt",
+      "sha256": "29da14178af0853155fb8ab24571b7474ccbbf783bf93684a8e6da4066e3eb4a",
+      "read_allowed": true
+    },
+    {
+      "path": "day-profiles/ReadOwner.platform.txt",
+      "sha256": "7700033cfc91a898f9f862920ceacbde3dab30f0301e5ab9dc6ee71f9e84e5d4",
+      "read_allowed": true
+    },
+    {
+      "path": "day-profiles/NoRead.platform.txt",
+      "sha256": "a94c04f10e177c1ea7ae32f50b7ead76e26e8b965174deaff5dc8779ce377905",
+      "read_allowed": false
+    },
+    {
+      "path": "day-profiles/DefaultsOnly.platform.txt",
+      "sha256": "16a033d7b6ebd21447d9c034f896f3fc63b6fdee9c2c48cb9f853f175fcb2078",
+      "read_allowed": false
+    },
+    {
+      "path": "day-profiles/ReadDefaults.platform.txt",
+      "sha256": "c4225eaf8f2fbc679b734fa2bb4371a2db7a7b79dcf2453c9278afd005ccb5fc",
+      "read_allowed": true
+    }
+  ]
+}

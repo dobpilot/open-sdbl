@@ -189,6 +189,8 @@ pub(super) struct PresentationCompilation<'plans> {
     pub(super) field_usage: Vec<FieldUse>,
     /// Whether statements with `ИТОГИ` append the `__level` column.
     pub(super) totals_level: bool,
+    /// Проверка существования запрещённого остатка сохраняет все измерения.
+    pub(super) forbidden_balance_probe: bool,
 }
 
 impl<'plans> PresentationCompilation<'plans> {
@@ -212,6 +214,7 @@ impl<'plans> PresentationCompilation<'plans> {
             used_decisions: BTreeSet::new(),
             field_usage: Vec::new(),
             totals_level: false,
+            forbidden_balance_probe: false,
         }
     }
 
@@ -252,6 +255,7 @@ impl<'plans> PresentationCompilation<'plans> {
             used_decisions: BTreeSet::new(),
             field_usage: Vec::new(),
             totals_level: false,
+            forbidden_balance_probe: false,
         }
     }
 
@@ -522,6 +526,12 @@ pub(super) fn compile_query_ast_with_outer(
         // own, filtered by the owners this statement names.
         let sections = render_sections(&branch, dialect, ast)?;
         let compiled = CompiledQuery {
+            forbidden_row_column: None,
+            logical_projection: if ast.totals.is_none() && branch.sections.is_empty() {
+                branch.logical_projection
+            } else {
+                None
+            },
             sql: branch.sql,
             columns: branch.columns,
             deferred_presentations: branch.deferred_presentations,
@@ -622,7 +632,14 @@ pub(super) fn compile_query_ast_with_outer(
                 .join(", "),
         );
     }
+    let logical_projection = super::projection::union_projection(&branches);
     let compiled = CompiledQuery {
+        forbidden_row_column: None,
+        logical_projection: if ast.totals.is_none() {
+            logical_projection
+        } else {
+            None
+        },
         sql,
         columns,
         deferred_presentations: first.deferred_presentations.clone(),

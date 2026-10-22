@@ -55,7 +55,7 @@ fn descends_from_the_seeds_of_a_nested_query() {
     // down the parent column of the target catalog.
     assert_contains(
         &compiled.sql,
-        "SELECT \"__seeds\".\"Ссылка\" AS \"__node\" FROM (SELECT \"Г\".\"_idrref\" AS \"Ссылка\" FROM \"_reference53\" AS \"Г\" WHERE (\"Г\".\"_code\" = 'A')) AS \"__seeds\" UNION ALL SELECT \"__catalog\".\"_idrref\" FROM \"_reference53\" AS \"__catalog\" JOIN \"__hier_1\" ON \"__catalog\".\"_parentidrref\" = \"__hier_1\".\"__node\"",
+        "SELECT \"__seeds\".\"Ссылка\" AS \"__node\" FROM (SELECT \"Г\".\"_idrref\" AS \"Ссылка\" FROM \"_reference53\" AS \"Г\" WHERE ((rtrim(CAST(\"Г\".\"_code\" AS text), ' ') COLLATE \"C\") = (rtrim(CAST('A' AS text), ' ') COLLATE \"C\"))) AS \"__seeds\" UNION ALL SELECT \"__catalog\".\"_idrref\" FROM \"_reference53\" AS \"__catalog\" JOIN \"__hier_1\" ON \"__catalog\".\"_parentidrref\" = \"__hier_1\".\"__node\"",
     );
     assert_contains(
         &compiled.sql,

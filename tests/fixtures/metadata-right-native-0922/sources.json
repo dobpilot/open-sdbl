@@ -1,0 +1,262 @@
+[
+  {
+    "source": "standard-profiles/explicit-code-no-default-yes/RootDeny.rights.deflate",
+    "target": "standard-profiles/explicit-code-no-default-yes/RootDeny.rights.deflate",
+    "sha256": "369daaf070efd31b752024ae6dc7a2f3b5d2f4b4cf8ada2ad8516a7b5cb70e3c"
+  },
+  {
+    "source": "standard-profiles/independent-owner-no-code-yes/RootDeny.rights.deflate",
+    "target": "standard-profiles/independent-owner-no-code-yes/RootDeny.rights.deflate",
+    "sha256": "ed651c01960dd42874f7cf7cc5da9fa434f9daca19925cb997d9cd26ad611abe"
+  },
+  {
+    "source": "standard-profiles/missing-code-default-no/RootDeny.rights.deflate",
+    "target": "standard-profiles/missing-code-default-no/RootDeny.rights.deflate",
+    "sha256": "5185e2c65b56c3d70d1cebfe7b48548bbd9b9cd43d37fdfbedd38494410489af"
+  },
+  {
+    "source": "standard-profiles/missing-code-default-yes/RootDeny.rights.deflate",
+    "target": "standard-profiles/missing-code-default-yes/RootDeny.rights.deflate",
+    "sha256": "37e32ff77b02ae94b5923206b95cfb9002ed7b0e657529444af1f99cfbff1a13"
+  },
+  {
+    "source": "standard-profiles/owner-no-code-no/RootDeny.rights.deflate",
+    "target": "standard-profiles/owner-no-code-no/RootDeny.rights.deflate",
+    "sha256": "a332d62a255d3c783e16f9430bd2b78b9e14f9cdcdce1ca0901a47c076fdcf3d"
+  },
+  {
+    "source": "standard-profiles/owner-no-code-yes/RootDeny.rights.deflate",
+    "target": "standard-profiles/owner-no-code-yes/RootDeny.rights.deflate",
+    "sha256": "d65b61e2769eabfd3f4ea775cbeb308f3973f110818590405aa0c4f8928b65d1"
+  },
+  {
+    "source": "standard-profiles/owner-yes-code-no/RootDeny.rights.deflate",
+    "target": "standard-profiles/owner-yes-code-no/RootDeny.rights.deflate",
+    "sha256": "5185e2c65b56c3d70d1cebfe7b48548bbd9b9cd43d37fdfbedd38494410489af"
+  },
+  {
+    "source": "standard-profiles/owner-yes-code-yes/RootDeny.rights.deflate",
+    "target": "standard-profiles/owner-yes-code-yes/RootDeny.rights.deflate",
+    "sha256": "6145575778cf19867f3e6eaa4a4f525df5da17e89ee330c37c87cf77ad672df5"
+  },
+  {
+    "source": "standard-profiles/explicit-code-no-default-yes/deny.oracle",
+    "target": "standard-profiles/explicit-code-no-default-yes/deny.oracle",
+    "sha256": "e7b498aa693de3a9d41a3e602e68a3f8cd6a61c08e270d6fd519356d6232f29e"
+  },
+  {
+    "source": "standard-profiles/independent-owner-no-code-yes/deny.oracle",
+    "target": "standard-profiles/independent-owner-no-code-yes/deny.oracle",
+    "sha256": "1ed34671b2d63df79f8aa08c282c544fee82d943380bbbc913fe0657c2b4daf1"
+  },
+  {
+    "source": "standard-profiles/missing-code-default-no/deny.oracle",
+    "target": "standard-profiles/missing-code-default-no/deny.oracle",
+    "sha256": "c29793981b57d7ac6cd3260916e9961892fc533a7fd0bcaecad4d05924610956"
+  },
+  {
+    "source": "standard-profiles/missing-code-default-yes/deny.oracle",
+    "target": "standard-profiles/missing-code-default-yes/deny.oracle",
+    "sha256": "7c4b8b31aa055ef5e3682d92d5b43e94bbd032cffe72209925bbcccaf3530893"
+  },
+  {
+    "source": "standard-profiles/owner-no-code-no/deny.oracle",
+    "target": "standard-profiles/owner-no-code-no/deny.oracle",
+    "sha256": "8e7bd32b20436f31971576fd33d6b8696395a27e16fda24481931c1f669afb65"
+  },
+  {
+    "source": "standard-profiles/owner-no-code-yes/deny.oracle",
+    "target": "standard-profiles/owner-no-code-yes/deny.oracle",
+    "sha256": "8e7bd32b20436f31971576fd33d6b8696395a27e16fda24481931c1f669afb65"
+  },
+  {
+    "source": "standard-profiles/owner-yes-code-no/deny.oracle",
+    "target": "standard-profiles/owner-yes-code-no/deny.oracle",
+    "sha256": "c29793981b57d7ac6cd3260916e9961892fc533a7fd0bcaecad4d05924610956"
+  },
+  {
+    "source": "standard-profiles/owner-yes-code-yes/deny.oracle",
+    "target": "standard-profiles/owner-yes-code-yes/deny.oracle",
+    "sha256": "ed46f1c689ed3f417e639acd68883af6915c5dd361827605ff8468679fa219c2"
+  },
+  {
+    "source": "standard-profiles/explicit-code-no-default-yes/native.cf",
+    "target": "standard-profiles/explicit-code-no-default-yes/native.cf",
+    "sha256": "8be2490dd47385e6946a1d73560ed8376da71b65acaa049168e78f3885ee47bb"
+  },
+  {
+    "source": "standard-profiles/independent-owner-no-code-yes/native.cf",
+    "target": "standard-profiles/independent-owner-no-code-yes/native.cf",
+    "sha256": "731bf2cd10d4158f6156bbf1d7781b00928133d5b3880376b844007861a2f157"
+  },
+  {
+    "source": "standard-profiles/missing-code-default-no/native.cf",
+    "target": "standard-profiles/missing-code-default-no/native.cf",
+    "sha256": "6c12509c4b3e2288a0c3e71d7a21e6fe85c64ec873fed30f31f3cf78062dcbb8"
+  },
+  {
+    "source": "standard-profiles/missing-code-default-yes/native.cf",
+    "target": "standard-profiles/missing-code-default-yes/native.cf",
+    "sha256": "3c12e14cdb23001cd03939517eb3faf4e93ddf19660b6e40dbe5965d5b0cf93a"
+  },
+  {
+    "source": "standard-profiles/owner-no-code-no/native.cf",
+    "target": "standard-profiles/owner-no-code-no/native.cf",
+    "sha256": "ee9bff8047a94d172e3ad36e4c62fcbe9609636b5148c097122f8c2776e480a5"
+  },
+  {
+    "source": "standard-profiles/owner-no-code-yes/native.cf",
+    "target": "standard-profiles/owner-no-code-yes/native.cf",
+    "sha256": "b5cb3de87108004e59e4c4caab6da849501a127b1887d5f1cec6c4eba3443ebb"
+  },
+  {
+    "source": "standard-profiles/owner-yes-code-no/native.cf",
+    "target": "standard-profiles/owner-yes-code-no/native.cf",
+    "sha256": "9ee505f3dececcf8609093ca04c5e340f50a8e85c6325911bb85ab334f2ddcda"
+  },
+  {
+    "source": "standard-profiles/owner-yes-code-yes/native.cf",
+    "target": "standard-profiles/owner-yes-code-yes/native.cf",
+    "sha256": "70b745a26e3cac78c6728151265a8304e62b63dc66f4e6641a4fe1330e0fa7f4"
+  },
+  {
+    "source": "standard-description-profiles/description-yes-default-no/RootDeny.rights.deflate",
+    "target": "standard-description-profiles/description-yes-default-no/RootDeny.rights.deflate",
+    "sha256": "1aa719b124b8380c974a958a371a4e7ad031239df0d55029e5bdb6d1c1e6a56d"
+  },
+  {
+    "source": "standard-description-profiles/explicit-description-no-default-yes/RootDeny.rights.deflate",
+    "target": "standard-description-profiles/explicit-description-no-default-yes/RootDeny.rights.deflate",
+    "sha256": "f5d3738a868168f1f8c7e72147b3a73236384919f991b801d42ebf78753bcf63"
+  },
+  {
+    "source": "standard-description-profiles/description-yes-default-no/deny.oracle",
+    "target": "standard-description-profiles/description-yes-default-no/deny.oracle",
+    "sha256": "372f21288f3d118272e60a24ee67e34771d64125883cd4778747fab64b7ce407"
+  },
+  {
+    "source": "standard-description-profiles/explicit-description-no-default-yes/deny.oracle",
+    "target": "standard-description-profiles/explicit-description-no-default-yes/deny.oracle",
+    "sha256": "22d22cb9af2f30439a1439a10142201ac8b6fa9d27b0aed5aa4caaead303ac3d"
+  },
+  {
+    "source": "standard-description-profiles/description-yes-default-no/native.cf",
+    "target": "standard-description-profiles/description-yes-default-no/native.cf",
+    "sha256": "0f99262f92be203933ce6233e3728420d2df8672f9097bb4d04606859b74f73b"
+  },
+  {
+    "source": "standard-description-profiles/explicit-description-no-default-yes/native.cf",
+    "target": "standard-description-profiles/explicit-description-no-default-yes/native.cf",
+    "sha256": "52ba70da1457d98c45232fc9a7d89d3b30f72eeac3726796e07677b903b27e9c"
+  },
+  {
+    "source": "multiple-roles/both-refuse-child/RootAllow.rights.deflate",
+    "target": "multiple-roles/both-refuse-child/RootAllow.rights.deflate",
+    "sha256": "f6040875c2709142bf634d27b008b422821df48cecacce66158bbdc907227452"
+  },
+  {
+    "source": "multiple-roles/both-refuse-child/RootDeny.rights.deflate",
+    "target": "multiple-roles/both-refuse-child/RootDeny.rights.deflate",
+    "sha256": "cd56a3cb1feef1ace9d81f1eaa73026c29f18e21e50c1e8a1a00245355401306"
+  },
+  {
+    "source": "multiple-roles/second-role-complete/RootAllow.rights.deflate",
+    "target": "multiple-roles/second-role-complete/RootAllow.rights.deflate",
+    "sha256": "f6040875c2709142bf634d27b008b422821df48cecacce66158bbdc907227452"
+  },
+  {
+    "source": "multiple-roles/second-role-complete/RootDeny.rights.deflate",
+    "target": "multiple-roles/second-role-complete/RootDeny.rights.deflate",
+    "sha256": "c92d3f8a988cca5c31c0d5b8a3125355b60e5d9adc691f42682ff1313c27893d"
+  },
+  {
+    "source": "multiple-roles/split-parent-child/RootAllow.rights.deflate",
+    "target": "multiple-roles/split-parent-child/RootAllow.rights.deflate",
+    "sha256": "f6040875c2709142bf634d27b008b422821df48cecacce66158bbdc907227452"
+  },
+  {
+    "source": "multiple-roles/split-parent-child/RootDeny.rights.deflate",
+    "target": "multiple-roles/split-parent-child/RootDeny.rights.deflate",
+    "sha256": "11013999094956b95415d47a946cf3643ea046b5b2e51b9760f37f818fdc5312"
+  },
+  {
+    "source": "multiple-roles/both-refuse-child/deny.oracle",
+    "target": "multiple-roles/both-refuse-child/deny.oracle",
+    "sha256": "869cc728fc73c61f3d3cc99e9f35ae3d961b7b6eb93b17785b6d1dacc126a3c9"
+  },
+  {
+    "source": "multiple-roles/second-role-complete/deny.oracle",
+    "target": "multiple-roles/second-role-complete/deny.oracle",
+    "sha256": "de0657fe04e8bab05e891ac24571754bc7596b9e9382afc4e24d919dacee4576"
+  },
+  {
+    "source": "multiple-roles/split-parent-child/deny.oracle",
+    "target": "multiple-roles/split-parent-child/deny.oracle",
+    "sha256": "869cc728fc73c61f3d3cc99e9f35ae3d961b7b6eb93b17785b6d1dacc126a3c9"
+  },
+  {
+    "source": "multiple-roles/both-refuse-child/native.cf",
+    "target": "multiple-roles/both-refuse-child/native.cf",
+    "sha256": "58f769133df1ffac2e45c5ce1b43e40c5942910de3ac93f1ed5a4ab0dc9705ae"
+  },
+  {
+    "source": "multiple-roles/second-role-complete/native.cf",
+    "target": "multiple-roles/second-role-complete/native.cf",
+    "sha256": "91ebc87b757a1aeee2c557f10a48f5764ddb96a917fefe2e7b36238dce205dc1"
+  },
+  {
+    "source": "multiple-roles/split-parent-child/native.cf",
+    "target": "multiple-roles/split-parent-child/native.cf",
+    "sha256": "03592d3c1bdca5b57171cf8f2e72b2735b69d8132bd20c1f9b78588131865151"
+  },
+  {
+    "source": "standard-paths/standard-admin.oracle",
+    "target": "standard-paths/standard-admin.oracle",
+    "sha256": "17819716294a9214e3f6ba720fab565fdc620432231145c00bd7d7dc88d3edd4"
+  },
+  {
+    "source": "standard-paths/standard-deny.oracle",
+    "target": "standard-paths/standard-deny.oracle",
+    "sha256": "8e7bd32b20436f31971576fd33d6b8696395a27e16fda24481931c1f669afb65"
+  },
+  {
+    "source": "standard-paths/standard.oracle",
+    "target": "standard-paths/standard.oracle",
+    "sha256": "e39cb6e5640b055580ffde6f5bd99274123e22841fff264d8207ccb9d843e3ea"
+  },
+  {
+    "source": "standard-privileged/privileged-admin.oracle",
+    "target": "standard-privileged/privileged-admin.oracle",
+    "sha256": "047de7f79ec23f6a3fb4f77dfcb1a077d1f9de58909a6b81aded7eec4c145983"
+  },
+  {
+    "source": "standard-privileged/privileged-deny.oracle",
+    "target": "standard-privileged/privileged-deny.oracle",
+    "sha256": "86743dbf28b32f1965ecb49c72f69d4692ad5432c2635319ea5520aafb41d1aa"
+  },
+  {
+    "source": "standard-privileged/privileged.oracle",
+    "target": "standard-privileged/privileged.oracle",
+    "sha256": "8b58b74adaeecd93f8f508c8782a8f144bab829bced2aa0814f632e3d41eab87"
+  },
+  {
+    "source": "standard-profiles/owner-no-code-no/native.cf:1316b080-3b2c-501b-ace3-a1234a3fedd1",
+    "target": "catalog.deflate",
+    "sha256": "e654874882a13fe4b47a5a8998b406af23028cfaba53cffafd56fa4ea40a39fc"
+  },
+  {
+    "source": "standard-profiles/owner-no-code-no/native.cf:9d3bec1a-c27a-4d3b-94e1-45dd6c85cf81.0",
+    "target": "RootAllow.rights.deflate",
+    "sha256": "d5401145cc1811d478f6b479d66a439d8533bfb1fde9c92358ce5337d4f61ff5"
+  },
+  {
+    "source": "standard-right-results.json",
+    "target": "standard-right-results.json",
+    "sha256": "c55ccbafcb1de7a48345c30815a3b76f2ac398970ac99a3b822147c9fa456fdb"
+  },
+  {
+    "source": "multiple-roles/results.json",
+    "target": "multiple-roles/results.json",
+    "sha256": "2cd908768c43febc6dc448933d570f8070a0873a8e4907bac517270b1c19eb4e"
+  }
+]

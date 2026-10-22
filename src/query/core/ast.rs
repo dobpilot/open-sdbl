@@ -971,3 +971,30 @@ pub(super) const fn days_in_month(year: u16, month: u8) -> u8 {
 const fn is_leap_year(year: u16) -> bool {
     year % 4 == 0 && (year % 100 != 0 || year % 400 == 0)
 }
+
+// Левая цепь ограниченного парсером выражения обходится без стека вызовов.
+type BinaryTerm<'expression, 'tokens, 'source> = (
+    &'tokens Token<'source>,
+    &'expression Expression<'tokens, 'source>,
+);
+
+pub(super) fn left_binary_spine<'expression, 'tokens, 'source>(
+    expression: &'expression Expression<'tokens, 'source>,
+) -> (
+    &'expression Expression<'tokens, 'source>,
+    Vec<BinaryTerm<'expression, 'tokens, 'source>>,
+) {
+    let mut leftmost = expression;
+    let mut terms = Vec::new();
+    while let Expression::Binary {
+        left,
+        operator,
+        right,
+    } = leftmost
+    {
+        terms.push((*operator, right.as_ref()));
+        leftmost = left.as_ref();
+    }
+    terms.reverse();
+    (leftmost, terms)
+}

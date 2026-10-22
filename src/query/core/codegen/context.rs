@@ -36,6 +36,7 @@ use crate::query::core::usage::FieldUsage;
 use crate::query::core::{QueryDiagnostic, QueryDiagnosticKind};
 
 pub(super) struct CompiledBranch {
+    pub(super) logical_projection: Option<Vec<crate::query::LogicalResultColumn>>,
     pub(super) sql: String,
     /// The same statement without its final ordering, which a nested
     /// result embeds as a subquery: SQL Server refuses `ORDER BY` there.
@@ -81,6 +82,7 @@ impl OrderKey {
 pub(super) enum SelectedProjection {
     Field(ResolvedPath),
     Generated {
+        composite: Option<(String, Option<u8>, bool)>,
         sql: String,
         label: String,
         deferred: bool,
@@ -733,6 +735,7 @@ impl CompilationContext<'_, '_> {
                 });
             }
         };
+        self.check_uuid_field(&source.fields[field_index], field)?;
         source.used_fields.borrow_mut().insert(field_index);
         self.note_field_use(scope, source.object, source.fields[field_index].field);
         Ok(ResolvedPath {
@@ -1123,7 +1126,41 @@ impl CompilationContext<'_, '_> {
         }
     }
 
+    fn check_uuid_field(
+        &self,
+        field: &QueryableField,
+        token: &Token<'_>,
+    ) -> Result<(), QueryDiagnostic> {
+        if !matches!(self.dialect, SqlDialect::Postgres)
+            && field.columns.iter().any(|column| {
+                column.kind == ColumnKind::Uuid
+                    && matches!(
+                        ColumnKind::from_catalog_type(&column.data_type),
+                        ColumnKind::Binary { .. }
+                    )
+            })
+        {
+            return Err(QueryDiagnostic::at(
+                QueryDiagnosticKind::UnsupportedFeature,
+                Some(token),
+                "native UUID attributes are supported only on PostgreSQL",
+            ));
+        }
+        Ok(())
+    }
+
     pub(super) fn resolve(
+        &mut self,
+        reference: &FieldReference<'_, '_>,
+    ) -> Result<ResolvedPath, QueryDiagnostic> {
+        let resolved = self.resolve_inner(reference)?;
+        if let Some(token) = reference.segments.last() {
+            self.check_uuid_field(resolved.field(), token)?;
+        }
+        Ok(resolved)
+    }
+
+    fn resolve_inner(
         &mut self,
         reference: &FieldReference<'_, '_>,
     ) -> Result<ResolvedPath, QueryDiagnostic> {
@@ -2320,8 +2357,19 @@ impl CompilationContext<'_, '_> {
         if let Some(expression) = &resolved.expression {
             return expression.clone();
         }
-        self.dialect
-            .qualified_column(Some(&resolved.sql_alias), &column.physical_name)
+        let physical = self
+            .dialect
+            .qualified_column(Some(&resolved.sql_alias), &column.physical_name);
+        if column.kind == ColumnKind::Uuid
+            && matches!(
+                ColumnKind::from_catalog_type(&column.data_type),
+                ColumnKind::Binary { .. }
+            )
+        {
+            self.dialect.reference_uuid(&physical)
+        } else {
+            physical
+        }
     }
 
     pub(super) fn ensure_presentation_join(

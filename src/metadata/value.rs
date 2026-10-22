@@ -81,14 +81,29 @@ pub fn parse_serialized_sequence(input: &[u8]) -> Result<Vec<Value>, MetadataErr
     Parser::new(text).parse_sequence()
 }
 
+/// Разбирает те же значения, не удерживая тела посторонних коллекций.
+pub(crate) fn parse_identity_serialized(input: &[u8]) -> Result<Value, MetadataError> {
+    let input = input.strip_prefix(&[0xef, 0xbb, 0xbf]).unwrap_or(input);
+    let text = std::str::from_utf8(input)
+        .map_err(|error| MetadataError::utf8(error.valid_up_to(), "metadata is not valid UTF-8"))?;
+    let mut parser = Parser::new(text);
+    parser.identity_only = true;
+    parser.parse()
+}
+
 struct Parser<'input> {
     input: &'input str,
     offset: usize,
+    identity_only: bool,
 }
 
 impl<'input> Parser<'input> {
     const fn new(input: &'input str) -> Self {
-        Self { input, offset: 0 }
+        Self {
+            input,
+            offset: 0,
+            identity_only: false,
+        }
     }
 
     fn parse_sequence(mut self) -> Result<Vec<Value>, MetadataError> {
@@ -179,7 +194,19 @@ impl<'input> Parser<'input> {
                     expecting_value = true;
                 }
                 Some(_) if expecting_value => {
-                    values.push(self.value(depth + 1)?);
+                    let value = self.value(depth + 1)?;
+                    // Для обнаружения сохраняются заголовки и измеренные части,
+                    // но не полный состав произвольных коллекций реквизитов.
+                    let discard = self.identity_only
+                        && values.len() >= 2
+                        && values[0].as_scalar().is_some_and(|id| {
+                            id.parse::<super::Guid>().is_ok()
+                                && !super::runtime_metadata::identity_collection(id)
+                        })
+                        && values[1].as_u32().is_some();
+                    if !discard {
+                        values.push(value);
+                    }
                     expecting_value = false;
                 }
                 Some(_) => {

@@ -1,0 +1,33 @@
+﻿<?xml version="1.0" encoding="UTF-8"?>
+<ConfigDumpInfo xmlns="http://v8.1c.ru/8.3/xcf/dumpinfo" xmlns:xen="http://v8.1c.ru/8.3/xcf/enums" xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" format="Hierarchical" version="2.20">
+	<ConfigVersions>
+		<Metadata name="Catalog.ЗамерВременныхТаблиц" id="a7177622-2cb3-5bfd-a0d7-1ae7a4a9f4d5" configVersion="36d0d786bcb29043be44703f63cef96100000000">
+			<Metadata name="Catalog.ЗамерВременныхТаблиц.Attribute.ОпцияБулево" id="26069638-d009-5163-a17d-f3603d8cd655"/>
+			<Metadata name="Catalog.ЗамерВременныхТаблиц.Attribute.ЧислоПробы" id="6f9b5ce7-a364-5a2c-97f3-b7e150701a1a"/>
+		</Metadata>
+		<Metadata name="CommonModule.ЗамерыДинамическогоМодуля" id="d7b9c017-c8e3-45a9-b8c0-2e5902fc2aa4" configVersion="118f5cfa8697164caae5a38620adf07800000000"/>
+		<Metadata name="CommonModule.ЗамерыДинамическогоМодуля.Module" id="d7b9c017-c8e3-45a9-b8c0-2e5902fc2aa4.0" configVersion="21e6dd02bbf59b40878226841d0437b900000000"/>
+		<Metadata name="CommonModule.ЗамерыЗначенияМодуля" id="4d392458-2a40-4ad6-9c35-9c8422c2184b" configVersion="74453c7fe741754d85fa55720b7728ed00000000"/>
+		<Metadata name="CommonModule.ЗамерыЗначенияМодуля.Module" id="4d392458-2a40-4ad6-9c35-9c8422c2184b.0" configVersion="7978c004db0a364b89433e5eb08bbb6600000000"/>
+		<Metadata name="CommonModule.ЗамерыЛенивойАрности" id="fca893b1-3e72-4fbb-a3d5-4b5a1a63d146" configVersion="5e8686d5bbbe7541b2cc0f197344010000000000"/>
+		<Metadata name="CommonModule.ЗамерыЛенивойАрности.Module" id="fca893b1-3e72-4fbb-a3d5-4b5a1a63d146.0" configVersion="5029a5f51343a64f97422d137024b8ec00000000"/>
+		<Metadata name="CommonModule.ЗамерыСамоссылкиМодуля" id="3a56c8f4-6ef2-4d72-924b-0e3f82bc6901" configVersion="436f50856264474386c91ef737bb41f300000000"/>
+		<Metadata name="CommonModule.ЗамерыСамоссылкиМодуля.Module" id="3a56c8f4-6ef2-4d72-924b-0e3f82bc6901.0" configVersion="03e868e89ddee74086c6be8e19e0a89d00000000"/>
+		<Metadata name="CommonModule.ЗамерыФоновыйСосед" id="9e4b2f7c-8b6d-4eaf-9c73-3f4d2e1a6b23" configVersion="957efcb783cfcb4090dd2d8aad77cc4400000000"/>
+		<Metadata name="CommonModule.ЗамерыФоновыйСосед.Module" id="9e4b2f7c-8b6d-4eaf-9c73-3f4d2e1a6b23.0" configVersion="3e5e509624b2684d83a95293a19ab23600000000"/>
+		<Metadata name="CommonModule.ЗамерыФоновыхЗаданий" id="7c2f2d5a-6f4b-4c8e-9a51-1d2b0c9e4f01" configVersion="6e0a1406c515bf429625d0e608e00c2f00000000"/>
+		<Metadata name="CommonModule.ЗамерыФоновыхЗаданий.Module" id="7c2f2d5a-6f4b-4c8e-9a51-1d2b0c9e4f01.0" configVersion="a45a248719bab746b071a67e9d3d94cf00000000"/>
+		<Metadata name="CommonModule.ЗамерыФоновыхЗаданийДвусторонние" id="8d3a1e6b-7a5c-4d9f-8b62-2e3c1d0f5a12" configVersion="025b5e46c378ef46b46d991f23c6f2a700000000"/>
+		<Metadata name="CommonModule.ЗамерыФоновыхЗаданийДвусторонние.Module" id="8d3a1e6b-7a5c-4d9f-8b62-2e3c1d0f5a12.0" configVersion="81dedac01401cf45af2f299793c0802900000000"/>
+		<Metadata name="Configuration.Configuration" id="b18aafa2-492a-461b-83ea-b70809fa18bc" configVersion="ea30cc05fd4bfb4d8daaf1eebec6a17200000000"/>
+		<Metadata name="Configuration.Configuration.ManagedApplicationModule" id="e99d9824-65e8-4f6b-a280-1be0b617fe4a.6" configVersion="24ddde4c6e44d84191aa4f6092364b2a00000000"/>
+		<Metadata name="Constant.ЗначениеОпцииПробы" id="9893e2d6-f3f8-4d73-bb06-19bf26d216ab" configVersion="d5cb68068773ae43beb5f9fd62316e4c00000000"/>
+		<Metadata name="DataProcessor.Замеры" id="ff92317d-71e7-4664-a13a-18bd31fd3701" configVersion="f3052bf8013c3c4887d1a73a88350fd300000000"/>
+		<Metadata name="DataProcessor.Замеры.Form.Форма" id="8081de47-60ab-4047-8c98-1e22e2725431" configVersion="d0d32b56020d7247896408f34a71eefd00000000"/>
+		<Metadata name="DataProcessor.Замеры.Form.Форма.Form" id="8081de47-60ab-4047-8c98-1e22e2725431.0" configVersion="598522c52b857e47a577a71ef588d45b00000000"/>
+		<Metadata name="DataProcessor.Замеры.ObjectModule" id="ff92317d-71e7-4664-a13a-18bd31fd3701.0" configVersion="c12bdfe25bb8834a871f11db83c0f5a600000000"/>
+		<Metadata name="FunctionalOption.ОпцияПробы" id="a11dfe2b-ef68-4701-9977-08fb0e680ee1" configVersion="22558821d73dad4b81a52e7f6818bb7a00000000"/>
+		<Metadata name="FunctionalOption.ОпцияПробыПривилегированная" id="87c6ea4c-6187-4c3f-92ac-b691c1007e3e" configVersion="af869bab4face3439b452431558bda1c00000000"/>
+		<Metadata name="Language.English" id="180d0526-9c13-4b6a-a302-3e8c1b8df522" configVersion="e203dff60b568343b3b1f3db12b039a700000000"/>
+	</ConfigVersions>
+</ConfigDumpInfo>

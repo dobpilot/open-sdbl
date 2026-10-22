@@ -1,0 +1,77 @@
+[
+  {
+    "label": "load-external",
+    "command": [
+      "/opt/1cv8/x86_64/8.3.27.2342/1cv8",
+      "DESIGNER",
+      "/F",
+      "/home/kan/\u0414\u043e\u043a\u0443\u043c\u0435\u043d\u0442\u044b/develop/open-bsl/target/diagnostics/configuration-access-right-complete-native-1015/native-ib",
+      "/N",
+      "RootProbeAdmin",
+      "/LoadConfigFromFiles",
+      "/home/kan/\u0414\u043e\u043a\u0443\u043c\u0435\u043d\u0442\u044b/develop/open-bsl/target/diagnostics/configuration-access-right-complete-native-1015/input-xml",
+      "/UpdateDBCfg",
+      "/DisableStartupDialogs",
+      "/Out",
+      "/home/kan/\u0414\u043e\u043a\u0443\u043c\u0435\u043d\u0442\u044b/develop/open-bsl/target/diagnostics/configuration-access-right-complete-native-1015/load-external.log"
+    ],
+    "pid": 253728,
+    "exit": 0,
+    "seconds": 7.47
+  },
+  {
+    "label": "admin-external",
+    "command": [
+      "/opt/1cv8/x86_64/8.3.27.2342/1cv8",
+      "ENTERPRISE",
+      "/F",
+      "/home/kan/\u0414\u043e\u043a\u0443\u043c\u0435\u043d\u0442\u044b/develop/open-bsl/target/diagnostics/configuration-access-right-complete-native-1015/native-ib",
+      "/N",
+      "RootProbeAdmin",
+      "/RunModeManagedApplication",
+      "/DisableStartupDialogs",
+      "/Out",
+      "/home/kan/\u0414\u043e\u043a\u0443\u043c\u0435\u043d\u0442\u044b/develop/open-bsl/target/diagnostics/configuration-access-right-complete-native-1015/admin-external.log"
+    ],
+    "pid": 253897,
+    "exit": 0,
+    "seconds": 1.47
+  },
+  {
+    "label": "deny-external",
+    "command": [
+      "/opt/1cv8/x86_64/8.3.27.2342/1cv8",
+      "ENTERPRISE",
+      "/F",
+      "/home/kan/\u0414\u043e\u043a\u0443\u043c\u0435\u043d\u0442\u044b/develop/open-bsl/target/diagnostics/configuration-access-right-complete-native-1015/native-ib",
+      "/N",
+      "RootProbeDeny",
+      "/RunModeManagedApplication",
+      "/DisableStartupDialogs",
+      "/Out",
+      "/home/kan/\u0414\u043e\u043a\u0443\u043c\u0435\u043d\u0442\u044b/develop/open-bsl/target/diagnostics/configuration-access-right-complete-native-1015/deny-external.log"
+    ],
+    "pid": 254062,
+    "exit": 0,
+    "seconds": 1.52
+  },
+  {
+    "label": "dump-external-cf",
+    "command": [
+      "/opt/1cv8/x86_64/8.3.27.2342/1cv8",
+      "DESIGNER",
+      "/F",
+      "/home/kan/\u0414\u043e\u043a\u0443\u043c\u0435\u043d\u0442\u044b/develop/open-bsl/target/diagnostics/configuration-access-right-complete-native-1015/native-ib",
+      "/N",
+      "RootProbeAdmin",
+      "/DumpCfg",
+      "/home/kan/\u0414\u043e\u043a\u0443\u043c\u0435\u043d\u0442\u044b/develop/open-bsl/target/diagnostics/configuration-access-right-complete-native-1015/own-external-config.cf",
+      "/DisableStartupDialogs",
+      "/Out",
+      "/home/kan/\u0414\u043e\u043a\u0443\u043c\u0435\u043d\u0442\u044b/develop/open-bsl/target/diagnostics/configuration-access-right-complete-native-1015/dump-external-cf.log"
+    ],
+    "pid": 254220,
+    "exit": 0,
+    "seconds": 7.52
+  }
+]

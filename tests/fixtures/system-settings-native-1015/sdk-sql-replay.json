@@ -1,0 +1,148 @@
+[
+  {
+    "kind": "mvarchar(150)",
+    "case": "root",
+    "key": "scalar",
+    "rows": 1,
+    "sql": "SELECT \"_settingsdata\" FROM \"_systemsettings\" WHERE \"_userid\" = 'OpenBslSettingsAdmin' AND \"_objectkey\" = 'open-bsl-system-settings-control-1015' AND \"_settingskey\" = 'scalar' AND \"_dataseparationuse58\" = FALSE AND \"_fld55\" = '' LIMIT 2",
+    "read_only": true,
+    "file": "replay-root-scalar.settingsdata"
+  },
+  {
+    "kind": "mvarchar(150)",
+    "case": "root",
+    "key": "absent",
+    "rows": 0,
+    "sql": "SELECT \"_settingsdata\" FROM \"_systemsettings\" WHERE \"_userid\" = 'OpenBslSettingsAdmin' AND \"_objectkey\" = 'open-bsl-system-settings-control-1015' AND \"_settingskey\" = 'absent' AND \"_dataseparationuse58\" = FALSE AND \"_fld55\" = '' LIMIT 2",
+    "read_only": true
+  },
+  {
+    "kind": "mvarchar(150)",
+    "case": "root",
+    "key": "storage",
+    "rows": 1,
+    "sql": "SELECT \"_settingsdata\" FROM \"_systemsettings\" WHERE \"_userid\" = 'OpenBslSettingsAdmin' AND \"_objectkey\" = 'open-bsl-system-settings-control-1015' AND \"_settingskey\" = 'storage' AND \"_dataseparationuse58\" = FALSE AND \"_fld55\" = '' LIMIT 2",
+    "read_only": true,
+    "file": "replay-root-storage.settingsdata"
+  },
+  {
+    "kind": "mvarchar(150)",
+    "case": "A",
+    "key": "scalar",
+    "rows": 1,
+    "sql": "SELECT \"_settingsdata\" FROM \"_systemsettings\" WHERE \"_userid\" = 'OpenBslSettingsAdmin' AND \"_objectkey\" = 'open-bsl-system-settings-control-1015' AND \"_settingskey\" = 'scalar' AND \"_dataseparationuse58\" = TRUE AND \"_fld55\" = 'A' LIMIT 2",
+    "read_only": true,
+    "file": "replay-A-scalar.settingsdata"
+  },
+  {
+    "kind": "mvarchar(150)",
+    "case": "A",
+    "key": "absent",
+    "rows": 0,
+    "sql": "SELECT \"_settingsdata\" FROM \"_systemsettings\" WHERE \"_userid\" = 'OpenBslSettingsAdmin' AND \"_objectkey\" = 'open-bsl-system-settings-control-1015' AND \"_settingskey\" = 'absent' AND \"_dataseparationuse58\" = TRUE AND \"_fld55\" = 'A' LIMIT 2",
+    "read_only": true
+  },
+  {
+    "kind": "mvarchar(150)",
+    "case": "A",
+    "key": "storage",
+    "rows": 1,
+    "sql": "SELECT \"_settingsdata\" FROM \"_systemsettings\" WHERE \"_userid\" = 'OpenBslSettingsAdmin' AND \"_objectkey\" = 'open-bsl-system-settings-control-1015' AND \"_settingskey\" = 'storage' AND \"_dataseparationuse58\" = TRUE AND \"_fld55\" = 'A' LIMIT 2",
+    "read_only": true,
+    "file": "replay-A-storage.settingsdata"
+  },
+  {
+    "kind": "mvarchar(150)",
+    "case": "B",
+    "key": "scalar",
+    "rows": 1,
+    "sql": "SELECT \"_settingsdata\" FROM \"_systemsettings\" WHERE \"_userid\" = 'OpenBslSettingsAdmin' AND \"_objectkey\" = 'open-bsl-system-settings-control-1015' AND \"_settingskey\" = 'scalar' AND \"_dataseparationuse58\" = TRUE AND \"_fld55\" = 'B' LIMIT 2",
+    "read_only": true,
+    "file": "replay-B-scalar.settingsdata"
+  },
+  {
+    "kind": "mvarchar(150)",
+    "case": "B",
+    "key": "absent",
+    "rows": 0,
+    "sql": "SELECT \"_settingsdata\" FROM \"_systemsettings\" WHERE \"_userid\" = 'OpenBslSettingsAdmin' AND \"_objectkey\" = 'open-bsl-system-settings-control-1015' AND \"_settingskey\" = 'absent' AND \"_dataseparationuse58\" = TRUE AND \"_fld55\" = 'B' LIMIT 2",
+    "read_only": true
+  },
+  {
+    "kind": "mvarchar(150)",
+    "case": "B",
+    "key": "storage",
+    "rows": 1,
+    "sql": "SELECT \"_settingsdata\" FROM \"_systemsettings\" WHERE \"_userid\" = 'OpenBslSettingsAdmin' AND \"_objectkey\" = 'open-bsl-system-settings-control-1015' AND \"_settingskey\" = 'storage' AND \"_dataseparationuse58\" = TRUE AND \"_fld55\" = 'B' LIMIT 2",
+    "read_only": true,
+    "file": "replay-B-storage.settingsdata"
+  },
+  {
+    "kind": "numeric",
+    "case": "inactive",
+    "key": "conditional-shared",
+    "rows": 1,
+    "sql": "SELECT \"_settingsdata\" FROM \"_systemsettings\" WHERE \"_userid\" = 'OpenBslSettingsAdmin' AND \"_objectkey\" = 'open-bsl-system-settings-numeric-control-1015' AND \"_settingskey\" = 'conditional-shared' AND \"_dataseparationuse58\" = FALSE AND \"_fld55\" = 0 LIMIT 2",
+    "read_only": true,
+    "file": "replay-inactive-conditional-shared.settingsdata"
+  },
+  {
+    "kind": "numeric",
+    "case": "inactive",
+    "key": "absent",
+    "rows": 0,
+    "sql": "SELECT \"_settingsdata\" FROM \"_systemsettings\" WHERE \"_userid\" = 'OpenBslSettingsAdmin' AND \"_objectkey\" = 'open-bsl-system-settings-numeric-control-1015' AND \"_settingskey\" = 'absent' AND \"_dataseparationuse58\" = FALSE AND \"_fld55\" = 0 LIMIT 2",
+    "read_only": true
+  },
+  {
+    "kind": "numeric",
+    "case": "disabled",
+    "key": "conditional-shared",
+    "rows": 1,
+    "sql": "SELECT \"_settingsdata\" FROM \"_systemsettings\" WHERE \"_userid\" = 'OpenBslSettingsAdmin' AND \"_objectkey\" = 'open-bsl-system-settings-numeric-control-1015' AND \"_settingskey\" = 'conditional-shared' AND \"_dataseparationuse58\" = TRUE AND \"_fld55\" = 0 LIMIT 2",
+    "read_only": true,
+    "file": "replay-disabled-conditional-shared.settingsdata"
+  },
+  {
+    "kind": "numeric",
+    "case": "disabled",
+    "key": "absent",
+    "rows": 0,
+    "sql": "SELECT \"_settingsdata\" FROM \"_systemsettings\" WHERE \"_userid\" = 'OpenBslSettingsAdmin' AND \"_objectkey\" = 'open-bsl-system-settings-numeric-control-1015' AND \"_settingskey\" = 'absent' AND \"_dataseparationuse58\" = TRUE AND \"_fld55\" = 0 LIMIT 2",
+    "read_only": true
+  },
+  {
+    "kind": "numeric",
+    "case": "101",
+    "key": "conditional-shared",
+    "rows": 1,
+    "sql": "SELECT \"_settingsdata\" FROM \"_systemsettings\" WHERE \"_userid\" = 'OpenBslSettingsAdmin' AND \"_objectkey\" = 'open-bsl-system-settings-numeric-control-1015' AND \"_settingskey\" = 'conditional-shared' AND \"_dataseparationuse58\" = TRUE AND \"_fld55\" = 101 LIMIT 2",
+    "read_only": true,
+    "file": "replay-101-conditional-shared.settingsdata"
+  },
+  {
+    "kind": "numeric",
+    "case": "101",
+    "key": "absent",
+    "rows": 0,
+    "sql": "SELECT \"_settingsdata\" FROM \"_systemsettings\" WHERE \"_userid\" = 'OpenBslSettingsAdmin' AND \"_objectkey\" = 'open-bsl-system-settings-numeric-control-1015' AND \"_settingskey\" = 'absent' AND \"_dataseparationuse58\" = TRUE AND \"_fld55\" = 101 LIMIT 2",
+    "read_only": true
+  },
+  {
+    "kind": "numeric",
+    "case": "202",
+    "key": "conditional-shared",
+    "rows": 1,
+    "sql": "SELECT \"_settingsdata\" FROM \"_systemsettings\" WHERE \"_userid\" = 'OpenBslSettingsAdmin' AND \"_objectkey\" = 'open-bsl-system-settings-numeric-control-1015' AND \"_settingskey\" = 'conditional-shared' AND \"_dataseparationuse58\" = TRUE AND \"_fld55\" = 202 LIMIT 2",
+    "read_only": true,
+    "file": "replay-202-conditional-shared.settingsdata"
+  },
+  {
+    "kind": "numeric",
+    "case": "202",
+    "key": "absent",
+    "rows": 0,
+    "sql": "SELECT \"_settingsdata\" FROM \"_systemsettings\" WHERE \"_userid\" = 'OpenBslSettingsAdmin' AND \"_objectkey\" = 'open-bsl-system-settings-numeric-control-1015' AND \"_settingskey\" = 'absent' AND \"_dataseparationuse58\" = TRUE AND \"_fld55\" = 202 LIMIT 2",
+    "read_only": true
+  }
+]

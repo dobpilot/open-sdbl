@@ -1,0 +1,20 @@
+{
+  "status": "passed",
+  "cases": [
+    {
+      "layout": 37,
+      "status": "passed",
+      "records_unchanged": true,
+      "oracle": "legacy-language-37.oracle"
+    },
+    {
+      "layout": 31,
+      "status": "passed",
+      "records_unchanged": true,
+      "oracle": "legacy-language-31.oracle"
+    }
+  ],
+  "production_database_modified": false,
+  "original_dt_unchanged": true,
+  "scope": "Controlled reconstruction of own native user records; official 1C user-manager Language read. Not an original dump from an old platform version."
+}

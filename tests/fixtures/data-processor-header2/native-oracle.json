@@ -1,0 +1,56 @@
+{
+  "owner_uuid": "4507a92e-abb6-4329-88b2-3429bc694bc6",
+  "attributes": [
+    {
+      "uuid": "2694c1b4-536b-4187-adf6-0f8757aaae76",
+      "name": "URLВебСервиса",
+      "types": [
+        {
+          "element": "Type",
+          "text": "xs:string"
+        },
+        {
+          "element": "StringQualifiers",
+          "text": "\n\t\t\t\t\t\t\t"
+        }
+      ],
+      "type_xml": "<ns0:Type xmlns:ns0=\"http://v8.1c.ru/8.3/MDClasses\" xmlns:ns1=\"http://v8.1c.ru/8.1/data/core\">\n\t\t\t\t\t\t<ns1:Type>xs:string</ns1:Type>\n\t\t\t\t\t\t<ns1:StringQualifiers>\n\t\t\t\t\t\t\t<ns1:Length>0</ns1:Length>\n\t\t\t\t\t\t\t<ns1:AllowedLength>Variable</ns1:AllowedLength>\n\t\t\t\t\t\t</ns1:StringQualifiers>\n\t\t\t\t\t</ns0:Type>\n\t\t\t\t\t"
+    },
+    {
+      "uuid": "e523f88b-b3de-476e-a3cc-592970492dec",
+      "name": "НаименованиеАвтономногоРабочегоМеста",
+      "types": [
+        {
+          "element": "Type",
+          "text": "xs:string"
+        },
+        {
+          "element": "StringQualifiers",
+          "text": "\n\t\t\t\t\t\t\t"
+        }
+      ],
+      "type_xml": "<ns0:Type xmlns:ns0=\"http://v8.1c.ru/8.3/MDClasses\" xmlns:ns1=\"http://v8.1c.ru/8.1/data/core\">\n\t\t\t\t\t\t<ns1:Type>xs:string</ns1:Type>\n\t\t\t\t\t\t<ns1:StringQualifiers>\n\t\t\t\t\t\t\t<ns1:Length>150</ns1:Length>\n\t\t\t\t\t\t\t<ns1:AllowedLength>Variable</ns1:AllowedLength>\n\t\t\t\t\t\t</ns1:StringQualifiers>\n\t\t\t\t\t</ns0:Type>\n\t\t\t\t\t"
+    },
+    {
+      "uuid": "0e2107e2-8648-4b2e-9dfb-c23b1ff5b007",
+      "name": "АвтономноеРабочееМесто",
+      "types": [
+        {
+          "element": "TypeSet",
+          "text": "cfg:ExchangePlanRef"
+        }
+      ],
+      "type_xml": "<ns0:Type xmlns:ns0=\"http://v8.1c.ru/8.3/MDClasses\" xmlns:ns1=\"http://v8.1c.ru/8.1/data/core\">\n\t\t\t\t\t\t<ns1:TypeSet>cfg:ExchangePlanRef</ns1:TypeSet>\n\t\t\t\t\t</ns0:Type>\n\t\t\t\t\t"
+    }
+  ],
+  "tabular_sections": 0,
+  "forms": [
+    "НастройкаНаСторонеСервиса",
+    "ДополнительноеОписание"
+  ],
+  "templates": [
+    "ИнструкцияПоНастройкеАРМ",
+    "КакУстановитьИлиОбновитьВерсиюПлатформы1СПредприятие"
+  ],
+  "no_external_reference_placeholder": true
+}

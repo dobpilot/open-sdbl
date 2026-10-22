@@ -1,0 +1,37 @@
+[
+  {
+    "check": "initdb",
+    "exit_code": 0,
+    "seconds": 1.17
+  },
+  {
+    "check": "pg-start",
+    "exit_code": 0,
+    "seconds": 0.11
+  },
+  {
+    "check": "restore",
+    "exit_code": 0,
+    "seconds": 3.82
+  },
+  {
+    "check": "export",
+    "exit_code": 0,
+    "seconds": 2.02
+  },
+  {
+    "check": "import",
+    "exit_code": 0,
+    "seconds": 2.02
+  },
+  {
+    "check": "apply",
+    "exit_code": 0,
+    "seconds": 2.02
+  },
+  {
+    "check": "pg-stop",
+    "exit_code": 0,
+    "seconds": 0.11
+  }
+]

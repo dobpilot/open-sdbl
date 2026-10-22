@@ -1,0 +1,9 @@
+[package]
+name = "sdbl-empty-role-db-control"
+version = "0.0.0"
+edition = "2024"
+[workspace]
+[dependencies]
+open-sdbl = { path = "/tmp/open-sdbl-extension-rights-recon-1013" }
+open-sdbl-db = { path = "/tmp/open-sdbl-extension-rights-recon-1013/crates/open-sdbl-db" }
+tokio = { version = "1.53.1", features = ["macros", "rt-multi-thread"] }

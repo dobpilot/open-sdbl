@@ -1,0 +1,24 @@
+{
+  "uuid": "cc906f05-5ea6-43cb-a084-c4ee51ca4bd5",
+  "name": "ИспользоватьРазделениеПоОбластямДанных",
+  "types": [
+    "xs:boolean"
+  ],
+  "generated": [
+    {
+      "name": "ConstantManager.ИспользоватьРазделениеПоОбластямДанных",
+      "TypeId": "10d74e67-eac8-4797-ac69-898a3c1c9669",
+      "ValueId": "e0591d1f-a2ea-4fed-a08a-f2ffa81b95f6"
+    },
+    {
+      "name": "ConstantValueManager.ИспользоватьРазделениеПоОбластямДанных",
+      "TypeId": "a98c3e8f-5a35-4b95-b96e-d57979e592ad",
+      "ValueId": "5b5da831-1b77-4736-bac6-fee11bdfec70"
+    },
+    {
+      "name": "ConstantValueKey.ИспользоватьРазделениеПоОбластямДанных",
+      "TypeId": "c4b43735-92f0-54fb-b89e-38894fa57f0f",
+      "ValueId": "bd140e2d-3855-5bab-a495-b002603f0721"
+    }
+  ]
+}

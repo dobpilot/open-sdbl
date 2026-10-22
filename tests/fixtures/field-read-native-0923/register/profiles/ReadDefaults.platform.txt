@@ -1,0 +1,6 @@
+principal	ReadDefaults
+privileged	false
+read.right	true
+get.value	13
+query.value	13
+query.rows	1

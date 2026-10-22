@@ -1,0 +1,17 @@
+{
+  "status": "prepared inputs, not a native oracle",
+  "source": "docs/research/fixtures/user-settings-native-1015/legacy-user-records/generate-own-records.rs",
+  "source_sha256": "f9b0677a8b74b5f71755943ebb7603f0f7304bb9df93d20ba6343011d9aa46df",
+  "generated_source_sha256": "6497f1a1a793ee45d63d350307b4b395c1b1170c8cb0882aa8ed78ac6e1bfca0",
+  "forms": [
+    31,
+    37
+  ],
+  "users": [
+    "LangRussian",
+    "LangEnglish",
+    "LangDefault"
+  ],
+  "production_records_used": false,
+  "scope": "Existing reconstruction algorithm applied to own native empty-password users. SDK validates structure only; platform results still required."
+}

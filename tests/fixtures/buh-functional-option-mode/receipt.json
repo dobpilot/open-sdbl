@@ -1,0 +1,34 @@
+{
+  "sdk_version": "0.9.20",
+  "sdk_path": "/tmp/open-sdbl-separation-constant-review",
+  "public_verifier_compile_exit_code": 0,
+  "public_verifier_exit_code": 101,
+  "live_database_access": false,
+  "sdk_modified": false,
+  "native_xml_options": 547,
+  "native_xml_mode_counts": {
+    "true": 547
+  },
+  "files": [
+    {
+      "path": "/home/kan/Документы/develop/open-bsl/target/configured-session-integration/release/deps/libopen_sdbl-9fdf3c8b329f1ea4.rlib",
+      "sha256": "309618d4cd297f1735353a91c711e8986ccca4e527e588e98a64b40728fe15fd"
+    },
+    {
+      "path": "/tmp/open-sdbl-separation-constant-review/src/metadata/runtime_metadata.rs",
+      "sha256": "6959185ba4f15c5e547547a94fc858b46362d727beca6ca8c08b2e651bafd8e5"
+    },
+    {
+      "path": "/home/kan/Документы/develop/open-bsl/docs/research/fixtures/buh-functional-option-mode-1016/owner.deflate",
+      "sha256": "044749cc60b4fba3c7ad71e4a82ecabfc173c7b0ac66fcf8dbbceefb0e1793fc"
+    },
+    {
+      "path": "/home/kan/Документы/develop/open-bsl/docs/research/fixtures/buh-functional-option-mode-1016/ИспользуютсяПрофилиБезопасности-option.xml",
+      "sha256": "ee3e055e6389b2da4b55561273aaced0a06dedb85e762e81e111113816fcd72e"
+    },
+    {
+      "path": "/home/kan/Документы/develop/open-bsl/docs/research/fixtures/buh-functional-option-mode-1016/ИспользуютсяПрофилиБезопасности-constant.xml",
+      "sha256": "9669232c41a07ffd4d8f92a6f5c9c51cddb8a20b134089a41c798ed36e6254eb"
+    }
+  ]
+}

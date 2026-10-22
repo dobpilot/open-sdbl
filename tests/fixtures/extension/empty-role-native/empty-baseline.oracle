@@ -1,0 +1,15 @@
+﻿client=entered
+server=entered
+user=Baseline
+role=No
+Администрирование=No
+АдминистрированиеДанных=No
+ОбновлениеКонфигурацииБазыДанных=No
+АктивныеПользователи=No
+ЖурналРегистрации=No
+ТонкийКлиент=Yes
+ТолстыйКлиент=Yes
+Вывод=No
+complete=true
+
+client=complete

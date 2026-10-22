@@ -895,3 +895,10 @@ fn verified_catalog_still_denies_explicit_member_read_and_unsupported_standard_f
         );
     }
 }
+
+#[path = "field_read_0923.rs"]
+mod field_read_0923;
+
+#[cfg(test)]
+#[path = "user_language.rs"]
+mod user_language;

@@ -1,0 +1,19 @@
+WARNING: password file "/dev/null" is not a plain file
+_commonsettings|_userid|USER-DEFINED|mvarchar|
+_commonsettings|_objectkey|USER-DEFINED|mvarchar|
+_commonsettings|_settingskey|USER-DEFINED|mvarchar|
+_commonsettings|_version|bytea|bytea|
+_commonsettings|_settingspresentation|USER-DEFINED|mvarchar|
+_commonsettings|_settingsdata|bytea|bytea|
+_commonsettings|_changedate|timestamp without time zone|timestamp|
+_commonsettings|_useridhash|numeric|numeric|
+_commonsettings|_settingskeyhash|numeric|numeric|
+_systemsettings|_userid|USER-DEFINED|mvarchar|
+_systemsettings|_objectkey|USER-DEFINED|mvarchar|
+_systemsettings|_settingskey|USER-DEFINED|mvarchar|
+_systemsettings|_version|bytea|bytea|
+_systemsettings|_settingspresentation|USER-DEFINED|mvarchar|
+_systemsettings|_settingsdata|bytea|bytea|
+_systemsettings|_changedate|timestamp without time zone|timestamp|
+_systemsettings|_useridhash|numeric|numeric|
+_systemsettings|_settingskeyhash|numeric|numeric|

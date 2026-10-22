@@ -1,0 +1,5 @@
+scope	index	uuid	name	row_len	wrapper	body	typed	identity	comment	flags
+own	0	203addd4-6b9c-486d-a13f-cf54f3c2df06	Организация	2	3/5	27/23	2/3	1/7		0,0
+own	1	50e82874-a444-43b9-9ba6-3fc5272bef21	ТипНаправления	2	3/5	27/23	2/3	1/7		0,0
+own	2	180cfd78-7ac3-4717-98a3-a8ad51a0d4d9	Направление	2	3/5	27/23	2/3	1/7		0,0
+own	3	7712bed3-a048-4104-aec5-9a4702a6dd62	ДатаАктуализации	2	3/5	27/23	2/3	1/7		0,0

@@ -1,0 +1,87 @@
+{
+  "_systemsettings": [
+    {
+      "user": "OpenBslSettingsAdmin",
+      "object": "open-bsl-system-settings-control-1015",
+      "setting": "scalar",
+      "separation_use": false,
+      "separation_value": "",
+      "bytes": 1173,
+      "file": "_systemsettings-0.settingsdata"
+    },
+    {
+      "user": "OpenBslSettingsAdmin",
+      "object": "open-bsl-system-settings-control-1015",
+      "setting": "storage",
+      "separation_use": false,
+      "separation_value": "",
+      "bytes": 1793,
+      "file": "_systemsettings-1.settingsdata"
+    },
+    {
+      "user": "OpenBslSettingsAdmin",
+      "object": "open-bsl-system-settings-control-1015",
+      "setting": "scalar",
+      "separation_use": true,
+      "separation_value": "A",
+      "bytes": 1173,
+      "file": "_systemsettings-2.settingsdata"
+    },
+    {
+      "user": "OpenBslSettingsAdmin",
+      "object": "open-bsl-system-settings-control-1015",
+      "setting": "storage",
+      "separation_use": true,
+      "separation_value": "A",
+      "bytes": 1793,
+      "file": "_systemsettings-3.settingsdata"
+    },
+    {
+      "user": "OpenBslSettingsAdmin",
+      "object": "open-bsl-system-settings-control-1015",
+      "setting": "scalar",
+      "separation_use": true,
+      "separation_value": "B",
+      "bytes": 1173,
+      "file": "_systemsettings-4.settingsdata"
+    },
+    {
+      "user": "OpenBslSettingsAdmin",
+      "object": "open-bsl-system-settings-control-1015",
+      "setting": "storage",
+      "separation_use": true,
+      "separation_value": "B",
+      "bytes": 1793,
+      "file": "_systemsettings-5.settingsdata"
+    }
+  ],
+  "_commonsettings": [
+    {
+      "user": "OpenBslSettingsAdmin",
+      "object": "open-bsl-system-settings-control-1015",
+      "setting": "scalar",
+      "separation_use": false,
+      "separation_value": "",
+      "bytes": 1173,
+      "file": "_commonsettings-0.settingsdata"
+    },
+    {
+      "user": "OpenBslSettingsAdmin",
+      "object": "open-bsl-system-settings-control-1015",
+      "setting": "scalar",
+      "separation_use": true,
+      "separation_value": "A",
+      "bytes": 1173,
+      "file": "_commonsettings-1.settingsdata"
+    },
+    {
+      "user": "OpenBslSettingsAdmin",
+      "object": "open-bsl-system-settings-control-1015",
+      "setting": "scalar",
+      "separation_use": true,
+      "separation_value": "B",
+      "bytes": 1173,
+      "file": "_commonsettings-2.settingsdata"
+    }
+  ]
+}

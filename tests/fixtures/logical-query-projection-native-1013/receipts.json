@@ -1,0 +1,72 @@
+[
+  {
+    "label": "load-extended-form",
+    "command": [
+      "/opt/1cv8/x86_64/8.3.27.2342/1cv8",
+      "DESIGNER",
+      "/F",
+      "/tmp/sdbl-logical-priv-context-native-1013/runtime-ib",
+      "/N",
+      "ControlAdministrator",
+      "/LoadConfigFromFiles",
+      "/tmp/sdbl-logical-priv-context-native-1013/input-xml",
+      "/DisableStartupDialogs",
+      "/Out",
+      "/tmp/sdbl-logical-priv-context-native-1013/load-extended-form.log"
+    ],
+    "exit": 0,
+    "seconds": 7.7
+  },
+  {
+    "label": "update-extended-form",
+    "command": [
+      "/opt/1cv8/x86_64/8.3.27.2342/1cv8",
+      "DESIGNER",
+      "/F",
+      "/tmp/sdbl-logical-priv-context-native-1013/runtime-ib",
+      "/N",
+      "ControlAdministrator",
+      "/UpdateDBCfg",
+      "/DisableStartupDialogs",
+      "/Out",
+      "/tmp/sdbl-logical-priv-context-native-1013/update-extended-form.log"
+    ],
+    "exit": 0,
+    "seconds": 2.12
+  },
+  {
+    "label": "dump-extended-form",
+    "command": [
+      "/opt/1cv8/x86_64/8.3.27.2342/1cv8",
+      "DESIGNER",
+      "/F",
+      "/tmp/sdbl-logical-priv-context-native-1013/runtime-ib",
+      "/N",
+      "ControlAdministrator",
+      "/DumpConfigToFiles",
+      "/tmp/sdbl-logical-priv-context-native-1013/extended-native-xml",
+      "/DisableStartupDialogs",
+      "/Out",
+      "/tmp/sdbl-logical-priv-context-native-1013/dump-extended-form.log"
+    ],
+    "exit": 0,
+    "seconds": 7.52
+  },
+  {
+    "label": "runtime-extended",
+    "command": [
+      "/opt/1cv8/x86_64/8.3.27.2342/1cv8",
+      "ENTERPRISE",
+      "/F",
+      "/tmp/sdbl-logical-priv-context-native-1013/runtime-ib",
+      "/N",
+      "Target",
+      "/RunModeManagedApplication",
+      "/DisableStartupDialogs",
+      "/Out",
+      "/tmp/sdbl-logical-priv-context-native-1013/runtime-extended.log"
+    ],
+    "exit": 0,
+    "seconds": 1.47
+  }
+]

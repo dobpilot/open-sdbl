@@ -1,0 +1,11 @@
+# Native metadata rights, SDK 0.9.22
+
+Source: open-bsl/docs/research/fixtures/verify-access-rights-native-1017. Platform 8.3.27.2342, CompatibilityMode Version8_3_27, ScriptVariant English; owned fixture database only. Production DEMO/BUH/UNF were not changed. sources.json records original paths and SHA-256 hashes for copied observations, CF snapshots and native compiled resources. cases.tsv is a projection of the retained native observation indexes, not SDK-generated oracle data.
+
+The replay covers all 384 single-role/privileged rows and 108 multiple-role rows, twice: pure resolver/role evaluation and complete AccessStore evaluation. Consumer-only test mapping models operator policy for NotApplicable and privileged grants; the SDK does not own that policy. One native catalog descriptor is extracted unchanged from the owner-no-code-no CF; all role profiles change only rights, not this catalog. The tiny dbnames.deflate is a synthetic owner/kind index for resolving this exact native GUID without requiring a database or physical SQL schema; no SQL/RLS behavior is claimed here.
+
+The initial standard-paths denied oracle is byte-identical to owner-no-code-no/deny.oracle; its role evaluation reuses that retained compiled profile. The admin role is extracted from that same native CF (the admin role was not altered by those profiles). Privileged observations need no grant evaluation but still pass through structural validation. Multiple-role observations use both compiled resources from their own retained CF. No rights are synthesized from the XML inputs.
+
+An important correction discovered by actual replay: independent-owner-no-code-yes permits VerifyAccessRights(View, Code/Код) but denies AccessRight(View, Code/Код). The first attempted shared evaluator failed exactly these two observations. Separate verification evaluation preserves this native distinction. The unsupported independent=true/defaults=true parent-denial combination is not guessed.
+
+Member identity is the entire pair (-2, 03f171e8-326f-41c6-9fa5-932a0b12cddf) for Code or (-3, same GUID) for Description. Native compiled resources, rather than pre-import role XML, already include owner Read implied by View. New APIs do not alter ordinary SQL/RLS field authorization.

@@ -1,0 +1,3 @@
+name=ОпцияПробы location=None privileged=None expected=false
+name=ОпцияПробыПривилегированная location=None privileged=None expected=true
+Error: "не приобретено режимов: 2"

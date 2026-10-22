@@ -1,0 +1,13 @@
+{
+  "known_memberships": 409,
+  "unknown_memberships": 46,
+  "unknown_class38_51": 32,
+  "unknown_class37_50": 14,
+  "class38_owner_nonempty_comments": 10,
+  "class38_any_child_nonempty_comments": 31,
+  "class38_owner_or_child_nonempty_comments": 32,
+  "class38_nonzero_owner_flags": 0,
+  "class38_any_nonzero_member_flags": 0,
+  "class38_any_empty_patterns": 0,
+  "scope": "Diagnostic observations only; current shared identity remains strict and no further profile support is added."
+}

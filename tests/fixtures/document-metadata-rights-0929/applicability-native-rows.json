@@ -1,0 +1,1154 @@
+[
+  {
+    "profile": "read-off",
+    "priv": "0",
+    "case": "owner",
+    "right": "Read",
+    "operation": "access",
+    "value": "YES"
+  },
+  {
+    "profile": "read-off",
+    "priv": "0",
+    "case": "owner",
+    "right": "Read",
+    "operation": "verify",
+    "value": "OK"
+  },
+  {
+    "profile": "read-off",
+    "priv": "0",
+    "case": "owner",
+    "right": "View",
+    "operation": "access",
+    "value": "NO"
+  },
+  {
+    "profile": "read-off",
+    "priv": "0",
+    "case": "owner",
+    "right": "View",
+    "operation": "verify",
+    "value": "ERROR:{DataProcessor.Замеры.Form.Форма.Form(17)}: Error calling context method (VerifyAccessRights): Access violation!"
+  },
+  {
+    "profile": "read-off",
+    "priv": "0",
+    "case": "number.ru",
+    "right": "Read",
+    "operation": "access",
+    "value": "ERROR:{DataProcessor.Замеры.Form.Форма.Form(20)}: Error calling context method (AccessRight): Cannot apply the Read right to Document.ЗамерДокумента"
+  },
+  {
+    "profile": "read-off",
+    "priv": "0",
+    "case": "number.ru",
+    "right": "Read",
+    "operation": "verify",
+    "value": "OK"
+  },
+  {
+    "profile": "read-off",
+    "priv": "0",
+    "case": "number.ru",
+    "right": "View",
+    "operation": "access",
+    "value": "NO"
+  },
+  {
+    "profile": "read-off",
+    "priv": "0",
+    "case": "number.ru",
+    "right": "View",
+    "operation": "verify",
+    "value": "ERROR:{DataProcessor.Замеры.Form.Форма.Form(17)}: Error calling context method (VerifyAccessRights): Access violation!"
+  },
+  {
+    "profile": "read-off",
+    "priv": "0",
+    "case": "number.en",
+    "right": "Read",
+    "operation": "access",
+    "value": "ERROR:{DataProcessor.Замеры.Form.Форма.Form(20)}: Error calling context method (AccessRight): Cannot apply the Read right to Document.ЗамерДокумента"
+  },
+  {
+    "profile": "read-off",
+    "priv": "0",
+    "case": "number.en",
+    "right": "Read",
+    "operation": "verify",
+    "value": "OK"
+  },
+  {
+    "profile": "read-off",
+    "priv": "0",
+    "case": "number.en",
+    "right": "View",
+    "operation": "access",
+    "value": "NO"
+  },
+  {
+    "profile": "read-off",
+    "priv": "0",
+    "case": "number.en",
+    "right": "View",
+    "operation": "verify",
+    "value": "ERROR:{DataProcessor.Замеры.Form.Форма.Form(17)}: Error calling context method (VerifyAccessRights): Access violation!"
+  },
+  {
+    "profile": "read-off",
+    "priv": "0",
+    "case": "date.ru",
+    "right": "Read",
+    "operation": "access",
+    "value": "ERROR:{DataProcessor.Замеры.Form.Форма.Form(20)}: Error calling context method (AccessRight): Cannot apply the Read right to Document.ЗамерДокумента"
+  },
+  {
+    "profile": "read-off",
+    "priv": "0",
+    "case": "date.ru",
+    "right": "Read",
+    "operation": "verify",
+    "value": "OK"
+  },
+  {
+    "profile": "read-off",
+    "priv": "0",
+    "case": "date.ru",
+    "right": "View",
+    "operation": "access",
+    "value": "NO"
+  },
+  {
+    "profile": "read-off",
+    "priv": "0",
+    "case": "date.ru",
+    "right": "View",
+    "operation": "verify",
+    "value": "ERROR:{DataProcessor.Замеры.Form.Форма.Form(17)}: Error calling context method (VerifyAccessRights): Access violation!"
+  },
+  {
+    "profile": "read-off",
+    "priv": "0",
+    "case": "date.en",
+    "right": "Read",
+    "operation": "access",
+    "value": "ERROR:{DataProcessor.Замеры.Form.Форма.Form(20)}: Error calling context method (AccessRight): Cannot apply the Read right to Document.ЗамерДокумента"
+  },
+  {
+    "profile": "read-off",
+    "priv": "0",
+    "case": "date.en",
+    "right": "Read",
+    "operation": "verify",
+    "value": "OK"
+  },
+  {
+    "profile": "read-off",
+    "priv": "0",
+    "case": "date.en",
+    "right": "View",
+    "operation": "access",
+    "value": "NO"
+  },
+  {
+    "profile": "read-off",
+    "priv": "0",
+    "case": "date.en",
+    "right": "View",
+    "operation": "verify",
+    "value": "ERROR:{DataProcessor.Замеры.Form.Форма.Form(17)}: Error calling context method (VerifyAccessRights): Access violation!"
+  },
+  {
+    "profile": "read-off",
+    "priv": "0",
+    "case": "attribute",
+    "right": "Read",
+    "operation": "access",
+    "value": "ERROR:{DataProcessor.Замеры.Form.Форма.Form(20)}: Error calling context method (AccessRight): Cannot apply the Read right to Document.ЗамерДокумента.Attribute.Заполняемый"
+  },
+  {
+    "profile": "read-off",
+    "priv": "0",
+    "case": "attribute",
+    "right": "Read",
+    "operation": "verify",
+    "value": "OK"
+  },
+  {
+    "profile": "read-off",
+    "priv": "0",
+    "case": "attribute",
+    "right": "View",
+    "operation": "access",
+    "value": "NO"
+  },
+  {
+    "profile": "read-off",
+    "priv": "0",
+    "case": "attribute",
+    "right": "View",
+    "operation": "verify",
+    "value": "ERROR:{DataProcessor.Замеры.Form.Форма.Form(17)}: Error calling context method (VerifyAccessRights): Access violation!"
+  },
+  {
+    "profile": "read-off",
+    "priv": "1",
+    "case": "owner",
+    "right": "Read",
+    "operation": "access",
+    "value": "YES"
+  },
+  {
+    "profile": "read-off",
+    "priv": "1",
+    "case": "owner",
+    "right": "Read",
+    "operation": "verify",
+    "value": "OK"
+  },
+  {
+    "profile": "read-off",
+    "priv": "1",
+    "case": "owner",
+    "right": "View",
+    "operation": "access",
+    "value": "YES"
+  },
+  {
+    "profile": "read-off",
+    "priv": "1",
+    "case": "owner",
+    "right": "View",
+    "operation": "verify",
+    "value": "OK"
+  },
+  {
+    "profile": "read-off",
+    "priv": "1",
+    "case": "number.ru",
+    "right": "Read",
+    "operation": "access",
+    "value": "ERROR:{DataProcessor.Замеры.Form.Форма.Form(20)}: Error calling context method (AccessRight): Cannot apply the Read right to Document.ЗамерДокумента"
+  },
+  {
+    "profile": "read-off",
+    "priv": "1",
+    "case": "number.ru",
+    "right": "Read",
+    "operation": "verify",
+    "value": "OK"
+  },
+  {
+    "profile": "read-off",
+    "priv": "1",
+    "case": "number.ru",
+    "right": "View",
+    "operation": "access",
+    "value": "YES"
+  },
+  {
+    "profile": "read-off",
+    "priv": "1",
+    "case": "number.ru",
+    "right": "View",
+    "operation": "verify",
+    "value": "OK"
+  },
+  {
+    "profile": "read-off",
+    "priv": "1",
+    "case": "number.en",
+    "right": "Read",
+    "operation": "access",
+    "value": "ERROR:{DataProcessor.Замеры.Form.Форма.Form(20)}: Error calling context method (AccessRight): Cannot apply the Read right to Document.ЗамерДокумента"
+  },
+  {
+    "profile": "read-off",
+    "priv": "1",
+    "case": "number.en",
+    "right": "Read",
+    "operation": "verify",
+    "value": "OK"
+  },
+  {
+    "profile": "read-off",
+    "priv": "1",
+    "case": "number.en",
+    "right": "View",
+    "operation": "access",
+    "value": "YES"
+  },
+  {
+    "profile": "read-off",
+    "priv": "1",
+    "case": "number.en",
+    "right": "View",
+    "operation": "verify",
+    "value": "OK"
+  },
+  {
+    "profile": "read-off",
+    "priv": "1",
+    "case": "date.ru",
+    "right": "Read",
+    "operation": "access",
+    "value": "ERROR:{DataProcessor.Замеры.Form.Форма.Form(20)}: Error calling context method (AccessRight): Cannot apply the Read right to Document.ЗамерДокумента"
+  },
+  {
+    "profile": "read-off",
+    "priv": "1",
+    "case": "date.ru",
+    "right": "Read",
+    "operation": "verify",
+    "value": "OK"
+  },
+  {
+    "profile": "read-off",
+    "priv": "1",
+    "case": "date.ru",
+    "right": "View",
+    "operation": "access",
+    "value": "YES"
+  },
+  {
+    "profile": "read-off",
+    "priv": "1",
+    "case": "date.ru",
+    "right": "View",
+    "operation": "verify",
+    "value": "OK"
+  },
+  {
+    "profile": "read-off",
+    "priv": "1",
+    "case": "date.en",
+    "right": "Read",
+    "operation": "access",
+    "value": "ERROR:{DataProcessor.Замеры.Form.Форма.Form(20)}: Error calling context method (AccessRight): Cannot apply the Read right to Document.ЗамерДокумента"
+  },
+  {
+    "profile": "read-off",
+    "priv": "1",
+    "case": "date.en",
+    "right": "Read",
+    "operation": "verify",
+    "value": "OK"
+  },
+  {
+    "profile": "read-off",
+    "priv": "1",
+    "case": "date.en",
+    "right": "View",
+    "operation": "access",
+    "value": "YES"
+  },
+  {
+    "profile": "read-off",
+    "priv": "1",
+    "case": "date.en",
+    "right": "View",
+    "operation": "verify",
+    "value": "OK"
+  },
+  {
+    "profile": "read-off",
+    "priv": "1",
+    "case": "attribute",
+    "right": "Read",
+    "operation": "access",
+    "value": "ERROR:{DataProcessor.Замеры.Form.Форма.Form(20)}: Error calling context method (AccessRight): Cannot apply the Read right to Document.ЗамерДокумента.Attribute.Заполняемый"
+  },
+  {
+    "profile": "read-off",
+    "priv": "1",
+    "case": "attribute",
+    "right": "Read",
+    "operation": "verify",
+    "value": "OK"
+  },
+  {
+    "profile": "read-off",
+    "priv": "1",
+    "case": "attribute",
+    "right": "View",
+    "operation": "access",
+    "value": "YES"
+  },
+  {
+    "profile": "read-off",
+    "priv": "1",
+    "case": "attribute",
+    "right": "View",
+    "operation": "verify",
+    "value": "OK"
+  },
+  {
+    "profile": "read-on",
+    "priv": "0",
+    "case": "owner",
+    "right": "Read",
+    "operation": "access",
+    "value": "YES"
+  },
+  {
+    "profile": "read-on",
+    "priv": "0",
+    "case": "owner",
+    "right": "Read",
+    "operation": "verify",
+    "value": "OK"
+  },
+  {
+    "profile": "read-on",
+    "priv": "0",
+    "case": "owner",
+    "right": "View",
+    "operation": "access",
+    "value": "NO"
+  },
+  {
+    "profile": "read-on",
+    "priv": "0",
+    "case": "owner",
+    "right": "View",
+    "operation": "verify",
+    "value": "ERROR:{DataProcessor.Замеры.Form.Форма.Form(17)}: Error calling context method (VerifyAccessRights): Access violation!"
+  },
+  {
+    "profile": "read-on",
+    "priv": "0",
+    "case": "number.ru",
+    "right": "Read",
+    "operation": "access",
+    "value": "ERROR:{DataProcessor.Замеры.Form.Форма.Form(20)}: Error calling context method (AccessRight): Cannot apply the Read right to Document.ЗамерДокумента"
+  },
+  {
+    "profile": "read-on",
+    "priv": "0",
+    "case": "number.ru",
+    "right": "Read",
+    "operation": "verify",
+    "value": "OK"
+  },
+  {
+    "profile": "read-on",
+    "priv": "0",
+    "case": "number.ru",
+    "right": "View",
+    "operation": "access",
+    "value": "NO"
+  },
+  {
+    "profile": "read-on",
+    "priv": "0",
+    "case": "number.ru",
+    "right": "View",
+    "operation": "verify",
+    "value": "ERROR:{DataProcessor.Замеры.Form.Форма.Form(17)}: Error calling context method (VerifyAccessRights): Access violation!"
+  },
+  {
+    "profile": "read-on",
+    "priv": "0",
+    "case": "number.en",
+    "right": "Read",
+    "operation": "access",
+    "value": "ERROR:{DataProcessor.Замеры.Form.Форма.Form(20)}: Error calling context method (AccessRight): Cannot apply the Read right to Document.ЗамерДокумента"
+  },
+  {
+    "profile": "read-on",
+    "priv": "0",
+    "case": "number.en",
+    "right": "Read",
+    "operation": "verify",
+    "value": "OK"
+  },
+  {
+    "profile": "read-on",
+    "priv": "0",
+    "case": "number.en",
+    "right": "View",
+    "operation": "access",
+    "value": "NO"
+  },
+  {
+    "profile": "read-on",
+    "priv": "0",
+    "case": "number.en",
+    "right": "View",
+    "operation": "verify",
+    "value": "ERROR:{DataProcessor.Замеры.Form.Форма.Form(17)}: Error calling context method (VerifyAccessRights): Access violation!"
+  },
+  {
+    "profile": "read-on",
+    "priv": "0",
+    "case": "date.ru",
+    "right": "Read",
+    "operation": "access",
+    "value": "ERROR:{DataProcessor.Замеры.Form.Форма.Form(20)}: Error calling context method (AccessRight): Cannot apply the Read right to Document.ЗамерДокумента"
+  },
+  {
+    "profile": "read-on",
+    "priv": "0",
+    "case": "date.ru",
+    "right": "Read",
+    "operation": "verify",
+    "value": "OK"
+  },
+  {
+    "profile": "read-on",
+    "priv": "0",
+    "case": "date.ru",
+    "right": "View",
+    "operation": "access",
+    "value": "NO"
+  },
+  {
+    "profile": "read-on",
+    "priv": "0",
+    "case": "date.ru",
+    "right": "View",
+    "operation": "verify",
+    "value": "ERROR:{DataProcessor.Замеры.Form.Форма.Form(17)}: Error calling context method (VerifyAccessRights): Access violation!"
+  },
+  {
+    "profile": "read-on",
+    "priv": "0",
+    "case": "date.en",
+    "right": "Read",
+    "operation": "access",
+    "value": "ERROR:{DataProcessor.Замеры.Form.Форма.Form(20)}: Error calling context method (AccessRight): Cannot apply the Read right to Document.ЗамерДокумента"
+  },
+  {
+    "profile": "read-on",
+    "priv": "0",
+    "case": "date.en",
+    "right": "Read",
+    "operation": "verify",
+    "value": "OK"
+  },
+  {
+    "profile": "read-on",
+    "priv": "0",
+    "case": "date.en",
+    "right": "View",
+    "operation": "access",
+    "value": "NO"
+  },
+  {
+    "profile": "read-on",
+    "priv": "0",
+    "case": "date.en",
+    "right": "View",
+    "operation": "verify",
+    "value": "ERROR:{DataProcessor.Замеры.Form.Форма.Form(17)}: Error calling context method (VerifyAccessRights): Access violation!"
+  },
+  {
+    "profile": "read-on",
+    "priv": "0",
+    "case": "attribute",
+    "right": "Read",
+    "operation": "access",
+    "value": "ERROR:{DataProcessor.Замеры.Form.Форма.Form(20)}: Error calling context method (AccessRight): Cannot apply the Read right to Document.ЗамерДокумента.Attribute.Заполняемый"
+  },
+  {
+    "profile": "read-on",
+    "priv": "0",
+    "case": "attribute",
+    "right": "Read",
+    "operation": "verify",
+    "value": "OK"
+  },
+  {
+    "profile": "read-on",
+    "priv": "0",
+    "case": "attribute",
+    "right": "View",
+    "operation": "access",
+    "value": "NO"
+  },
+  {
+    "profile": "read-on",
+    "priv": "0",
+    "case": "attribute",
+    "right": "View",
+    "operation": "verify",
+    "value": "ERROR:{DataProcessor.Замеры.Form.Форма.Form(17)}: Error calling context method (VerifyAccessRights): Access violation!"
+  },
+  {
+    "profile": "read-on",
+    "priv": "1",
+    "case": "owner",
+    "right": "Read",
+    "operation": "access",
+    "value": "YES"
+  },
+  {
+    "profile": "read-on",
+    "priv": "1",
+    "case": "owner",
+    "right": "Read",
+    "operation": "verify",
+    "value": "OK"
+  },
+  {
+    "profile": "read-on",
+    "priv": "1",
+    "case": "owner",
+    "right": "View",
+    "operation": "access",
+    "value": "YES"
+  },
+  {
+    "profile": "read-on",
+    "priv": "1",
+    "case": "owner",
+    "right": "View",
+    "operation": "verify",
+    "value": "OK"
+  },
+  {
+    "profile": "read-on",
+    "priv": "1",
+    "case": "number.ru",
+    "right": "Read",
+    "operation": "access",
+    "value": "ERROR:{DataProcessor.Замеры.Form.Форма.Form(20)}: Error calling context method (AccessRight): Cannot apply the Read right to Document.ЗамерДокумента"
+  },
+  {
+    "profile": "read-on",
+    "priv": "1",
+    "case": "number.ru",
+    "right": "Read",
+    "operation": "verify",
+    "value": "OK"
+  },
+  {
+    "profile": "read-on",
+    "priv": "1",
+    "case": "number.ru",
+    "right": "View",
+    "operation": "access",
+    "value": "YES"
+  },
+  {
+    "profile": "read-on",
+    "priv": "1",
+    "case": "number.ru",
+    "right": "View",
+    "operation": "verify",
+    "value": "OK"
+  },
+  {
+    "profile": "read-on",
+    "priv": "1",
+    "case": "number.en",
+    "right": "Read",
+    "operation": "access",
+    "value": "ERROR:{DataProcessor.Замеры.Form.Форма.Form(20)}: Error calling context method (AccessRight): Cannot apply the Read right to Document.ЗамерДокумента"
+  },
+  {
+    "profile": "read-on",
+    "priv": "1",
+    "case": "number.en",
+    "right": "Read",
+    "operation": "verify",
+    "value": "OK"
+  },
+  {
+    "profile": "read-on",
+    "priv": "1",
+    "case": "number.en",
+    "right": "View",
+    "operation": "access",
+    "value": "YES"
+  },
+  {
+    "profile": "read-on",
+    "priv": "1",
+    "case": "number.en",
+    "right": "View",
+    "operation": "verify",
+    "value": "OK"
+  },
+  {
+    "profile": "read-on",
+    "priv": "1",
+    "case": "date.ru",
+    "right": "Read",
+    "operation": "access",
+    "value": "ERROR:{DataProcessor.Замеры.Form.Форма.Form(20)}: Error calling context method (AccessRight): Cannot apply the Read right to Document.ЗамерДокумента"
+  },
+  {
+    "profile": "read-on",
+    "priv": "1",
+    "case": "date.ru",
+    "right": "Read",
+    "operation": "verify",
+    "value": "OK"
+  },
+  {
+    "profile": "read-on",
+    "priv": "1",
+    "case": "date.ru",
+    "right": "View",
+    "operation": "access",
+    "value": "YES"
+  },
+  {
+    "profile": "read-on",
+    "priv": "1",
+    "case": "date.ru",
+    "right": "View",
+    "operation": "verify",
+    "value": "OK"
+  },
+  {
+    "profile": "read-on",
+    "priv": "1",
+    "case": "date.en",
+    "right": "Read",
+    "operation": "access",
+    "value": "ERROR:{DataProcessor.Замеры.Form.Форма.Form(20)}: Error calling context method (AccessRight): Cannot apply the Read right to Document.ЗамерДокумента"
+  },
+  {
+    "profile": "read-on",
+    "priv": "1",
+    "case": "date.en",
+    "right": "Read",
+    "operation": "verify",
+    "value": "OK"
+  },
+  {
+    "profile": "read-on",
+    "priv": "1",
+    "case": "date.en",
+    "right": "View",
+    "operation": "access",
+    "value": "YES"
+  },
+  {
+    "profile": "read-on",
+    "priv": "1",
+    "case": "date.en",
+    "right": "View",
+    "operation": "verify",
+    "value": "OK"
+  },
+  {
+    "profile": "read-on",
+    "priv": "1",
+    "case": "attribute",
+    "right": "Read",
+    "operation": "access",
+    "value": "ERROR:{DataProcessor.Замеры.Form.Форма.Form(20)}: Error calling context method (AccessRight): Cannot apply the Read right to Document.ЗамерДокумента.Attribute.Заполняемый"
+  },
+  {
+    "profile": "read-on",
+    "priv": "1",
+    "case": "attribute",
+    "right": "Read",
+    "operation": "verify",
+    "value": "OK"
+  },
+  {
+    "profile": "read-on",
+    "priv": "1",
+    "case": "attribute",
+    "right": "View",
+    "operation": "access",
+    "value": "YES"
+  },
+  {
+    "profile": "read-on",
+    "priv": "1",
+    "case": "attribute",
+    "right": "View",
+    "operation": "verify",
+    "value": "OK"
+  },
+  {
+    "profile": "denied",
+    "priv": "0",
+    "case": "owner",
+    "right": "Read",
+    "operation": "access",
+    "value": "NO"
+  },
+  {
+    "profile": "denied",
+    "priv": "0",
+    "case": "owner",
+    "right": "Read",
+    "operation": "verify",
+    "value": "ERROR:{DataProcessor.Замеры.Form.Форма.Form(17)}: Error calling context method (VerifyAccessRights): Access violation!"
+  },
+  {
+    "profile": "denied",
+    "priv": "0",
+    "case": "owner",
+    "right": "View",
+    "operation": "access",
+    "value": "NO"
+  },
+  {
+    "profile": "denied",
+    "priv": "0",
+    "case": "owner",
+    "right": "View",
+    "operation": "verify",
+    "value": "ERROR:{DataProcessor.Замеры.Form.Форма.Form(17)}: Error calling context method (VerifyAccessRights): Access violation!"
+  },
+  {
+    "profile": "denied",
+    "priv": "0",
+    "case": "number.ru",
+    "right": "Read",
+    "operation": "access",
+    "value": "ERROR:{DataProcessor.Замеры.Form.Форма.Form(20)}: Error calling context method (AccessRight): Cannot apply the Read right to Document.ЗамерДокумента"
+  },
+  {
+    "profile": "denied",
+    "priv": "0",
+    "case": "number.ru",
+    "right": "Read",
+    "operation": "verify",
+    "value": "OK"
+  },
+  {
+    "profile": "denied",
+    "priv": "0",
+    "case": "number.ru",
+    "right": "View",
+    "operation": "access",
+    "value": "NO"
+  },
+  {
+    "profile": "denied",
+    "priv": "0",
+    "case": "number.ru",
+    "right": "View",
+    "operation": "verify",
+    "value": "ERROR:{DataProcessor.Замеры.Form.Форма.Form(17)}: Error calling context method (VerifyAccessRights): Access violation!"
+  },
+  {
+    "profile": "denied",
+    "priv": "0",
+    "case": "number.en",
+    "right": "Read",
+    "operation": "access",
+    "value": "ERROR:{DataProcessor.Замеры.Form.Форма.Form(20)}: Error calling context method (AccessRight): Cannot apply the Read right to Document.ЗамерДокумента"
+  },
+  {
+    "profile": "denied",
+    "priv": "0",
+    "case": "number.en",
+    "right": "Read",
+    "operation": "verify",
+    "value": "OK"
+  },
+  {
+    "profile": "denied",
+    "priv": "0",
+    "case": "number.en",
+    "right": "View",
+    "operation": "access",
+    "value": "NO"
+  },
+  {
+    "profile": "denied",
+    "priv": "0",
+    "case": "number.en",
+    "right": "View",
+    "operation": "verify",
+    "value": "ERROR:{DataProcessor.Замеры.Form.Форма.Form(17)}: Error calling context method (VerifyAccessRights): Access violation!"
+  },
+  {
+    "profile": "denied",
+    "priv": "0",
+    "case": "date.ru",
+    "right": "Read",
+    "operation": "access",
+    "value": "ERROR:{DataProcessor.Замеры.Form.Форма.Form(20)}: Error calling context method (AccessRight): Cannot apply the Read right to Document.ЗамерДокумента"
+  },
+  {
+    "profile": "denied",
+    "priv": "0",
+    "case": "date.ru",
+    "right": "Read",
+    "operation": "verify",
+    "value": "OK"
+  },
+  {
+    "profile": "denied",
+    "priv": "0",
+    "case": "date.ru",
+    "right": "View",
+    "operation": "access",
+    "value": "NO"
+  },
+  {
+    "profile": "denied",
+    "priv": "0",
+    "case": "date.ru",
+    "right": "View",
+    "operation": "verify",
+    "value": "ERROR:{DataProcessor.Замеры.Form.Форма.Form(17)}: Error calling context method (VerifyAccessRights): Access violation!"
+  },
+  {
+    "profile": "denied",
+    "priv": "0",
+    "case": "date.en",
+    "right": "Read",
+    "operation": "access",
+    "value": "ERROR:{DataProcessor.Замеры.Form.Форма.Form(20)}: Error calling context method (AccessRight): Cannot apply the Read right to Document.ЗамерДокумента"
+  },
+  {
+    "profile": "denied",
+    "priv": "0",
+    "case": "date.en",
+    "right": "Read",
+    "operation": "verify",
+    "value": "OK"
+  },
+  {
+    "profile": "denied",
+    "priv": "0",
+    "case": "date.en",
+    "right": "View",
+    "operation": "access",
+    "value": "NO"
+  },
+  {
+    "profile": "denied",
+    "priv": "0",
+    "case": "date.en",
+    "right": "View",
+    "operation": "verify",
+    "value": "ERROR:{DataProcessor.Замеры.Form.Форма.Form(17)}: Error calling context method (VerifyAccessRights): Access violation!"
+  },
+  {
+    "profile": "denied",
+    "priv": "0",
+    "case": "attribute",
+    "right": "Read",
+    "operation": "access",
+    "value": "ERROR:{DataProcessor.Замеры.Form.Форма.Form(20)}: Error calling context method (AccessRight): Cannot apply the Read right to Document.ЗамерДокумента.Attribute.Заполняемый"
+  },
+  {
+    "profile": "denied",
+    "priv": "0",
+    "case": "attribute",
+    "right": "Read",
+    "operation": "verify",
+    "value": "OK"
+  },
+  {
+    "profile": "denied",
+    "priv": "0",
+    "case": "attribute",
+    "right": "View",
+    "operation": "access",
+    "value": "NO"
+  },
+  {
+    "profile": "denied",
+    "priv": "0",
+    "case": "attribute",
+    "right": "View",
+    "operation": "verify",
+    "value": "ERROR:{DataProcessor.Замеры.Form.Форма.Form(17)}: Error calling context method (VerifyAccessRights): Access violation!"
+  },
+  {
+    "profile": "denied",
+    "priv": "1",
+    "case": "owner",
+    "right": "Read",
+    "operation": "access",
+    "value": "YES"
+  },
+  {
+    "profile": "denied",
+    "priv": "1",
+    "case": "owner",
+    "right": "Read",
+    "operation": "verify",
+    "value": "OK"
+  },
+  {
+    "profile": "denied",
+    "priv": "1",
+    "case": "owner",
+    "right": "View",
+    "operation": "access",
+    "value": "YES"
+  },
+  {
+    "profile": "denied",
+    "priv": "1",
+    "case": "owner",
+    "right": "View",
+    "operation": "verify",
+    "value": "OK"
+  },
+  {
+    "profile": "denied",
+    "priv": "1",
+    "case": "number.ru",
+    "right": "Read",
+    "operation": "access",
+    "value": "ERROR:{DataProcessor.Замеры.Form.Форма.Form(20)}: Error calling context method (AccessRight): Cannot apply the Read right to Document.ЗамерДокумента"
+  },
+  {
+    "profile": "denied",
+    "priv": "1",
+    "case": "number.ru",
+    "right": "Read",
+    "operation": "verify",
+    "value": "OK"
+  },
+  {
+    "profile": "denied",
+    "priv": "1",
+    "case": "number.ru",
+    "right": "View",
+    "operation": "access",
+    "value": "YES"
+  },
+  {
+    "profile": "denied",
+    "priv": "1",
+    "case": "number.ru",
+    "right": "View",
+    "operation": "verify",
+    "value": "OK"
+  },
+  {
+    "profile": "denied",
+    "priv": "1",
+    "case": "number.en",
+    "right": "Read",
+    "operation": "access",
+    "value": "ERROR:{DataProcessor.Замеры.Form.Форма.Form(20)}: Error calling context method (AccessRight): Cannot apply the Read right to Document.ЗамерДокумента"
+  },
+  {
+    "profile": "denied",
+    "priv": "1",
+    "case": "number.en",
+    "right": "Read",
+    "operation": "verify",
+    "value": "OK"
+  },
+  {
+    "profile": "denied",
+    "priv": "1",
+    "case": "number.en",
+    "right": "View",
+    "operation": "access",
+    "value": "YES"
+  },
+  {
+    "profile": "denied",
+    "priv": "1",
+    "case": "number.en",
+    "right": "View",
+    "operation": "verify",
+    "value": "OK"
+  },
+  {
+    "profile": "denied",
+    "priv": "1",
+    "case": "date.ru",
+    "right": "Read",
+    "operation": "access",
+    "value": "ERROR:{DataProcessor.Замеры.Form.Форма.Form(20)}: Error calling context method (AccessRight): Cannot apply the Read right to Document.ЗамерДокумента"
+  },
+  {
+    "profile": "denied",
+    "priv": "1",
+    "case": "date.ru",
+    "right": "Read",
+    "operation": "verify",
+    "value": "OK"
+  },
+  {
+    "profile": "denied",
+    "priv": "1",
+    "case": "date.ru",
+    "right": "View",
+    "operation": "access",
+    "value": "YES"
+  },
+  {
+    "profile": "denied",
+    "priv": "1",
+    "case": "date.ru",
+    "right": "View",
+    "operation": "verify",
+    "value": "OK"
+  },
+  {
+    "profile": "denied",
+    "priv": "1",
+    "case": "date.en",
+    "right": "Read",
+    "operation": "access",
+    "value": "ERROR:{DataProcessor.Замеры.Form.Форма.Form(20)}: Error calling context method (AccessRight): Cannot apply the Read right to Document.ЗамерДокумента"
+  },
+  {
+    "profile": "denied",
+    "priv": "1",
+    "case": "date.en",
+    "right": "Read",
+    "operation": "verify",
+    "value": "OK"
+  },
+  {
+    "profile": "denied",
+    "priv": "1",
+    "case": "date.en",
+    "right": "View",
+    "operation": "access",
+    "value": "YES"
+  },
+  {
+    "profile": "denied",
+    "priv": "1",
+    "case": "date.en",
+    "right": "View",
+    "operation": "verify",
+    "value": "OK"
+  },
+  {
+    "profile": "denied",
+    "priv": "1",
+    "case": "attribute",
+    "right": "Read",
+    "operation": "access",
+    "value": "ERROR:{DataProcessor.Замеры.Form.Форма.Form(20)}: Error calling context method (AccessRight): Cannot apply the Read right to Document.ЗамерДокумента.Attribute.Заполняемый"
+  },
+  {
+    "profile": "denied",
+    "priv": "1",
+    "case": "attribute",
+    "right": "Read",
+    "operation": "verify",
+    "value": "OK"
+  },
+  {
+    "profile": "denied",
+    "priv": "1",
+    "case": "attribute",
+    "right": "View",
+    "operation": "access",
+    "value": "YES"
+  },
+  {
+    "profile": "denied",
+    "priv": "1",
+    "case": "attribute",
+    "right": "View",
+    "operation": "verify",
+    "value": "OK"
+  }
+]

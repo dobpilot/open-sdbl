@@ -1,0 +1,187 @@
+﻿<?xml version="1.0" encoding="UTF-8"?>
+<MetaDataObject xmlns="http://v8.1c.ru/8.3/MDClasses" xmlns:app="http://v8.1c.ru/8.2/managed-application/core" xmlns:cfg="http://v8.1c.ru/8.1/data/enterprise/current-config" xmlns:cmi="http://v8.1c.ru/8.2/managed-application/cmi" xmlns:ent="http://v8.1c.ru/8.1/data/enterprise" xmlns:lf="http://v8.1c.ru/8.2/managed-application/logform" xmlns:style="http://v8.1c.ru/8.1/data/ui/style" xmlns:sys="http://v8.1c.ru/8.1/data/ui/fonts/system" xmlns:v8="http://v8.1c.ru/8.1/data/core" xmlns:v8ui="http://v8.1c.ru/8.1/data/ui" xmlns:web="http://v8.1c.ru/8.1/data/ui/colors/web" xmlns:win="http://v8.1c.ru/8.1/data/ui/colors/windows" xmlns:xen="http://v8.1c.ru/8.3/xcf/enums" xmlns:xpr="http://v8.1c.ru/8.3/xcf/predef" xmlns:xr="http://v8.1c.ru/8.3/xcf/readable" xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" version="2.20">
+	<Enum uuid="fe9c408b-b39c-40b8-be5d-9061ba2198ec">
+		<InternalInfo>
+			<xr:GeneratedType name="EnumRef.ДвиженияЦелевыхСредств" category="Ref">
+				<xr:TypeId>4678b32c-95d5-458a-9794-12a23bd6b37c</xr:TypeId>
+				<xr:ValueId>0539e59b-6259-4ed8-9e88-89f178a0bf40</xr:ValueId>
+			</xr:GeneratedType>
+			<xr:GeneratedType name="EnumManager.ДвиженияЦелевыхСредств" category="Manager">
+				<xr:TypeId>f109971a-e535-4db6-b05c-6999f993f1ec</xr:TypeId>
+				<xr:ValueId>227a11fe-3b3e-4564-babd-aa289991688d</xr:ValueId>
+			</xr:GeneratedType>
+			<xr:GeneratedType name="EnumList.ДвиженияЦелевыхСредств" category="List">
+				<xr:TypeId>9f335acd-62e1-4b5e-9341-fbb19413c6c4</xr:TypeId>
+				<xr:ValueId>2df87e3a-77a1-4ec9-930f-3112bebfe10d</xr:ValueId>
+			</xr:GeneratedType>
+		</InternalInfo>
+		<Properties>
+			<Name>ДвиженияЦелевыхСредств</Name>
+			<Synonym>
+				<v8:item>
+					<v8:lang>ru</v8:lang>
+					<v8:content>Движения целевых средств</v8:content>
+				</v8:item>
+			</Synonym>
+			<Comment/>
+			<UseStandardCommands>false</UseStandardCommands>
+			<Characteristics/>
+			<QuickChoice>true</QuickChoice>
+			<ChoiceMode>BothWays</ChoiceMode>
+			<DefaultListForm/>
+			<DefaultChoiceForm/>
+			<AuxiliaryListForm/>
+			<AuxiliaryChoiceForm/>
+			<ListPresentation/>
+			<ExtendedListPresentation/>
+			<Explanation/>
+			<ChoiceHistoryOnInput>Auto</ChoiceHistoryOnInput>
+		</Properties>
+		<ChildObjects>
+			<EnumValue uuid="0a9677a0-cabb-4169-abd0-432a179e454f">
+				<Properties>
+					<Name>ВступительныеВзносы</Name>
+					<Synonym>
+						<v8:item>
+							<v8:lang>ru</v8:lang>
+							<v8:content>Вступительные взносы</v8:content>
+						</v8:item>
+					</Synonym>
+					<Comment/>
+				</Properties>
+			</EnumValue>
+			<EnumValue uuid="fbf05dd9-ec54-4cd9-a7ec-03412c275564">
+				<Properties>
+					<Name>ЧленскиеВзносы</Name>
+					<Synonym>
+						<v8:item>
+							<v8:lang>ru</v8:lang>
+							<v8:content>Членские взносы</v8:content>
+						</v8:item>
+					</Synonym>
+					<Comment/>
+				</Properties>
+			</EnumValue>
+			<EnumValue uuid="fd7f3225-d994-44f8-b224-815c89246bca">
+				<Properties>
+					<Name>ДобровольныеВзносы</Name>
+					<Synonym>
+						<v8:item>
+							<v8:lang>ru</v8:lang>
+							<v8:content>Добровольные взносы</v8:content>
+						</v8:item>
+					</Synonym>
+					<Comment/>
+				</Properties>
+			</EnumValue>
+			<EnumValue uuid="2f5232bf-3145-4a03-8618-4404a9bbedcf">
+				<Properties>
+					<Name>ДоходыОтПредпринимательскойДеятельностиОрганизации</Name>
+					<Synonym>
+						<v8:item>
+							<v8:lang>ru</v8:lang>
+							<v8:content>Доходы от предпринимательской деятельности организации</v8:content>
+						</v8:item>
+					</Synonym>
+					<Comment/>
+				</Properties>
+			</EnumValue>
+			<EnumValue uuid="5d7f403c-cd32-4bd2-8562-8b6ee1c4ae5b">
+				<Properties>
+					<Name>ПрочиеПоступления</Name>
+					<Synonym>
+						<v8:item>
+							<v8:lang>ru</v8:lang>
+							<v8:content>Прочие поступления</v8:content>
+						</v8:item>
+					</Synonym>
+					<Comment/>
+				</Properties>
+			</EnumValue>
+			<EnumValue uuid="57d5436f-2dcc-4df9-818c-bd3b8a1f230d">
+				<Properties>
+					<Name>ОказаниеСоциальнойИБлаготворительнойПомощи</Name>
+					<Synonym>
+						<v8:item>
+							<v8:lang>ru</v8:lang>
+							<v8:content>Оказание социальной и благотворительной помощи</v8:content>
+						</v8:item>
+					</Synonym>
+					<Comment/>
+				</Properties>
+			</EnumValue>
+			<EnumValue uuid="e4e46d3b-8e37-4681-946d-7a618c14a62c">
+				<Properties>
+					<Name>ПроведениеКонференцийСеминаров</Name>
+					<Synonym>
+						<v8:item>
+							<v8:lang>ru</v8:lang>
+							<v8:content>Проведение конференций семинаров и т.п.</v8:content>
+						</v8:item>
+					</Synonym>
+					<Comment/>
+				</Properties>
+			</EnumValue>
+			<EnumValue uuid="7c6e0170-f4dc-462b-bf95-1870931c0bb2">
+				<Properties>
+					<Name>ПроведениеИныхЦелевыхМероприятий</Name>
+					<Synonym>
+						<v8:item>
+							<v8:lang>ru</v8:lang>
+							<v8:content>Проведение иных целевых мероприятий</v8:content>
+						</v8:item>
+					</Synonym>
+					<Comment/>
+				</Properties>
+			</EnumValue>
+			<EnumValue uuid="8917b687-4f5e-4241-af6c-dd6376a7ab80">
+				<Properties>
+					<Name>СодержаниеАппаратаУправления</Name>
+					<Synonym>
+						<v8:item>
+							<v8:lang>ru</v8:lang>
+							<v8:content>Содержание аппарата управления</v8:content>
+						</v8:item>
+					</Synonym>
+					<Comment/>
+				</Properties>
+			</EnumValue>
+			<EnumValue uuid="a0ada46f-3440-483a-ab2b-fc46a6d96cab">
+				<Properties>
+					<Name>ПриобретениеОсновныхСредствИнвентаряИИногоИмущества</Name>
+					<Synonym>
+						<v8:item>
+							<v8:lang>ru</v8:lang>
+							<v8:content>Приобретение основных средств, инвентаря и иного имущества</v8:content>
+						</v8:item>
+					</Synonym>
+					<Comment/>
+				</Properties>
+			</EnumValue>
+			<EnumValue uuid="efea51e9-f4ee-453c-a287-a77e068e04a6">
+				<Properties>
+					<Name>РасходыСвязанныеСПредпринимательскойДеятельностью</Name>
+					<Synonym>
+						<v8:item>
+							<v8:lang>ru</v8:lang>
+							<v8:content>Расходы связанные с предпринимательской деятельностью</v8:content>
+						</v8:item>
+					</Synonym>
+					<Comment/>
+				</Properties>
+			</EnumValue>
+			<EnumValue uuid="582e6056-c5ff-4b11-8925-a7af2f7e3973">
+				<Properties>
+					<Name>ПрочиеРасходы</Name>
+					<Synonym>
+						<v8:item>
+							<v8:lang>ru</v8:lang>
+							<v8:content>Прочие расходы</v8:content>
+						</v8:item>
+					</Synonym>
+					<Comment/>
+				</Properties>
+			</EnumValue>
+		</ChildObjects>
+	</Enum>
+</MetaDataObject>

@@ -1,0 +1,26 @@
+{
+  "base": "05a24e5e5e420d9e55483cbf643eb736c1bf65c0",
+  "workspace": {
+    "exit": 0,
+    "passed": 952,
+    "failed": 0,
+    "ignored": 13,
+    "log": "/tmp/sdbl-logical-workspace-final-2.log",
+    "focused_projection_tests_in_full_run": 8
+  },
+  "final_focused_projection": {
+    "exit": 0,
+    "passed": 9,
+    "additional_binary_tag_guard_tested_separately": true,
+    "log": "/tmp/sdbl-logical-focused.log"
+  },
+  "fmt": 0,
+  "clippy_workspace_all_targets": 0,
+  "rustdoc_warnings_denied": 0,
+  "openspec_all_strict": {
+    "exit": 0,
+    "passed": 13
+  },
+  "native_positive_completed": true,
+  "prior_doctest_artifact_mismatch": "Intermediate overlapping rebuild while a suite ran produced E0460; final sequential frozen-source workspace run passed all doctests."
+}

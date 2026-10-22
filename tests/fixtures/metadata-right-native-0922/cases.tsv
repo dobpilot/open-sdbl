@@ -1,0 +1,492 @@
+standard-description-profiles/description-yes-default-no/deny.oracle	verify	Read	undefined	false	allowed	standard-description-profiles/description-yes-default-no/RootDeny.rights.deflate
+standard-description-profiles/description-yes-default-no/deny.oracle	access	Read	undefined	false	allowed	standard-description-profiles/description-yes-default-no/RootDeny.rights.deflate
+standard-description-profiles/description-yes-default-no/deny.oracle	verify	Read	empty	false	invalid_standard_path	standard-description-profiles/description-yes-default-no/RootDeny.rights.deflate
+standard-description-profiles/description-yes-default-no/deny.oracle	access	Read	empty	false	invalid_standard_path	standard-description-profiles/description-yes-default-no/RootDeny.rights.deflate
+standard-description-profiles/description-yes-default-no/deny.oracle	verify	Read	Код	false	allowed	standard-description-profiles/description-yes-default-no/RootDeny.rights.deflate
+standard-description-profiles/description-yes-default-no/deny.oracle	access	Read	Код	false	not_applicable	standard-description-profiles/description-yes-default-no/RootDeny.rights.deflate
+standard-description-profiles/description-yes-default-no/deny.oracle	verify	Read	Code	false	allowed	standard-description-profiles/description-yes-default-no/RootDeny.rights.deflate
+standard-description-profiles/description-yes-default-no/deny.oracle	access	Read	Code	false	not_applicable	standard-description-profiles/description-yes-default-no/RootDeny.rights.deflate
+standard-description-profiles/description-yes-default-no/deny.oracle	verify	Read	Description	false	allowed	standard-description-profiles/description-yes-default-no/RootDeny.rights.deflate
+standard-description-profiles/description-yes-default-no/deny.oracle	access	Read	Description	false	not_applicable	standard-description-profiles/description-yes-default-no/RootDeny.rights.deflate
+standard-description-profiles/description-yes-default-no/deny.oracle	verify	Read	Наименование	false	allowed	standard-description-profiles/description-yes-default-no/RootDeny.rights.deflate
+standard-description-profiles/description-yes-default-no/deny.oracle	access	Read	Наименование	false	not_applicable	standard-description-profiles/description-yes-default-no/RootDeny.rights.deflate
+standard-description-profiles/description-yes-default-no/deny.oracle	verify	Read	cOdE	false	allowed	standard-description-profiles/description-yes-default-no/RootDeny.rights.deflate
+standard-description-profiles/description-yes-default-no/deny.oracle	access	Read	cOdE	false	not_applicable	standard-description-profiles/description-yes-default-no/RootDeny.rights.deflate
+standard-description-profiles/description-yes-default-no/deny.oracle	verify	Read	код	false	allowed	standard-description-profiles/description-yes-default-no/RootDeny.rights.deflate
+standard-description-profiles/description-yes-default-no/deny.oracle	access	Read	код	false	not_applicable	standard-description-profiles/description-yes-default-no/RootDeny.rights.deflate
+standard-description-profiles/description-yes-default-no/deny.oracle	verify	Read	НеСуществует	false	invalid_standard_path	standard-description-profiles/description-yes-default-no/RootDeny.rights.deflate
+standard-description-profiles/description-yes-default-no/deny.oracle	access	Read	НеСуществует	false	invalid_standard_path	standard-description-profiles/description-yes-default-no/RootDeny.rights.deflate
+standard-description-profiles/description-yes-default-no/deny.oracle	verify	View	undefined	false	allowed	standard-description-profiles/description-yes-default-no/RootDeny.rights.deflate
+standard-description-profiles/description-yes-default-no/deny.oracle	access	View	undefined	false	allowed	standard-description-profiles/description-yes-default-no/RootDeny.rights.deflate
+standard-description-profiles/description-yes-default-no/deny.oracle	verify	View	empty	false	invalid_standard_path	standard-description-profiles/description-yes-default-no/RootDeny.rights.deflate
+standard-description-profiles/description-yes-default-no/deny.oracle	access	View	empty	false	invalid_standard_path	standard-description-profiles/description-yes-default-no/RootDeny.rights.deflate
+standard-description-profiles/description-yes-default-no/deny.oracle	verify	View	Код	false	denied	standard-description-profiles/description-yes-default-no/RootDeny.rights.deflate
+standard-description-profiles/description-yes-default-no/deny.oracle	access	View	Код	false	denied	standard-description-profiles/description-yes-default-no/RootDeny.rights.deflate
+standard-description-profiles/description-yes-default-no/deny.oracle	verify	View	Code	false	denied	standard-description-profiles/description-yes-default-no/RootDeny.rights.deflate
+standard-description-profiles/description-yes-default-no/deny.oracle	access	View	Code	false	denied	standard-description-profiles/description-yes-default-no/RootDeny.rights.deflate
+standard-description-profiles/description-yes-default-no/deny.oracle	verify	View	Description	false	allowed	standard-description-profiles/description-yes-default-no/RootDeny.rights.deflate
+standard-description-profiles/description-yes-default-no/deny.oracle	access	View	Description	false	allowed	standard-description-profiles/description-yes-default-no/RootDeny.rights.deflate
+standard-description-profiles/description-yes-default-no/deny.oracle	verify	View	Наименование	false	allowed	standard-description-profiles/description-yes-default-no/RootDeny.rights.deflate
+standard-description-profiles/description-yes-default-no/deny.oracle	access	View	Наименование	false	allowed	standard-description-profiles/description-yes-default-no/RootDeny.rights.deflate
+standard-description-profiles/description-yes-default-no/deny.oracle	verify	View	cOdE	false	denied	standard-description-profiles/description-yes-default-no/RootDeny.rights.deflate
+standard-description-profiles/description-yes-default-no/deny.oracle	access	View	cOdE	false	denied	standard-description-profiles/description-yes-default-no/RootDeny.rights.deflate
+standard-description-profiles/description-yes-default-no/deny.oracle	verify	View	код	false	denied	standard-description-profiles/description-yes-default-no/RootDeny.rights.deflate
+standard-description-profiles/description-yes-default-no/deny.oracle	access	View	код	false	denied	standard-description-profiles/description-yes-default-no/RootDeny.rights.deflate
+standard-description-profiles/description-yes-default-no/deny.oracle	verify	View	НеСуществует	false	invalid_standard_path	standard-description-profiles/description-yes-default-no/RootDeny.rights.deflate
+standard-description-profiles/description-yes-default-no/deny.oracle	access	View	НеСуществует	false	invalid_standard_path	standard-description-profiles/description-yes-default-no/RootDeny.rights.deflate
+standard-description-profiles/explicit-description-no-default-yes/deny.oracle	verify	Read	undefined	false	allowed	standard-description-profiles/explicit-description-no-default-yes/RootDeny.rights.deflate
+standard-description-profiles/explicit-description-no-default-yes/deny.oracle	access	Read	undefined	false	allowed	standard-description-profiles/explicit-description-no-default-yes/RootDeny.rights.deflate
+standard-description-profiles/explicit-description-no-default-yes/deny.oracle	verify	Read	empty	false	invalid_standard_path	standard-description-profiles/explicit-description-no-default-yes/RootDeny.rights.deflate
+standard-description-profiles/explicit-description-no-default-yes/deny.oracle	access	Read	empty	false	invalid_standard_path	standard-description-profiles/explicit-description-no-default-yes/RootDeny.rights.deflate
+standard-description-profiles/explicit-description-no-default-yes/deny.oracle	verify	Read	Код	false	allowed	standard-description-profiles/explicit-description-no-default-yes/RootDeny.rights.deflate
+standard-description-profiles/explicit-description-no-default-yes/deny.oracle	access	Read	Код	false	not_applicable	standard-description-profiles/explicit-description-no-default-yes/RootDeny.rights.deflate
+standard-description-profiles/explicit-description-no-default-yes/deny.oracle	verify	Read	Code	false	allowed	standard-description-profiles/explicit-description-no-default-yes/RootDeny.rights.deflate
+standard-description-profiles/explicit-description-no-default-yes/deny.oracle	access	Read	Code	false	not_applicable	standard-description-profiles/explicit-description-no-default-yes/RootDeny.rights.deflate
+standard-description-profiles/explicit-description-no-default-yes/deny.oracle	verify	Read	Description	false	allowed	standard-description-profiles/explicit-description-no-default-yes/RootDeny.rights.deflate
+standard-description-profiles/explicit-description-no-default-yes/deny.oracle	access	Read	Description	false	not_applicable	standard-description-profiles/explicit-description-no-default-yes/RootDeny.rights.deflate
+standard-description-profiles/explicit-description-no-default-yes/deny.oracle	verify	Read	Наименование	false	allowed	standard-description-profiles/explicit-description-no-default-yes/RootDeny.rights.deflate
+standard-description-profiles/explicit-description-no-default-yes/deny.oracle	access	Read	Наименование	false	not_applicable	standard-description-profiles/explicit-description-no-default-yes/RootDeny.rights.deflate
+standard-description-profiles/explicit-description-no-default-yes/deny.oracle	verify	Read	cOdE	false	allowed	standard-description-profiles/explicit-description-no-default-yes/RootDeny.rights.deflate
+standard-description-profiles/explicit-description-no-default-yes/deny.oracle	access	Read	cOdE	false	not_applicable	standard-description-profiles/explicit-description-no-default-yes/RootDeny.rights.deflate
+standard-description-profiles/explicit-description-no-default-yes/deny.oracle	verify	Read	код	false	allowed	standard-description-profiles/explicit-description-no-default-yes/RootDeny.rights.deflate
+standard-description-profiles/explicit-description-no-default-yes/deny.oracle	access	Read	код	false	not_applicable	standard-description-profiles/explicit-description-no-default-yes/RootDeny.rights.deflate
+standard-description-profiles/explicit-description-no-default-yes/deny.oracle	verify	Read	НеСуществует	false	invalid_standard_path	standard-description-profiles/explicit-description-no-default-yes/RootDeny.rights.deflate
+standard-description-profiles/explicit-description-no-default-yes/deny.oracle	access	Read	НеСуществует	false	invalid_standard_path	standard-description-profiles/explicit-description-no-default-yes/RootDeny.rights.deflate
+standard-description-profiles/explicit-description-no-default-yes/deny.oracle	verify	View	undefined	false	allowed	standard-description-profiles/explicit-description-no-default-yes/RootDeny.rights.deflate
+standard-description-profiles/explicit-description-no-default-yes/deny.oracle	access	View	undefined	false	allowed	standard-description-profiles/explicit-description-no-default-yes/RootDeny.rights.deflate
+standard-description-profiles/explicit-description-no-default-yes/deny.oracle	verify	View	empty	false	invalid_standard_path	standard-description-profiles/explicit-description-no-default-yes/RootDeny.rights.deflate
+standard-description-profiles/explicit-description-no-default-yes/deny.oracle	access	View	empty	false	invalid_standard_path	standard-description-profiles/explicit-description-no-default-yes/RootDeny.rights.deflate
+standard-description-profiles/explicit-description-no-default-yes/deny.oracle	verify	View	Код	false	allowed	standard-description-profiles/explicit-description-no-default-yes/RootDeny.rights.deflate
+standard-description-profiles/explicit-description-no-default-yes/deny.oracle	access	View	Код	false	allowed	standard-description-profiles/explicit-description-no-default-yes/RootDeny.rights.deflate
+standard-description-profiles/explicit-description-no-default-yes/deny.oracle	verify	View	Code	false	allowed	standard-description-profiles/explicit-description-no-default-yes/RootDeny.rights.deflate
+standard-description-profiles/explicit-description-no-default-yes/deny.oracle	access	View	Code	false	allowed	standard-description-profiles/explicit-description-no-default-yes/RootDeny.rights.deflate
+standard-description-profiles/explicit-description-no-default-yes/deny.oracle	verify	View	Description	false	denied	standard-description-profiles/explicit-description-no-default-yes/RootDeny.rights.deflate
+standard-description-profiles/explicit-description-no-default-yes/deny.oracle	access	View	Description	false	denied	standard-description-profiles/explicit-description-no-default-yes/RootDeny.rights.deflate
+standard-description-profiles/explicit-description-no-default-yes/deny.oracle	verify	View	Наименование	false	denied	standard-description-profiles/explicit-description-no-default-yes/RootDeny.rights.deflate
+standard-description-profiles/explicit-description-no-default-yes/deny.oracle	access	View	Наименование	false	denied	standard-description-profiles/explicit-description-no-default-yes/RootDeny.rights.deflate
+standard-description-profiles/explicit-description-no-default-yes/deny.oracle	verify	View	cOdE	false	allowed	standard-description-profiles/explicit-description-no-default-yes/RootDeny.rights.deflate
+standard-description-profiles/explicit-description-no-default-yes/deny.oracle	access	View	cOdE	false	allowed	standard-description-profiles/explicit-description-no-default-yes/RootDeny.rights.deflate
+standard-description-profiles/explicit-description-no-default-yes/deny.oracle	verify	View	код	false	allowed	standard-description-profiles/explicit-description-no-default-yes/RootDeny.rights.deflate
+standard-description-profiles/explicit-description-no-default-yes/deny.oracle	access	View	код	false	allowed	standard-description-profiles/explicit-description-no-default-yes/RootDeny.rights.deflate
+standard-description-profiles/explicit-description-no-default-yes/deny.oracle	verify	View	НеСуществует	false	invalid_standard_path	standard-description-profiles/explicit-description-no-default-yes/RootDeny.rights.deflate
+standard-description-profiles/explicit-description-no-default-yes/deny.oracle	access	View	НеСуществует	false	invalid_standard_path	standard-description-profiles/explicit-description-no-default-yes/RootDeny.rights.deflate
+standard-paths/standard-admin.oracle	verify	Read	undefined	false	allowed	RootAllow.rights.deflate
+standard-paths/standard-admin.oracle	access	Read	undefined	false	allowed	RootAllow.rights.deflate
+standard-paths/standard-admin.oracle	verify	Read	empty	false	invalid_standard_path	RootAllow.rights.deflate
+standard-paths/standard-admin.oracle	access	Read	empty	false	invalid_standard_path	RootAllow.rights.deflate
+standard-paths/standard-admin.oracle	verify	Read	Код	false	allowed	RootAllow.rights.deflate
+standard-paths/standard-admin.oracle	access	Read	Код	false	not_applicable	RootAllow.rights.deflate
+standard-paths/standard-admin.oracle	verify	Read	Code	false	allowed	RootAllow.rights.deflate
+standard-paths/standard-admin.oracle	access	Read	Code	false	not_applicable	RootAllow.rights.deflate
+standard-paths/standard-admin.oracle	verify	Read	Description	false	allowed	RootAllow.rights.deflate
+standard-paths/standard-admin.oracle	access	Read	Description	false	not_applicable	RootAllow.rights.deflate
+standard-paths/standard-admin.oracle	verify	Read	НеСуществует	false	invalid_standard_path	RootAllow.rights.deflate
+standard-paths/standard-admin.oracle	access	Read	НеСуществует	false	invalid_standard_path	RootAllow.rights.deflate
+standard-paths/standard-admin.oracle	verify	View	undefined	false	denied	RootAllow.rights.deflate
+standard-paths/standard-admin.oracle	access	View	undefined	false	denied	RootAllow.rights.deflate
+standard-paths/standard-admin.oracle	verify	View	empty	false	invalid_standard_path	RootAllow.rights.deflate
+standard-paths/standard-admin.oracle	access	View	empty	false	invalid_standard_path	RootAllow.rights.deflate
+standard-paths/standard-admin.oracle	verify	View	Код	false	denied	RootAllow.rights.deflate
+standard-paths/standard-admin.oracle	access	View	Код	false	denied	RootAllow.rights.deflate
+standard-paths/standard-admin.oracle	verify	View	Code	false	denied	RootAllow.rights.deflate
+standard-paths/standard-admin.oracle	access	View	Code	false	denied	RootAllow.rights.deflate
+standard-paths/standard-admin.oracle	verify	View	Description	false	denied	RootAllow.rights.deflate
+standard-paths/standard-admin.oracle	access	View	Description	false	denied	RootAllow.rights.deflate
+standard-paths/standard-admin.oracle	verify	View	НеСуществует	false	invalid_standard_path	RootAllow.rights.deflate
+standard-paths/standard-admin.oracle	access	View	НеСуществует	false	invalid_standard_path	RootAllow.rights.deflate
+standard-paths/standard-deny.oracle	verify	Read	undefined	false	denied	standard-profiles/owner-no-code-no/RootDeny.rights.deflate
+standard-paths/standard-deny.oracle	access	Read	undefined	false	denied	standard-profiles/owner-no-code-no/RootDeny.rights.deflate
+standard-paths/standard-deny.oracle	verify	Read	empty	false	invalid_standard_path	standard-profiles/owner-no-code-no/RootDeny.rights.deflate
+standard-paths/standard-deny.oracle	access	Read	empty	false	invalid_standard_path	standard-profiles/owner-no-code-no/RootDeny.rights.deflate
+standard-paths/standard-deny.oracle	verify	Read	Код	false	allowed	standard-profiles/owner-no-code-no/RootDeny.rights.deflate
+standard-paths/standard-deny.oracle	access	Read	Код	false	not_applicable	standard-profiles/owner-no-code-no/RootDeny.rights.deflate
+standard-paths/standard-deny.oracle	verify	Read	Code	false	allowed	standard-profiles/owner-no-code-no/RootDeny.rights.deflate
+standard-paths/standard-deny.oracle	access	Read	Code	false	not_applicable	standard-profiles/owner-no-code-no/RootDeny.rights.deflate
+standard-paths/standard-deny.oracle	verify	Read	Description	false	allowed	standard-profiles/owner-no-code-no/RootDeny.rights.deflate
+standard-paths/standard-deny.oracle	access	Read	Description	false	not_applicable	standard-profiles/owner-no-code-no/RootDeny.rights.deflate
+standard-paths/standard-deny.oracle	verify	Read	НеСуществует	false	invalid_standard_path	standard-profiles/owner-no-code-no/RootDeny.rights.deflate
+standard-paths/standard-deny.oracle	access	Read	НеСуществует	false	invalid_standard_path	standard-profiles/owner-no-code-no/RootDeny.rights.deflate
+standard-paths/standard-deny.oracle	verify	View	undefined	false	denied	standard-profiles/owner-no-code-no/RootDeny.rights.deflate
+standard-paths/standard-deny.oracle	access	View	undefined	false	denied	standard-profiles/owner-no-code-no/RootDeny.rights.deflate
+standard-paths/standard-deny.oracle	verify	View	empty	false	invalid_standard_path	standard-profiles/owner-no-code-no/RootDeny.rights.deflate
+standard-paths/standard-deny.oracle	access	View	empty	false	invalid_standard_path	standard-profiles/owner-no-code-no/RootDeny.rights.deflate
+standard-paths/standard-deny.oracle	verify	View	Код	false	denied	standard-profiles/owner-no-code-no/RootDeny.rights.deflate
+standard-paths/standard-deny.oracle	access	View	Код	false	denied	standard-profiles/owner-no-code-no/RootDeny.rights.deflate
+standard-paths/standard-deny.oracle	verify	View	Code	false	denied	standard-profiles/owner-no-code-no/RootDeny.rights.deflate
+standard-paths/standard-deny.oracle	access	View	Code	false	denied	standard-profiles/owner-no-code-no/RootDeny.rights.deflate
+standard-paths/standard-deny.oracle	verify	View	Description	false	denied	standard-profiles/owner-no-code-no/RootDeny.rights.deflate
+standard-paths/standard-deny.oracle	access	View	Description	false	denied	standard-profiles/owner-no-code-no/RootDeny.rights.deflate
+standard-paths/standard-deny.oracle	verify	View	НеСуществует	false	invalid_standard_path	standard-profiles/owner-no-code-no/RootDeny.rights.deflate
+standard-paths/standard-deny.oracle	access	View	НеСуществует	false	invalid_standard_path	standard-profiles/owner-no-code-no/RootDeny.rights.deflate
+standard-privileged/privileged-admin.oracle	verify	Read	undefined	true	allowed	
+standard-privileged/privileged-admin.oracle	access	Read	undefined	true	allowed	
+standard-privileged/privileged-admin.oracle	verify	Read	empty	true	invalid_standard_path	
+standard-privileged/privileged-admin.oracle	access	Read	empty	true	invalid_standard_path	
+standard-privileged/privileged-admin.oracle	verify	Read	Код	true	allowed	
+standard-privileged/privileged-admin.oracle	access	Read	Код	true	not_applicable	
+standard-privileged/privileged-admin.oracle	verify	Read	Code	true	allowed	
+standard-privileged/privileged-admin.oracle	access	Read	Code	true	not_applicable	
+standard-privileged/privileged-admin.oracle	verify	Read	Description	true	allowed	
+standard-privileged/privileged-admin.oracle	access	Read	Description	true	not_applicable	
+standard-privileged/privileged-admin.oracle	verify	Read	НеСуществует	true	invalid_standard_path	
+standard-privileged/privileged-admin.oracle	access	Read	НеСуществует	true	invalid_standard_path	
+standard-privileged/privileged-admin.oracle	verify	View	undefined	true	allowed	
+standard-privileged/privileged-admin.oracle	access	View	undefined	true	allowed	
+standard-privileged/privileged-admin.oracle	verify	View	empty	true	invalid_standard_path	
+standard-privileged/privileged-admin.oracle	access	View	empty	true	invalid_standard_path	
+standard-privileged/privileged-admin.oracle	verify	View	Код	true	allowed	
+standard-privileged/privileged-admin.oracle	access	View	Код	true	allowed	
+standard-privileged/privileged-admin.oracle	verify	View	Code	true	allowed	
+standard-privileged/privileged-admin.oracle	access	View	Code	true	allowed	
+standard-privileged/privileged-admin.oracle	verify	View	Description	true	allowed	
+standard-privileged/privileged-admin.oracle	access	View	Description	true	allowed	
+standard-privileged/privileged-admin.oracle	verify	View	НеСуществует	true	invalid_standard_path	
+standard-privileged/privileged-admin.oracle	access	View	НеСуществует	true	invalid_standard_path	
+standard-privileged/privileged-admin.oracle	verify	UnknownNativeRight	undefined	true	unknown_right	
+standard-privileged/privileged-admin.oracle	access	UnknownNativeRight	undefined	true	unknown_right	
+standard-privileged/privileged-admin.oracle	verify	UnknownNativeRight	empty	true	unknown_right	
+standard-privileged/privileged-admin.oracle	access	UnknownNativeRight	empty	true	unknown_right	
+standard-privileged/privileged-admin.oracle	verify	UnknownNativeRight	Код	true	unknown_right	
+standard-privileged/privileged-admin.oracle	access	UnknownNativeRight	Код	true	unknown_right	
+standard-privileged/privileged-admin.oracle	verify	UnknownNativeRight	Code	true	unknown_right	
+standard-privileged/privileged-admin.oracle	access	UnknownNativeRight	Code	true	unknown_right	
+standard-privileged/privileged-admin.oracle	verify	UnknownNativeRight	Description	true	unknown_right	
+standard-privileged/privileged-admin.oracle	access	UnknownNativeRight	Description	true	unknown_right	
+standard-privileged/privileged-admin.oracle	verify	UnknownNativeRight	НеСуществует	true	unknown_right	
+standard-privileged/privileged-admin.oracle	access	UnknownNativeRight	НеСуществует	true	unknown_right	
+standard-privileged/privileged-deny.oracle	verify	Read	undefined	true	allowed	
+standard-privileged/privileged-deny.oracle	access	Read	undefined	true	allowed	
+standard-privileged/privileged-deny.oracle	verify	Read	empty	true	invalid_standard_path	
+standard-privileged/privileged-deny.oracle	access	Read	empty	true	invalid_standard_path	
+standard-privileged/privileged-deny.oracle	verify	Read	Код	true	allowed	
+standard-privileged/privileged-deny.oracle	access	Read	Код	true	not_applicable	
+standard-privileged/privileged-deny.oracle	verify	Read	Code	true	allowed	
+standard-privileged/privileged-deny.oracle	access	Read	Code	true	not_applicable	
+standard-privileged/privileged-deny.oracle	verify	Read	Description	true	allowed	
+standard-privileged/privileged-deny.oracle	access	Read	Description	true	not_applicable	
+standard-privileged/privileged-deny.oracle	verify	Read	НеСуществует	true	invalid_standard_path	
+standard-privileged/privileged-deny.oracle	access	Read	НеСуществует	true	invalid_standard_path	
+standard-privileged/privileged-deny.oracle	verify	View	undefined	true	allowed	
+standard-privileged/privileged-deny.oracle	access	View	undefined	true	allowed	
+standard-privileged/privileged-deny.oracle	verify	View	empty	true	invalid_standard_path	
+standard-privileged/privileged-deny.oracle	access	View	empty	true	invalid_standard_path	
+standard-privileged/privileged-deny.oracle	verify	View	Код	true	allowed	
+standard-privileged/privileged-deny.oracle	access	View	Код	true	allowed	
+standard-privileged/privileged-deny.oracle	verify	View	Code	true	allowed	
+standard-privileged/privileged-deny.oracle	access	View	Code	true	allowed	
+standard-privileged/privileged-deny.oracle	verify	View	Description	true	allowed	
+standard-privileged/privileged-deny.oracle	access	View	Description	true	allowed	
+standard-privileged/privileged-deny.oracle	verify	View	НеСуществует	true	invalid_standard_path	
+standard-privileged/privileged-deny.oracle	access	View	НеСуществует	true	invalid_standard_path	
+standard-privileged/privileged-deny.oracle	verify	UnknownNativeRight	undefined	true	unknown_right	
+standard-privileged/privileged-deny.oracle	access	UnknownNativeRight	undefined	true	unknown_right	
+standard-privileged/privileged-deny.oracle	verify	UnknownNativeRight	empty	true	unknown_right	
+standard-privileged/privileged-deny.oracle	access	UnknownNativeRight	empty	true	unknown_right	
+standard-privileged/privileged-deny.oracle	verify	UnknownNativeRight	Код	true	unknown_right	
+standard-privileged/privileged-deny.oracle	access	UnknownNativeRight	Код	true	unknown_right	
+standard-privileged/privileged-deny.oracle	verify	UnknownNativeRight	Code	true	unknown_right	
+standard-privileged/privileged-deny.oracle	access	UnknownNativeRight	Code	true	unknown_right	
+standard-privileged/privileged-deny.oracle	verify	UnknownNativeRight	Description	true	unknown_right	
+standard-privileged/privileged-deny.oracle	access	UnknownNativeRight	Description	true	unknown_right	
+standard-privileged/privileged-deny.oracle	verify	UnknownNativeRight	НеСуществует	true	unknown_right	
+standard-privileged/privileged-deny.oracle	access	UnknownNativeRight	НеСуществует	true	unknown_right	
+standard-profiles/explicit-code-no-default-yes/deny.oracle	verify	Read	undefined	false	allowed	standard-profiles/explicit-code-no-default-yes/RootDeny.rights.deflate
+standard-profiles/explicit-code-no-default-yes/deny.oracle	access	Read	undefined	false	allowed	standard-profiles/explicit-code-no-default-yes/RootDeny.rights.deflate
+standard-profiles/explicit-code-no-default-yes/deny.oracle	verify	Read	empty	false	invalid_standard_path	standard-profiles/explicit-code-no-default-yes/RootDeny.rights.deflate
+standard-profiles/explicit-code-no-default-yes/deny.oracle	access	Read	empty	false	invalid_standard_path	standard-profiles/explicit-code-no-default-yes/RootDeny.rights.deflate
+standard-profiles/explicit-code-no-default-yes/deny.oracle	verify	Read	Код	false	allowed	standard-profiles/explicit-code-no-default-yes/RootDeny.rights.deflate
+standard-profiles/explicit-code-no-default-yes/deny.oracle	access	Read	Код	false	not_applicable	standard-profiles/explicit-code-no-default-yes/RootDeny.rights.deflate
+standard-profiles/explicit-code-no-default-yes/deny.oracle	verify	Read	Code	false	allowed	standard-profiles/explicit-code-no-default-yes/RootDeny.rights.deflate
+standard-profiles/explicit-code-no-default-yes/deny.oracle	access	Read	Code	false	not_applicable	standard-profiles/explicit-code-no-default-yes/RootDeny.rights.deflate
+standard-profiles/explicit-code-no-default-yes/deny.oracle	verify	Read	Description	false	allowed	standard-profiles/explicit-code-no-default-yes/RootDeny.rights.deflate
+standard-profiles/explicit-code-no-default-yes/deny.oracle	access	Read	Description	false	not_applicable	standard-profiles/explicit-code-no-default-yes/RootDeny.rights.deflate
+standard-profiles/explicit-code-no-default-yes/deny.oracle	verify	Read	НеСуществует	false	invalid_standard_path	standard-profiles/explicit-code-no-default-yes/RootDeny.rights.deflate
+standard-profiles/explicit-code-no-default-yes/deny.oracle	access	Read	НеСуществует	false	invalid_standard_path	standard-profiles/explicit-code-no-default-yes/RootDeny.rights.deflate
+standard-profiles/explicit-code-no-default-yes/deny.oracle	verify	View	undefined	false	allowed	standard-profiles/explicit-code-no-default-yes/RootDeny.rights.deflate
+standard-profiles/explicit-code-no-default-yes/deny.oracle	access	View	undefined	false	allowed	standard-profiles/explicit-code-no-default-yes/RootDeny.rights.deflate
+standard-profiles/explicit-code-no-default-yes/deny.oracle	verify	View	empty	false	invalid_standard_path	standard-profiles/explicit-code-no-default-yes/RootDeny.rights.deflate
+standard-profiles/explicit-code-no-default-yes/deny.oracle	access	View	empty	false	invalid_standard_path	standard-profiles/explicit-code-no-default-yes/RootDeny.rights.deflate
+standard-profiles/explicit-code-no-default-yes/deny.oracle	verify	View	Код	false	denied	standard-profiles/explicit-code-no-default-yes/RootDeny.rights.deflate
+standard-profiles/explicit-code-no-default-yes/deny.oracle	access	View	Код	false	denied	standard-profiles/explicit-code-no-default-yes/RootDeny.rights.deflate
+standard-profiles/explicit-code-no-default-yes/deny.oracle	verify	View	Code	false	denied	standard-profiles/explicit-code-no-default-yes/RootDeny.rights.deflate
+standard-profiles/explicit-code-no-default-yes/deny.oracle	access	View	Code	false	denied	standard-profiles/explicit-code-no-default-yes/RootDeny.rights.deflate
+standard-profiles/explicit-code-no-default-yes/deny.oracle	verify	View	Description	false	allowed	standard-profiles/explicit-code-no-default-yes/RootDeny.rights.deflate
+standard-profiles/explicit-code-no-default-yes/deny.oracle	access	View	Description	false	allowed	standard-profiles/explicit-code-no-default-yes/RootDeny.rights.deflate
+standard-profiles/explicit-code-no-default-yes/deny.oracle	verify	View	НеСуществует	false	invalid_standard_path	standard-profiles/explicit-code-no-default-yes/RootDeny.rights.deflate
+standard-profiles/explicit-code-no-default-yes/deny.oracle	access	View	НеСуществует	false	invalid_standard_path	standard-profiles/explicit-code-no-default-yes/RootDeny.rights.deflate
+standard-profiles/independent-owner-no-code-yes/deny.oracle	verify	Read	undefined	false	denied	standard-profiles/independent-owner-no-code-yes/RootDeny.rights.deflate
+standard-profiles/independent-owner-no-code-yes/deny.oracle	access	Read	undefined	false	denied	standard-profiles/independent-owner-no-code-yes/RootDeny.rights.deflate
+standard-profiles/independent-owner-no-code-yes/deny.oracle	verify	Read	empty	false	invalid_standard_path	standard-profiles/independent-owner-no-code-yes/RootDeny.rights.deflate
+standard-profiles/independent-owner-no-code-yes/deny.oracle	access	Read	empty	false	invalid_standard_path	standard-profiles/independent-owner-no-code-yes/RootDeny.rights.deflate
+standard-profiles/independent-owner-no-code-yes/deny.oracle	verify	Read	Код	false	allowed	standard-profiles/independent-owner-no-code-yes/RootDeny.rights.deflate
+standard-profiles/independent-owner-no-code-yes/deny.oracle	access	Read	Код	false	not_applicable	standard-profiles/independent-owner-no-code-yes/RootDeny.rights.deflate
+standard-profiles/independent-owner-no-code-yes/deny.oracle	verify	Read	Code	false	allowed	standard-profiles/independent-owner-no-code-yes/RootDeny.rights.deflate
+standard-profiles/independent-owner-no-code-yes/deny.oracle	access	Read	Code	false	not_applicable	standard-profiles/independent-owner-no-code-yes/RootDeny.rights.deflate
+standard-profiles/independent-owner-no-code-yes/deny.oracle	verify	Read	Description	false	allowed	standard-profiles/independent-owner-no-code-yes/RootDeny.rights.deflate
+standard-profiles/independent-owner-no-code-yes/deny.oracle	access	Read	Description	false	not_applicable	standard-profiles/independent-owner-no-code-yes/RootDeny.rights.deflate
+standard-profiles/independent-owner-no-code-yes/deny.oracle	verify	Read	НеСуществует	false	invalid_standard_path	standard-profiles/independent-owner-no-code-yes/RootDeny.rights.deflate
+standard-profiles/independent-owner-no-code-yes/deny.oracle	access	Read	НеСуществует	false	invalid_standard_path	standard-profiles/independent-owner-no-code-yes/RootDeny.rights.deflate
+standard-profiles/independent-owner-no-code-yes/deny.oracle	verify	View	undefined	false	denied	standard-profiles/independent-owner-no-code-yes/RootDeny.rights.deflate
+standard-profiles/independent-owner-no-code-yes/deny.oracle	access	View	undefined	false	denied	standard-profiles/independent-owner-no-code-yes/RootDeny.rights.deflate
+standard-profiles/independent-owner-no-code-yes/deny.oracle	verify	View	empty	false	invalid_standard_path	standard-profiles/independent-owner-no-code-yes/RootDeny.rights.deflate
+standard-profiles/independent-owner-no-code-yes/deny.oracle	access	View	empty	false	invalid_standard_path	standard-profiles/independent-owner-no-code-yes/RootDeny.rights.deflate
+standard-profiles/independent-owner-no-code-yes/deny.oracle	verify	View	Код	false	allowed	standard-profiles/independent-owner-no-code-yes/RootDeny.rights.deflate
+standard-profiles/independent-owner-no-code-yes/deny.oracle	access	View	Код	false	denied	standard-profiles/independent-owner-no-code-yes/RootDeny.rights.deflate
+standard-profiles/independent-owner-no-code-yes/deny.oracle	verify	View	Code	false	allowed	standard-profiles/independent-owner-no-code-yes/RootDeny.rights.deflate
+standard-profiles/independent-owner-no-code-yes/deny.oracle	access	View	Code	false	denied	standard-profiles/independent-owner-no-code-yes/RootDeny.rights.deflate
+standard-profiles/independent-owner-no-code-yes/deny.oracle	verify	View	Description	false	denied	standard-profiles/independent-owner-no-code-yes/RootDeny.rights.deflate
+standard-profiles/independent-owner-no-code-yes/deny.oracle	access	View	Description	false	denied	standard-profiles/independent-owner-no-code-yes/RootDeny.rights.deflate
+standard-profiles/independent-owner-no-code-yes/deny.oracle	verify	View	НеСуществует	false	invalid_standard_path	standard-profiles/independent-owner-no-code-yes/RootDeny.rights.deflate
+standard-profiles/independent-owner-no-code-yes/deny.oracle	access	View	НеСуществует	false	invalid_standard_path	standard-profiles/independent-owner-no-code-yes/RootDeny.rights.deflate
+standard-profiles/missing-code-default-no/deny.oracle	verify	Read	undefined	false	allowed	standard-profiles/missing-code-default-no/RootDeny.rights.deflate
+standard-profiles/missing-code-default-no/deny.oracle	access	Read	undefined	false	allowed	standard-profiles/missing-code-default-no/RootDeny.rights.deflate
+standard-profiles/missing-code-default-no/deny.oracle	verify	Read	empty	false	invalid_standard_path	standard-profiles/missing-code-default-no/RootDeny.rights.deflate
+standard-profiles/missing-code-default-no/deny.oracle	access	Read	empty	false	invalid_standard_path	standard-profiles/missing-code-default-no/RootDeny.rights.deflate
+standard-profiles/missing-code-default-no/deny.oracle	verify	Read	Код	false	allowed	standard-profiles/missing-code-default-no/RootDeny.rights.deflate
+standard-profiles/missing-code-default-no/deny.oracle	access	Read	Код	false	not_applicable	standard-profiles/missing-code-default-no/RootDeny.rights.deflate
+standard-profiles/missing-code-default-no/deny.oracle	verify	Read	Code	false	allowed	standard-profiles/missing-code-default-no/RootDeny.rights.deflate
+standard-profiles/missing-code-default-no/deny.oracle	access	Read	Code	false	not_applicable	standard-profiles/missing-code-default-no/RootDeny.rights.deflate
+standard-profiles/missing-code-default-no/deny.oracle	verify	Read	Description	false	allowed	standard-profiles/missing-code-default-no/RootDeny.rights.deflate
+standard-profiles/missing-code-default-no/deny.oracle	access	Read	Description	false	not_applicable	standard-profiles/missing-code-default-no/RootDeny.rights.deflate
+standard-profiles/missing-code-default-no/deny.oracle	verify	Read	НеСуществует	false	invalid_standard_path	standard-profiles/missing-code-default-no/RootDeny.rights.deflate
+standard-profiles/missing-code-default-no/deny.oracle	access	Read	НеСуществует	false	invalid_standard_path	standard-profiles/missing-code-default-no/RootDeny.rights.deflate
+standard-profiles/missing-code-default-no/deny.oracle	verify	View	undefined	false	allowed	standard-profiles/missing-code-default-no/RootDeny.rights.deflate
+standard-profiles/missing-code-default-no/deny.oracle	access	View	undefined	false	allowed	standard-profiles/missing-code-default-no/RootDeny.rights.deflate
+standard-profiles/missing-code-default-no/deny.oracle	verify	View	empty	false	invalid_standard_path	standard-profiles/missing-code-default-no/RootDeny.rights.deflate
+standard-profiles/missing-code-default-no/deny.oracle	access	View	empty	false	invalid_standard_path	standard-profiles/missing-code-default-no/RootDeny.rights.deflate
+standard-profiles/missing-code-default-no/deny.oracle	verify	View	Код	false	denied	standard-profiles/missing-code-default-no/RootDeny.rights.deflate
+standard-profiles/missing-code-default-no/deny.oracle	access	View	Код	false	denied	standard-profiles/missing-code-default-no/RootDeny.rights.deflate
+standard-profiles/missing-code-default-no/deny.oracle	verify	View	Code	false	denied	standard-profiles/missing-code-default-no/RootDeny.rights.deflate
+standard-profiles/missing-code-default-no/deny.oracle	access	View	Code	false	denied	standard-profiles/missing-code-default-no/RootDeny.rights.deflate
+standard-profiles/missing-code-default-no/deny.oracle	verify	View	Description	false	denied	standard-profiles/missing-code-default-no/RootDeny.rights.deflate
+standard-profiles/missing-code-default-no/deny.oracle	access	View	Description	false	denied	standard-profiles/missing-code-default-no/RootDeny.rights.deflate
+standard-profiles/missing-code-default-no/deny.oracle	verify	View	НеСуществует	false	invalid_standard_path	standard-profiles/missing-code-default-no/RootDeny.rights.deflate
+standard-profiles/missing-code-default-no/deny.oracle	access	View	НеСуществует	false	invalid_standard_path	standard-profiles/missing-code-default-no/RootDeny.rights.deflate
+standard-profiles/missing-code-default-yes/deny.oracle	verify	Read	undefined	false	allowed	standard-profiles/missing-code-default-yes/RootDeny.rights.deflate
+standard-profiles/missing-code-default-yes/deny.oracle	access	Read	undefined	false	allowed	standard-profiles/missing-code-default-yes/RootDeny.rights.deflate
+standard-profiles/missing-code-default-yes/deny.oracle	verify	Read	empty	false	invalid_standard_path	standard-profiles/missing-code-default-yes/RootDeny.rights.deflate
+standard-profiles/missing-code-default-yes/deny.oracle	access	Read	empty	false	invalid_standard_path	standard-profiles/missing-code-default-yes/RootDeny.rights.deflate
+standard-profiles/missing-code-default-yes/deny.oracle	verify	Read	Код	false	allowed	standard-profiles/missing-code-default-yes/RootDeny.rights.deflate
+standard-profiles/missing-code-default-yes/deny.oracle	access	Read	Код	false	not_applicable	standard-profiles/missing-code-default-yes/RootDeny.rights.deflate
+standard-profiles/missing-code-default-yes/deny.oracle	verify	Read	Code	false	allowed	standard-profiles/missing-code-default-yes/RootDeny.rights.deflate
+standard-profiles/missing-code-default-yes/deny.oracle	access	Read	Code	false	not_applicable	standard-profiles/missing-code-default-yes/RootDeny.rights.deflate
+standard-profiles/missing-code-default-yes/deny.oracle	verify	Read	Description	false	allowed	standard-profiles/missing-code-default-yes/RootDeny.rights.deflate
+standard-profiles/missing-code-default-yes/deny.oracle	access	Read	Description	false	not_applicable	standard-profiles/missing-code-default-yes/RootDeny.rights.deflate
+standard-profiles/missing-code-default-yes/deny.oracle	verify	Read	НеСуществует	false	invalid_standard_path	standard-profiles/missing-code-default-yes/RootDeny.rights.deflate
+standard-profiles/missing-code-default-yes/deny.oracle	access	Read	НеСуществует	false	invalid_standard_path	standard-profiles/missing-code-default-yes/RootDeny.rights.deflate
+standard-profiles/missing-code-default-yes/deny.oracle	verify	View	undefined	false	allowed	standard-profiles/missing-code-default-yes/RootDeny.rights.deflate
+standard-profiles/missing-code-default-yes/deny.oracle	access	View	undefined	false	allowed	standard-profiles/missing-code-default-yes/RootDeny.rights.deflate
+standard-profiles/missing-code-default-yes/deny.oracle	verify	View	empty	false	invalid_standard_path	standard-profiles/missing-code-default-yes/RootDeny.rights.deflate
+standard-profiles/missing-code-default-yes/deny.oracle	access	View	empty	false	invalid_standard_path	standard-profiles/missing-code-default-yes/RootDeny.rights.deflate
+standard-profiles/missing-code-default-yes/deny.oracle	verify	View	Код	false	allowed	standard-profiles/missing-code-default-yes/RootDeny.rights.deflate
+standard-profiles/missing-code-default-yes/deny.oracle	access	View	Код	false	allowed	standard-profiles/missing-code-default-yes/RootDeny.rights.deflate
+standard-profiles/missing-code-default-yes/deny.oracle	verify	View	Code	false	allowed	standard-profiles/missing-code-default-yes/RootDeny.rights.deflate
+standard-profiles/missing-code-default-yes/deny.oracle	access	View	Code	false	allowed	standard-profiles/missing-code-default-yes/RootDeny.rights.deflate
+standard-profiles/missing-code-default-yes/deny.oracle	verify	View	Description	false	allowed	standard-profiles/missing-code-default-yes/RootDeny.rights.deflate
+standard-profiles/missing-code-default-yes/deny.oracle	access	View	Description	false	allowed	standard-profiles/missing-code-default-yes/RootDeny.rights.deflate
+standard-profiles/missing-code-default-yes/deny.oracle	verify	View	НеСуществует	false	invalid_standard_path	standard-profiles/missing-code-default-yes/RootDeny.rights.deflate
+standard-profiles/missing-code-default-yes/deny.oracle	access	View	НеСуществует	false	invalid_standard_path	standard-profiles/missing-code-default-yes/RootDeny.rights.deflate
+standard-profiles/owner-no-code-no/deny.oracle	verify	Read	undefined	false	denied	standard-profiles/owner-no-code-no/RootDeny.rights.deflate
+standard-profiles/owner-no-code-no/deny.oracle	access	Read	undefined	false	denied	standard-profiles/owner-no-code-no/RootDeny.rights.deflate
+standard-profiles/owner-no-code-no/deny.oracle	verify	Read	empty	false	invalid_standard_path	standard-profiles/owner-no-code-no/RootDeny.rights.deflate
+standard-profiles/owner-no-code-no/deny.oracle	access	Read	empty	false	invalid_standard_path	standard-profiles/owner-no-code-no/RootDeny.rights.deflate
+standard-profiles/owner-no-code-no/deny.oracle	verify	Read	Код	false	allowed	standard-profiles/owner-no-code-no/RootDeny.rights.deflate
+standard-profiles/owner-no-code-no/deny.oracle	access	Read	Код	false	not_applicable	standard-profiles/owner-no-code-no/RootDeny.rights.deflate
+standard-profiles/owner-no-code-no/deny.oracle	verify	Read	Code	false	allowed	standard-profiles/owner-no-code-no/RootDeny.rights.deflate
+standard-profiles/owner-no-code-no/deny.oracle	access	Read	Code	false	not_applicable	standard-profiles/owner-no-code-no/RootDeny.rights.deflate
+standard-profiles/owner-no-code-no/deny.oracle	verify	Read	Description	false	allowed	standard-profiles/owner-no-code-no/RootDeny.rights.deflate
+standard-profiles/owner-no-code-no/deny.oracle	access	Read	Description	false	not_applicable	standard-profiles/owner-no-code-no/RootDeny.rights.deflate
+standard-profiles/owner-no-code-no/deny.oracle	verify	Read	НеСуществует	false	invalid_standard_path	standard-profiles/owner-no-code-no/RootDeny.rights.deflate
+standard-profiles/owner-no-code-no/deny.oracle	access	Read	НеСуществует	false	invalid_standard_path	standard-profiles/owner-no-code-no/RootDeny.rights.deflate
+standard-profiles/owner-no-code-no/deny.oracle	verify	View	undefined	false	denied	standard-profiles/owner-no-code-no/RootDeny.rights.deflate
+standard-profiles/owner-no-code-no/deny.oracle	access	View	undefined	false	denied	standard-profiles/owner-no-code-no/RootDeny.rights.deflate
+standard-profiles/owner-no-code-no/deny.oracle	verify	View	empty	false	invalid_standard_path	standard-profiles/owner-no-code-no/RootDeny.rights.deflate
+standard-profiles/owner-no-code-no/deny.oracle	access	View	empty	false	invalid_standard_path	standard-profiles/owner-no-code-no/RootDeny.rights.deflate
+standard-profiles/owner-no-code-no/deny.oracle	verify	View	Код	false	denied	standard-profiles/owner-no-code-no/RootDeny.rights.deflate
+standard-profiles/owner-no-code-no/deny.oracle	access	View	Код	false	denied	standard-profiles/owner-no-code-no/RootDeny.rights.deflate
+standard-profiles/owner-no-code-no/deny.oracle	verify	View	Code	false	denied	standard-profiles/owner-no-code-no/RootDeny.rights.deflate
+standard-profiles/owner-no-code-no/deny.oracle	access	View	Code	false	denied	standard-profiles/owner-no-code-no/RootDeny.rights.deflate
+standard-profiles/owner-no-code-no/deny.oracle	verify	View	Description	false	denied	standard-profiles/owner-no-code-no/RootDeny.rights.deflate
+standard-profiles/owner-no-code-no/deny.oracle	access	View	Description	false	denied	standard-profiles/owner-no-code-no/RootDeny.rights.deflate
+standard-profiles/owner-no-code-no/deny.oracle	verify	View	НеСуществует	false	invalid_standard_path	standard-profiles/owner-no-code-no/RootDeny.rights.deflate
+standard-profiles/owner-no-code-no/deny.oracle	access	View	НеСуществует	false	invalid_standard_path	standard-profiles/owner-no-code-no/RootDeny.rights.deflate
+standard-profiles/owner-no-code-yes/deny.oracle	verify	Read	undefined	false	denied	standard-profiles/owner-no-code-yes/RootDeny.rights.deflate
+standard-profiles/owner-no-code-yes/deny.oracle	access	Read	undefined	false	denied	standard-profiles/owner-no-code-yes/RootDeny.rights.deflate
+standard-profiles/owner-no-code-yes/deny.oracle	verify	Read	empty	false	invalid_standard_path	standard-profiles/owner-no-code-yes/RootDeny.rights.deflate
+standard-profiles/owner-no-code-yes/deny.oracle	access	Read	empty	false	invalid_standard_path	standard-profiles/owner-no-code-yes/RootDeny.rights.deflate
+standard-profiles/owner-no-code-yes/deny.oracle	verify	Read	Код	false	allowed	standard-profiles/owner-no-code-yes/RootDeny.rights.deflate
+standard-profiles/owner-no-code-yes/deny.oracle	access	Read	Код	false	not_applicable	standard-profiles/owner-no-code-yes/RootDeny.rights.deflate
+standard-profiles/owner-no-code-yes/deny.oracle	verify	Read	Code	false	allowed	standard-profiles/owner-no-code-yes/RootDeny.rights.deflate
+standard-profiles/owner-no-code-yes/deny.oracle	access	Read	Code	false	not_applicable	standard-profiles/owner-no-code-yes/RootDeny.rights.deflate
+standard-profiles/owner-no-code-yes/deny.oracle	verify	Read	Description	false	allowed	standard-profiles/owner-no-code-yes/RootDeny.rights.deflate
+standard-profiles/owner-no-code-yes/deny.oracle	access	Read	Description	false	not_applicable	standard-profiles/owner-no-code-yes/RootDeny.rights.deflate
+standard-profiles/owner-no-code-yes/deny.oracle	verify	Read	НеСуществует	false	invalid_standard_path	standard-profiles/owner-no-code-yes/RootDeny.rights.deflate
+standard-profiles/owner-no-code-yes/deny.oracle	access	Read	НеСуществует	false	invalid_standard_path	standard-profiles/owner-no-code-yes/RootDeny.rights.deflate
+standard-profiles/owner-no-code-yes/deny.oracle	verify	View	undefined	false	denied	standard-profiles/owner-no-code-yes/RootDeny.rights.deflate
+standard-profiles/owner-no-code-yes/deny.oracle	access	View	undefined	false	denied	standard-profiles/owner-no-code-yes/RootDeny.rights.deflate
+standard-profiles/owner-no-code-yes/deny.oracle	verify	View	empty	false	invalid_standard_path	standard-profiles/owner-no-code-yes/RootDeny.rights.deflate
+standard-profiles/owner-no-code-yes/deny.oracle	access	View	empty	false	invalid_standard_path	standard-profiles/owner-no-code-yes/RootDeny.rights.deflate
+standard-profiles/owner-no-code-yes/deny.oracle	verify	View	Код	false	denied	standard-profiles/owner-no-code-yes/RootDeny.rights.deflate
+standard-profiles/owner-no-code-yes/deny.oracle	access	View	Код	false	denied	standard-profiles/owner-no-code-yes/RootDeny.rights.deflate
+standard-profiles/owner-no-code-yes/deny.oracle	verify	View	Code	false	denied	standard-profiles/owner-no-code-yes/RootDeny.rights.deflate
+standard-profiles/owner-no-code-yes/deny.oracle	access	View	Code	false	denied	standard-profiles/owner-no-code-yes/RootDeny.rights.deflate
+standard-profiles/owner-no-code-yes/deny.oracle	verify	View	Description	false	denied	standard-profiles/owner-no-code-yes/RootDeny.rights.deflate
+standard-profiles/owner-no-code-yes/deny.oracle	access	View	Description	false	denied	standard-profiles/owner-no-code-yes/RootDeny.rights.deflate
+standard-profiles/owner-no-code-yes/deny.oracle	verify	View	НеСуществует	false	invalid_standard_path	standard-profiles/owner-no-code-yes/RootDeny.rights.deflate
+standard-profiles/owner-no-code-yes/deny.oracle	access	View	НеСуществует	false	invalid_standard_path	standard-profiles/owner-no-code-yes/RootDeny.rights.deflate
+standard-profiles/owner-yes-code-no/deny.oracle	verify	Read	undefined	false	allowed	standard-profiles/owner-yes-code-no/RootDeny.rights.deflate
+standard-profiles/owner-yes-code-no/deny.oracle	access	Read	undefined	false	allowed	standard-profiles/owner-yes-code-no/RootDeny.rights.deflate
+standard-profiles/owner-yes-code-no/deny.oracle	verify	Read	empty	false	invalid_standard_path	standard-profiles/owner-yes-code-no/RootDeny.rights.deflate
+standard-profiles/owner-yes-code-no/deny.oracle	access	Read	empty	false	invalid_standard_path	standard-profiles/owner-yes-code-no/RootDeny.rights.deflate
+standard-profiles/owner-yes-code-no/deny.oracle	verify	Read	Код	false	allowed	standard-profiles/owner-yes-code-no/RootDeny.rights.deflate
+standard-profiles/owner-yes-code-no/deny.oracle	access	Read	Код	false	not_applicable	standard-profiles/owner-yes-code-no/RootDeny.rights.deflate
+standard-profiles/owner-yes-code-no/deny.oracle	verify	Read	Code	false	allowed	standard-profiles/owner-yes-code-no/RootDeny.rights.deflate
+standard-profiles/owner-yes-code-no/deny.oracle	access	Read	Code	false	not_applicable	standard-profiles/owner-yes-code-no/RootDeny.rights.deflate
+standard-profiles/owner-yes-code-no/deny.oracle	verify	Read	Description	false	allowed	standard-profiles/owner-yes-code-no/RootDeny.rights.deflate
+standard-profiles/owner-yes-code-no/deny.oracle	access	Read	Description	false	not_applicable	standard-profiles/owner-yes-code-no/RootDeny.rights.deflate
+standard-profiles/owner-yes-code-no/deny.oracle	verify	Read	НеСуществует	false	invalid_standard_path	standard-profiles/owner-yes-code-no/RootDeny.rights.deflate
+standard-profiles/owner-yes-code-no/deny.oracle	access	Read	НеСуществует	false	invalid_standard_path	standard-profiles/owner-yes-code-no/RootDeny.rights.deflate
+standard-profiles/owner-yes-code-no/deny.oracle	verify	View	undefined	false	allowed	standard-profiles/owner-yes-code-no/RootDeny.rights.deflate
+standard-profiles/owner-yes-code-no/deny.oracle	access	View	undefined	false	allowed	standard-profiles/owner-yes-code-no/RootDeny.rights.deflate
+standard-profiles/owner-yes-code-no/deny.oracle	verify	View	empty	false	invalid_standard_path	standard-profiles/owner-yes-code-no/RootDeny.rights.deflate
+standard-profiles/owner-yes-code-no/deny.oracle	access	View	empty	false	invalid_standard_path	standard-profiles/owner-yes-code-no/RootDeny.rights.deflate
+standard-profiles/owner-yes-code-no/deny.oracle	verify	View	Код	false	denied	standard-profiles/owner-yes-code-no/RootDeny.rights.deflate
+standard-profiles/owner-yes-code-no/deny.oracle	access	View	Код	false	denied	standard-profiles/owner-yes-code-no/RootDeny.rights.deflate
+standard-profiles/owner-yes-code-no/deny.oracle	verify	View	Code	false	denied	standard-profiles/owner-yes-code-no/RootDeny.rights.deflate
+standard-profiles/owner-yes-code-no/deny.oracle	access	View	Code	false	denied	standard-profiles/owner-yes-code-no/RootDeny.rights.deflate
+standard-profiles/owner-yes-code-no/deny.oracle	verify	View	Description	false	denied	standard-profiles/owner-yes-code-no/RootDeny.rights.deflate
+standard-profiles/owner-yes-code-no/deny.oracle	access	View	Description	false	denied	standard-profiles/owner-yes-code-no/RootDeny.rights.deflate
+standard-profiles/owner-yes-code-no/deny.oracle	verify	View	НеСуществует	false	invalid_standard_path	standard-profiles/owner-yes-code-no/RootDeny.rights.deflate
+standard-profiles/owner-yes-code-no/deny.oracle	access	View	НеСуществует	false	invalid_standard_path	standard-profiles/owner-yes-code-no/RootDeny.rights.deflate
+standard-profiles/owner-yes-code-yes/deny.oracle	verify	Read	undefined	false	allowed	standard-profiles/owner-yes-code-yes/RootDeny.rights.deflate
+standard-profiles/owner-yes-code-yes/deny.oracle	access	Read	undefined	false	allowed	standard-profiles/owner-yes-code-yes/RootDeny.rights.deflate
+standard-profiles/owner-yes-code-yes/deny.oracle	verify	Read	empty	false	invalid_standard_path	standard-profiles/owner-yes-code-yes/RootDeny.rights.deflate
+standard-profiles/owner-yes-code-yes/deny.oracle	access	Read	empty	false	invalid_standard_path	standard-profiles/owner-yes-code-yes/RootDeny.rights.deflate
+standard-profiles/owner-yes-code-yes/deny.oracle	verify	Read	Код	false	allowed	standard-profiles/owner-yes-code-yes/RootDeny.rights.deflate
+standard-profiles/owner-yes-code-yes/deny.oracle	access	Read	Код	false	not_applicable	standard-profiles/owner-yes-code-yes/RootDeny.rights.deflate
+standard-profiles/owner-yes-code-yes/deny.oracle	verify	Read	Code	false	allowed	standard-profiles/owner-yes-code-yes/RootDeny.rights.deflate
+standard-profiles/owner-yes-code-yes/deny.oracle	access	Read	Code	false	not_applicable	standard-profiles/owner-yes-code-yes/RootDeny.rights.deflate
+standard-profiles/owner-yes-code-yes/deny.oracle	verify	Read	Description	false	allowed	standard-profiles/owner-yes-code-yes/RootDeny.rights.deflate
+standard-profiles/owner-yes-code-yes/deny.oracle	access	Read	Description	false	not_applicable	standard-profiles/owner-yes-code-yes/RootDeny.rights.deflate
+standard-profiles/owner-yes-code-yes/deny.oracle	verify	Read	НеСуществует	false	invalid_standard_path	standard-profiles/owner-yes-code-yes/RootDeny.rights.deflate
+standard-profiles/owner-yes-code-yes/deny.oracle	access	Read	НеСуществует	false	invalid_standard_path	standard-profiles/owner-yes-code-yes/RootDeny.rights.deflate
+standard-profiles/owner-yes-code-yes/deny.oracle	verify	View	undefined	false	allowed	standard-profiles/owner-yes-code-yes/RootDeny.rights.deflate
+standard-profiles/owner-yes-code-yes/deny.oracle	access	View	undefined	false	allowed	standard-profiles/owner-yes-code-yes/RootDeny.rights.deflate
+standard-profiles/owner-yes-code-yes/deny.oracle	verify	View	empty	false	invalid_standard_path	standard-profiles/owner-yes-code-yes/RootDeny.rights.deflate
+standard-profiles/owner-yes-code-yes/deny.oracle	access	View	empty	false	invalid_standard_path	standard-profiles/owner-yes-code-yes/RootDeny.rights.deflate
+standard-profiles/owner-yes-code-yes/deny.oracle	verify	View	Код	false	allowed	standard-profiles/owner-yes-code-yes/RootDeny.rights.deflate
+standard-profiles/owner-yes-code-yes/deny.oracle	access	View	Код	false	allowed	standard-profiles/owner-yes-code-yes/RootDeny.rights.deflate
+standard-profiles/owner-yes-code-yes/deny.oracle	verify	View	Code	false	allowed	standard-profiles/owner-yes-code-yes/RootDeny.rights.deflate
+standard-profiles/owner-yes-code-yes/deny.oracle	access	View	Code	false	allowed	standard-profiles/owner-yes-code-yes/RootDeny.rights.deflate
+standard-profiles/owner-yes-code-yes/deny.oracle	verify	View	Description	false	denied	standard-profiles/owner-yes-code-yes/RootDeny.rights.deflate
+standard-profiles/owner-yes-code-yes/deny.oracle	access	View	Description	false	denied	standard-profiles/owner-yes-code-yes/RootDeny.rights.deflate
+standard-profiles/owner-yes-code-yes/deny.oracle	verify	View	НеСуществует	false	invalid_standard_path	standard-profiles/owner-yes-code-yes/RootDeny.rights.deflate
+standard-profiles/owner-yes-code-yes/deny.oracle	access	View	НеСуществует	false	invalid_standard_path	standard-profiles/owner-yes-code-yes/RootDeny.rights.deflate
+multiple-roles/both-refuse-child/deny.oracle	verify	Read	undefined	false	allowed	multiple-roles/both-refuse-child/RootDeny.rights.deflate,multiple-roles/both-refuse-child/RootAllow.rights.deflate
+multiple-roles/both-refuse-child/deny.oracle	access	Read	undefined	false	allowed	multiple-roles/both-refuse-child/RootDeny.rights.deflate,multiple-roles/both-refuse-child/RootAllow.rights.deflate
+multiple-roles/both-refuse-child/deny.oracle	verify	Read	empty	false	invalid_standard_path	multiple-roles/both-refuse-child/RootDeny.rights.deflate,multiple-roles/both-refuse-child/RootAllow.rights.deflate
+multiple-roles/both-refuse-child/deny.oracle	access	Read	empty	false	invalid_standard_path	multiple-roles/both-refuse-child/RootDeny.rights.deflate,multiple-roles/both-refuse-child/RootAllow.rights.deflate
+multiple-roles/both-refuse-child/deny.oracle	verify	Read	Код	false	allowed	multiple-roles/both-refuse-child/RootDeny.rights.deflate,multiple-roles/both-refuse-child/RootAllow.rights.deflate
+multiple-roles/both-refuse-child/deny.oracle	access	Read	Код	false	not_applicable	multiple-roles/both-refuse-child/RootDeny.rights.deflate,multiple-roles/both-refuse-child/RootAllow.rights.deflate
+multiple-roles/both-refuse-child/deny.oracle	verify	Read	Code	false	allowed	multiple-roles/both-refuse-child/RootDeny.rights.deflate,multiple-roles/both-refuse-child/RootAllow.rights.deflate
+multiple-roles/both-refuse-child/deny.oracle	access	Read	Code	false	not_applicable	multiple-roles/both-refuse-child/RootDeny.rights.deflate,multiple-roles/both-refuse-child/RootAllow.rights.deflate
+multiple-roles/both-refuse-child/deny.oracle	verify	Read	Description	false	allowed	multiple-roles/both-refuse-child/RootDeny.rights.deflate,multiple-roles/both-refuse-child/RootAllow.rights.deflate
+multiple-roles/both-refuse-child/deny.oracle	access	Read	Description	false	not_applicable	multiple-roles/both-refuse-child/RootDeny.rights.deflate,multiple-roles/both-refuse-child/RootAllow.rights.deflate
+multiple-roles/both-refuse-child/deny.oracle	verify	Read	Наименование	false	allowed	multiple-roles/both-refuse-child/RootDeny.rights.deflate,multiple-roles/both-refuse-child/RootAllow.rights.deflate
+multiple-roles/both-refuse-child/deny.oracle	access	Read	Наименование	false	not_applicable	multiple-roles/both-refuse-child/RootDeny.rights.deflate,multiple-roles/both-refuse-child/RootAllow.rights.deflate
+multiple-roles/both-refuse-child/deny.oracle	verify	Read	cOdE	false	allowed	multiple-roles/both-refuse-child/RootDeny.rights.deflate,multiple-roles/both-refuse-child/RootAllow.rights.deflate
+multiple-roles/both-refuse-child/deny.oracle	access	Read	cOdE	false	not_applicable	multiple-roles/both-refuse-child/RootDeny.rights.deflate,multiple-roles/both-refuse-child/RootAllow.rights.deflate
+multiple-roles/both-refuse-child/deny.oracle	verify	Read	код	false	allowed	multiple-roles/both-refuse-child/RootDeny.rights.deflate,multiple-roles/both-refuse-child/RootAllow.rights.deflate
+multiple-roles/both-refuse-child/deny.oracle	access	Read	код	false	not_applicable	multiple-roles/both-refuse-child/RootDeny.rights.deflate,multiple-roles/both-refuse-child/RootAllow.rights.deflate
+multiple-roles/both-refuse-child/deny.oracle	verify	Read	НеСуществует	false	invalid_standard_path	multiple-roles/both-refuse-child/RootDeny.rights.deflate,multiple-roles/both-refuse-child/RootAllow.rights.deflate
+multiple-roles/both-refuse-child/deny.oracle	access	Read	НеСуществует	false	invalid_standard_path	multiple-roles/both-refuse-child/RootDeny.rights.deflate,multiple-roles/both-refuse-child/RootAllow.rights.deflate
+multiple-roles/both-refuse-child/deny.oracle	verify	View	undefined	false	allowed	multiple-roles/both-refuse-child/RootDeny.rights.deflate,multiple-roles/both-refuse-child/RootAllow.rights.deflate
+multiple-roles/both-refuse-child/deny.oracle	access	View	undefined	false	allowed	multiple-roles/both-refuse-child/RootDeny.rights.deflate,multiple-roles/both-refuse-child/RootAllow.rights.deflate
+multiple-roles/both-refuse-child/deny.oracle	verify	View	empty	false	invalid_standard_path	multiple-roles/both-refuse-child/RootDeny.rights.deflate,multiple-roles/both-refuse-child/RootAllow.rights.deflate
+multiple-roles/both-refuse-child/deny.oracle	access	View	empty	false	invalid_standard_path	multiple-roles/both-refuse-child/RootDeny.rights.deflate,multiple-roles/both-refuse-child/RootAllow.rights.deflate
+multiple-roles/both-refuse-child/deny.oracle	verify	View	Код	false	denied	multiple-roles/both-refuse-child/RootDeny.rights.deflate,multiple-roles/both-refuse-child/RootAllow.rights.deflate
+multiple-roles/both-refuse-child/deny.oracle	access	View	Код	false	denied	multiple-roles/both-refuse-child/RootDeny.rights.deflate,multiple-roles/both-refuse-child/RootAllow.rights.deflate
+multiple-roles/both-refuse-child/deny.oracle	verify	View	Code	false	denied	multiple-roles/both-refuse-child/RootDeny.rights.deflate,multiple-roles/both-refuse-child/RootAllow.rights.deflate
+multiple-roles/both-refuse-child/deny.oracle	access	View	Code	false	denied	multiple-roles/both-refuse-child/RootDeny.rights.deflate,multiple-roles/both-refuse-child/RootAllow.rights.deflate
+multiple-roles/both-refuse-child/deny.oracle	verify	View	Description	false	denied	multiple-roles/both-refuse-child/RootDeny.rights.deflate,multiple-roles/both-refuse-child/RootAllow.rights.deflate
+multiple-roles/both-refuse-child/deny.oracle	access	View	Description	false	denied	multiple-roles/both-refuse-child/RootDeny.rights.deflate,multiple-roles/both-refuse-child/RootAllow.rights.deflate
+multiple-roles/both-refuse-child/deny.oracle	verify	View	Наименование	false	denied	multiple-roles/both-refuse-child/RootDeny.rights.deflate,multiple-roles/both-refuse-child/RootAllow.rights.deflate
+multiple-roles/both-refuse-child/deny.oracle	access	View	Наименование	false	denied	multiple-roles/both-refuse-child/RootDeny.rights.deflate,multiple-roles/both-refuse-child/RootAllow.rights.deflate
+multiple-roles/both-refuse-child/deny.oracle	verify	View	cOdE	false	denied	multiple-roles/both-refuse-child/RootDeny.rights.deflate,multiple-roles/both-refuse-child/RootAllow.rights.deflate
+multiple-roles/both-refuse-child/deny.oracle	access	View	cOdE	false	denied	multiple-roles/both-refuse-child/RootDeny.rights.deflate,multiple-roles/both-refuse-child/RootAllow.rights.deflate
+multiple-roles/both-refuse-child/deny.oracle	verify	View	код	false	denied	multiple-roles/both-refuse-child/RootDeny.rights.deflate,multiple-roles/both-refuse-child/RootAllow.rights.deflate
+multiple-roles/both-refuse-child/deny.oracle	access	View	код	false	denied	multiple-roles/both-refuse-child/RootDeny.rights.deflate,multiple-roles/both-refuse-child/RootAllow.rights.deflate
+multiple-roles/both-refuse-child/deny.oracle	verify	View	НеСуществует	false	invalid_standard_path	multiple-roles/both-refuse-child/RootDeny.rights.deflate,multiple-roles/both-refuse-child/RootAllow.rights.deflate
+multiple-roles/both-refuse-child/deny.oracle	access	View	НеСуществует	false	invalid_standard_path	multiple-roles/both-refuse-child/RootDeny.rights.deflate,multiple-roles/both-refuse-child/RootAllow.rights.deflate
+multiple-roles/second-role-complete/deny.oracle	verify	Read	undefined	false	allowed	multiple-roles/second-role-complete/RootDeny.rights.deflate,multiple-roles/second-role-complete/RootAllow.rights.deflate
+multiple-roles/second-role-complete/deny.oracle	access	Read	undefined	false	allowed	multiple-roles/second-role-complete/RootDeny.rights.deflate,multiple-roles/second-role-complete/RootAllow.rights.deflate
+multiple-roles/second-role-complete/deny.oracle	verify	Read	empty	false	invalid_standard_path	multiple-roles/second-role-complete/RootDeny.rights.deflate,multiple-roles/second-role-complete/RootAllow.rights.deflate
+multiple-roles/second-role-complete/deny.oracle	access	Read	empty	false	invalid_standard_path	multiple-roles/second-role-complete/RootDeny.rights.deflate,multiple-roles/second-role-complete/RootAllow.rights.deflate
+multiple-roles/second-role-complete/deny.oracle	verify	Read	Код	false	allowed	multiple-roles/second-role-complete/RootDeny.rights.deflate,multiple-roles/second-role-complete/RootAllow.rights.deflate
+multiple-roles/second-role-complete/deny.oracle	access	Read	Код	false	not_applicable	multiple-roles/second-role-complete/RootDeny.rights.deflate,multiple-roles/second-role-complete/RootAllow.rights.deflate
+multiple-roles/second-role-complete/deny.oracle	verify	Read	Code	false	allowed	multiple-roles/second-role-complete/RootDeny.rights.deflate,multiple-roles/second-role-complete/RootAllow.rights.deflate
+multiple-roles/second-role-complete/deny.oracle	access	Read	Code	false	not_applicable	multiple-roles/second-role-complete/RootDeny.rights.deflate,multiple-roles/second-role-complete/RootAllow.rights.deflate
+multiple-roles/second-role-complete/deny.oracle	verify	Read	Description	false	allowed	multiple-roles/second-role-complete/RootDeny.rights.deflate,multiple-roles/second-role-complete/RootAllow.rights.deflate
+multiple-roles/second-role-complete/deny.oracle	access	Read	Description	false	not_applicable	multiple-roles/second-role-complete/RootDeny.rights.deflate,multiple-roles/second-role-complete/RootAllow.rights.deflate
+multiple-roles/second-role-complete/deny.oracle	verify	Read	Наименование	false	allowed	multiple-roles/second-role-complete/RootDeny.rights.deflate,multiple-roles/second-role-complete/RootAllow.rights.deflate
+multiple-roles/second-role-complete/deny.oracle	access	Read	Наименование	false	not_applicable	multiple-roles/second-role-complete/RootDeny.rights.deflate,multiple-roles/second-role-complete/RootAllow.rights.deflate
+multiple-roles/second-role-complete/deny.oracle	verify	Read	cOdE	false	allowed	multiple-roles/second-role-complete/RootDeny.rights.deflate,multiple-roles/second-role-complete/RootAllow.rights.deflate
+multiple-roles/second-role-complete/deny.oracle	access	Read	cOdE	false	not_applicable	multiple-roles/second-role-complete/RootDeny.rights.deflate,multiple-roles/second-role-complete/RootAllow.rights.deflate
+multiple-roles/second-role-complete/deny.oracle	verify	Read	код	false	allowed	multiple-roles/second-role-complete/RootDeny.rights.deflate,multiple-roles/second-role-complete/RootAllow.rights.deflate
+multiple-roles/second-role-complete/deny.oracle	access	Read	код	false	not_applicable	multiple-roles/second-role-complete/RootDeny.rights.deflate,multiple-roles/second-role-complete/RootAllow.rights.deflate
+multiple-roles/second-role-complete/deny.oracle	verify	Read	НеСуществует	false	invalid_standard_path	multiple-roles/second-role-complete/RootDeny.rights.deflate,multiple-roles/second-role-complete/RootAllow.rights.deflate
+multiple-roles/second-role-complete/deny.oracle	access	Read	НеСуществует	false	invalid_standard_path	multiple-roles/second-role-complete/RootDeny.rights.deflate,multiple-roles/second-role-complete/RootAllow.rights.deflate
+multiple-roles/second-role-complete/deny.oracle	verify	View	undefined	false	allowed	multiple-roles/second-role-complete/RootDeny.rights.deflate,multiple-roles/second-role-complete/RootAllow.rights.deflate
+multiple-roles/second-role-complete/deny.oracle	access	View	undefined	false	allowed	multiple-roles/second-role-complete/RootDeny.rights.deflate,multiple-roles/second-role-complete/RootAllow.rights.deflate
+multiple-roles/second-role-complete/deny.oracle	verify	View	empty	false	invalid_standard_path	multiple-roles/second-role-complete/RootDeny.rights.deflate,multiple-roles/second-role-complete/RootAllow.rights.deflate
+multiple-roles/second-role-complete/deny.oracle	access	View	empty	false	invalid_standard_path	multiple-roles/second-role-complete/RootDeny.rights.deflate,multiple-roles/second-role-complete/RootAllow.rights.deflate
+multiple-roles/second-role-complete/deny.oracle	verify	View	Код	false	allowed	multiple-roles/second-role-complete/RootDeny.rights.deflate,multiple-roles/second-role-complete/RootAllow.rights.deflate
+multiple-roles/second-role-complete/deny.oracle	access	View	Код	false	allowed	multiple-roles/second-role-complete/RootDeny.rights.deflate,multiple-roles/second-role-complete/RootAllow.rights.deflate
+multiple-roles/second-role-complete/deny.oracle	verify	View	Code	false	allowed	multiple-roles/second-role-complete/RootDeny.rights.deflate,multiple-roles/second-role-complete/RootAllow.rights.deflate
+multiple-roles/second-role-complete/deny.oracle	access	View	Code	false	allowed	multiple-roles/second-role-complete/RootDeny.rights.deflate,multiple-roles/second-role-complete/RootAllow.rights.deflate
+multiple-roles/second-role-complete/deny.oracle	verify	View	Description	false	denied	multiple-roles/second-role-complete/RootDeny.rights.deflate,multiple-roles/second-role-complete/RootAllow.rights.deflate
+multiple-roles/second-role-complete/deny.oracle	access	View	Description	false	denied	multiple-roles/second-role-complete/RootDeny.rights.deflate,multiple-roles/second-role-complete/RootAllow.rights.deflate
+multiple-roles/second-role-complete/deny.oracle	verify	View	Наименование	false	denied	multiple-roles/second-role-complete/RootDeny.rights.deflate,multiple-roles/second-role-complete/RootAllow.rights.deflate
+multiple-roles/second-role-complete/deny.oracle	access	View	Наименование	false	denied	multiple-roles/second-role-complete/RootDeny.rights.deflate,multiple-roles/second-role-complete/RootAllow.rights.deflate
+multiple-roles/second-role-complete/deny.oracle	verify	View	cOdE	false	allowed	multiple-roles/second-role-complete/RootDeny.rights.deflate,multiple-roles/second-role-complete/RootAllow.rights.deflate
+multiple-roles/second-role-complete/deny.oracle	access	View	cOdE	false	allowed	multiple-roles/second-role-complete/RootDeny.rights.deflate,multiple-roles/second-role-complete/RootAllow.rights.deflate
+multiple-roles/second-role-complete/deny.oracle	verify	View	код	false	allowed	multiple-roles/second-role-complete/RootDeny.rights.deflate,multiple-roles/second-role-complete/RootAllow.rights.deflate
+multiple-roles/second-role-complete/deny.oracle	access	View	код	false	allowed	multiple-roles/second-role-complete/RootDeny.rights.deflate,multiple-roles/second-role-complete/RootAllow.rights.deflate
+multiple-roles/second-role-complete/deny.oracle	verify	View	НеСуществует	false	invalid_standard_path	multiple-roles/second-role-complete/RootDeny.rights.deflate,multiple-roles/second-role-complete/RootAllow.rights.deflate
+multiple-roles/second-role-complete/deny.oracle	access	View	НеСуществует	false	invalid_standard_path	multiple-roles/second-role-complete/RootDeny.rights.deflate,multiple-roles/second-role-complete/RootAllow.rights.deflate
+multiple-roles/split-parent-child/deny.oracle	verify	Read	undefined	false	allowed	multiple-roles/split-parent-child/RootDeny.rights.deflate,multiple-roles/split-parent-child/RootAllow.rights.deflate
+multiple-roles/split-parent-child/deny.oracle	access	Read	undefined	false	allowed	multiple-roles/split-parent-child/RootDeny.rights.deflate,multiple-roles/split-parent-child/RootAllow.rights.deflate
+multiple-roles/split-parent-child/deny.oracle	verify	Read	empty	false	invalid_standard_path	multiple-roles/split-parent-child/RootDeny.rights.deflate,multiple-roles/split-parent-child/RootAllow.rights.deflate
+multiple-roles/split-parent-child/deny.oracle	access	Read	empty	false	invalid_standard_path	multiple-roles/split-parent-child/RootDeny.rights.deflate,multiple-roles/split-parent-child/RootAllow.rights.deflate
+multiple-roles/split-parent-child/deny.oracle	verify	Read	Код	false	allowed	multiple-roles/split-parent-child/RootDeny.rights.deflate,multiple-roles/split-parent-child/RootAllow.rights.deflate
+multiple-roles/split-parent-child/deny.oracle	access	Read	Код	false	not_applicable	multiple-roles/split-parent-child/RootDeny.rights.deflate,multiple-roles/split-parent-child/RootAllow.rights.deflate
+multiple-roles/split-parent-child/deny.oracle	verify	Read	Code	false	allowed	multiple-roles/split-parent-child/RootDeny.rights.deflate,multiple-roles/split-parent-child/RootAllow.rights.deflate
+multiple-roles/split-parent-child/deny.oracle	access	Read	Code	false	not_applicable	multiple-roles/split-parent-child/RootDeny.rights.deflate,multiple-roles/split-parent-child/RootAllow.rights.deflate
+multiple-roles/split-parent-child/deny.oracle	verify	Read	Description	false	allowed	multiple-roles/split-parent-child/RootDeny.rights.deflate,multiple-roles/split-parent-child/RootAllow.rights.deflate
+multiple-roles/split-parent-child/deny.oracle	access	Read	Description	false	not_applicable	multiple-roles/split-parent-child/RootDeny.rights.deflate,multiple-roles/split-parent-child/RootAllow.rights.deflate
+multiple-roles/split-parent-child/deny.oracle	verify	Read	Наименование	false	allowed	multiple-roles/split-parent-child/RootDeny.rights.deflate,multiple-roles/split-parent-child/RootAllow.rights.deflate
+multiple-roles/split-parent-child/deny.oracle	access	Read	Наименование	false	not_applicable	multiple-roles/split-parent-child/RootDeny.rights.deflate,multiple-roles/split-parent-child/RootAllow.rights.deflate
+multiple-roles/split-parent-child/deny.oracle	verify	Read	cOdE	false	allowed	multiple-roles/split-parent-child/RootDeny.rights.deflate,multiple-roles/split-parent-child/RootAllow.rights.deflate
+multiple-roles/split-parent-child/deny.oracle	access	Read	cOdE	false	not_applicable	multiple-roles/split-parent-child/RootDeny.rights.deflate,multiple-roles/split-parent-child/RootAllow.rights.deflate
+multiple-roles/split-parent-child/deny.oracle	verify	Read	код	false	allowed	multiple-roles/split-parent-child/RootDeny.rights.deflate,multiple-roles/split-parent-child/RootAllow.rights.deflate
+multiple-roles/split-parent-child/deny.oracle	access	Read	код	false	not_applicable	multiple-roles/split-parent-child/RootDeny.rights.deflate,multiple-roles/split-parent-child/RootAllow.rights.deflate
+multiple-roles/split-parent-child/deny.oracle	verify	Read	НеСуществует	false	invalid_standard_path	multiple-roles/split-parent-child/RootDeny.rights.deflate,multiple-roles/split-parent-child/RootAllow.rights.deflate
+multiple-roles/split-parent-child/deny.oracle	access	Read	НеСуществует	false	invalid_standard_path	multiple-roles/split-parent-child/RootDeny.rights.deflate,multiple-roles/split-parent-child/RootAllow.rights.deflate
+multiple-roles/split-parent-child/deny.oracle	verify	View	undefined	false	allowed	multiple-roles/split-parent-child/RootDeny.rights.deflate,multiple-roles/split-parent-child/RootAllow.rights.deflate
+multiple-roles/split-parent-child/deny.oracle	access	View	undefined	false	allowed	multiple-roles/split-parent-child/RootDeny.rights.deflate,multiple-roles/split-parent-child/RootAllow.rights.deflate
+multiple-roles/split-parent-child/deny.oracle	verify	View	empty	false	invalid_standard_path	multiple-roles/split-parent-child/RootDeny.rights.deflate,multiple-roles/split-parent-child/RootAllow.rights.deflate
+multiple-roles/split-parent-child/deny.oracle	access	View	empty	false	invalid_standard_path	multiple-roles/split-parent-child/RootDeny.rights.deflate,multiple-roles/split-parent-child/RootAllow.rights.deflate
+multiple-roles/split-parent-child/deny.oracle	verify	View	Код	false	denied	multiple-roles/split-parent-child/RootDeny.rights.deflate,multiple-roles/split-parent-child/RootAllow.rights.deflate
+multiple-roles/split-parent-child/deny.oracle	access	View	Код	false	denied	multiple-roles/split-parent-child/RootDeny.rights.deflate,multiple-roles/split-parent-child/RootAllow.rights.deflate
+multiple-roles/split-parent-child/deny.oracle	verify	View	Code	false	denied	multiple-roles/split-parent-child/RootDeny.rights.deflate,multiple-roles/split-parent-child/RootAllow.rights.deflate
+multiple-roles/split-parent-child/deny.oracle	access	View	Code	false	denied	multiple-roles/split-parent-child/RootDeny.rights.deflate,multiple-roles/split-parent-child/RootAllow.rights.deflate
+multiple-roles/split-parent-child/deny.oracle	verify	View	Description	false	denied	multiple-roles/split-parent-child/RootDeny.rights.deflate,multiple-roles/split-parent-child/RootAllow.rights.deflate
+multiple-roles/split-parent-child/deny.oracle	access	View	Description	false	denied	multiple-roles/split-parent-child/RootDeny.rights.deflate,multiple-roles/split-parent-child/RootAllow.rights.deflate
+multiple-roles/split-parent-child/deny.oracle	verify	View	Наименование	false	denied	multiple-roles/split-parent-child/RootDeny.rights.deflate,multiple-roles/split-parent-child/RootAllow.rights.deflate
+multiple-roles/split-parent-child/deny.oracle	access	View	Наименование	false	denied	multiple-roles/split-parent-child/RootDeny.rights.deflate,multiple-roles/split-parent-child/RootAllow.rights.deflate
+multiple-roles/split-parent-child/deny.oracle	verify	View	cOdE	false	denied	multiple-roles/split-parent-child/RootDeny.rights.deflate,multiple-roles/split-parent-child/RootAllow.rights.deflate
+multiple-roles/split-parent-child/deny.oracle	access	View	cOdE	false	denied	multiple-roles/split-parent-child/RootDeny.rights.deflate,multiple-roles/split-parent-child/RootAllow.rights.deflate
+multiple-roles/split-parent-child/deny.oracle	verify	View	код	false	denied	multiple-roles/split-parent-child/RootDeny.rights.deflate,multiple-roles/split-parent-child/RootAllow.rights.deflate
+multiple-roles/split-parent-child/deny.oracle	access	View	код	false	denied	multiple-roles/split-parent-child/RootDeny.rights.deflate,multiple-roles/split-parent-child/RootAllow.rights.deflate
+multiple-roles/split-parent-child/deny.oracle	verify	View	НеСуществует	false	invalid_standard_path	multiple-roles/split-parent-child/RootDeny.rights.deflate,multiple-roles/split-parent-child/RootAllow.rights.deflate
+multiple-roles/split-parent-child/deny.oracle	access	View	НеСуществует	false	invalid_standard_path	multiple-roles/split-parent-child/RootDeny.rights.deflate,multiple-roles/split-parent-child/RootAllow.rights.deflate

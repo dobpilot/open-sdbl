@@ -1,0 +1,34 @@
+{
+  "platform": "8.3.27.2342",
+  "source_register_measurements": "open-bsl/docs/research/fixtures/information-register-rights-1016",
+  "source_document_measurements": "open-bsl/docs/research/fixtures/document-field-access-1017/native",
+  "register_cf_command": [
+    "/opt/1cv8/x86_64/8.3.27.2342/1cv8",
+    "DESIGNER",
+    "/F",
+    "/tmp/open-sdbl-0923-register-ib",
+    "/N",
+    "ControlAdmin",
+    "/DumpCfg",
+    "/tmp/open-sdbl-0923-field-rights/tests/fixtures/field-read-native-0923/register/control.cf",
+    "/Out",
+    "/tmp/open-sdbl-0923-field-rights/tests/fixtures/field-read-native-0923/register/cf-dump.log",
+    "/DisableStartupDialogs",
+    "/DisableStartupMessages"
+  ],
+  "register_dump_exit": 0,
+  "register_source_1cd_sha256": "65a175c70e9b0ec740c13e464d0a40ba90e8a8990147604d00efeb86266edd45",
+  "register_copied_1cd_after_designer_sha256": "016fcfc2dff52c575d8035b3a636a8d2b6d398f7e0045153f24f793733c05465",
+  "tool_repository": "https://github.com/saby-integration/v8unpack",
+  "tool_existing_local_clone": "/tmp/open-sdbl0914-v8unpack",
+  "tool_head": "51473807dc8f874e9b06d84f466fff0861f3c4ac",
+  "tool_scope": "existing research extractor only; no Rust dependency",
+  "unmeasured_scope": [
+    "writes",
+    "other standard fields",
+    "new explicit member rules",
+    "new RLS shapes",
+    "tabular sections",
+    "SQL Server live verification"
+  ]
+}

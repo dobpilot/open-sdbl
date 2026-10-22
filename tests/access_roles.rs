@@ -129,7 +129,7 @@ fn names_rights_by_identifier_and_by_spelling() {
     assert_eq!(Right::parse("чтение"), Some(Right::Read));
     assert_eq!(Right::parse("view"), Some(Right::View));
     assert_eq!(Right::parse("ничего"), None);
-    let unknown = Guid::from_str("eb29e198-c338-4a20-a253-be6fc3dd44d9").unwrap();
+    let unknown = Guid::from_str("00000000-0000-0000-0000-000000000001").unwrap();
     assert_eq!(Right::from_guid(&unknown), Right::Other(unknown.clone()));
     assert_eq!(Right::Other(unknown.clone()).name(), unknown.as_str());
 }

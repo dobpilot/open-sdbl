@@ -21,14 +21,18 @@ mod postgres;
 use crate::metadata::{MetadataSnapshot, SnapshotFingerprint};
 
 pub use core::{
-    AccessDecision, AccessRestriction, ColumnKind, ColumnOrigin, CompileOptions, CompiledColumn,
-    CompiledQuery, FieldUsage, FieldUsageRequest, FieldUse, InvalidParameterDate,
-    MaterializedBatchResult, ParameterColumn, ParameterDate, ParameterValue,
+    AccessDecision, AccessRestriction, BoundaryKind, ColumnKind, ColumnOrigin,
+    CommonSettingsSeparation, CompileOptions, CompiledColumn, CompiledQuery, CompositeResultMember,
+    FieldUsage, FieldUsageRequest, FieldUse, InvalidParameterDate, LogicalResultColumn,
+    LogicalResultValue, MaterializedBatchResult, ParameterBoundary, ParameterBoundaryValue,
+    ParameterColumn, ParameterDate, ParameterPointInTime, ParameterReference, ParameterValue,
     PresentationExpression, PresentationPlan, PresentationRequest, PresentationTarget,
-    QueryDiagnostic, QueryDiagnosticKind, QueryParameter, QueryableColumn, QueryableField,
+    QueryConstantReferences, QueryDiagnostic, QueryDiagnosticKind, QueryMetadataReference,
+    QueryMetadataReferences, QueryParameter, QueryableColumn, QueryableField,
     QueryableFieldCatalog, RestrictionMode, RestrictionRequest, RestrictionTarget,
     SessionParameters, TempTable, TempTablesManager, TypeValue, constants_table_fields,
-    find_metadata_object, object_query_name, queryable_field_catalog, queryable_fields,
+    find_metadata_object, object_query_name, query_metadata_references, queryable_field_catalog,
+    queryable_fields,
 };
 pub use mssql::{InvalidMsSqlYearOffset, MsSqlBackend, MsSqlDialectLevel};
 pub use postgres::PostgresBackend;
@@ -64,6 +68,66 @@ pub struct QueryCompiler<'snapshot, Backend> {
 }
 
 impl<B: Backend> QueryCompiler<'_, B> {
+    /// Строит чтение общих настроек для точного пользователя и полной области.
+    ///
+    /// Возвращает SQL с одной двоичной колонкой и не более двух строк:
+    /// вызывающий обязан отклонить неоднозначный результат. Пропущенное имя
+    /// пользователя разрешается хостом до вызова, явное пустое имя сохраняется.
+    /// Регистр имени области пользователя сохраняется независимо от `mvarchar`.
+    /// Поддержан измеренный PostgreSQL со строковыми и числовыми разделителями.
+    ///
+    /// # Errors
+    ///
+    /// Возвращает ошибку при неподдержанном провайдере, неполном приобретении
+    /// системной таблицы, неизвестном типе или неполной/неоднозначной области.
+    pub fn compile_common_settings_load(
+        &self,
+        user_name: &str,
+        object_key: &str,
+        settings_key: &str,
+        separators: &[CommonSettingsSeparation],
+    ) -> Result<String, QueryDiagnostic> {
+        core::compile_settings_load(
+            self.snapshot,
+            self.backend.dialect(),
+            core::SettingsStorage::Common,
+            user_name,
+            object_key,
+            settings_key,
+            separators,
+        )
+    }
+
+    /// Строит чтение системных настроек для точного пользователя и полной области.
+    ///
+    /// Возвращает SQL с одной двоичной колонкой и не более двух строк, чтобы
+    /// вызывающий отклонил неоднозначный результат. Пользователя и разрешённую
+    /// область определяет хост; явное пустое имя и регистр имени области
+    /// пользователя сохраняются независимо от `mvarchar`. Поддержан только
+    /// измеренный PostgreSQL со строковыми и числовыми разделителями.
+    ///
+    /// # Errors
+    ///
+    /// Возвращает ошибку при неподдержанном провайдере, неполном приобретении
+    /// системной таблицы, неизвестном типе или неполной/неоднозначной области.
+    pub fn compile_system_settings_load(
+        &self,
+        user: &str,
+        object: &str,
+        setting: &str,
+        scope: &[CommonSettingsSeparation],
+    ) -> Result<String, QueryDiagnostic> {
+        core::compile_settings_load(
+            self.snapshot,
+            self.backend.dialect(),
+            core::SettingsStorage::System,
+            user,
+            object,
+            setting,
+            scope,
+        )
+    }
+
     /// Compiles a bounded 1C SELECT query for this backend.
     ///
     /// # Errors

@@ -1,0 +1,29 @@
+probe.started	YES
+principal	SettingsNone
+privileged	NO
+right.data-administration	NO
+right.administration	NO
+right.save-user-data	NO
+common.load.default	ok:common|SettingsNone
+common.load.current	ok:common|SettingsNone
+common.load.lower-current	error:{DataProcessor.Замеры.Form.Форма.Form(31)}: Ошибка при вызове метода контекста (Load): Нарушение прав доступа!
+common.load.empty	error:{DataProcessor.Замеры.Form.Форма.Form(31)}: Ошибка при вызове метода контекста (Load): Нарушение прав доступа!
+common.load.other	error:{DataProcessor.Замеры.Form.Форма.Form(31)}: Ошибка при вызове метода контекста (Load): Нарушение прав доступа!
+common.load.ghost	error:{DataProcessor.Замеры.Form.Форма.Form(31)}: Ошибка при вызове метода контекста (Load): Нарушение прав доступа!
+common.save.current	error:{DataProcessor.Замеры.Form.Форма.Form(43)}: Ошибка при вызове метода контекста (Save): Нарушение прав доступа!
+common.save.other	error:{DataProcessor.Замеры.Form.Форма.Form(45)}: Ошибка при вызове метода контекста (Save): Нарушение прав доступа!
+system.load.default	ok:system|SettingsNone
+system.load.current	ok:system|SettingsNone
+system.load.lower-current	error:{DataProcessor.Замеры.Form.Форма.Form(31)}: Ошибка при вызове метода контекста (Load): Нарушение прав доступа!
+system.load.empty	error:{DataProcessor.Замеры.Form.Форма.Form(31)}: Ошибка при вызове метода контекста (Load): Нарушение прав доступа!
+system.load.other	error:{DataProcessor.Замеры.Form.Форма.Form(31)}: Ошибка при вызове метода контекста (Load): Нарушение прав доступа!
+system.load.ghost	error:{DataProcessor.Замеры.Form.Форма.Form(31)}: Ошибка при вызове метода контекста (Load): Нарушение прав доступа!
+system.save.current	error:{DataProcessor.Замеры.Form.Форма.Form(43)}: Ошибка при вызове метода контекста (Save): Нарушение прав доступа!
+system.save.other	error:{DataProcessor.Замеры.Form.Форма.Form(45)}: Ошибка при вызове метода контекста (Save): Нарушение прав доступа!
+privileged.enabled	YES
+privileged.right.data-administration	YES
+common.privileged.load.other	ok:common|ControlAdmin
+system.privileged.load.other	ok:system|ControlAdmin
+common.privileged.save.other	ok
+system.privileged.save.other	ok
+privileged.restored	NO

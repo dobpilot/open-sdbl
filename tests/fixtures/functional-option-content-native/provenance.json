@@ -1,0 +1,9 @@
+{
+  "platform": "8.3.27.2342",
+  "sdk_commit": "3362c0474ce8876bb5a15706f8fe18112569012f",
+  "container_tool": "saby v8unpack",
+  "container_tool_commit": "51473807dc8f874e9b06d84f466fff0861f3c4ac",
+  "extraction": "container_reader.extract(False, False), container 1, unchanged bare-GUID resources",
+  "sdk_reproduction_exit": 1,
+  "native_receipt_lines": 8
+}

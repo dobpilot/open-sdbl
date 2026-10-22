@@ -1,0 +1,67 @@
+﻿<?xml version="1.0" encoding="UTF-8"?>
+<MetaDataObject xmlns="http://v8.1c.ru/8.3/MDClasses" xmlns:app="http://v8.1c.ru/8.2/managed-application/core" xmlns:cfg="http://v8.1c.ru/8.1/data/enterprise/current-config" xmlns:cmi="http://v8.1c.ru/8.2/managed-application/cmi" xmlns:ent="http://v8.1c.ru/8.1/data/enterprise" xmlns:lf="http://v8.1c.ru/8.2/managed-application/logform" xmlns:style="http://v8.1c.ru/8.1/data/ui/style" xmlns:sys="http://v8.1c.ru/8.1/data/ui/fonts/system" xmlns:v8="http://v8.1c.ru/8.1/data/core" xmlns:v8ui="http://v8.1c.ru/8.1/data/ui" xmlns:web="http://v8.1c.ru/8.1/data/ui/colors/web" xmlns:win="http://v8.1c.ru/8.1/data/ui/colors/windows" xmlns:xen="http://v8.1c.ru/8.3/xcf/enums" xmlns:xpr="http://v8.1c.ru/8.3/xcf/predef" xmlns:xr="http://v8.1c.ru/8.3/xcf/readable" xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" version="2.20">
+	<Enum uuid="1e057ae0-c258-4599-9816-0e609d98a3be">
+		<InternalInfo>
+			<xr:GeneratedType name="EnumRef.СпособыСтроительства" category="Ref">
+				<xr:TypeId>be2470cf-d875-47ce-af16-a604d1f8c90a</xr:TypeId>
+				<xr:ValueId>3da3e503-8aab-41b2-8989-59d829158c14</xr:ValueId>
+			</xr:GeneratedType>
+			<xr:GeneratedType name="EnumManager.СпособыСтроительства" category="Manager">
+				<xr:TypeId>6e36c95c-5a42-47ed-8c43-439ecb084607</xr:TypeId>
+				<xr:ValueId>33cab1d7-619b-49ea-9472-447e76154ebc</xr:ValueId>
+			</xr:GeneratedType>
+			<xr:GeneratedType name="EnumList.СпособыСтроительства" category="List">
+				<xr:TypeId>92d895b7-7280-4e65-8029-b130dba3e130</xr:TypeId>
+				<xr:ValueId>3111383f-72de-4d25-ba83-880a015261e6</xr:ValueId>
+			</xr:GeneratedType>
+		</InternalInfo>
+		<Properties>
+			<Name>СпособыСтроительства</Name>
+			<Synonym>
+				<v8:item>
+					<v8:lang>ru</v8:lang>
+					<v8:content>Способы строительства</v8:content>
+				</v8:item>
+			</Synonym>
+			<Comment/>
+			<UseStandardCommands>true</UseStandardCommands>
+			<Characteristics/>
+			<QuickChoice>true</QuickChoice>
+			<ChoiceMode>BothWays</ChoiceMode>
+			<DefaultListForm/>
+			<DefaultChoiceForm/>
+			<AuxiliaryListForm/>
+			<AuxiliaryChoiceForm/>
+			<ListPresentation/>
+			<ExtendedListPresentation/>
+			<Explanation/>
+			<ChoiceHistoryOnInput>Auto</ChoiceHistoryOnInput>
+		</Properties>
+		<ChildObjects>
+			<EnumValue uuid="45e5b183-a2df-43d4-8c54-a7801e93c65e">
+				<Properties>
+					<Name>Подрядный</Name>
+					<Synonym>
+						<v8:item>
+							<v8:lang>ru</v8:lang>
+							<v8:content>Подрядный</v8:content>
+						</v8:item>
+					</Synonym>
+					<Comment>С привлечением подрядных организаций</Comment>
+				</Properties>
+			</EnumValue>
+			<EnumValue uuid="8069bd33-647d-4627-a6df-13746c25e84e">
+				<Properties>
+					<Name>Хозспособ</Name>
+					<Synonym>
+						<v8:item>
+							<v8:lang>ru</v8:lang>
+							<v8:content>Хозспособ</v8:content>
+						</v8:item>
+					</Synonym>
+					<Comment>Строительство собственными силами</Comment>
+				</Properties>
+			</EnumValue>
+		</ChildObjects>
+	</Enum>
+</MetaDataObject>

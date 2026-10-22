@@ -1,0 +1,16 @@
+find.types.number.same=filled
+find.types.number.string=empty
+find.types.number.undefined=empty
+find.types.number.null=empty
+find.types.boolean.same=filled
+find.types.boolean.string=empty
+find.types.boolean.undefined=empty
+find.types.boolean.null=empty
+find.types.date.same=filled
+find.types.date.string=empty
+find.types.date.undefined=empty
+find.types.date.null=empty
+find.types.reference.same=filled
+find.types.reference.string=empty
+find.types.reference.undefined=empty
+find.types.reference.null=empty

@@ -1,0 +1,16 @@
+{
+  "source_cf": "/tmp/sdbl-enum19-control-1013/old-modes/Version8_2_16/control.cf",
+  "source_enum_uuid": "9cc43f9d-e693-42bb-8439-5754583bd7ac",
+  "source_enum_compressed_sha256": "3db38e44284d86f6c86762b8efd329d685aa6a4da9a8b249a4d385e6e7815490",
+  "source_enum_inflated_sha256": "0f956a524cc05ad83fe2721469041d2dd8350358716741a169b8ea8c45456fb9",
+  "reextracted_enum_compressed_identical": true,
+  "modified_existing_payloads": [
+    "26c30ece-33b5-498a-b409-a91a046ba66b",
+    "versions"
+  ],
+  "removed": "c143f002-c8de-45ef-8272-ca10ec452db4",
+  "added": "9cc43f9d-e693-42bb-8439-5754583bd7ac",
+  "unchanged_others_verified": true,
+  "v8unpack_commit": "51473807dc8f874e9b06d84f466fff0861f3c4ac",
+  "packer_nested": true
+}

@@ -1,0 +1,24 @@
+   Compiling open-sdbl v0.9.20 (/tmp/open-sdbl-sales-book-review)
+    Finished `test` profile [unoptimized] target(s) in 6.19s
+     Running unittests src/lib.rs (/home/kan/Документы/develop/open-bsl/target/open-sdbl-sales-book-review-agent/debug/deps/open_sdbl-4aae15254d7c1c95)
+
+running 3 tests
+test metadata::runtime_metadata::legacy_sales_book_document_tests::native_sales_book_document_preserves_all_seven_xml_declarations_and_order ... FAILED
+test metadata::runtime_metadata::legacy_sales_book_document_tests::malformed_legacy_document_owner_does_not_enable_the_profile ... ok
+test metadata::runtime_metadata::legacy_sales_book_document_tests::malformed_legacy_document_members_do_not_publish_a_prefix ... ok
+
+failures:
+
+---- metadata::runtime_metadata::legacy_sales_book_document_tests::native_sales_book_document_preserves_all_seven_xml_declarations_and_order stdout ----
+
+thread 'metadata::runtime_metadata::legacy_sales_book_document_tests::native_sales_book_document_preserves_all_seven_xml_declarations_and_order' (2203) panicked at src/metadata/legacy_sales_book_document_tests.rs:49:48:
+called `Option::unwrap()` on a `None` value
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    metadata::runtime_metadata::legacy_sales_book_document_tests::native_sales_book_document_preserves_all_seven_xml_declarations_and_order
+
+test result: FAILED. 2 passed; 1 failed; 0 ignored; 0 measured; 145 filtered out; finished in 1.90s
+
+error: test failed, to rerun pass `-p open-sdbl --lib`

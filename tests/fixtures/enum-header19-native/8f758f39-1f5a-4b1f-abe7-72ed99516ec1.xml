@@ -1,0 +1,79 @@
+﻿<?xml version="1.0" encoding="UTF-8"?>
+<MetaDataObject xmlns="http://v8.1c.ru/8.3/MDClasses" xmlns:app="http://v8.1c.ru/8.2/managed-application/core" xmlns:cfg="http://v8.1c.ru/8.1/data/enterprise/current-config" xmlns:cmi="http://v8.1c.ru/8.2/managed-application/cmi" xmlns:ent="http://v8.1c.ru/8.1/data/enterprise" xmlns:lf="http://v8.1c.ru/8.2/managed-application/logform" xmlns:style="http://v8.1c.ru/8.1/data/ui/style" xmlns:sys="http://v8.1c.ru/8.1/data/ui/fonts/system" xmlns:v8="http://v8.1c.ru/8.1/data/core" xmlns:v8ui="http://v8.1c.ru/8.1/data/ui" xmlns:web="http://v8.1c.ru/8.1/data/ui/colors/web" xmlns:win="http://v8.1c.ru/8.1/data/ui/colors/windows" xmlns:xen="http://v8.1c.ru/8.3/xcf/enums" xmlns:xpr="http://v8.1c.ru/8.3/xcf/predef" xmlns:xr="http://v8.1c.ru/8.3/xcf/readable" xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" version="2.20">
+	<Enum uuid="8f758f39-1f5a-4b1f-abe7-72ed99516ec1">
+		<InternalInfo>
+			<xr:GeneratedType name="EnumRef.ВидыСтоимости" category="Ref">
+				<xr:TypeId>d49270ae-b525-4966-b9a4-a45a0ee5eae8</xr:TypeId>
+				<xr:ValueId>4dfbc0df-1c8b-4743-b4a4-3106d2d3efbe</xr:ValueId>
+			</xr:GeneratedType>
+			<xr:GeneratedType name="EnumManager.ВидыСтоимости" category="Manager">
+				<xr:TypeId>fb497901-c5cc-4f89-ad2c-54a61b767121</xr:TypeId>
+				<xr:ValueId>ba191e1a-11ec-4a42-aba6-840b7a5a71ed</xr:ValueId>
+			</xr:GeneratedType>
+			<xr:GeneratedType name="EnumList.ВидыСтоимости" category="List">
+				<xr:TypeId>202d9f39-a30a-4ae7-800d-6d7d776a4f83</xr:TypeId>
+				<xr:ValueId>3336305d-9868-46f2-a996-4da9b6055de3</xr:ValueId>
+			</xr:GeneratedType>
+		</InternalInfo>
+		<Properties>
+			<Name>ВидыСтоимости</Name>
+			<Synonym>
+				<v8:item>
+					<v8:lang>ru</v8:lang>
+					<v8:content>Виды стоимости выпуска</v8:content>
+				</v8:item>
+			</Synonym>
+			<Comment/>
+			<UseStandardCommands>true</UseStandardCommands>
+			<Characteristics/>
+			<QuickChoice>true</QuickChoice>
+			<ChoiceMode>QuickChoice</ChoiceMode>
+			<DefaultListForm/>
+			<DefaultChoiceForm/>
+			<AuxiliaryListForm/>
+			<AuxiliaryChoiceForm/>
+			<ListPresentation/>
+			<ExtendedListPresentation/>
+			<Explanation/>
+			<ChoiceHistoryOnInput>Auto</ChoiceHistoryOnInput>
+		</Properties>
+		<ChildObjects>
+			<EnumValue uuid="9d2c90cf-cdb5-499c-9fa3-27bd2f19c90a">
+				<Properties>
+					<Name>Фактическая</Name>
+					<Synonym>
+						<v8:item>
+							<v8:lang>ru</v8:lang>
+							<v8:content>Выпуск по фактической стоимости</v8:content>
+						</v8:item>
+					</Synonym>
+					<Comment>Выпуск по фактической стоимости</Comment>
+				</Properties>
+			</EnumValue>
+			<EnumValue uuid="0294a7a9-a36e-4061-8a55-c38f8a9c99f5">
+				<Properties>
+					<Name>Плановая</Name>
+					<Synonym>
+						<v8:item>
+							<v8:lang>ru</v8:lang>
+							<v8:content>Выпуск по плановой стоимости</v8:content>
+						</v8:item>
+					</Synonym>
+					<Comment>Выпуск по плановой стоимости</Comment>
+				</Properties>
+			</EnumValue>
+			<EnumValue uuid="a00fbc78-6216-4a03-ad52-dc490c8825e4">
+				<Properties>
+					<Name>Отклонение</Name>
+					<Synonym>
+						<v8:item>
+							<v8:lang>ru</v8:lang>
+							<v8:content>Отклонение</v8:content>
+						</v8:item>
+					</Synonym>
+					<Comment>Отклонение фактической стоимости выпуска от плановой</Comment>
+				</Properties>
+			</EnumValue>
+		</ChildObjects>
+	</Enum>
+</MetaDataObject>

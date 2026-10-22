@@ -1,6 +1,11 @@
+#[path = "resolve_selection.rs"]
+mod selection;
+pub use selection::{resolve_selected_metadata, resolve_selected_runtime_metadata};
+
 use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::ops::Deref;
+use std::sync::Arc;
 
 use crate::names::{folded_name, names_equal};
 
@@ -38,6 +43,8 @@ struct MetadataIndex {
     extension_field_names: HashSet<String>,
     /// Reference target of an extension field by its field number.
     extension_reference_targets: HashMap<u32, String>,
+    /// Однозначно объявленные скалярные UUID, без догадки по длине SQL.
+    uuid_attributes: HashSet<AttributeId>,
     attributes_by_id: HashMap<AttributeId, LookupSlot<usize>>,
     attributes_by_owner_name: HashMap<(ObjectId, String), LookupSlot<usize>>,
     values_by_owner_name: HashMap<(ObjectId, String), LookupSlot<usize>>,
@@ -162,25 +169,27 @@ impl MetadataField {
     }
 }
 
-/// A reference type that stands for every object of one kind rather than
-/// for a single object. The identifiers are platform constants, measured on
-/// 8.3.27 by declaring an attribute of each category in a probe
-/// configuration and reading its Config type description.
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum ReferenceCategory {
-    /// Every object of one kind.
+/// Измеренное семейство ссылочных типов конфигурации.
+/// Состав семейства раскрывается по полному каталогу конфигурации; достигнутый
+/// набор объектов ленивого снимка не доказывает полноту такого раскрытия.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum ReferenceTypeSet {
+    /// Все ссылочные типы указанного класса метаданных.
     Kind(MetadataKind),
-    /// Every reference of the configuration.
+    /// Все ссылочные типы конфигурации, включая перечисления.
     Any,
 }
 
-impl ReferenceCategory {
+impl ReferenceTypeSet {
     fn covers(self, kind: Option<MetadataKind>) -> bool {
-        let Some(kind) = kind else {
-            return false;
-        };
+        kind.is_some_and(|kind| self.contains_kind(kind))
+    }
+
+    /// Проверяет принадлежность класса семейству по прежним правилам SQL-резолвера.
+    #[must_use]
+    pub fn contains_kind(self, kind: MetadataKind) -> bool {
         match self {
-            Self::Kind(wanted) => kind == wanted,
+            Self::Kind(wanted) => kind == wanted && Self::Any.contains_kind(kind),
             Self::Any => matches!(
                 kind,
                 MetadataKind::Catalog
@@ -198,50 +207,50 @@ impl ReferenceCategory {
 }
 
 /// The reference categories by their platform identifier.
-const REFERENCE_CATEGORIES: [(&str, ReferenceCategory); 10] = [
+const REFERENCE_CATEGORIES: [(&str, ReferenceTypeSet); 10] = [
     (
         "e61ef7b8-f3e1-4f4b-8ac7-676e90524997",
-        ReferenceCategory::Kind(MetadataKind::Catalog),
+        ReferenceTypeSet::Kind(MetadataKind::Catalog),
     ),
     (
         "38bfd075-3e63-4aaa-a93e-94521380d579",
-        ReferenceCategory::Kind(MetadataKind::Document),
+        ReferenceTypeSet::Kind(MetadataKind::Document),
     ),
     (
         "474c3bf6-08b5-4ddc-a2ad-989cedf11583",
-        ReferenceCategory::Kind(MetadataKind::Enumeration),
+        ReferenceTypeSet::Kind(MetadataKind::Enumeration),
     ),
     (
         "99892482-ed55-4fb5-a7f7-20888820a758",
-        ReferenceCategory::Kind(MetadataKind::ChartOfCharacteristicTypes),
+        ReferenceTypeSet::Kind(MetadataKind::ChartOfCharacteristicTypes),
     ),
     (
         "ac606d60-0209-4159-8e4c-794bc091ce38",
-        ReferenceCategory::Kind(MetadataKind::ChartOfAccounts),
+        ReferenceTypeSet::Kind(MetadataKind::ChartOfAccounts),
     ),
     (
         "593cd424-0877-470d-91f9-b90a982059b4",
-        ReferenceCategory::Kind(MetadataKind::ChartOfCalculationTypes),
+        ReferenceTypeSet::Kind(MetadataKind::ChartOfCalculationTypes),
     ),
     (
         "0a52f9de-73ea-4507-81e8-66217bead73a",
-        ReferenceCategory::Kind(MetadataKind::ExchangePlan),
+        ReferenceTypeSet::Kind(MetadataKind::ExchangePlan),
     ),
     (
         "214fa4d8-6ba4-4748-a5e1-6332b5887780",
-        ReferenceCategory::Kind(MetadataKind::BusinessProcess),
+        ReferenceTypeSet::Kind(MetadataKind::BusinessProcess),
     ),
     (
         "6291e9b3-8df5-44e1-b6b2-d9fe008016c0",
-        ReferenceCategory::Kind(MetadataKind::Task),
+        ReferenceTypeSet::Kind(MetadataKind::Task),
     ),
     (
         "280f5f0e-9c8a-49cc-bf6d-4d296cc17a63",
-        ReferenceCategory::Any,
+        ReferenceTypeSet::Any,
     ),
 ];
 
-fn reference_category(reference_type: &Guid) -> Option<ReferenceCategory> {
+pub(super) fn reference_category(reference_type: &Guid) -> Option<ReferenceTypeSet> {
     let text = reference_type.to_string();
     REFERENCE_CATEGORIES
         .iter()
@@ -596,6 +605,136 @@ impl Deref for ResolvedMetadata {
     }
 }
 
+/// Неизменяемые факты для объектной модели без готовности к запросам.
+/// Обычные поля, индексы запросов, отчёт сравнения и fingerprint не строятся
+/// при отдельном разрешении этого представления.
+#[derive(Debug, Clone)]
+pub struct RuntimeMetadataFacts {
+    db_names: DbNames,
+    descriptors: Arc<Vec<ConfigDescriptor>>,
+    schema: SchemaStorage,
+    live_tables: Arc<Vec<LiveTable>>,
+    objects: Arc<Vec<MetadataObject>>,
+    fields: Vec<MetadataField>,
+    values: Arc<Vec<MetadataValue>>,
+    criteria: Vec<MetadataCriterion>,
+    roles: Vec<Guid>,
+    objects_by_id: Arc<HashMap<ObjectId, usize>>,
+    common_attribute_separation: Arc<HashMap<Guid, Option<bool>>>,
+    // Неизменяемые коллекции разделяются при отложенной финализации.
+    query_context: Arc<QueryFinalizationContext>,
+}
+
+// Данные расширений нужны только отложенной финализации; нормализация уже завершена.
+#[derive(Debug, Clone)]
+struct QueryFinalizationContext {
+    extension_origins: HashMap<u32, String>,
+    extension_targets: HashMap<u32, String>,
+    extension_field_conflicts: Vec<(String, DbNameFieldConflict)>,
+    extension_restructure_anomalies: Vec<(String, String)>,
+}
+
+fn common_attribute_separation(db_names: &DbNames) -> HashMap<Guid, Option<bool>> {
+    let mut result = HashMap::new();
+    for entry in db_names
+        .entries()
+        .iter()
+        .filter(|entry| entry.alias == "Fld")
+    {
+        result
+            .entry(entry.guid.clone())
+            .and_modify(|known| *known = None)
+            .or_insert_with(|| Some(db_names.is_data_separator(entry.number)));
+    }
+    result
+}
+
+impl RuntimeMetadataFacts {
+    /// Строит полный снимок запросов из уже нормализованных фактов.
+    /// Не повторяет выбор ресурсов, слияние расширений или нормализацию.
+    /// Исходное значение не изменяется; неизменяемые коллекции разделяются через `Arc`.
+    /// Строгую проверку недостающих описателей выполняет слой `open-sdbl-db`.
+    #[must_use]
+    pub fn finalize_query(&self) -> ResolvedMetadata {
+        self.clone().into_query_snapshot()
+    }
+
+    /// Передаёт факты полному снимку запросов без копирования общего состава.
+    /// Дополняет поля и строит индексы, отчёт сравнения и прежний fingerprint.
+    /// Выбор ресурсов, слияние расширений и нормализация не повторяются.
+    #[must_use]
+    pub fn into_query_snapshot(self) -> ResolvedMetadata {
+        finalize_runtime_facts(self)
+    }
+
+    /// Возвращает нормализованные описатели в порядке полного разрешения.
+    #[must_use]
+    pub fn descriptors(&self) -> &[ConfigDescriptor] {
+        &self.descriptors
+    }
+    /// Возвращает общую декларацию физической схемы выбранных объектов.
+    #[must_use]
+    pub const fn schema(&self) -> &SchemaStorage {
+        &self.schema
+    }
+    /// Возвращает разрешённые объекты в порядке полного разрешения.
+    #[must_use]
+    pub fn objects(&self) -> &[MetadataObject] {
+        &self.objects
+    }
+    /// Находит объект по устойчивому идентификатору.
+    #[must_use]
+    pub fn object_by_id(&self, id: ObjectId) -> Option<&MetadataObject> {
+        self.objects_by_id
+            .get(&id)
+            .map(|&index| &self.objects[index])
+    }
+    /// Возвращает классификацию единственного физического поля общего реквизита.
+    /// `None` означает отсутствие поля или неоднозначный GUID; `Some(false)`
+    /// отличает обычное поле от разделителя без построения поля запроса.
+    #[must_use]
+    pub fn common_attribute_separation(&self, guid: &Guid) -> Option<bool> {
+        self.common_attribute_separation
+            .get(guid)
+            .copied()
+            .flatten()
+    }
+    /// Перечисляет только поля разделителей с разрешёнными настройками.
+    pub fn separators(&self) -> impl Iterator<Item = &MetadataField> {
+        self.fields.iter().filter(|field| field.data_separator)
+    }
+    /// Возвращает разрешённые значения перечислений и предопределённые значения.
+    #[must_use]
+    pub fn values(&self) -> &[MetadataValue] {
+        &self.values
+    }
+    /// Возвращает приобретённые критерии отбора.
+    #[must_use]
+    pub fn criteria(&self) -> &[MetadataCriterion] {
+        &self.criteria
+    }
+    /// Присоединяет критерии, разобранные из ресурсов конфигурации.
+    pub fn attach_criteria(&mut self, criteria: Vec<ConfigCriterion>) {
+        self.criteria = criteria
+            .into_iter()
+            .map(|criterion| MetadataCriterion {
+                guid: criterion.guid,
+                name: criterion.name,
+                content: criterion.content,
+            })
+            .collect();
+    }
+    /// Возвращает роли в порядке корневой коллекции конфигурации.
+    #[must_use]
+    pub fn roles(&self) -> &[Guid] {
+        &self.roles
+    }
+    /// Присоединяет роли, разобранные из корня конфигурации.
+    pub fn attach_roles(&mut self, roles: Vec<Guid>) {
+        self.roles = roles;
+    }
+}
+
 /// Query-ready metadata whose indexed collections cannot be mutated.
 ///
 /// Collections are intentionally exposed only through shared slice accessors,
@@ -609,25 +748,7 @@ impl Deref for ResolvedMetadata {
 /// ```
 #[derive(Debug, Clone)]
 pub struct MetadataSnapshot {
-    /// Authoritative DBNames mapping.
-    db_names: DbNames,
-    /// Bare-GUID Config descriptors.
-    descriptors: Vec<ConfigDescriptor>,
-    /// Authoritative current physical schema.
-    schema: SchemaStorage,
-    /// Observed PostgreSQL catalog tables.
-    live_tables: Vec<LiveTable>,
-    /// Resolved metadata objects.
-    objects: Vec<MetadataObject>,
-    /// Resolved custom fields.
-    fields: Vec<MetadataField>,
-    /// Resolved enumeration and catalog predefined values.
-    values: Vec<MetadataValue>,
-    /// Filter criteria declared by Config, in resource order.
-    criteria: Vec<MetadataCriterion>,
-    /// The roles the configuration root lists, attached after resolution.
-    roles: Vec<Guid>,
-    /// SchemaStorage indexes compared with the live catalog.
+    facts: RuntimeMetadataFacts,
     indexes: Vec<IndexComparison>,
     index: MetadataIndex,
     fingerprint: SnapshotFingerprint,
@@ -649,62 +770,75 @@ pub struct MetadataSnapshot {
 pub struct SnapshotFingerprint([u64; 2]);
 
 impl MetadataSnapshot {
+    /// Заимствует общие факты без копирования и без изменения готовности снимка.
+    #[must_use]
+    pub const fn runtime_facts(&self) -> &RuntimeMetadataFacts {
+        &self.facts
+    }
+
+    pub(crate) fn attribute_is_uuid(&self, id: AttributeId) -> bool {
+        self.index.uuid_attributes.contains(&id)
+    }
+
     /// Returns the authoritative DBNames mapping.
     #[must_use]
     pub const fn db_names(&self) -> &DbNames {
-        &self.db_names
+        &self.facts.db_names
     }
 
     /// Returns Config descriptors in resolution source order.
     #[must_use]
     pub fn descriptors(&self) -> &[ConfigDescriptor] {
-        &self.descriptors
+        &self.facts.descriptors
     }
 
     /// Returns the authoritative physical schema declaration.
     #[must_use]
     pub const fn schema(&self) -> &SchemaStorage {
-        &self.schema
+        &self.facts.schema
     }
 
     /// Returns observed live tables in catalog order.
     #[must_use]
     pub fn live_tables(&self) -> &[LiveTable] {
-        &self.live_tables
+        &self.facts.live_tables
     }
 
     /// Returns resolved metadata objects in deterministic source order.
     #[must_use]
     pub fn objects(&self) -> &[MetadataObject] {
-        &self.objects
+        &self.facts.objects
     }
 
     /// Returns resolved custom fields in deterministic source order.
     #[must_use]
     pub fn fields(&self) -> &[MetadataField] {
-        &self.fields
+        &self.facts.fields
     }
 
     /// Returns the data-separator fields in deterministic source order.
     pub fn separators(&self) -> impl Iterator<Item = &MetadataField> {
-        self.fields.iter().filter(|field| field.data_separator)
+        self.facts
+            .fields
+            .iter()
+            .filter(|field| field.data_separator)
     }
 
     /// Returns resolved predefined values in deterministic source order.
     #[must_use]
     pub fn values(&self) -> &[MetadataValue] {
-        &self.values
+        &self.facts.values
     }
 
     /// Returns the filter criteria in deterministic source order.
     #[must_use]
     pub fn criteria(&self) -> &[MetadataCriterion] {
-        &self.criteria
+        &self.facts.criteria
     }
 
     /// Attaches the filter criteria decoded from Config resources.
     pub fn attach_criteria(&mut self, criteria: Vec<ConfigCriterion>) {
-        self.criteria = criteria
+        self.facts.criteria = criteria
             .into_iter()
             .map(|criterion| MetadataCriterion {
                 guid: criterion.guid,
@@ -717,21 +851,22 @@ impl MetadataSnapshot {
     /// Attaches the role identifiers projected from the configuration
     /// root (`ParsedConfigResource::roles`).
     pub fn attach_roles(&mut self, roles: Vec<Guid>) {
-        self.roles = roles;
+        self.facts.roles = roles;
     }
 
     /// The roles the configuration declares, in collection order; empty
     /// until attached.
     #[must_use]
     pub fn roles(&self) -> &[Guid] {
-        &self.roles
+        &self.facts.roles
     }
 
     /// Looks up a filter criterion by its metadata name.
     #[must_use]
     pub fn criterion(&self, name: &str) -> Option<&MetadataCriterion> {
         let wanted = normalize_name(name);
-        self.criteria
+        self.facts
+            .criteria
             .iter()
             .find(|criterion| normalize_name(&criterion.name) == wanted)
     }
@@ -760,7 +895,7 @@ impl MetadataSnapshot {
             .objects_by_name
             .get(&(kind, normalize_name(name)))
         {
-            Some(LookupSlot::Unique(index)) => Ok(ObjectId::from(&self.objects[*index].guid)),
+            Some(LookupSlot::Unique(index)) => Ok(ObjectId::from(&self.facts.objects[*index].guid)),
             Some(LookupSlot::Ambiguous) => Err(LookupError::AmbiguousObject),
             None => Err(LookupError::ObjectNotFound),
         }
@@ -772,7 +907,7 @@ impl MetadataSnapshot {
         self.index
             .objects_by_id
             .get(&id)
-            .map(|index| &self.objects[*index])
+            .map(|index| &self.facts.objects[*index])
     }
 
     /// The synonym of the object `id` in `language`, under the rule of
@@ -813,7 +948,9 @@ impl MetadataSnapshot {
             .attributes_by_owner_name
             .get(&(owner, normalize_name(name)))
         {
-            Some(LookupSlot::Unique(index)) => Ok(AttributeId::from(&self.fields[*index].guid)),
+            Some(LookupSlot::Unique(index)) => {
+                Ok(AttributeId::from(&self.facts.fields[*index].guid))
+            }
             Some(LookupSlot::Ambiguous) => Err(LookupError::AmbiguousField),
             None => Err(LookupError::FieldNotFound),
         }
@@ -836,7 +973,7 @@ impl MetadataSnapshot {
             .filter(|field| self.index.standard_fields.contains(&(owner, *field)));
         match (custom, standard) {
             (Some(LookupSlot::Unique(index)), None) => Ok(FieldId::Metadata(AttributeId::from(
-                &self.fields[*index].guid,
+                &self.facts.fields[*index].guid,
             ))),
             (None, Some(field)) => Ok(FieldId::Standard(field)),
             (Some(LookupSlot::Ambiguous), _) | (Some(LookupSlot::Unique(_)), Some(_)) => {
@@ -853,7 +990,7 @@ impl MetadataSnapshot {
     /// Returns a typed missing or ambiguity outcome.
     pub fn attribute_by_id(&self, id: AttributeId) -> Result<&MetadataField, LookupError> {
         match self.index.attributes_by_id.get(&id) {
-            Some(LookupSlot::Unique(index)) => Ok(&self.fields[*index]),
+            Some(LookupSlot::Unique(index)) => Ok(&self.facts.fields[*index]),
             Some(LookupSlot::Ambiguous) => Err(LookupError::AmbiguousField),
             None => Err(LookupError::FieldNotFound),
         }
@@ -879,7 +1016,7 @@ impl MetadataSnapshot {
         self.index
             .live_tables_by_name
             .get(&physical_name.to_ascii_lowercase())
-            .map(|position| &self.live_tables[*position])
+            .map(|position| &self.facts.live_tables[*position])
     }
 
     /// Returns the `X<n>` configuration-extension variants of a canonical
@@ -890,7 +1027,7 @@ impl MetadataSnapshot {
             .get(&physical_name.to_ascii_lowercase())
             .into_iter()
             .flatten()
-            .map(|position| &self.live_tables[*position])
+            .map(|position| &self.facts.live_tables[*position])
     }
 
     /// Looks up a SchemaStorage table by physical or schema name in expected
@@ -901,7 +1038,7 @@ impl MetadataSnapshot {
         self.index
             .schema_tables_by_name
             .get(&name.to_ascii_lowercase())
-            .map(|position| &self.schema.tables[*position])
+            .map(|position| &self.facts.schema.tables[*position])
     }
 
     pub(crate) fn is_extension_field_name(&self, logical_name: &str) -> bool {
@@ -954,7 +1091,7 @@ impl MetadataSnapshot {
             .values_by_owner_name
             .get(&(owner, normalize_name(name)))
         {
-            Some(LookupSlot::Unique(index)) => Ok(&self.values[*index]),
+            Some(LookupSlot::Unique(index)) => Ok(&self.facts.values[*index]),
             Some(LookupSlot::Ambiguous) => Err(LookupError::AmbiguousValue),
             None => Err(LookupError::ValueNotFound),
         }
@@ -1029,7 +1166,7 @@ pub fn resolve_metadata_with_criteria(
         schema,
         live_tables,
     );
-    resolved.snapshot.criteria = criteria
+    resolved.snapshot.facts.criteria = criteria
         .into_iter()
         .map(|criterion| MetadataCriterion {
             guid: criterion.guid,
@@ -1043,13 +1180,67 @@ pub fn resolve_metadata_with_criteria(
 /// Resolves predefined values and caller-provided extension resources.
 #[must_use]
 pub fn resolve_metadata_with_predefined_values_and_extensions(
+    db_names: DbNames,
+    descriptors: Vec<ConfigDescriptor>,
+    predefined_values: Vec<ConfigPredefinedValue>,
+    extensions: Vec<ExtensionMetadata>,
+    schema: SchemaStorage,
+    live_tables: Vec<LiveTable>,
+) -> ResolvedMetadata {
+    match resolve_metadata_parts(
+        db_names,
+        descriptors,
+        predefined_values,
+        extensions,
+        schema,
+        live_tables,
+        false,
+    ) {
+        MetadataResolution::Snapshot(resolved) => resolved,
+        MetadataResolution::Runtime(_) => unreachable!(),
+    }
+}
+
+pub(super) fn resolve_runtime_metadata_with_extensions(
+    db_names: DbNames,
+    descriptors: Vec<ConfigDescriptor>,
+    predefined_values: Vec<ConfigPredefinedValue>,
+    extensions: Vec<ExtensionMetadata>,
+    schema: SchemaStorage,
+    live_tables: Vec<LiveTable>,
+) -> RuntimeMetadataFacts {
+    match resolve_metadata_parts(
+        db_names,
+        descriptors,
+        predefined_values,
+        extensions,
+        schema,
+        live_tables,
+        true,
+    ) {
+        MetadataResolution::Runtime(facts) => facts,
+        MetadataResolution::Snapshot(_) => unreachable!(),
+    }
+}
+
+// Результат немедленно разбирает одна из двух обёрток. Дополнительная
+// аллокация ради выравнивания размеров вариантов здесь не нужна.
+#[allow(clippy::large_enum_variant)]
+enum MetadataResolution {
+    Snapshot(ResolvedMetadata),
+    Runtime(RuntimeMetadataFacts),
+}
+
+#[allow(clippy::too_many_arguments)]
+fn resolve_metadata_parts(
     mut db_names: DbNames,
     mut descriptors: Vec<ConfigDescriptor>,
     predefined_values: Vec<ConfigPredefinedValue>,
     extensions: Vec<ExtensionMetadata>,
     mut schema: SchemaStorage,
     live_tables: Vec<LiveTable>,
-) -> ResolvedMetadata {
+    runtime_only: bool,
+) -> MetadataResolution {
     let mut extension_origins = HashMap::<u32, String>::new();
     let mut extension_targets = HashMap::<u32, String>::new();
     let mut extension_field_conflicts = Vec::<(String, DbNameFieldConflict)>::new();
@@ -1099,39 +1290,15 @@ pub fn resolve_metadata_with_predefined_values_and_extensions(
     super::runtime_metadata::resolve_functional_options(&mut descriptors, &db_names);
     super::runtime_metadata::resolve_common_attributes(&mut descriptors, &db_names);
     let live_table_by_name = index_live_tables(&live_tables);
-    let indexes = compare_indexes(&schema, &live_tables, &live_table_by_name, &db_names);
-    let mut separator_findings = Vec::new();
-    let mut report = build_resolution_report(
-        &db_names,
-        &descriptors,
-        &schema,
-        &live_tables,
-        &indexes,
-        &extension_field_conflicts,
-        &extension_restructure_anomalies,
-    );
+    let physical_tables = PhysicalTableIndex::new(&schema);
     let schema_tables: HashSet<String> = schema
         .tables
         .iter()
         .map(|table| folded_name(&table.name))
         .collect();
-    let schema_field_owners = index_schema_field_owners(&schema);
-    let schema_field_targets = index_schema_field_targets(&schema);
-    let live_fields = index_live_fields(&live_tables);
     let descriptor_by_guid: HashMap<&Guid, &ConfigDescriptor> = descriptors
         .iter()
         .map(|descriptor| (&descriptor.object_guid, descriptor))
-        .collect();
-    // An attribute names its reference targets by the reference type of
-    // each object, which that object's own descriptor carries.
-    let object_guid_by_reference_type: HashMap<&Guid, &Guid> = descriptors
-        .iter()
-        .filter_map(|descriptor| {
-            descriptor
-                .object_reference_type
-                .as_ref()
-                .map(|reference_type| (reference_type, &descriptor.object_guid))
-        })
         .collect();
     let mut seen_primary = HashSet::new();
     let mut seen_entries = HashSet::new();
@@ -1144,7 +1311,7 @@ pub fn resolve_metadata_with_predefined_values_and_extensions(
         {
             continue;
         }
-        let Some(physical_table) = physical_table_for_entry(entry, kind, &schema) else {
+        let Some(physical_table) = physical_tables.table_for_entry(entry, kind) else {
             continue;
         };
         let descriptor = descriptor_by_guid.get(&entry.guid).copied();
@@ -1196,17 +1363,21 @@ pub fn resolve_metadata_with_predefined_values_and_extensions(
         if object.kind.is_some_and(MetadataKind::is_service) {
             object.owner = primary_by_guid.get(&object.guid).copied().or_else(|| {
                 object.physical_table.as_deref().and_then(|table| {
-                    schema.table(table).and_then(|declaration| {
-                        declaration.owner.as_deref().and_then(|owner| {
-                            primary_owners
-                                .get(&folded_name(&format!("_{owner}")))
-                                .copied()
+                    physical_tables
+                        .schema_row(table)
+                        .map(|position| &schema.tables[position])
+                        .and_then(|declaration| {
+                            declaration.owner.as_deref().and_then(|owner| {
+                                primary_owners
+                                    .get(&folded_name(&format!("_{owner}")))
+                                    .copied()
+                            })
                         })
-                    })
                 })
             });
         }
     }
+    let (dependency_tables, dependency_owners) = dependency_indexes(&objects);
     let dependency_objects = schema
         .tables
         .iter()
@@ -1217,21 +1388,10 @@ pub fn resolve_metadata_with_predefined_values_and_extensions(
                 .as_deref()
                 .filter(|name| matches!(*name, "BaseCK" | "LeadingCK" | "DisplacedCK"))?;
             let owner_table = format!("_{}", table.owner.as_deref()?);
-            if objects.iter().any(|object| {
-                object
-                    .physical_table
-                    .as_deref()
-                    .is_some_and(|candidate| names_equal(candidate, &physical))
-            }) {
+            if dependency_tables.contains(&folded_name(&physical)) {
                 return None;
             }
-            let owner = objects.iter().find(|object| {
-                object.kind.is_some_and(|kind| !kind.is_service())
-                    && object
-                        .physical_table
-                        .as_deref()
-                        .is_some_and(|candidate| names_equal(candidate, &owner_table))
-            })?;
+            let owner = &objects[*dependency_owners.get(&folded_name(&owner_table))?];
             let live_table = live_table_by_name
                 .get(&physical.to_ascii_lowercase())
                 .map(|position| &live_tables[*position]);
@@ -1278,6 +1438,134 @@ pub fn resolve_metadata_with_predefined_values_and_extensions(
         }
     }
 
+    // Только опубликованным runtime-фактам нужны отдельные поля разделителей.
+    // Полный путь сразу построит все поля при финализации, поэтому не создаёт
+    // временные поля и их вспомогательные индексы второй раз.
+    let fields = if runtime_only {
+        resolve_fields(
+            &db_names,
+            &descriptors,
+            &schema,
+            &live_tables,
+            &objects,
+            &extension_origins,
+            &extension_targets,
+            true,
+        )
+        .0
+    } else {
+        Vec::new()
+    };
+
+    let object_ids = objects
+        .iter()
+        .filter(|object| object.kind.is_none_or(|kind| !kind.is_service()))
+        .map(|object| {
+            (
+                object.guid.clone(),
+                (ObjectId::from(&object.guid), object.kind),
+            )
+        })
+        .collect::<HashMap<_, _>>();
+    let mut values = Vec::new();
+    for descriptor in &descriptors {
+        if descriptor.resource_guid == descriptor.object_guid || !descriptor.enumeration_value {
+            continue;
+        }
+        let Some((owner, Some(MetadataKind::Enumeration))) =
+            object_ids.get(&descriptor.resource_guid).copied()
+        else {
+            continue;
+        };
+        values.push(MetadataValue {
+            owner,
+            guid: descriptor.object_guid.clone(),
+            name: descriptor.name.clone(),
+        });
+    }
+    for predefined in predefined_values {
+        // A value belongs to an object of the kind its resource serves:
+        // `.1c` to a catalog, `.9` to a chart of accounts.
+        let Some((owner, Some(kind))) = object_ids.get(&predefined.owner_guid).copied() else {
+            continue;
+        };
+        let matching = match predefined.source {
+            PredefinedSource::Catalog => kind == MetadataKind::Catalog,
+            PredefinedSource::ChartOfAccounts => kind == MetadataKind::ChartOfAccounts,
+            PredefinedSource::ChartOfCharacteristicTypes => {
+                kind == MetadataKind::ChartOfCharacteristicTypes
+            }
+        };
+        if !matching {
+            continue;
+        }
+        values.push(MetadataValue {
+            owner,
+            guid: predefined.value_guid,
+            name: predefined.name,
+        });
+    }
+
+    let objects_by_id = objects
+        .iter()
+        .enumerate()
+        .filter(|(_, object)| object.kind.is_none_or(|kind| !kind.is_service()))
+        .map(|(position, object)| (ObjectId::from(&object.guid), position))
+        .collect();
+    let facts = RuntimeMetadataFacts {
+        common_attribute_separation: Arc::new(common_attribute_separation(&db_names)),
+        db_names,
+        descriptors: Arc::new(descriptors),
+        schema,
+        live_tables: Arc::new(live_tables),
+        objects: Arc::new(objects),
+        fields,
+        values: Arc::new(values),
+        criteria: Vec::new(),
+        roles: Vec::new(),
+        objects_by_id: Arc::new(objects_by_id),
+        query_context: Arc::new(QueryFinalizationContext {
+            extension_origins,
+            extension_targets,
+            extension_field_conflicts,
+            extension_restructure_anomalies,
+        }),
+    };
+    if runtime_only {
+        MetadataResolution::Runtime(facts)
+    } else {
+        MetadataResolution::Snapshot(finalize_runtime_facts(facts))
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn resolve_fields(
+    db_names: &DbNames,
+    descriptors: &[ConfigDescriptor],
+    schema: &SchemaStorage,
+    live_tables: &[LiveTable],
+    objects: &[MetadataObject],
+    extension_origins: &HashMap<u32, String>,
+    extension_targets: &HashMap<u32, String>,
+    runtime_only: bool,
+) -> (Vec<MetadataField>, Vec<ResolutionFinding>) {
+    let schema_field_owners = index_schema_field_owners(schema);
+    let schema_field_targets = index_schema_field_targets(schema);
+    let live_fields = index_live_fields(live_tables);
+    let descriptor_by_guid: HashMap<&Guid, &ConfigDescriptor> = descriptors
+        .iter()
+        .map(|descriptor| (&descriptor.object_guid, descriptor))
+        .collect();
+    let object_guid_by_reference_type: HashMap<&Guid, &Guid> = descriptors
+        .iter()
+        .filter_map(|descriptor| {
+            descriptor
+                .object_reference_type
+                .as_ref()
+                .map(|reference_type| (reference_type, &descriptor.object_guid))
+        })
+        .collect();
+    let mut separator_findings = Vec::new();
     // Every object's reference type resolved to the table it stores, so an
     // attribute's declared targets become physical tables.
     let table_by_reference_type: HashMap<&Guid, String> = object_guid_by_reference_type
@@ -1291,11 +1579,9 @@ pub fn resolve_metadata_with_predefined_values_and_extensions(
         })
         .collect();
     let mut fields = Vec::new();
-    for entry in db_names
-        .entries()
-        .iter()
-        .filter(|entry| entry.alias == "Fld")
-    {
+    for entry in db_names.entries().iter().filter(|entry| {
+        entry.alias == "Fld" && (!runtime_only || db_names.is_data_separator(entry.number))
+    }) {
         let logical_name = format!("Fld{}", entry.number);
         let physical_name = format!("_{logical_name}");
         let owner_tables = schema_field_owners
@@ -1377,7 +1663,7 @@ pub fn resolve_metadata_with_predefined_values_and_extensions(
                         let Some(category) = reference_category(reference_type) else {
                             return false;
                         };
-                        for object in &objects {
+                        for object in objects {
                             if category.covers(object.kind)
                                 && let Some(table) = &object.physical_table
                             {
@@ -1392,93 +1678,94 @@ pub fn resolve_metadata_with_predefined_values_and_extensions(
         });
     }
 
-    let object_ids = objects
-        .iter()
-        .filter(|object| object.kind.is_none_or(|kind| !kind.is_service()))
-        .map(|object| {
-            (
-                object.guid.clone(),
-                (ObjectId::from(&object.guid), object.kind),
-            )
-        })
-        .collect::<HashMap<_, _>>();
-    let mut values = Vec::new();
-    for descriptor in &descriptors {
-        if descriptor.resource_guid == descriptor.object_guid || !descriptor.enumeration_value {
-            continue;
-        }
-        let Some((owner, Some(MetadataKind::Enumeration))) =
-            object_ids.get(&descriptor.resource_guid).copied()
-        else {
-            continue;
-        };
-        values.push(MetadataValue {
-            owner,
-            guid: descriptor.object_guid.clone(),
-            name: descriptor.name.clone(),
-        });
-    }
-    for predefined in predefined_values {
-        // A value belongs to an object of the kind its resource serves:
-        // `.1c` to a catalog, `.9` to a chart of accounts.
-        let Some((owner, Some(kind))) = object_ids.get(&predefined.owner_guid).copied() else {
-            continue;
-        };
-        let matching = match predefined.source {
-            PredefinedSource::Catalog => kind == MetadataKind::Catalog,
-            PredefinedSource::ChartOfAccounts => kind == MetadataKind::ChartOfAccounts,
-            PredefinedSource::ChartOfCharacteristicTypes => {
-                kind == MetadataKind::ChartOfCharacteristicTypes
-            }
-        };
-        if !matching {
-            continue;
-        }
-        values.push(MetadataValue {
-            owner,
-            guid: predefined.value_guid,
-            name: predefined.name,
-        });
-    }
+    (fields, separator_findings)
+}
 
-    let index = build_metadata_index(
-        &objects,
-        &fields,
-        &values,
-        &schema,
-        &live_tables,
+fn finalize_runtime_facts(mut facts: RuntimeMetadataFacts) -> ResolvedMetadata {
+    let live_table_by_name = index_live_tables(&facts.live_tables);
+    let physical_tables = PhysicalTableIndex::new(&facts.schema);
+    let indexes = compare_indexes(
+        &facts.schema,
+        &facts.live_tables,
+        &live_table_by_name,
+        &facts.db_names,
+    );
+    let mut report = build_resolution_report(
+        &facts.db_names,
+        &facts.descriptors,
+        &facts.schema,
+        &facts.live_tables,
+        &indexes,
+        &facts.query_context.extension_field_conflicts,
+        &facts.query_context.extension_restructure_anomalies,
+        &physical_tables,
+    );
+    let (fields, separator_findings) = resolve_fields(
+        &facts.db_names,
+        &facts.descriptors,
+        &facts.schema,
+        &facts.live_tables,
+        &facts.objects,
+        &facts.query_context.extension_origins,
+        &facts.query_context.extension_targets,
+        false,
+    );
+    facts.fields = fields;
+    let RuntimeMetadataFacts {
+        db_names,
+        descriptors,
+        schema,
+        live_tables,
+        objects,
+        fields,
+        values,
+        ..
+    } = &facts;
+    let mut index = build_metadata_index(
+        objects,
+        fields,
+        values,
+        schema,
+        live_tables,
         &live_table_by_name,
     );
 
+    // Повторяющиеся описатели не доказывают однозначный тип реквизита.
+    let mut uuid_attributes = HashMap::new();
+    for descriptor in descriptors.iter() {
+        let known_uuid = descriptor.declared_types.as_deref().is_some_and(|types| {
+            matches!(types, [ty] if ty.tag == "#" && ty.qualifiers.is_empty()
+                && ty.reference.as_ref().is_some_and(|id| id.as_str() == "fc01b5df-97fe-449b-83d4-218a090e681e"))
+        });
+        uuid_attributes
+            .entry(AttributeId::from(&descriptor.object_guid))
+            .and_modify(|known| *known = false)
+            .or_insert(known_uuid);
+    }
+    index.uuid_attributes = uuid_attributes
+        .into_iter()
+        .filter_map(|(id, known)| known.then_some(id))
+        .collect();
+
     let fingerprint = snapshot_fingerprint(
-        &db_names,
-        &descriptors,
-        &schema,
-        &live_tables,
-        &objects,
-        &fields,
-        &values,
+        db_names,
+        descriptors,
+        schema,
+        live_tables,
+        objects,
+        fields,
+        values,
         &indexes,
     );
+    report.findings.extend(separator_findings);
     ResolvedMetadata {
         snapshot: MetadataSnapshot {
-            db_names,
-            descriptors,
-            schema,
-            live_tables,
-            objects,
-            fields,
-            values,
-            criteria: Vec::new(),
-            roles: Vec::new(),
+            facts,
             indexes,
             index,
             fingerprint,
         },
-        report: {
-            report.findings.extend(separator_findings);
-            report
-        },
+        report,
     }
 }
 
@@ -1548,6 +1835,7 @@ fn snapshot_fingerprint(
     SnapshotFingerprint(state.0)
 }
 
+#[allow(clippy::too_many_arguments)]
 fn build_resolution_report(
     db_names: &DbNames,
     descriptors: &[ConfigDescriptor],
@@ -1556,6 +1844,7 @@ fn build_resolution_report(
     indexes: &[IndexComparison],
     extension_field_conflicts: &[(String, DbNameFieldConflict)],
     extension_restructure_anomalies: &[(String, String)],
+    physical_tables: &PhysicalTableIndex,
 ) -> ResolutionReport {
     const KNOWN_COLUMN_TAGS: [&str; 7] = ["S", "N", "T", "B", "L", "R", "V"];
     let mut findings = Vec::new();
@@ -1594,13 +1883,14 @@ fn build_resolution_report(
         {
             findings.push(ResolutionFinding::DescriptorMissing {
                 guid: entry.guid.clone(),
-                table: physical_table_for_entry(entry, kind, schema)
+                table: physical_tables
+                    .table_for_entry(entry, kind)
                     .unwrap_or_else(|| format!("{}{}", kind.physical_prefix(), entry.number)),
             });
         }
         if !entry.guid.is_nil()
             && kind.is_service()
-            && physical_table_for_entry(entry, kind, schema).is_none()
+            && physical_tables.table_for_entry(entry, kind).is_none()
         {
             findings.push(ResolutionFinding::ServiceTableMappingMissing {
                 guid: entry.guid.clone(),
@@ -1944,7 +2234,83 @@ fn infer_allowed_length(table: Option<&LiveTable>, column_name: &str) -> Option<
         .and_then(|column| AllowedLength::from_postgres_type(&column.data_type))
 }
 
-fn physical_table_for_entry(
+// Имена индексируются тем же ключом, что соответствует `names_equal`.
+// Позиция строки сохраняет приоритет первого совпадения общего OR-предиката.
+struct PhysicalTableIndex {
+    physical_names: Vec<String>,
+    by_name: HashMap<String, usize>,
+    extra_dimensions: HashMap<u32, usize>,
+}
+impl PhysicalTableIndex {
+    fn new(schema: &SchemaStorage) -> Self {
+        let mut index = Self {
+            physical_names: Vec::with_capacity(schema.tables.len()),
+            by_name: HashMap::new(),
+            extra_dimensions: HashMap::new(),
+        };
+        for (position, table) in schema.tables.iter().enumerate() {
+            index.physical_names.push(table.physical_name());
+            index
+                .by_name
+                .entry(folded_name(&table.name))
+                .or_insert(position);
+            if table
+                .inline_name
+                .as_deref()
+                .is_some_and(|name| names_equal(name, &format!("ExtDim{}", table.number)))
+            {
+                index
+                    .extra_dimensions
+                    .entry(table.number)
+                    .or_insert(position);
+            }
+        }
+        index
+    }
+    fn schema_row(&self, physical_name: &str) -> Option<usize> {
+        self.by_name
+            .get(&folded_name(
+                physical_name.strip_prefix('_').unwrap_or(physical_name),
+            ))
+            .copied()
+    }
+    fn table_for_entry(&self, entry: &DbNameEntry, kind: MetadataKind) -> Option<String> {
+        if !kind.is_service() {
+            return Some(format!("{}{}", kind.physical_prefix(), entry.number));
+        }
+        let alias = self.by_name.get(&folded_name(&entry.alias));
+        let numbered = self
+            .by_name
+            .get(&folded_name(&format!("{}{}", entry.alias, entry.number)));
+        let extra = (kind == MetadataKind::ExtraDimension)
+            .then(|| self.extra_dimensions.get(&entry.number))
+            .flatten();
+        [alias, numbered, extra]
+            .into_iter()
+            .flatten()
+            .min()
+            .map(|position| self.physical_names[*position].clone())
+    }
+}
+
+fn dependency_indexes(objects: &[MetadataObject]) -> (HashSet<String>, HashMap<String, usize>) {
+    let mut physical = HashSet::new();
+    let mut owners = HashMap::new();
+    for (position, object) in objects.iter().enumerate() {
+        if let Some(table) = object.physical_table.as_deref() {
+            let key = folded_name(table);
+            physical.insert(key.clone());
+            if object.kind.is_some_and(|kind| !kind.is_service()) {
+                owners.entry(key).or_insert(position);
+            }
+        }
+    }
+    (physical, owners)
+}
+
+// Исходный линейный поиск остаётся только эталоном эквивалентности в тестах.
+#[cfg(test)]
+fn plain_physical_table_for_entry(
     entry: &DbNameEntry,
     kind: MetadataKind,
     schema: &SchemaStorage,
@@ -2108,3 +2474,7 @@ mod tests {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "resolution_indexes_tests.rs"]
+mod resolution_indexes_tests;

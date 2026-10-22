@@ -1,0 +1,10 @@
+{
+  "basis.deflate": {
+    "source": "open-bsl/crates/bsl-config-db/tests/fixtures/document-owned-attributes/basis.deflate",
+    "sha256": "564e4dc37bdebd8798a292c8e28b40979d6a3319e182b05856c1837f4cda2392"
+  },
+  "event.deflate": {
+    "source": "open-bsl/crates/bsl-config-db/tests/fixtures/document-owned-attributes/event.deflate",
+    "sha256": "96adab4f6e20234e92f2720e1838282862176a9bc5cf6ad5dd78fc29d80d637c"
+  }
+}

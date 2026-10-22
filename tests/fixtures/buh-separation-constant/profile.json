@@ -1,0 +1,76 @@
+{
+  "root_tag": "1",
+  "root_length": 3,
+  "class_tag": "14",
+  "class_length": 12,
+  "body_path": [
+    1,
+    1
+  ],
+  "body_tag": "27",
+  "body_length": 23,
+  "typed_path": [
+    1,
+    1,
+    1
+  ],
+  "typed_tag": "2",
+  "typed_length": 3,
+  "identity_path": [
+    1,
+    1,
+    1,
+    1
+  ],
+  "identity_tag": "1",
+  "identity_length": 7,
+  "reference": [
+    "0",
+    "0",
+    "cc906f05-5ea6-43cb-a084-c4ee51ca4bd5"
+  ],
+  "name": "ИспользоватьРазделениеПоОбластямДанных",
+  "synonym": [
+    "1",
+    "ru",
+    "Использовать разделение по областям данных"
+  ],
+  "comment": "",
+  "flags": [
+    "0",
+    "0"
+  ],
+  "pattern_path": [
+    1,
+    1,
+    1,
+    2
+  ],
+  "pattern": [
+    "Pattern",
+    [
+      "B"
+    ]
+  ],
+  "class_generated_guids": [
+    "10d74e67-eac8-4797-ac69-898a3c1c9669",
+    "e0591d1f-a2ea-4fed-a08a-f2ffa81b95f6",
+    "a98c3e8f-5a35-4b95-b96e-d57979e592ad",
+    "5b5da831-1b77-4736-bac6-fee11bdfec70"
+  ],
+  "class_tail": [
+    "1",
+    "0",
+    [
+      "0"
+    ],
+    [
+      "0"
+    ],
+    "00000000-0000-0000-0000-000000000000",
+    "0"
+  ],
+  "root_tail": [
+    "0"
+  ]
+}

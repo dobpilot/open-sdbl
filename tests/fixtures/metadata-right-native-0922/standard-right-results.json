@@ -1,0 +1,3177 @@
+{
+  "platform": "8.3.27.2342",
+  "scope": "Owned native catalog standard-right cases only; no host/SDK implementation oracle, multiple-role rule or other-kind completion claim.",
+  "contexts": [
+    {
+      "oracle": "standard-description-profiles/description-yes-default-no/deny.oracle",
+      "user": "RootProbeDeny",
+      "privileged": false,
+      "sha256": "372f21288f3d118272e60a24ee67e34771d64125883cd4778747fab64b7ce407"
+    },
+    {
+      "oracle": "standard-description-profiles/explicit-description-no-default-yes/deny.oracle",
+      "user": "RootProbeDeny",
+      "privileged": false,
+      "sha256": "22d22cb9af2f30439a1439a10142201ac8b6fa9d27b0aed5aa4caaead303ac3d"
+    },
+    {
+      "oracle": "standard-paths/standard-admin.oracle",
+      "user": "RootProbeAdmin",
+      "privileged": false,
+      "sha256": "17819716294a9214e3f6ba720fab565fdc620432231145c00bd7d7dc88d3edd4"
+    },
+    {
+      "oracle": "standard-paths/standard-deny.oracle",
+      "user": "RootProbeDeny",
+      "privileged": false,
+      "sha256": "8e7bd32b20436f31971576fd33d6b8696395a27e16fda24481931c1f669afb65"
+    },
+    {
+      "oracle": "standard-privileged/privileged-admin.oracle",
+      "user": "RootProbeAdmin",
+      "privileged": true,
+      "sha256": "047de7f79ec23f6a3fb4f77dfcb1a077d1f9de58909a6b81aded7eec4c145983"
+    },
+    {
+      "oracle": "standard-privileged/privileged-deny.oracle",
+      "user": "RootProbeDeny",
+      "privileged": true,
+      "sha256": "86743dbf28b32f1965ecb49c72f69d4692ad5432c2635319ea5520aafb41d1aa"
+    },
+    {
+      "oracle": "standard-profiles/explicit-code-no-default-yes/deny.oracle",
+      "user": "RootProbeDeny",
+      "privileged": false,
+      "sha256": "e7b498aa693de3a9d41a3e602e68a3f8cd6a61c08e270d6fd519356d6232f29e"
+    },
+    {
+      "oracle": "standard-profiles/independent-owner-no-code-yes/deny.oracle",
+      "user": "RootProbeDeny",
+      "privileged": false,
+      "sha256": "1ed34671b2d63df79f8aa08c282c544fee82d943380bbbc913fe0657c2b4daf1"
+    },
+    {
+      "oracle": "standard-profiles/missing-code-default-no/deny.oracle",
+      "user": "RootProbeDeny",
+      "privileged": false,
+      "sha256": "c29793981b57d7ac6cd3260916e9961892fc533a7fd0bcaecad4d05924610956"
+    },
+    {
+      "oracle": "standard-profiles/missing-code-default-yes/deny.oracle",
+      "user": "RootProbeDeny",
+      "privileged": false,
+      "sha256": "7c4b8b31aa055ef5e3682d92d5b43e94bbd032cffe72209925bbcccaf3530893"
+    },
+    {
+      "oracle": "standard-profiles/owner-no-code-no/deny.oracle",
+      "user": "RootProbeDeny",
+      "privileged": false,
+      "sha256": "8e7bd32b20436f31971576fd33d6b8696395a27e16fda24481931c1f669afb65"
+    },
+    {
+      "oracle": "standard-profiles/owner-no-code-yes/deny.oracle",
+      "user": "RootProbeDeny",
+      "privileged": false,
+      "sha256": "8e7bd32b20436f31971576fd33d6b8696395a27e16fda24481931c1f669afb65"
+    },
+    {
+      "oracle": "standard-profiles/owner-yes-code-no/deny.oracle",
+      "user": "RootProbeDeny",
+      "privileged": false,
+      "sha256": "c29793981b57d7ac6cd3260916e9961892fc533a7fd0bcaecad4d05924610956"
+    },
+    {
+      "oracle": "standard-profiles/owner-yes-code-yes/deny.oracle",
+      "user": "RootProbeDeny",
+      "privileged": false,
+      "sha256": "ed46f1c689ed3f417e639acd68883af6915c5dd361827605ff8468679fa219c2"
+    }
+  ],
+  "observations": [
+    {
+      "context": "standard-description-profiles/description-yes-default-no/deny.oracle",
+      "method": "verify",
+      "right": "Read",
+      "standard": "undefined",
+      "outcome": "allowed",
+      "native_text": "allowed"
+    },
+    {
+      "context": "standard-description-profiles/description-yes-default-no/deny.oracle",
+      "method": "access",
+      "right": "Read",
+      "standard": "undefined",
+      "outcome": "allowed",
+      "native_text": "allowed"
+    },
+    {
+      "context": "standard-description-profiles/description-yes-default-no/deny.oracle",
+      "method": "verify",
+      "right": "Read",
+      "standard": "empty",
+      "outcome": "invalid_standard_path",
+      "native_text": "error:{DataProcessor.Замеры.Form.Форма.Form(41)}: Error calling context method (VerifyAccessRights): Invalid parameter value (parameter number '3')"
+    },
+    {
+      "context": "standard-description-profiles/description-yes-default-no/deny.oracle",
+      "method": "access",
+      "right": "Read",
+      "standard": "empty",
+      "outcome": "invalid_standard_path",
+      "native_text": "error:{DataProcessor.Замеры.Form.Форма.Form(44)}: Error calling context method (AccessRight): Invalid parameter value (parameter number '4')"
+    },
+    {
+      "context": "standard-description-profiles/description-yes-default-no/deny.oracle",
+      "method": "verify",
+      "right": "Read",
+      "standard": "Код",
+      "outcome": "allowed",
+      "native_text": "allowed"
+    },
+    {
+      "context": "standard-description-profiles/description-yes-default-no/deny.oracle",
+      "method": "access",
+      "right": "Read",
+      "standard": "Код",
+      "outcome": "not_applicable",
+      "native_text": "error:{DataProcessor.Замеры.Form.Форма.Form(44)}: Error calling context method (AccessRight): Cannot apply the Read right to Catalog.ВладелецПробы"
+    },
+    {
+      "context": "standard-description-profiles/description-yes-default-no/deny.oracle",
+      "method": "verify",
+      "right": "Read",
+      "standard": "Code",
+      "outcome": "allowed",
+      "native_text": "allowed"
+    },
+    {
+      "context": "standard-description-profiles/description-yes-default-no/deny.oracle",
+      "method": "access",
+      "right": "Read",
+      "standard": "Code",
+      "outcome": "not_applicable",
+      "native_text": "error:{DataProcessor.Замеры.Form.Форма.Form(44)}: Error calling context method (AccessRight): Cannot apply the Read right to Catalog.ВладелецПробы"
+    },
+    {
+      "context": "standard-description-profiles/description-yes-default-no/deny.oracle",
+      "method": "verify",
+      "right": "Read",
+      "standard": "Description",
+      "outcome": "allowed",
+      "native_text": "allowed"
+    },
+    {
+      "context": "standard-description-profiles/description-yes-default-no/deny.oracle",
+      "method": "access",
+      "right": "Read",
+      "standard": "Description",
+      "outcome": "not_applicable",
+      "native_text": "error:{DataProcessor.Замеры.Form.Форма.Form(44)}: Error calling context method (AccessRight): Cannot apply the Read right to Catalog.ВладелецПробы"
+    },
+    {
+      "context": "standard-description-profiles/description-yes-default-no/deny.oracle",
+      "method": "verify",
+      "right": "Read",
+      "standard": "Наименование",
+      "outcome": "allowed",
+      "native_text": "allowed"
+    },
+    {
+      "context": "standard-description-profiles/description-yes-default-no/deny.oracle",
+      "method": "access",
+      "right": "Read",
+      "standard": "Наименование",
+      "outcome": "not_applicable",
+      "native_text": "error:{DataProcessor.Замеры.Form.Форма.Form(44)}: Error calling context method (AccessRight): Cannot apply the Read right to Catalog.ВладелецПробы"
+    },
+    {
+      "context": "standard-description-profiles/description-yes-default-no/deny.oracle",
+      "method": "verify",
+      "right": "Read",
+      "standard": "cOdE",
+      "outcome": "allowed",
+      "native_text": "allowed"
+    },
+    {
+      "context": "standard-description-profiles/description-yes-default-no/deny.oracle",
+      "method": "access",
+      "right": "Read",
+      "standard": "cOdE",
+      "outcome": "not_applicable",
+      "native_text": "error:{DataProcessor.Замеры.Form.Форма.Form(44)}: Error calling context method (AccessRight): Cannot apply the Read right to Catalog.ВладелецПробы"
+    },
+    {
+      "context": "standard-description-profiles/description-yes-default-no/deny.oracle",
+      "method": "verify",
+      "right": "Read",
+      "standard": "код",
+      "outcome": "allowed",
+      "native_text": "allowed"
+    },
+    {
+      "context": "standard-description-profiles/description-yes-default-no/deny.oracle",
+      "method": "access",
+      "right": "Read",
+      "standard": "код",
+      "outcome": "not_applicable",
+      "native_text": "error:{DataProcessor.Замеры.Form.Форма.Form(44)}: Error calling context method (AccessRight): Cannot apply the Read right to Catalog.ВладелецПробы"
+    },
+    {
+      "context": "standard-description-profiles/description-yes-default-no/deny.oracle",
+      "method": "verify",
+      "right": "Read",
+      "standard": "НеСуществует",
+      "outcome": "invalid_standard_path",
+      "native_text": "error:{DataProcessor.Замеры.Form.Форма.Form(41)}: Error calling context method (VerifyAccessRights): Invalid parameter value (parameter number '3') (НеСуществует)"
+    },
+    {
+      "context": "standard-description-profiles/description-yes-default-no/deny.oracle",
+      "method": "access",
+      "right": "Read",
+      "standard": "НеСуществует",
+      "outcome": "invalid_standard_path",
+      "native_text": "error:{DataProcessor.Замеры.Form.Форма.Form(44)}: Error calling context method (AccessRight): Invalid parameter value (parameter number '4') (НеСуществует)"
+    },
+    {
+      "context": "standard-description-profiles/description-yes-default-no/deny.oracle",
+      "method": "verify",
+      "right": "View",
+      "standard": "undefined",
+      "outcome": "allowed",
+      "native_text": "allowed"
+    },
+    {
+      "context": "standard-description-profiles/description-yes-default-no/deny.oracle",
+      "method": "access",
+      "right": "View",
+      "standard": "undefined",
+      "outcome": "allowed",
+      "native_text": "allowed"
+    },
+    {
+      "context": "standard-description-profiles/description-yes-default-no/deny.oracle",
+      "method": "verify",
+      "right": "View",
+      "standard": "empty",
+      "outcome": "invalid_standard_path",
+      "native_text": "error:{DataProcessor.Замеры.Form.Форма.Form(41)}: Error calling context method (VerifyAccessRights): Invalid parameter value (parameter number '3')"
+    },
+    {
+      "context": "standard-description-profiles/description-yes-default-no/deny.oracle",
+      "method": "access",
+      "right": "View",
+      "standard": "empty",
+      "outcome": "invalid_standard_path",
+      "native_text": "error:{DataProcessor.Замеры.Form.Форма.Form(44)}: Error calling context method (AccessRight): Invalid parameter value (parameter number '4')"
+    },
+    {
+      "context": "standard-description-profiles/description-yes-default-no/deny.oracle",
+      "method": "verify",
+      "right": "View",
+      "standard": "Код",
+      "outcome": "denied",
+      "native_text": "error:{DataProcessor.Замеры.Form.Форма.Form(41)}: Error calling context method (VerifyAccessRights): Access violation!"
+    },
+    {
+      "context": "standard-description-profiles/description-yes-default-no/deny.oracle",
+      "method": "access",
+      "right": "View",
+      "standard": "Код",
+      "outcome": "denied",
+      "native_text": "denied"
+    },
+    {
+      "context": "standard-description-profiles/description-yes-default-no/deny.oracle",
+      "method": "verify",
+      "right": "View",
+      "standard": "Code",
+      "outcome": "denied",
+      "native_text": "error:{DataProcessor.Замеры.Form.Форма.Form(41)}: Error calling context method (VerifyAccessRights): Access violation!"
+    },
+    {
+      "context": "standard-description-profiles/description-yes-default-no/deny.oracle",
+      "method": "access",
+      "right": "View",
+      "standard": "Code",
+      "outcome": "denied",
+      "native_text": "denied"
+    },
+    {
+      "context": "standard-description-profiles/description-yes-default-no/deny.oracle",
+      "method": "verify",
+      "right": "View",
+      "standard": "Description",
+      "outcome": "allowed",
+      "native_text": "allowed"
+    },
+    {
+      "context": "standard-description-profiles/description-yes-default-no/deny.oracle",
+      "method": "access",
+      "right": "View",
+      "standard": "Description",
+      "outcome": "allowed",
+      "native_text": "allowed"
+    },
+    {
+      "context": "standard-description-profiles/description-yes-default-no/deny.oracle",
+      "method": "verify",
+      "right": "View",
+      "standard": "Наименование",
+      "outcome": "allowed",
+      "native_text": "allowed"
+    },
+    {
+      "context": "standard-description-profiles/description-yes-default-no/deny.oracle",
+      "method": "access",
+      "right": "View",
+      "standard": "Наименование",
+      "outcome": "allowed",
+      "native_text": "allowed"
+    },
+    {
+      "context": "standard-description-profiles/description-yes-default-no/deny.oracle",
+      "method": "verify",
+      "right": "View",
+      "standard": "cOdE",
+      "outcome": "denied",
+      "native_text": "error:{DataProcessor.Замеры.Form.Форма.Form(41)}: Error calling context method (VerifyAccessRights): Access violation!"
+    },
+    {
+      "context": "standard-description-profiles/description-yes-default-no/deny.oracle",
+      "method": "access",
+      "right": "View",
+      "standard": "cOdE",
+      "outcome": "denied",
+      "native_text": "denied"
+    },
+    {
+      "context": "standard-description-profiles/description-yes-default-no/deny.oracle",
+      "method": "verify",
+      "right": "View",
+      "standard": "код",
+      "outcome": "denied",
+      "native_text": "error:{DataProcessor.Замеры.Form.Форма.Form(41)}: Error calling context method (VerifyAccessRights): Access violation!"
+    },
+    {
+      "context": "standard-description-profiles/description-yes-default-no/deny.oracle",
+      "method": "access",
+      "right": "View",
+      "standard": "код",
+      "outcome": "denied",
+      "native_text": "denied"
+    },
+    {
+      "context": "standard-description-profiles/description-yes-default-no/deny.oracle",
+      "method": "verify",
+      "right": "View",
+      "standard": "НеСуществует",
+      "outcome": "invalid_standard_path",
+      "native_text": "error:{DataProcessor.Замеры.Form.Форма.Form(41)}: Error calling context method (VerifyAccessRights): Invalid parameter value (parameter number '3') (НеСуществует)"
+    },
+    {
+      "context": "standard-description-profiles/description-yes-default-no/deny.oracle",
+      "method": "access",
+      "right": "View",
+      "standard": "НеСуществует",
+      "outcome": "invalid_standard_path",
+      "native_text": "error:{DataProcessor.Замеры.Form.Форма.Form(44)}: Error calling context method (AccessRight): Invalid parameter value (parameter number '4') (НеСуществует)"
+    },
+    {
+      "context": "standard-description-profiles/explicit-description-no-default-yes/deny.oracle",
+      "method": "verify",
+      "right": "Read",
+      "standard": "undefined",
+      "outcome": "allowed",
+      "native_text": "allowed"
+    },
+    {
+      "context": "standard-description-profiles/explicit-description-no-default-yes/deny.oracle",
+      "method": "access",
+      "right": "Read",
+      "standard": "undefined",
+      "outcome": "allowed",
+      "native_text": "allowed"
+    },
+    {
+      "context": "standard-description-profiles/explicit-description-no-default-yes/deny.oracle",
+      "method": "verify",
+      "right": "Read",
+      "standard": "empty",
+      "outcome": "invalid_standard_path",
+      "native_text": "error:{DataProcessor.Замеры.Form.Форма.Form(41)}: Error calling context method (VerifyAccessRights): Invalid parameter value (parameter number '3')"
+    },
+    {
+      "context": "standard-description-profiles/explicit-description-no-default-yes/deny.oracle",
+      "method": "access",
+      "right": "Read",
+      "standard": "empty",
+      "outcome": "invalid_standard_path",
+      "native_text": "error:{DataProcessor.Замеры.Form.Форма.Form(44)}: Error calling context method (AccessRight): Invalid parameter value (parameter number '4')"
+    },
+    {
+      "context": "standard-description-profiles/explicit-description-no-default-yes/deny.oracle",
+      "method": "verify",
+      "right": "Read",
+      "standard": "Код",
+      "outcome": "allowed",
+      "native_text": "allowed"
+    },
+    {
+      "context": "standard-description-profiles/explicit-description-no-default-yes/deny.oracle",
+      "method": "access",
+      "right": "Read",
+      "standard": "Код",
+      "outcome": "not_applicable",
+      "native_text": "error:{DataProcessor.Замеры.Form.Форма.Form(44)}: Error calling context method (AccessRight): Cannot apply the Read right to Catalog.ВладелецПробы"
+    },
+    {
+      "context": "standard-description-profiles/explicit-description-no-default-yes/deny.oracle",
+      "method": "verify",
+      "right": "Read",
+      "standard": "Code",
+      "outcome": "allowed",
+      "native_text": "allowed"
+    },
+    {
+      "context": "standard-description-profiles/explicit-description-no-default-yes/deny.oracle",
+      "method": "access",
+      "right": "Read",
+      "standard": "Code",
+      "outcome": "not_applicable",
+      "native_text": "error:{DataProcessor.Замеры.Form.Форма.Form(44)}: Error calling context method (AccessRight): Cannot apply the Read right to Catalog.ВладелецПробы"
+    },
+    {
+      "context": "standard-description-profiles/explicit-description-no-default-yes/deny.oracle",
+      "method": "verify",
+      "right": "Read",
+      "standard": "Description",
+      "outcome": "allowed",
+      "native_text": "allowed"
+    },
+    {
+      "context": "standard-description-profiles/explicit-description-no-default-yes/deny.oracle",
+      "method": "access",
+      "right": "Read",
+      "standard": "Description",
+      "outcome": "not_applicable",
+      "native_text": "error:{DataProcessor.Замеры.Form.Форма.Form(44)}: Error calling context method (AccessRight): Cannot apply the Read right to Catalog.ВладелецПробы"
+    },
+    {
+      "context": "standard-description-profiles/explicit-description-no-default-yes/deny.oracle",
+      "method": "verify",
+      "right": "Read",
+      "standard": "Наименование",
+      "outcome": "allowed",
+      "native_text": "allowed"
+    },
+    {
+      "context": "standard-description-profiles/explicit-description-no-default-yes/deny.oracle",
+      "method": "access",
+      "right": "Read",
+      "standard": "Наименование",
+      "outcome": "not_applicable",
+      "native_text": "error:{DataProcessor.Замеры.Form.Форма.Form(44)}: Error calling context method (AccessRight): Cannot apply the Read right to Catalog.ВладелецПробы"
+    },
+    {
+      "context": "standard-description-profiles/explicit-description-no-default-yes/deny.oracle",
+      "method": "verify",
+      "right": "Read",
+      "standard": "cOdE",
+      "outcome": "allowed",
+      "native_text": "allowed"
+    },
+    {
+      "context": "standard-description-profiles/explicit-description-no-default-yes/deny.oracle",
+      "method": "access",
+      "right": "Read",
+      "standard": "cOdE",
+      "outcome": "not_applicable",
+      "native_text": "error:{DataProcessor.Замеры.Form.Форма.Form(44)}: Error calling context method (AccessRight): Cannot apply the Read right to Catalog.ВладелецПробы"
+    },
+    {
+      "context": "standard-description-profiles/explicit-description-no-default-yes/deny.oracle",
+      "method": "verify",
+      "right": "Read",
+      "standard": "код",
+      "outcome": "allowed",
+      "native_text": "allowed"
+    },
+    {
+      "context": "standard-description-profiles/explicit-description-no-default-yes/deny.oracle",
+      "method": "access",
+      "right": "Read",
+      "standard": "код",
+      "outcome": "not_applicable",
+      "native_text": "error:{DataProcessor.Замеры.Form.Форма.Form(44)}: Error calling context method (AccessRight): Cannot apply the Read right to Catalog.ВладелецПробы"
+    },
+    {
+      "context": "standard-description-profiles/explicit-description-no-default-yes/deny.oracle",
+      "method": "verify",
+      "right": "Read",
+      "standard": "НеСуществует",
+      "outcome": "invalid_standard_path",
+      "native_text": "error:{DataProcessor.Замеры.Form.Форма.Form(41)}: Error calling context method (VerifyAccessRights): Invalid parameter value (parameter number '3') (НеСуществует)"
+    },
+    {
+      "context": "standard-description-profiles/explicit-description-no-default-yes/deny.oracle",
+      "method": "access",
+      "right": "Read",
+      "standard": "НеСуществует",
+      "outcome": "invalid_standard_path",
+      "native_text": "error:{DataProcessor.Замеры.Form.Форма.Form(44)}: Error calling context method (AccessRight): Invalid parameter value (parameter number '4') (НеСуществует)"
+    },
+    {
+      "context": "standard-description-profiles/explicit-description-no-default-yes/deny.oracle",
+      "method": "verify",
+      "right": "View",
+      "standard": "undefined",
+      "outcome": "allowed",
+      "native_text": "allowed"
+    },
+    {
+      "context": "standard-description-profiles/explicit-description-no-default-yes/deny.oracle",
+      "method": "access",
+      "right": "View",
+      "standard": "undefined",
+      "outcome": "allowed",
+      "native_text": "allowed"
+    },
+    {
+      "context": "standard-description-profiles/explicit-description-no-default-yes/deny.oracle",
+      "method": "verify",
+      "right": "View",
+      "standard": "empty",
+      "outcome": "invalid_standard_path",
+      "native_text": "error:{DataProcessor.Замеры.Form.Форма.Form(41)}: Error calling context method (VerifyAccessRights): Invalid parameter value (parameter number '3')"
+    },
+    {
+      "context": "standard-description-profiles/explicit-description-no-default-yes/deny.oracle",
+      "method": "access",
+      "right": "View",
+      "standard": "empty",
+      "outcome": "invalid_standard_path",
+      "native_text": "error:{DataProcessor.Замеры.Form.Форма.Form(44)}: Error calling context method (AccessRight): Invalid parameter value (parameter number '4')"
+    },
+    {
+      "context": "standard-description-profiles/explicit-description-no-default-yes/deny.oracle",
+      "method": "verify",
+      "right": "View",
+      "standard": "Код",
+      "outcome": "allowed",
+      "native_text": "allowed"
+    },
+    {
+      "context": "standard-description-profiles/explicit-description-no-default-yes/deny.oracle",
+      "method": "access",
+      "right": "View",
+      "standard": "Код",
+      "outcome": "allowed",
+      "native_text": "allowed"
+    },
+    {
+      "context": "standard-description-profiles/explicit-description-no-default-yes/deny.oracle",
+      "method": "verify",
+      "right": "View",
+      "standard": "Code",
+      "outcome": "allowed",
+      "native_text": "allowed"
+    },
+    {
+      "context": "standard-description-profiles/explicit-description-no-default-yes/deny.oracle",
+      "method": "access",
+      "right": "View",
+      "standard": "Code",
+      "outcome": "allowed",
+      "native_text": "allowed"
+    },
+    {
+      "context": "standard-description-profiles/explicit-description-no-default-yes/deny.oracle",
+      "method": "verify",
+      "right": "View",
+      "standard": "Description",
+      "outcome": "denied",
+      "native_text": "error:{DataProcessor.Замеры.Form.Форма.Form(41)}: Error calling context method (VerifyAccessRights): Access violation!"
+    },
+    {
+      "context": "standard-description-profiles/explicit-description-no-default-yes/deny.oracle",
+      "method": "access",
+      "right": "View",
+      "standard": "Description",
+      "outcome": "denied",
+      "native_text": "denied"
+    },
+    {
+      "context": "standard-description-profiles/explicit-description-no-default-yes/deny.oracle",
+      "method": "verify",
+      "right": "View",
+      "standard": "Наименование",
+      "outcome": "denied",
+      "native_text": "error:{DataProcessor.Замеры.Form.Форма.Form(41)}: Error calling context method (VerifyAccessRights): Access violation!"
+    },
+    {
+      "context": "standard-description-profiles/explicit-description-no-default-yes/deny.oracle",
+      "method": "access",
+      "right": "View",
+      "standard": "Наименование",
+      "outcome": "denied",
+      "native_text": "denied"
+    },
+    {
+      "context": "standard-description-profiles/explicit-description-no-default-yes/deny.oracle",
+      "method": "verify",
+      "right": "View",
+      "standard": "cOdE",
+      "outcome": "allowed",
+      "native_text": "allowed"
+    },
+    {
+      "context": "standard-description-profiles/explicit-description-no-default-yes/deny.oracle",
+      "method": "access",
+      "right": "View",
+      "standard": "cOdE",
+      "outcome": "allowed",
+      "native_text": "allowed"
+    },
+    {
+      "context": "standard-description-profiles/explicit-description-no-default-yes/deny.oracle",
+      "method": "verify",
+      "right": "View",
+      "standard": "код",
+      "outcome": "allowed",
+      "native_text": "allowed"
+    },
+    {
+      "context": "standard-description-profiles/explicit-description-no-default-yes/deny.oracle",
+      "method": "access",
+      "right": "View",
+      "standard": "код",
+      "outcome": "allowed",
+      "native_text": "allowed"
+    },
+    {
+      "context": "standard-description-profiles/explicit-description-no-default-yes/deny.oracle",
+      "method": "verify",
+      "right": "View",
+      "standard": "НеСуществует",
+      "outcome": "invalid_standard_path",
+      "native_text": "error:{DataProcessor.Замеры.Form.Форма.Form(41)}: Error calling context method (VerifyAccessRights): Invalid parameter value (parameter number '3') (НеСуществует)"
+    },
+    {
+      "context": "standard-description-profiles/explicit-description-no-default-yes/deny.oracle",
+      "method": "access",
+      "right": "View",
+      "standard": "НеСуществует",
+      "outcome": "invalid_standard_path",
+      "native_text": "error:{DataProcessor.Замеры.Form.Форма.Form(44)}: Error calling context method (AccessRight): Invalid parameter value (parameter number '4') (НеСуществует)"
+    },
+    {
+      "context": "standard-paths/standard-admin.oracle",
+      "method": "verify",
+      "right": "Read",
+      "standard": "undefined",
+      "outcome": "allowed",
+      "native_text": "allowed"
+    },
+    {
+      "context": "standard-paths/standard-admin.oracle",
+      "method": "access",
+      "right": "Read",
+      "standard": "undefined",
+      "outcome": "allowed",
+      "native_text": "allowed"
+    },
+    {
+      "context": "standard-paths/standard-admin.oracle",
+      "method": "verify",
+      "right": "Read",
+      "standard": "empty",
+      "outcome": "invalid_standard_path",
+      "native_text": "error:{DataProcessor.Замеры.Form.Форма.Form(38)}: Error calling context method (VerifyAccessRights): Invalid parameter value (parameter number '3')"
+    },
+    {
+      "context": "standard-paths/standard-admin.oracle",
+      "method": "access",
+      "right": "Read",
+      "standard": "empty",
+      "outcome": "invalid_standard_path",
+      "native_text": "error:{DataProcessor.Замеры.Form.Форма.Form(41)}: Error calling context method (AccessRight): Invalid parameter value (parameter number '4')"
+    },
+    {
+      "context": "standard-paths/standard-admin.oracle",
+      "method": "verify",
+      "right": "Read",
+      "standard": "Код",
+      "outcome": "allowed",
+      "native_text": "allowed"
+    },
+    {
+      "context": "standard-paths/standard-admin.oracle",
+      "method": "access",
+      "right": "Read",
+      "standard": "Код",
+      "outcome": "not_applicable",
+      "native_text": "error:{DataProcessor.Замеры.Form.Форма.Form(41)}: Error calling context method (AccessRight): Cannot apply the Read right to Catalog.ВладелецПробы"
+    },
+    {
+      "context": "standard-paths/standard-admin.oracle",
+      "method": "verify",
+      "right": "Read",
+      "standard": "Code",
+      "outcome": "allowed",
+      "native_text": "allowed"
+    },
+    {
+      "context": "standard-paths/standard-admin.oracle",
+      "method": "access",
+      "right": "Read",
+      "standard": "Code",
+      "outcome": "not_applicable",
+      "native_text": "error:{DataProcessor.Замеры.Form.Форма.Form(41)}: Error calling context method (AccessRight): Cannot apply the Read right to Catalog.ВладелецПробы"
+    },
+    {
+      "context": "standard-paths/standard-admin.oracle",
+      "method": "verify",
+      "right": "Read",
+      "standard": "Description",
+      "outcome": "allowed",
+      "native_text": "allowed"
+    },
+    {
+      "context": "standard-paths/standard-admin.oracle",
+      "method": "access",
+      "right": "Read",
+      "standard": "Description",
+      "outcome": "not_applicable",
+      "native_text": "error:{DataProcessor.Замеры.Form.Форма.Form(41)}: Error calling context method (AccessRight): Cannot apply the Read right to Catalog.ВладелецПробы"
+    },
+    {
+      "context": "standard-paths/standard-admin.oracle",
+      "method": "verify",
+      "right": "Read",
+      "standard": "НеСуществует",
+      "outcome": "invalid_standard_path",
+      "native_text": "error:{DataProcessor.Замеры.Form.Форма.Form(38)}: Error calling context method (VerifyAccessRights): Invalid parameter value (parameter number '3') (НеСуществует)"
+    },
+    {
+      "context": "standard-paths/standard-admin.oracle",
+      "method": "access",
+      "right": "Read",
+      "standard": "НеСуществует",
+      "outcome": "invalid_standard_path",
+      "native_text": "error:{DataProcessor.Замеры.Form.Форма.Form(41)}: Error calling context method (AccessRight): Invalid parameter value (parameter number '4') (НеСуществует)"
+    },
+    {
+      "context": "standard-paths/standard-admin.oracle",
+      "method": "verify",
+      "right": "View",
+      "standard": "undefined",
+      "outcome": "denied",
+      "native_text": "error:{DataProcessor.Замеры.Form.Форма.Form(38)}: Error calling context method (VerifyAccessRights): Access violation!"
+    },
+    {
+      "context": "standard-paths/standard-admin.oracle",
+      "method": "access",
+      "right": "View",
+      "standard": "undefined",
+      "outcome": "denied",
+      "native_text": "denied"
+    },
+    {
+      "context": "standard-paths/standard-admin.oracle",
+      "method": "verify",
+      "right": "View",
+      "standard": "empty",
+      "outcome": "invalid_standard_path",
+      "native_text": "error:{DataProcessor.Замеры.Form.Форма.Form(38)}: Error calling context method (VerifyAccessRights): Invalid parameter value (parameter number '3')"
+    },
+    {
+      "context": "standard-paths/standard-admin.oracle",
+      "method": "access",
+      "right": "View",
+      "standard": "empty",
+      "outcome": "invalid_standard_path",
+      "native_text": "error:{DataProcessor.Замеры.Form.Форма.Form(41)}: Error calling context method (AccessRight): Invalid parameter value (parameter number '4')"
+    },
+    {
+      "context": "standard-paths/standard-admin.oracle",
+      "method": "verify",
+      "right": "View",
+      "standard": "Код",
+      "outcome": "denied",
+      "native_text": "error:{DataProcessor.Замеры.Form.Форма.Form(38)}: Error calling context method (VerifyAccessRights): Access violation!"
+    },
+    {
+      "context": "standard-paths/standard-admin.oracle",
+      "method": "access",
+      "right": "View",
+      "standard": "Код",
+      "outcome": "denied",
+      "native_text": "denied"
+    },
+    {
+      "context": "standard-paths/standard-admin.oracle",
+      "method": "verify",
+      "right": "View",
+      "standard": "Code",
+      "outcome": "denied",
+      "native_text": "error:{DataProcessor.Замеры.Form.Форма.Form(38)}: Error calling context method (VerifyAccessRights): Access violation!"
+    },
+    {
+      "context": "standard-paths/standard-admin.oracle",
+      "method": "access",
+      "right": "View",
+      "standard": "Code",
+      "outcome": "denied",
+      "native_text": "denied"
+    },
+    {
+      "context": "standard-paths/standard-admin.oracle",
+      "method": "verify",
+      "right": "View",
+      "standard": "Description",
+      "outcome": "denied",
+      "native_text": "error:{DataProcessor.Замеры.Form.Форма.Form(38)}: Error calling context method (VerifyAccessRights): Access violation!"
+    },
+    {
+      "context": "standard-paths/standard-admin.oracle",
+      "method": "access",
+      "right": "View",
+      "standard": "Description",
+      "outcome": "denied",
+      "native_text": "denied"
+    },
+    {
+      "context": "standard-paths/standard-admin.oracle",
+      "method": "verify",
+      "right": "View",
+      "standard": "НеСуществует",
+      "outcome": "invalid_standard_path",
+      "native_text": "error:{DataProcessor.Замеры.Form.Форма.Form(38)}: Error calling context method (VerifyAccessRights): Invalid parameter value (parameter number '3') (НеСуществует)"
+    },
+    {
+      "context": "standard-paths/standard-admin.oracle",
+      "method": "access",
+      "right": "View",
+      "standard": "НеСуществует",
+      "outcome": "invalid_standard_path",
+      "native_text": "error:{DataProcessor.Замеры.Form.Форма.Form(41)}: Error calling context method (AccessRight): Invalid parameter value (parameter number '4') (НеСуществует)"
+    },
+    {
+      "context": "standard-paths/standard-deny.oracle",
+      "method": "verify",
+      "right": "Read",
+      "standard": "undefined",
+      "outcome": "denied",
+      "native_text": "error:{DataProcessor.Замеры.Form.Форма.Form(38)}: Error calling context method (VerifyAccessRights): Access violation!"
+    },
+    {
+      "context": "standard-paths/standard-deny.oracle",
+      "method": "access",
+      "right": "Read",
+      "standard": "undefined",
+      "outcome": "denied",
+      "native_text": "denied"
+    },
+    {
+      "context": "standard-paths/standard-deny.oracle",
+      "method": "verify",
+      "right": "Read",
+      "standard": "empty",
+      "outcome": "invalid_standard_path",
+      "native_text": "error:{DataProcessor.Замеры.Form.Форма.Form(38)}: Error calling context method (VerifyAccessRights): Invalid parameter value (parameter number '3')"
+    },
+    {
+      "context": "standard-paths/standard-deny.oracle",
+      "method": "access",
+      "right": "Read",
+      "standard": "empty",
+      "outcome": "invalid_standard_path",
+      "native_text": "error:{DataProcessor.Замеры.Form.Форма.Form(41)}: Error calling context method (AccessRight): Invalid parameter value (parameter number '4')"
+    },
+    {
+      "context": "standard-paths/standard-deny.oracle",
+      "method": "verify",
+      "right": "Read",
+      "standard": "Код",
+      "outcome": "allowed",
+      "native_text": "allowed"
+    },
+    {
+      "context": "standard-paths/standard-deny.oracle",
+      "method": "access",
+      "right": "Read",
+      "standard": "Код",
+      "outcome": "not_applicable",
+      "native_text": "error:{DataProcessor.Замеры.Form.Форма.Form(41)}: Error calling context method (AccessRight): Cannot apply the Read right to Catalog.ВладелецПробы"
+    },
+    {
+      "context": "standard-paths/standard-deny.oracle",
+      "method": "verify",
+      "right": "Read",
+      "standard": "Code",
+      "outcome": "allowed",
+      "native_text": "allowed"
+    },
+    {
+      "context": "standard-paths/standard-deny.oracle",
+      "method": "access",
+      "right": "Read",
+      "standard": "Code",
+      "outcome": "not_applicable",
+      "native_text": "error:{DataProcessor.Замеры.Form.Форма.Form(41)}: Error calling context method (AccessRight): Cannot apply the Read right to Catalog.ВладелецПробы"
+    },
+    {
+      "context": "standard-paths/standard-deny.oracle",
+      "method": "verify",
+      "right": "Read",
+      "standard": "Description",
+      "outcome": "allowed",
+      "native_text": "allowed"
+    },
+    {
+      "context": "standard-paths/standard-deny.oracle",
+      "method": "access",
+      "right": "Read",
+      "standard": "Description",
+      "outcome": "not_applicable",
+      "native_text": "error:{DataProcessor.Замеры.Form.Форма.Form(41)}: Error calling context method (AccessRight): Cannot apply the Read right to Catalog.ВладелецПробы"
+    },
+    {
+      "context": "standard-paths/standard-deny.oracle",
+      "method": "verify",
+      "right": "Read",
+      "standard": "НеСуществует",
+      "outcome": "invalid_standard_path",
+      "native_text": "error:{DataProcessor.Замеры.Form.Форма.Form(38)}: Error calling context method (VerifyAccessRights): Invalid parameter value (parameter number '3') (НеСуществует)"
+    },
+    {
+      "context": "standard-paths/standard-deny.oracle",
+      "method": "access",
+      "right": "Read",
+      "standard": "НеСуществует",
+      "outcome": "invalid_standard_path",
+      "native_text": "error:{DataProcessor.Замеры.Form.Форма.Form(41)}: Error calling context method (AccessRight): Invalid parameter value (parameter number '4') (НеСуществует)"
+    },
+    {
+      "context": "standard-paths/standard-deny.oracle",
+      "method": "verify",
+      "right": "View",
+      "standard": "undefined",
+      "outcome": "denied",
+      "native_text": "error:{DataProcessor.Замеры.Form.Форма.Form(38)}: Error calling context method (VerifyAccessRights): Access violation!"
+    },
+    {
+      "context": "standard-paths/standard-deny.oracle",
+      "method": "access",
+      "right": "View",
+      "standard": "undefined",
+      "outcome": "denied",
+      "native_text": "denied"
+    },
+    {
+      "context": "standard-paths/standard-deny.oracle",
+      "method": "verify",
+      "right": "View",
+      "standard": "empty",
+      "outcome": "invalid_standard_path",
+      "native_text": "error:{DataProcessor.Замеры.Form.Форма.Form(38)}: Error calling context method (VerifyAccessRights): Invalid parameter value (parameter number '3')"
+    },
+    {
+      "context": "standard-paths/standard-deny.oracle",
+      "method": "access",
+      "right": "View",
+      "standard": "empty",
+      "outcome": "invalid_standard_path",
+      "native_text": "error:{DataProcessor.Замеры.Form.Форма.Form(41)}: Error calling context method (AccessRight): Invalid parameter value (parameter number '4')"
+    },
+    {
+      "context": "standard-paths/standard-deny.oracle",
+      "method": "verify",
+      "right": "View",
+      "standard": "Код",
+      "outcome": "denied",
+      "native_text": "error:{DataProcessor.Замеры.Form.Форма.Form(38)}: Error calling context method (VerifyAccessRights): Access violation!"
+    },
+    {
+      "context": "standard-paths/standard-deny.oracle",
+      "method": "access",
+      "right": "View",
+      "standard": "Код",
+      "outcome": "denied",
+      "native_text": "denied"
+    },
+    {
+      "context": "standard-paths/standard-deny.oracle",
+      "method": "verify",
+      "right": "View",
+      "standard": "Code",
+      "outcome": "denied",
+      "native_text": "error:{DataProcessor.Замеры.Form.Форма.Form(38)}: Error calling context method (VerifyAccessRights): Access violation!"
+    },
+    {
+      "context": "standard-paths/standard-deny.oracle",
+      "method": "access",
+      "right": "View",
+      "standard": "Code",
+      "outcome": "denied",
+      "native_text": "denied"
+    },
+    {
+      "context": "standard-paths/standard-deny.oracle",
+      "method": "verify",
+      "right": "View",
+      "standard": "Description",
+      "outcome": "denied",
+      "native_text": "error:{DataProcessor.Замеры.Form.Форма.Form(38)}: Error calling context method (VerifyAccessRights): Access violation!"
+    },
+    {
+      "context": "standard-paths/standard-deny.oracle",
+      "method": "access",
+      "right": "View",
+      "standard": "Description",
+      "outcome": "denied",
+      "native_text": "denied"
+    },
+    {
+      "context": "standard-paths/standard-deny.oracle",
+      "method": "verify",
+      "right": "View",
+      "standard": "НеСуществует",
+      "outcome": "invalid_standard_path",
+      "native_text": "error:{DataProcessor.Замеры.Form.Форма.Form(38)}: Error calling context method (VerifyAccessRights): Invalid parameter value (parameter number '3') (НеСуществует)"
+    },
+    {
+      "context": "standard-paths/standard-deny.oracle",
+      "method": "access",
+      "right": "View",
+      "standard": "НеСуществует",
+      "outcome": "invalid_standard_path",
+      "native_text": "error:{DataProcessor.Замеры.Form.Форма.Form(41)}: Error calling context method (AccessRight): Invalid parameter value (parameter number '4') (НеСуществует)"
+    },
+    {
+      "context": "standard-privileged/privileged-admin.oracle",
+      "method": "verify",
+      "right": "Read",
+      "standard": "undefined",
+      "outcome": "allowed",
+      "native_text": "allowed"
+    },
+    {
+      "context": "standard-privileged/privileged-admin.oracle",
+      "method": "access",
+      "right": "Read",
+      "standard": "undefined",
+      "outcome": "allowed",
+      "native_text": "allowed"
+    },
+    {
+      "context": "standard-privileged/privileged-admin.oracle",
+      "method": "verify",
+      "right": "Read",
+      "standard": "empty",
+      "outcome": "invalid_standard_path",
+      "native_text": "error:{DataProcessor.Замеры.Form.Форма.Form(40)}: Error calling context method (VerifyAccessRights): Invalid parameter value (parameter number '3')"
+    },
+    {
+      "context": "standard-privileged/privileged-admin.oracle",
+      "method": "access",
+      "right": "Read",
+      "standard": "empty",
+      "outcome": "invalid_standard_path",
+      "native_text": "error:{DataProcessor.Замеры.Form.Форма.Form(43)}: Error calling context method (AccessRight): Invalid parameter value (parameter number '4')"
+    },
+    {
+      "context": "standard-privileged/privileged-admin.oracle",
+      "method": "verify",
+      "right": "Read",
+      "standard": "Код",
+      "outcome": "allowed",
+      "native_text": "allowed"
+    },
+    {
+      "context": "standard-privileged/privileged-admin.oracle",
+      "method": "access",
+      "right": "Read",
+      "standard": "Код",
+      "outcome": "not_applicable",
+      "native_text": "error:{DataProcessor.Замеры.Form.Форма.Form(43)}: Error calling context method (AccessRight): Cannot apply the Read right to Catalog.ВладелецПробы"
+    },
+    {
+      "context": "standard-privileged/privileged-admin.oracle",
+      "method": "verify",
+      "right": "Read",
+      "standard": "Code",
+      "outcome": "allowed",
+      "native_text": "allowed"
+    },
+    {
+      "context": "standard-privileged/privileged-admin.oracle",
+      "method": "access",
+      "right": "Read",
+      "standard": "Code",
+      "outcome": "not_applicable",
+      "native_text": "error:{DataProcessor.Замеры.Form.Форма.Form(43)}: Error calling context method (AccessRight): Cannot apply the Read right to Catalog.ВладелецПробы"
+    },
+    {
+      "context": "standard-privileged/privileged-admin.oracle",
+      "method": "verify",
+      "right": "Read",
+      "standard": "Description",
+      "outcome": "allowed",
+      "native_text": "allowed"
+    },
+    {
+      "context": "standard-privileged/privileged-admin.oracle",
+      "method": "access",
+      "right": "Read",
+      "standard": "Description",
+      "outcome": "not_applicable",
+      "native_text": "error:{DataProcessor.Замеры.Form.Форма.Form(43)}: Error calling context method (AccessRight): Cannot apply the Read right to Catalog.ВладелецПробы"
+    },
+    {
+      "context": "standard-privileged/privileged-admin.oracle",
+      "method": "verify",
+      "right": "Read",
+      "standard": "НеСуществует",
+      "outcome": "invalid_standard_path",
+      "native_text": "error:{DataProcessor.Замеры.Form.Форма.Form(40)}: Error calling context method (VerifyAccessRights): Invalid parameter value (parameter number '3') (НеСуществует)"
+    },
+    {
+      "context": "standard-privileged/privileged-admin.oracle",
+      "method": "access",
+      "right": "Read",
+      "standard": "НеСуществует",
+      "outcome": "invalid_standard_path",
+      "native_text": "error:{DataProcessor.Замеры.Form.Форма.Form(43)}: Error calling context method (AccessRight): Invalid parameter value (parameter number '4') (НеСуществует)"
+    },
+    {
+      "context": "standard-privileged/privileged-admin.oracle",
+      "method": "verify",
+      "right": "View",
+      "standard": "undefined",
+      "outcome": "allowed",
+      "native_text": "allowed"
+    },
+    {
+      "context": "standard-privileged/privileged-admin.oracle",
+      "method": "access",
+      "right": "View",
+      "standard": "undefined",
+      "outcome": "allowed",
+      "native_text": "allowed"
+    },
+    {
+      "context": "standard-privileged/privileged-admin.oracle",
+      "method": "verify",
+      "right": "View",
+      "standard": "empty",
+      "outcome": "invalid_standard_path",
+      "native_text": "error:{DataProcessor.Замеры.Form.Форма.Form(40)}: Error calling context method (VerifyAccessRights): Invalid parameter value (parameter number '3')"
+    },
+    {
+      "context": "standard-privileged/privileged-admin.oracle",
+      "method": "access",
+      "right": "View",
+      "standard": "empty",
+      "outcome": "invalid_standard_path",
+      "native_text": "error:{DataProcessor.Замеры.Form.Форма.Form(43)}: Error calling context method (AccessRight): Invalid parameter value (parameter number '4')"
+    },
+    {
+      "context": "standard-privileged/privileged-admin.oracle",
+      "method": "verify",
+      "right": "View",
+      "standard": "Код",
+      "outcome": "allowed",
+      "native_text": "allowed"
+    },
+    {
+      "context": "standard-privileged/privileged-admin.oracle",
+      "method": "access",
+      "right": "View",
+      "standard": "Код",
+      "outcome": "allowed",
+      "native_text": "allowed"
+    },
+    {
+      "context": "standard-privileged/privileged-admin.oracle",
+      "method": "verify",
+      "right": "View",
+      "standard": "Code",
+      "outcome": "allowed",
+      "native_text": "allowed"
+    },
+    {
+      "context": "standard-privileged/privileged-admin.oracle",
+      "method": "access",
+      "right": "View",
+      "standard": "Code",
+      "outcome": "allowed",
+      "native_text": "allowed"
+    },
+    {
+      "context": "standard-privileged/privileged-admin.oracle",
+      "method": "verify",
+      "right": "View",
+      "standard": "Description",
+      "outcome": "allowed",
+      "native_text": "allowed"
+    },
+    {
+      "context": "standard-privileged/privileged-admin.oracle",
+      "method": "access",
+      "right": "View",
+      "standard": "Description",
+      "outcome": "allowed",
+      "native_text": "allowed"
+    },
+    {
+      "context": "standard-privileged/privileged-admin.oracle",
+      "method": "verify",
+      "right": "View",
+      "standard": "НеСуществует",
+      "outcome": "invalid_standard_path",
+      "native_text": "error:{DataProcessor.Замеры.Form.Форма.Form(40)}: Error calling context method (VerifyAccessRights): Invalid parameter value (parameter number '3') (НеСуществует)"
+    },
+    {
+      "context": "standard-privileged/privileged-admin.oracle",
+      "method": "access",
+      "right": "View",
+      "standard": "НеСуществует",
+      "outcome": "invalid_standard_path",
+      "native_text": "error:{DataProcessor.Замеры.Form.Форма.Form(43)}: Error calling context method (AccessRight): Invalid parameter value (parameter number '4') (НеСуществует)"
+    },
+    {
+      "context": "standard-privileged/privileged-admin.oracle",
+      "method": "verify",
+      "right": "UnknownNativeRight",
+      "standard": "undefined",
+      "outcome": "unknown_right",
+      "native_text": "error:{DataProcessor.Замеры.Form.Форма.Form(40)}: Error calling context method (VerifyAccessRights): The right specified doesn't exist: UnknownNativeRight"
+    },
+    {
+      "context": "standard-privileged/privileged-admin.oracle",
+      "method": "access",
+      "right": "UnknownNativeRight",
+      "standard": "undefined",
+      "outcome": "unknown_right",
+      "native_text": "error:{DataProcessor.Замеры.Form.Форма.Form(43)}: Error calling context method (AccessRight): The right specified doesn't exist: UnknownNativeRight"
+    },
+    {
+      "context": "standard-privileged/privileged-admin.oracle",
+      "method": "verify",
+      "right": "UnknownNativeRight",
+      "standard": "empty",
+      "outcome": "unknown_right",
+      "native_text": "error:{DataProcessor.Замеры.Form.Форма.Form(40)}: Error calling context method (VerifyAccessRights): The right specified doesn't exist: UnknownNativeRight"
+    },
+    {
+      "context": "standard-privileged/privileged-admin.oracle",
+      "method": "access",
+      "right": "UnknownNativeRight",
+      "standard": "empty",
+      "outcome": "unknown_right",
+      "native_text": "error:{DataProcessor.Замеры.Form.Форма.Form(43)}: Error calling context method (AccessRight): The right specified doesn't exist: UnknownNativeRight"
+    },
+    {
+      "context": "standard-privileged/privileged-admin.oracle",
+      "method": "verify",
+      "right": "UnknownNativeRight",
+      "standard": "Код",
+      "outcome": "unknown_right",
+      "native_text": "error:{DataProcessor.Замеры.Form.Форма.Form(40)}: Error calling context method (VerifyAccessRights): The right specified doesn't exist: UnknownNativeRight"
+    },
+    {
+      "context": "standard-privileged/privileged-admin.oracle",
+      "method": "access",
+      "right": "UnknownNativeRight",
+      "standard": "Код",
+      "outcome": "unknown_right",
+      "native_text": "error:{DataProcessor.Замеры.Form.Форма.Form(43)}: Error calling context method (AccessRight): The right specified doesn't exist: UnknownNativeRight"
+    },
+    {
+      "context": "standard-privileged/privileged-admin.oracle",
+      "method": "verify",
+      "right": "UnknownNativeRight",
+      "standard": "Code",
+      "outcome": "unknown_right",
+      "native_text": "error:{DataProcessor.Замеры.Form.Форма.Form(40)}: Error calling context method (VerifyAccessRights): The right specified doesn't exist: UnknownNativeRight"
+    },
+    {
+      "context": "standard-privileged/privileged-admin.oracle",
+      "method": "access",
+      "right": "UnknownNativeRight",
+      "standard": "Code",
+      "outcome": "unknown_right",
+      "native_text": "error:{DataProcessor.Замеры.Form.Форма.Form(43)}: Error calling context method (AccessRight): The right specified doesn't exist: UnknownNativeRight"
+    },
+    {
+      "context": "standard-privileged/privileged-admin.oracle",
+      "method": "verify",
+      "right": "UnknownNativeRight",
+      "standard": "Description",
+      "outcome": "unknown_right",
+      "native_text": "error:{DataProcessor.Замеры.Form.Форма.Form(40)}: Error calling context method (VerifyAccessRights): The right specified doesn't exist: UnknownNativeRight"
+    },
+    {
+      "context": "standard-privileged/privileged-admin.oracle",
+      "method": "access",
+      "right": "UnknownNativeRight",
+      "standard": "Description",
+      "outcome": "unknown_right",
+      "native_text": "error:{DataProcessor.Замеры.Form.Форма.Form(43)}: Error calling context method (AccessRight): The right specified doesn't exist: UnknownNativeRight"
+    },
+    {
+      "context": "standard-privileged/privileged-admin.oracle",
+      "method": "verify",
+      "right": "UnknownNativeRight",
+      "standard": "НеСуществует",
+      "outcome": "unknown_right",
+      "native_text": "error:{DataProcessor.Замеры.Form.Форма.Form(40)}: Error calling context method (VerifyAccessRights): The right specified doesn't exist: UnknownNativeRight"
+    },
+    {
+      "context": "standard-privileged/privileged-admin.oracle",
+      "method": "access",
+      "right": "UnknownNativeRight",
+      "standard": "НеСуществует",
+      "outcome": "unknown_right",
+      "native_text": "error:{DataProcessor.Замеры.Form.Форма.Form(43)}: Error calling context method (AccessRight): The right specified doesn't exist: UnknownNativeRight"
+    },
+    {
+      "context": "standard-privileged/privileged-deny.oracle",
+      "method": "verify",
+      "right": "Read",
+      "standard": "undefined",
+      "outcome": "allowed",
+      "native_text": "allowed"
+    },
+    {
+      "context": "standard-privileged/privileged-deny.oracle",
+      "method": "access",
+      "right": "Read",
+      "standard": "undefined",
+      "outcome": "allowed",
+      "native_text": "allowed"
+    },
+    {
+      "context": "standard-privileged/privileged-deny.oracle",
+      "method": "verify",
+      "right": "Read",
+      "standard": "empty",
+      "outcome": "invalid_standard_path",
+      "native_text": "error:{DataProcessor.Замеры.Form.Форма.Form(40)}: Error calling context method (VerifyAccessRights): Invalid parameter value (parameter number '3')"
+    },
+    {
+      "context": "standard-privileged/privileged-deny.oracle",
+      "method": "access",
+      "right": "Read",
+      "standard": "empty",
+      "outcome": "invalid_standard_path",
+      "native_text": "error:{DataProcessor.Замеры.Form.Форма.Form(43)}: Error calling context method (AccessRight): Invalid parameter value (parameter number '4')"
+    },
+    {
+      "context": "standard-privileged/privileged-deny.oracle",
+      "method": "verify",
+      "right": "Read",
+      "standard": "Код",
+      "outcome": "allowed",
+      "native_text": "allowed"
+    },
+    {
+      "context": "standard-privileged/privileged-deny.oracle",
+      "method": "access",
+      "right": "Read",
+      "standard": "Код",
+      "outcome": "not_applicable",
+      "native_text": "error:{DataProcessor.Замеры.Form.Форма.Form(43)}: Error calling context method (AccessRight): Cannot apply the Read right to Catalog.ВладелецПробы"
+    },
+    {
+      "context": "standard-privileged/privileged-deny.oracle",
+      "method": "verify",
+      "right": "Read",
+      "standard": "Code",
+      "outcome": "allowed",
+      "native_text": "allowed"
+    },
+    {
+      "context": "standard-privileged/privileged-deny.oracle",
+      "method": "access",
+      "right": "Read",
+      "standard": "Code",
+      "outcome": "not_applicable",
+      "native_text": "error:{DataProcessor.Замеры.Form.Форма.Form(43)}: Error calling context method (AccessRight): Cannot apply the Read right to Catalog.ВладелецПробы"
+    },
+    {
+      "context": "standard-privileged/privileged-deny.oracle",
+      "method": "verify",
+      "right": "Read",
+      "standard": "Description",
+      "outcome": "allowed",
+      "native_text": "allowed"
+    },
+    {
+      "context": "standard-privileged/privileged-deny.oracle",
+      "method": "access",
+      "right": "Read",
+      "standard": "Description",
+      "outcome": "not_applicable",
+      "native_text": "error:{DataProcessor.Замеры.Form.Форма.Form(43)}: Error calling context method (AccessRight): Cannot apply the Read right to Catalog.ВладелецПробы"
+    },
+    {
+      "context": "standard-privileged/privileged-deny.oracle",
+      "method": "verify",
+      "right": "Read",
+      "standard": "НеСуществует",
+      "outcome": "invalid_standard_path",
+      "native_text": "error:{DataProcessor.Замеры.Form.Форма.Form(40)}: Error calling context method (VerifyAccessRights): Invalid parameter value (parameter number '3') (НеСуществует)"
+    },
+    {
+      "context": "standard-privileged/privileged-deny.oracle",
+      "method": "access",
+      "right": "Read",
+      "standard": "НеСуществует",
+      "outcome": "invalid_standard_path",
+      "native_text": "error:{DataProcessor.Замеры.Form.Форма.Form(43)}: Error calling context method (AccessRight): Invalid parameter value (parameter number '4') (НеСуществует)"
+    },
+    {
+      "context": "standard-privileged/privileged-deny.oracle",
+      "method": "verify",
+      "right": "View",
+      "standard": "undefined",
+      "outcome": "allowed",
+      "native_text": "allowed"
+    },
+    {
+      "context": "standard-privileged/privileged-deny.oracle",
+      "method": "access",
+      "right": "View",
+      "standard": "undefined",
+      "outcome": "allowed",
+      "native_text": "allowed"
+    },
+    {
+      "context": "standard-privileged/privileged-deny.oracle",
+      "method": "verify",
+      "right": "View",
+      "standard": "empty",
+      "outcome": "invalid_standard_path",
+      "native_text": "error:{DataProcessor.Замеры.Form.Форма.Form(40)}: Error calling context method (VerifyAccessRights): Invalid parameter value (parameter number '3')"
+    },
+    {
+      "context": "standard-privileged/privileged-deny.oracle",
+      "method": "access",
+      "right": "View",
+      "standard": "empty",
+      "outcome": "invalid_standard_path",
+      "native_text": "error:{DataProcessor.Замеры.Form.Форма.Form(43)}: Error calling context method (AccessRight): Invalid parameter value (parameter number '4')"
+    },
+    {
+      "context": "standard-privileged/privileged-deny.oracle",
+      "method": "verify",
+      "right": "View",
+      "standard": "Код",
+      "outcome": "allowed",
+      "native_text": "allowed"
+    },
+    {
+      "context": "standard-privileged/privileged-deny.oracle",
+      "method": "access",
+      "right": "View",
+      "standard": "Код",
+      "outcome": "allowed",
+      "native_text": "allowed"
+    },
+    {
+      "context": "standard-privileged/privileged-deny.oracle",
+      "method": "verify",
+      "right": "View",
+      "standard": "Code",
+      "outcome": "allowed",
+      "native_text": "allowed"
+    },
+    {
+      "context": "standard-privileged/privileged-deny.oracle",
+      "method": "access",
+      "right": "View",
+      "standard": "Code",
+      "outcome": "allowed",
+      "native_text": "allowed"
+    },
+    {
+      "context": "standard-privileged/privileged-deny.oracle",
+      "method": "verify",
+      "right": "View",
+      "standard": "Description",
+      "outcome": "allowed",
+      "native_text": "allowed"
+    },
+    {
+      "context": "standard-privileged/privileged-deny.oracle",
+      "method": "access",
+      "right": "View",
+      "standard": "Description",
+      "outcome": "allowed",
+      "native_text": "allowed"
+    },
+    {
+      "context": "standard-privileged/privileged-deny.oracle",
+      "method": "verify",
+      "right": "View",
+      "standard": "НеСуществует",
+      "outcome": "invalid_standard_path",
+      "native_text": "error:{DataProcessor.Замеры.Form.Форма.Form(40)}: Error calling context method (VerifyAccessRights): Invalid parameter value (parameter number '3') (НеСуществует)"
+    },
+    {
+      "context": "standard-privileged/privileged-deny.oracle",
+      "method": "access",
+      "right": "View",
+      "standard": "НеСуществует",
+      "outcome": "invalid_standard_path",
+      "native_text": "error:{DataProcessor.Замеры.Form.Форма.Form(43)}: Error calling context method (AccessRight): Invalid parameter value (parameter number '4') (НеСуществует)"
+    },
+    {
+      "context": "standard-privileged/privileged-deny.oracle",
+      "method": "verify",
+      "right": "UnknownNativeRight",
+      "standard": "undefined",
+      "outcome": "unknown_right",
+      "native_text": "error:{DataProcessor.Замеры.Form.Форма.Form(40)}: Error calling context method (VerifyAccessRights): The right specified doesn't exist: UnknownNativeRight"
+    },
+    {
+      "context": "standard-privileged/privileged-deny.oracle",
+      "method": "access",
+      "right": "UnknownNativeRight",
+      "standard": "undefined",
+      "outcome": "unknown_right",
+      "native_text": "error:{DataProcessor.Замеры.Form.Форма.Form(43)}: Error calling context method (AccessRight): The right specified doesn't exist: UnknownNativeRight"
+    },
+    {
+      "context": "standard-privileged/privileged-deny.oracle",
+      "method": "verify",
+      "right": "UnknownNativeRight",
+      "standard": "empty",
+      "outcome": "unknown_right",
+      "native_text": "error:{DataProcessor.Замеры.Form.Форма.Form(40)}: Error calling context method (VerifyAccessRights): The right specified doesn't exist: UnknownNativeRight"
+    },
+    {
+      "context": "standard-privileged/privileged-deny.oracle",
+      "method": "access",
+      "right": "UnknownNativeRight",
+      "standard": "empty",
+      "outcome": "unknown_right",
+      "native_text": "error:{DataProcessor.Замеры.Form.Форма.Form(43)}: Error calling context method (AccessRight): The right specified doesn't exist: UnknownNativeRight"
+    },
+    {
+      "context": "standard-privileged/privileged-deny.oracle",
+      "method": "verify",
+      "right": "UnknownNativeRight",
+      "standard": "Код",
+      "outcome": "unknown_right",
+      "native_text": "error:{DataProcessor.Замеры.Form.Форма.Form(40)}: Error calling context method (VerifyAccessRights): The right specified doesn't exist: UnknownNativeRight"
+    },
+    {
+      "context": "standard-privileged/privileged-deny.oracle",
+      "method": "access",
+      "right": "UnknownNativeRight",
+      "standard": "Код",
+      "outcome": "unknown_right",
+      "native_text": "error:{DataProcessor.Замеры.Form.Форма.Form(43)}: Error calling context method (AccessRight): The right specified doesn't exist: UnknownNativeRight"
+    },
+    {
+      "context": "standard-privileged/privileged-deny.oracle",
+      "method": "verify",
+      "right": "UnknownNativeRight",
+      "standard": "Code",
+      "outcome": "unknown_right",
+      "native_text": "error:{DataProcessor.Замеры.Form.Форма.Form(40)}: Error calling context method (VerifyAccessRights): The right specified doesn't exist: UnknownNativeRight"
+    },
+    {
+      "context": "standard-privileged/privileged-deny.oracle",
+      "method": "access",
+      "right": "UnknownNativeRight",
+      "standard": "Code",
+      "outcome": "unknown_right",
+      "native_text": "error:{DataProcessor.Замеры.Form.Форма.Form(43)}: Error calling context method (AccessRight): The right specified doesn't exist: UnknownNativeRight"
+    },
+    {
+      "context": "standard-privileged/privileged-deny.oracle",
+      "method": "verify",
+      "right": "UnknownNativeRight",
+      "standard": "Description",
+      "outcome": "unknown_right",
+      "native_text": "error:{DataProcessor.Замеры.Form.Форма.Form(40)}: Error calling context method (VerifyAccessRights): The right specified doesn't exist: UnknownNativeRight"
+    },
+    {
+      "context": "standard-privileged/privileged-deny.oracle",
+      "method": "access",
+      "right": "UnknownNativeRight",
+      "standard": "Description",
+      "outcome": "unknown_right",
+      "native_text": "error:{DataProcessor.Замеры.Form.Форма.Form(43)}: Error calling context method (AccessRight): The right specified doesn't exist: UnknownNativeRight"
+    },
+    {
+      "context": "standard-privileged/privileged-deny.oracle",
+      "method": "verify",
+      "right": "UnknownNativeRight",
+      "standard": "НеСуществует",
+      "outcome": "unknown_right",
+      "native_text": "error:{DataProcessor.Замеры.Form.Форма.Form(40)}: Error calling context method (VerifyAccessRights): The right specified doesn't exist: UnknownNativeRight"
+    },
+    {
+      "context": "standard-privileged/privileged-deny.oracle",
+      "method": "access",
+      "right": "UnknownNativeRight",
+      "standard": "НеСуществует",
+      "outcome": "unknown_right",
+      "native_text": "error:{DataProcessor.Замеры.Form.Форма.Form(43)}: Error calling context method (AccessRight): The right specified doesn't exist: UnknownNativeRight"
+    },
+    {
+      "context": "standard-profiles/explicit-code-no-default-yes/deny.oracle",
+      "method": "verify",
+      "right": "Read",
+      "standard": "undefined",
+      "outcome": "allowed",
+      "native_text": "allowed"
+    },
+    {
+      "context": "standard-profiles/explicit-code-no-default-yes/deny.oracle",
+      "method": "access",
+      "right": "Read",
+      "standard": "undefined",
+      "outcome": "allowed",
+      "native_text": "allowed"
+    },
+    {
+      "context": "standard-profiles/explicit-code-no-default-yes/deny.oracle",
+      "method": "verify",
+      "right": "Read",
+      "standard": "empty",
+      "outcome": "invalid_standard_path",
+      "native_text": "error:{DataProcessor.Замеры.Form.Форма.Form(38)}: Error calling context method (VerifyAccessRights): Invalid parameter value (parameter number '3')"
+    },
+    {
+      "context": "standard-profiles/explicit-code-no-default-yes/deny.oracle",
+      "method": "access",
+      "right": "Read",
+      "standard": "empty",
+      "outcome": "invalid_standard_path",
+      "native_text": "error:{DataProcessor.Замеры.Form.Форма.Form(41)}: Error calling context method (AccessRight): Invalid parameter value (parameter number '4')"
+    },
+    {
+      "context": "standard-profiles/explicit-code-no-default-yes/deny.oracle",
+      "method": "verify",
+      "right": "Read",
+      "standard": "Код",
+      "outcome": "allowed",
+      "native_text": "allowed"
+    },
+    {
+      "context": "standard-profiles/explicit-code-no-default-yes/deny.oracle",
+      "method": "access",
+      "right": "Read",
+      "standard": "Код",
+      "outcome": "not_applicable",
+      "native_text": "error:{DataProcessor.Замеры.Form.Форма.Form(41)}: Error calling context method (AccessRight): Cannot apply the Read right to Catalog.ВладелецПробы"
+    },
+    {
+      "context": "standard-profiles/explicit-code-no-default-yes/deny.oracle",
+      "method": "verify",
+      "right": "Read",
+      "standard": "Code",
+      "outcome": "allowed",
+      "native_text": "allowed"
+    },
+    {
+      "context": "standard-profiles/explicit-code-no-default-yes/deny.oracle",
+      "method": "access",
+      "right": "Read",
+      "standard": "Code",
+      "outcome": "not_applicable",
+      "native_text": "error:{DataProcessor.Замеры.Form.Форма.Form(41)}: Error calling context method (AccessRight): Cannot apply the Read right to Catalog.ВладелецПробы"
+    },
+    {
+      "context": "standard-profiles/explicit-code-no-default-yes/deny.oracle",
+      "method": "verify",
+      "right": "Read",
+      "standard": "Description",
+      "outcome": "allowed",
+      "native_text": "allowed"
+    },
+    {
+      "context": "standard-profiles/explicit-code-no-default-yes/deny.oracle",
+      "method": "access",
+      "right": "Read",
+      "standard": "Description",
+      "outcome": "not_applicable",
+      "native_text": "error:{DataProcessor.Замеры.Form.Форма.Form(41)}: Error calling context method (AccessRight): Cannot apply the Read right to Catalog.ВладелецПробы"
+    },
+    {
+      "context": "standard-profiles/explicit-code-no-default-yes/deny.oracle",
+      "method": "verify",
+      "right": "Read",
+      "standard": "НеСуществует",
+      "outcome": "invalid_standard_path",
+      "native_text": "error:{DataProcessor.Замеры.Form.Форма.Form(38)}: Error calling context method (VerifyAccessRights): Invalid parameter value (parameter number '3') (НеСуществует)"
+    },
+    {
+      "context": "standard-profiles/explicit-code-no-default-yes/deny.oracle",
+      "method": "access",
+      "right": "Read",
+      "standard": "НеСуществует",
+      "outcome": "invalid_standard_path",
+      "native_text": "error:{DataProcessor.Замеры.Form.Форма.Form(41)}: Error calling context method (AccessRight): Invalid parameter value (parameter number '4') (НеСуществует)"
+    },
+    {
+      "context": "standard-profiles/explicit-code-no-default-yes/deny.oracle",
+      "method": "verify",
+      "right": "View",
+      "standard": "undefined",
+      "outcome": "allowed",
+      "native_text": "allowed"
+    },
+    {
+      "context": "standard-profiles/explicit-code-no-default-yes/deny.oracle",
+      "method": "access",
+      "right": "View",
+      "standard": "undefined",
+      "outcome": "allowed",
+      "native_text": "allowed"
+    },
+    {
+      "context": "standard-profiles/explicit-code-no-default-yes/deny.oracle",
+      "method": "verify",
+      "right": "View",
+      "standard": "empty",
+      "outcome": "invalid_standard_path",
+      "native_text": "error:{DataProcessor.Замеры.Form.Форма.Form(38)}: Error calling context method (VerifyAccessRights): Invalid parameter value (parameter number '3')"
+    },
+    {
+      "context": "standard-profiles/explicit-code-no-default-yes/deny.oracle",
+      "method": "access",
+      "right": "View",
+      "standard": "empty",
+      "outcome": "invalid_standard_path",
+      "native_text": "error:{DataProcessor.Замеры.Form.Форма.Form(41)}: Error calling context method (AccessRight): Invalid parameter value (parameter number '4')"
+    },
+    {
+      "context": "standard-profiles/explicit-code-no-default-yes/deny.oracle",
+      "method": "verify",
+      "right": "View",
+      "standard": "Код",
+      "outcome": "denied",
+      "native_text": "error:{DataProcessor.Замеры.Form.Форма.Form(38)}: Error calling context method (VerifyAccessRights): Access violation!"
+    },
+    {
+      "context": "standard-profiles/explicit-code-no-default-yes/deny.oracle",
+      "method": "access",
+      "right": "View",
+      "standard": "Код",
+      "outcome": "denied",
+      "native_text": "denied"
+    },
+    {
+      "context": "standard-profiles/explicit-code-no-default-yes/deny.oracle",
+      "method": "verify",
+      "right": "View",
+      "standard": "Code",
+      "outcome": "denied",
+      "native_text": "error:{DataProcessor.Замеры.Form.Форма.Form(38)}: Error calling context method (VerifyAccessRights): Access violation!"
+    },
+    {
+      "context": "standard-profiles/explicit-code-no-default-yes/deny.oracle",
+      "method": "access",
+      "right": "View",
+      "standard": "Code",
+      "outcome": "denied",
+      "native_text": "denied"
+    },
+    {
+      "context": "standard-profiles/explicit-code-no-default-yes/deny.oracle",
+      "method": "verify",
+      "right": "View",
+      "standard": "Description",
+      "outcome": "allowed",
+      "native_text": "allowed"
+    },
+    {
+      "context": "standard-profiles/explicit-code-no-default-yes/deny.oracle",
+      "method": "access",
+      "right": "View",
+      "standard": "Description",
+      "outcome": "allowed",
+      "native_text": "allowed"
+    },
+    {
+      "context": "standard-profiles/explicit-code-no-default-yes/deny.oracle",
+      "method": "verify",
+      "right": "View",
+      "standard": "НеСуществует",
+      "outcome": "invalid_standard_path",
+      "native_text": "error:{DataProcessor.Замеры.Form.Форма.Form(38)}: Error calling context method (VerifyAccessRights): Invalid parameter value (parameter number '3') (НеСуществует)"
+    },
+    {
+      "context": "standard-profiles/explicit-code-no-default-yes/deny.oracle",
+      "method": "access",
+      "right": "View",
+      "standard": "НеСуществует",
+      "outcome": "invalid_standard_path",
+      "native_text": "error:{DataProcessor.Замеры.Form.Форма.Form(41)}: Error calling context method (AccessRight): Invalid parameter value (parameter number '4') (НеСуществует)"
+    },
+    {
+      "context": "standard-profiles/independent-owner-no-code-yes/deny.oracle",
+      "method": "verify",
+      "right": "Read",
+      "standard": "undefined",
+      "outcome": "denied",
+      "native_text": "error:{DataProcessor.Замеры.Form.Форма.Form(38)}: Error calling context method (VerifyAccessRights): Access violation!"
+    },
+    {
+      "context": "standard-profiles/independent-owner-no-code-yes/deny.oracle",
+      "method": "access",
+      "right": "Read",
+      "standard": "undefined",
+      "outcome": "denied",
+      "native_text": "denied"
+    },
+    {
+      "context": "standard-profiles/independent-owner-no-code-yes/deny.oracle",
+      "method": "verify",
+      "right": "Read",
+      "standard": "empty",
+      "outcome": "invalid_standard_path",
+      "native_text": "error:{DataProcessor.Замеры.Form.Форма.Form(38)}: Error calling context method (VerifyAccessRights): Invalid parameter value (parameter number '3')"
+    },
+    {
+      "context": "standard-profiles/independent-owner-no-code-yes/deny.oracle",
+      "method": "access",
+      "right": "Read",
+      "standard": "empty",
+      "outcome": "invalid_standard_path",
+      "native_text": "error:{DataProcessor.Замеры.Form.Форма.Form(41)}: Error calling context method (AccessRight): Invalid parameter value (parameter number '4')"
+    },
+    {
+      "context": "standard-profiles/independent-owner-no-code-yes/deny.oracle",
+      "method": "verify",
+      "right": "Read",
+      "standard": "Код",
+      "outcome": "allowed",
+      "native_text": "allowed"
+    },
+    {
+      "context": "standard-profiles/independent-owner-no-code-yes/deny.oracle",
+      "method": "access",
+      "right": "Read",
+      "standard": "Код",
+      "outcome": "not_applicable",
+      "native_text": "error:{DataProcessor.Замеры.Form.Форма.Form(41)}: Error calling context method (AccessRight): Cannot apply the Read right to Catalog.ВладелецПробы"
+    },
+    {
+      "context": "standard-profiles/independent-owner-no-code-yes/deny.oracle",
+      "method": "verify",
+      "right": "Read",
+      "standard": "Code",
+      "outcome": "allowed",
+      "native_text": "allowed"
+    },
+    {
+      "context": "standard-profiles/independent-owner-no-code-yes/deny.oracle",
+      "method": "access",
+      "right": "Read",
+      "standard": "Code",
+      "outcome": "not_applicable",
+      "native_text": "error:{DataProcessor.Замеры.Form.Форма.Form(41)}: Error calling context method (AccessRight): Cannot apply the Read right to Catalog.ВладелецПробы"
+    },
+    {
+      "context": "standard-profiles/independent-owner-no-code-yes/deny.oracle",
+      "method": "verify",
+      "right": "Read",
+      "standard": "Description",
+      "outcome": "allowed",
+      "native_text": "allowed"
+    },
+    {
+      "context": "standard-profiles/independent-owner-no-code-yes/deny.oracle",
+      "method": "access",
+      "right": "Read",
+      "standard": "Description",
+      "outcome": "not_applicable",
+      "native_text": "error:{DataProcessor.Замеры.Form.Форма.Form(41)}: Error calling context method (AccessRight): Cannot apply the Read right to Catalog.ВладелецПробы"
+    },
+    {
+      "context": "standard-profiles/independent-owner-no-code-yes/deny.oracle",
+      "method": "verify",
+      "right": "Read",
+      "standard": "НеСуществует",
+      "outcome": "invalid_standard_path",
+      "native_text": "error:{DataProcessor.Замеры.Form.Форма.Form(38)}: Error calling context method (VerifyAccessRights): Invalid parameter value (parameter number '3') (НеСуществует)"
+    },
+    {
+      "context": "standard-profiles/independent-owner-no-code-yes/deny.oracle",
+      "method": "access",
+      "right": "Read",
+      "standard": "НеСуществует",
+      "outcome": "invalid_standard_path",
+      "native_text": "error:{DataProcessor.Замеры.Form.Форма.Form(41)}: Error calling context method (AccessRight): Invalid parameter value (parameter number '4') (НеСуществует)"
+    },
+    {
+      "context": "standard-profiles/independent-owner-no-code-yes/deny.oracle",
+      "method": "verify",
+      "right": "View",
+      "standard": "undefined",
+      "outcome": "denied",
+      "native_text": "error:{DataProcessor.Замеры.Form.Форма.Form(38)}: Error calling context method (VerifyAccessRights): Access violation!"
+    },
+    {
+      "context": "standard-profiles/independent-owner-no-code-yes/deny.oracle",
+      "method": "access",
+      "right": "View",
+      "standard": "undefined",
+      "outcome": "denied",
+      "native_text": "denied"
+    },
+    {
+      "context": "standard-profiles/independent-owner-no-code-yes/deny.oracle",
+      "method": "verify",
+      "right": "View",
+      "standard": "empty",
+      "outcome": "invalid_standard_path",
+      "native_text": "error:{DataProcessor.Замеры.Form.Форма.Form(38)}: Error calling context method (VerifyAccessRights): Invalid parameter value (parameter number '3')"
+    },
+    {
+      "context": "standard-profiles/independent-owner-no-code-yes/deny.oracle",
+      "method": "access",
+      "right": "View",
+      "standard": "empty",
+      "outcome": "invalid_standard_path",
+      "native_text": "error:{DataProcessor.Замеры.Form.Форма.Form(41)}: Error calling context method (AccessRight): Invalid parameter value (parameter number '4')"
+    },
+    {
+      "context": "standard-profiles/independent-owner-no-code-yes/deny.oracle",
+      "method": "verify",
+      "right": "View",
+      "standard": "Код",
+      "outcome": "allowed",
+      "native_text": "allowed"
+    },
+    {
+      "context": "standard-profiles/independent-owner-no-code-yes/deny.oracle",
+      "method": "access",
+      "right": "View",
+      "standard": "Код",
+      "outcome": "denied",
+      "native_text": "denied"
+    },
+    {
+      "context": "standard-profiles/independent-owner-no-code-yes/deny.oracle",
+      "method": "verify",
+      "right": "View",
+      "standard": "Code",
+      "outcome": "allowed",
+      "native_text": "allowed"
+    },
+    {
+      "context": "standard-profiles/independent-owner-no-code-yes/deny.oracle",
+      "method": "access",
+      "right": "View",
+      "standard": "Code",
+      "outcome": "denied",
+      "native_text": "denied"
+    },
+    {
+      "context": "standard-profiles/independent-owner-no-code-yes/deny.oracle",
+      "method": "verify",
+      "right": "View",
+      "standard": "Description",
+      "outcome": "denied",
+      "native_text": "error:{DataProcessor.Замеры.Form.Форма.Form(38)}: Error calling context method (VerifyAccessRights): Access violation!"
+    },
+    {
+      "context": "standard-profiles/independent-owner-no-code-yes/deny.oracle",
+      "method": "access",
+      "right": "View",
+      "standard": "Description",
+      "outcome": "denied",
+      "native_text": "denied"
+    },
+    {
+      "context": "standard-profiles/independent-owner-no-code-yes/deny.oracle",
+      "method": "verify",
+      "right": "View",
+      "standard": "НеСуществует",
+      "outcome": "invalid_standard_path",
+      "native_text": "error:{DataProcessor.Замеры.Form.Форма.Form(38)}: Error calling context method (VerifyAccessRights): Invalid parameter value (parameter number '3') (НеСуществует)"
+    },
+    {
+      "context": "standard-profiles/independent-owner-no-code-yes/deny.oracle",
+      "method": "access",
+      "right": "View",
+      "standard": "НеСуществует",
+      "outcome": "invalid_standard_path",
+      "native_text": "error:{DataProcessor.Замеры.Form.Форма.Form(41)}: Error calling context method (AccessRight): Invalid parameter value (parameter number '4') (НеСуществует)"
+    },
+    {
+      "context": "standard-profiles/missing-code-default-no/deny.oracle",
+      "method": "verify",
+      "right": "Read",
+      "standard": "undefined",
+      "outcome": "allowed",
+      "native_text": "allowed"
+    },
+    {
+      "context": "standard-profiles/missing-code-default-no/deny.oracle",
+      "method": "access",
+      "right": "Read",
+      "standard": "undefined",
+      "outcome": "allowed",
+      "native_text": "allowed"
+    },
+    {
+      "context": "standard-profiles/missing-code-default-no/deny.oracle",
+      "method": "verify",
+      "right": "Read",
+      "standard": "empty",
+      "outcome": "invalid_standard_path",
+      "native_text": "error:{DataProcessor.Замеры.Form.Форма.Form(38)}: Error calling context method (VerifyAccessRights): Invalid parameter value (parameter number '3')"
+    },
+    {
+      "context": "standard-profiles/missing-code-default-no/deny.oracle",
+      "method": "access",
+      "right": "Read",
+      "standard": "empty",
+      "outcome": "invalid_standard_path",
+      "native_text": "error:{DataProcessor.Замеры.Form.Форма.Form(41)}: Error calling context method (AccessRight): Invalid parameter value (parameter number '4')"
+    },
+    {
+      "context": "standard-profiles/missing-code-default-no/deny.oracle",
+      "method": "verify",
+      "right": "Read",
+      "standard": "Код",
+      "outcome": "allowed",
+      "native_text": "allowed"
+    },
+    {
+      "context": "standard-profiles/missing-code-default-no/deny.oracle",
+      "method": "access",
+      "right": "Read",
+      "standard": "Код",
+      "outcome": "not_applicable",
+      "native_text": "error:{DataProcessor.Замеры.Form.Форма.Form(41)}: Error calling context method (AccessRight): Cannot apply the Read right to Catalog.ВладелецПробы"
+    },
+    {
+      "context": "standard-profiles/missing-code-default-no/deny.oracle",
+      "method": "verify",
+      "right": "Read",
+      "standard": "Code",
+      "outcome": "allowed",
+      "native_text": "allowed"
+    },
+    {
+      "context": "standard-profiles/missing-code-default-no/deny.oracle",
+      "method": "access",
+      "right": "Read",
+      "standard": "Code",
+      "outcome": "not_applicable",
+      "native_text": "error:{DataProcessor.Замеры.Form.Форма.Form(41)}: Error calling context method (AccessRight): Cannot apply the Read right to Catalog.ВладелецПробы"
+    },
+    {
+      "context": "standard-profiles/missing-code-default-no/deny.oracle",
+      "method": "verify",
+      "right": "Read",
+      "standard": "Description",
+      "outcome": "allowed",
+      "native_text": "allowed"
+    },
+    {
+      "context": "standard-profiles/missing-code-default-no/deny.oracle",
+      "method": "access",
+      "right": "Read",
+      "standard": "Description",
+      "outcome": "not_applicable",
+      "native_text": "error:{DataProcessor.Замеры.Form.Форма.Form(41)}: Error calling context method (AccessRight): Cannot apply the Read right to Catalog.ВладелецПробы"
+    },
+    {
+      "context": "standard-profiles/missing-code-default-no/deny.oracle",
+      "method": "verify",
+      "right": "Read",
+      "standard": "НеСуществует",
+      "outcome": "invalid_standard_path",
+      "native_text": "error:{DataProcessor.Замеры.Form.Форма.Form(38)}: Error calling context method (VerifyAccessRights): Invalid parameter value (parameter number '3') (НеСуществует)"
+    },
+    {
+      "context": "standard-profiles/missing-code-default-no/deny.oracle",
+      "method": "access",
+      "right": "Read",
+      "standard": "НеСуществует",
+      "outcome": "invalid_standard_path",
+      "native_text": "error:{DataProcessor.Замеры.Form.Форма.Form(41)}: Error calling context method (AccessRight): Invalid parameter value (parameter number '4') (НеСуществует)"
+    },
+    {
+      "context": "standard-profiles/missing-code-default-no/deny.oracle",
+      "method": "verify",
+      "right": "View",
+      "standard": "undefined",
+      "outcome": "allowed",
+      "native_text": "allowed"
+    },
+    {
+      "context": "standard-profiles/missing-code-default-no/deny.oracle",
+      "method": "access",
+      "right": "View",
+      "standard": "undefined",
+      "outcome": "allowed",
+      "native_text": "allowed"
+    },
+    {
+      "context": "standard-profiles/missing-code-default-no/deny.oracle",
+      "method": "verify",
+      "right": "View",
+      "standard": "empty",
+      "outcome": "invalid_standard_path",
+      "native_text": "error:{DataProcessor.Замеры.Form.Форма.Form(38)}: Error calling context method (VerifyAccessRights): Invalid parameter value (parameter number '3')"
+    },
+    {
+      "context": "standard-profiles/missing-code-default-no/deny.oracle",
+      "method": "access",
+      "right": "View",
+      "standard": "empty",
+      "outcome": "invalid_standard_path",
+      "native_text": "error:{DataProcessor.Замеры.Form.Форма.Form(41)}: Error calling context method (AccessRight): Invalid parameter value (parameter number '4')"
+    },
+    {
+      "context": "standard-profiles/missing-code-default-no/deny.oracle",
+      "method": "verify",
+      "right": "View",
+      "standard": "Код",
+      "outcome": "denied",
+      "native_text": "error:{DataProcessor.Замеры.Form.Форма.Form(38)}: Error calling context method (VerifyAccessRights): Access violation!"
+    },
+    {
+      "context": "standard-profiles/missing-code-default-no/deny.oracle",
+      "method": "access",
+      "right": "View",
+      "standard": "Код",
+      "outcome": "denied",
+      "native_text": "denied"
+    },
+    {
+      "context": "standard-profiles/missing-code-default-no/deny.oracle",
+      "method": "verify",
+      "right": "View",
+      "standard": "Code",
+      "outcome": "denied",
+      "native_text": "error:{DataProcessor.Замеры.Form.Форма.Form(38)}: Error calling context method (VerifyAccessRights): Access violation!"
+    },
+    {
+      "context": "standard-profiles/missing-code-default-no/deny.oracle",
+      "method": "access",
+      "right": "View",
+      "standard": "Code",
+      "outcome": "denied",
+      "native_text": "denied"
+    },
+    {
+      "context": "standard-profiles/missing-code-default-no/deny.oracle",
+      "method": "verify",
+      "right": "View",
+      "standard": "Description",
+      "outcome": "denied",
+      "native_text": "error:{DataProcessor.Замеры.Form.Форма.Form(38)}: Error calling context method (VerifyAccessRights): Access violation!"
+    },
+    {
+      "context": "standard-profiles/missing-code-default-no/deny.oracle",
+      "method": "access",
+      "right": "View",
+      "standard": "Description",
+      "outcome": "denied",
+      "native_text": "denied"
+    },
+    {
+      "context": "standard-profiles/missing-code-default-no/deny.oracle",
+      "method": "verify",
+      "right": "View",
+      "standard": "НеСуществует",
+      "outcome": "invalid_standard_path",
+      "native_text": "error:{DataProcessor.Замеры.Form.Форма.Form(38)}: Error calling context method (VerifyAccessRights): Invalid parameter value (parameter number '3') (НеСуществует)"
+    },
+    {
+      "context": "standard-profiles/missing-code-default-no/deny.oracle",
+      "method": "access",
+      "right": "View",
+      "standard": "НеСуществует",
+      "outcome": "invalid_standard_path",
+      "native_text": "error:{DataProcessor.Замеры.Form.Форма.Form(41)}: Error calling context method (AccessRight): Invalid parameter value (parameter number '4') (НеСуществует)"
+    },
+    {
+      "context": "standard-profiles/missing-code-default-yes/deny.oracle",
+      "method": "verify",
+      "right": "Read",
+      "standard": "undefined",
+      "outcome": "allowed",
+      "native_text": "allowed"
+    },
+    {
+      "context": "standard-profiles/missing-code-default-yes/deny.oracle",
+      "method": "access",
+      "right": "Read",
+      "standard": "undefined",
+      "outcome": "allowed",
+      "native_text": "allowed"
+    },
+    {
+      "context": "standard-profiles/missing-code-default-yes/deny.oracle",
+      "method": "verify",
+      "right": "Read",
+      "standard": "empty",
+      "outcome": "invalid_standard_path",
+      "native_text": "error:{DataProcessor.Замеры.Form.Форма.Form(38)}: Error calling context method (VerifyAccessRights): Invalid parameter value (parameter number '3')"
+    },
+    {
+      "context": "standard-profiles/missing-code-default-yes/deny.oracle",
+      "method": "access",
+      "right": "Read",
+      "standard": "empty",
+      "outcome": "invalid_standard_path",
+      "native_text": "error:{DataProcessor.Замеры.Form.Форма.Form(41)}: Error calling context method (AccessRight): Invalid parameter value (parameter number '4')"
+    },
+    {
+      "context": "standard-profiles/missing-code-default-yes/deny.oracle",
+      "method": "verify",
+      "right": "Read",
+      "standard": "Код",
+      "outcome": "allowed",
+      "native_text": "allowed"
+    },
+    {
+      "context": "standard-profiles/missing-code-default-yes/deny.oracle",
+      "method": "access",
+      "right": "Read",
+      "standard": "Код",
+      "outcome": "not_applicable",
+      "native_text": "error:{DataProcessor.Замеры.Form.Форма.Form(41)}: Error calling context method (AccessRight): Cannot apply the Read right to Catalog.ВладелецПробы"
+    },
+    {
+      "context": "standard-profiles/missing-code-default-yes/deny.oracle",
+      "method": "verify",
+      "right": "Read",
+      "standard": "Code",
+      "outcome": "allowed",
+      "native_text": "allowed"
+    },
+    {
+      "context": "standard-profiles/missing-code-default-yes/deny.oracle",
+      "method": "access",
+      "right": "Read",
+      "standard": "Code",
+      "outcome": "not_applicable",
+      "native_text": "error:{DataProcessor.Замеры.Form.Форма.Form(41)}: Error calling context method (AccessRight): Cannot apply the Read right to Catalog.ВладелецПробы"
+    },
+    {
+      "context": "standard-profiles/missing-code-default-yes/deny.oracle",
+      "method": "verify",
+      "right": "Read",
+      "standard": "Description",
+      "outcome": "allowed",
+      "native_text": "allowed"
+    },
+    {
+      "context": "standard-profiles/missing-code-default-yes/deny.oracle",
+      "method": "access",
+      "right": "Read",
+      "standard": "Description",
+      "outcome": "not_applicable",
+      "native_text": "error:{DataProcessor.Замеры.Form.Форма.Form(41)}: Error calling context method (AccessRight): Cannot apply the Read right to Catalog.ВладелецПробы"
+    },
+    {
+      "context": "standard-profiles/missing-code-default-yes/deny.oracle",
+      "method": "verify",
+      "right": "Read",
+      "standard": "НеСуществует",
+      "outcome": "invalid_standard_path",
+      "native_text": "error:{DataProcessor.Замеры.Form.Форма.Form(38)}: Error calling context method (VerifyAccessRights): Invalid parameter value (parameter number '3') (НеСуществует)"
+    },
+    {
+      "context": "standard-profiles/missing-code-default-yes/deny.oracle",
+      "method": "access",
+      "right": "Read",
+      "standard": "НеСуществует",
+      "outcome": "invalid_standard_path",
+      "native_text": "error:{DataProcessor.Замеры.Form.Форма.Form(41)}: Error calling context method (AccessRight): Invalid parameter value (parameter number '4') (НеСуществует)"
+    },
+    {
+      "context": "standard-profiles/missing-code-default-yes/deny.oracle",
+      "method": "verify",
+      "right": "View",
+      "standard": "undefined",
+      "outcome": "allowed",
+      "native_text": "allowed"
+    },
+    {
+      "context": "standard-profiles/missing-code-default-yes/deny.oracle",
+      "method": "access",
+      "right": "View",
+      "standard": "undefined",
+      "outcome": "allowed",
+      "native_text": "allowed"
+    },
+    {
+      "context": "standard-profiles/missing-code-default-yes/deny.oracle",
+      "method": "verify",
+      "right": "View",
+      "standard": "empty",
+      "outcome": "invalid_standard_path",
+      "native_text": "error:{DataProcessor.Замеры.Form.Форма.Form(38)}: Error calling context method (VerifyAccessRights): Invalid parameter value (parameter number '3')"
+    },
+    {
+      "context": "standard-profiles/missing-code-default-yes/deny.oracle",
+      "method": "access",
+      "right": "View",
+      "standard": "empty",
+      "outcome": "invalid_standard_path",
+      "native_text": "error:{DataProcessor.Замеры.Form.Форма.Form(41)}: Error calling context method (AccessRight): Invalid parameter value (parameter number '4')"
+    },
+    {
+      "context": "standard-profiles/missing-code-default-yes/deny.oracle",
+      "method": "verify",
+      "right": "View",
+      "standard": "Код",
+      "outcome": "allowed",
+      "native_text": "allowed"
+    },
+    {
+      "context": "standard-profiles/missing-code-default-yes/deny.oracle",
+      "method": "access",
+      "right": "View",
+      "standard": "Код",
+      "outcome": "allowed",
+      "native_text": "allowed"
+    },
+    {
+      "context": "standard-profiles/missing-code-default-yes/deny.oracle",
+      "method": "verify",
+      "right": "View",
+      "standard": "Code",
+      "outcome": "allowed",
+      "native_text": "allowed"
+    },
+    {
+      "context": "standard-profiles/missing-code-default-yes/deny.oracle",
+      "method": "access",
+      "right": "View",
+      "standard": "Code",
+      "outcome": "allowed",
+      "native_text": "allowed"
+    },
+    {
+      "context": "standard-profiles/missing-code-default-yes/deny.oracle",
+      "method": "verify",
+      "right": "View",
+      "standard": "Description",
+      "outcome": "allowed",
+      "native_text": "allowed"
+    },
+    {
+      "context": "standard-profiles/missing-code-default-yes/deny.oracle",
+      "method": "access",
+      "right": "View",
+      "standard": "Description",
+      "outcome": "allowed",
+      "native_text": "allowed"
+    },
+    {
+      "context": "standard-profiles/missing-code-default-yes/deny.oracle",
+      "method": "verify",
+      "right": "View",
+      "standard": "НеСуществует",
+      "outcome": "invalid_standard_path",
+      "native_text": "error:{DataProcessor.Замеры.Form.Форма.Form(38)}: Error calling context method (VerifyAccessRights): Invalid parameter value (parameter number '3') (НеСуществует)"
+    },
+    {
+      "context": "standard-profiles/missing-code-default-yes/deny.oracle",
+      "method": "access",
+      "right": "View",
+      "standard": "НеСуществует",
+      "outcome": "invalid_standard_path",
+      "native_text": "error:{DataProcessor.Замеры.Form.Форма.Form(41)}: Error calling context method (AccessRight): Invalid parameter value (parameter number '4') (НеСуществует)"
+    },
+    {
+      "context": "standard-profiles/owner-no-code-no/deny.oracle",
+      "method": "verify",
+      "right": "Read",
+      "standard": "undefined",
+      "outcome": "denied",
+      "native_text": "error:{DataProcessor.Замеры.Form.Форма.Form(38)}: Error calling context method (VerifyAccessRights): Access violation!"
+    },
+    {
+      "context": "standard-profiles/owner-no-code-no/deny.oracle",
+      "method": "access",
+      "right": "Read",
+      "standard": "undefined",
+      "outcome": "denied",
+      "native_text": "denied"
+    },
+    {
+      "context": "standard-profiles/owner-no-code-no/deny.oracle",
+      "method": "verify",
+      "right": "Read",
+      "standard": "empty",
+      "outcome": "invalid_standard_path",
+      "native_text": "error:{DataProcessor.Замеры.Form.Форма.Form(38)}: Error calling context method (VerifyAccessRights): Invalid parameter value (parameter number '3')"
+    },
+    {
+      "context": "standard-profiles/owner-no-code-no/deny.oracle",
+      "method": "access",
+      "right": "Read",
+      "standard": "empty",
+      "outcome": "invalid_standard_path",
+      "native_text": "error:{DataProcessor.Замеры.Form.Форма.Form(41)}: Error calling context method (AccessRight): Invalid parameter value (parameter number '4')"
+    },
+    {
+      "context": "standard-profiles/owner-no-code-no/deny.oracle",
+      "method": "verify",
+      "right": "Read",
+      "standard": "Код",
+      "outcome": "allowed",
+      "native_text": "allowed"
+    },
+    {
+      "context": "standard-profiles/owner-no-code-no/deny.oracle",
+      "method": "access",
+      "right": "Read",
+      "standard": "Код",
+      "outcome": "not_applicable",
+      "native_text": "error:{DataProcessor.Замеры.Form.Форма.Form(41)}: Error calling context method (AccessRight): Cannot apply the Read right to Catalog.ВладелецПробы"
+    },
+    {
+      "context": "standard-profiles/owner-no-code-no/deny.oracle",
+      "method": "verify",
+      "right": "Read",
+      "standard": "Code",
+      "outcome": "allowed",
+      "native_text": "allowed"
+    },
+    {
+      "context": "standard-profiles/owner-no-code-no/deny.oracle",
+      "method": "access",
+      "right": "Read",
+      "standard": "Code",
+      "outcome": "not_applicable",
+      "native_text": "error:{DataProcessor.Замеры.Form.Форма.Form(41)}: Error calling context method (AccessRight): Cannot apply the Read right to Catalog.ВладелецПробы"
+    },
+    {
+      "context": "standard-profiles/owner-no-code-no/deny.oracle",
+      "method": "verify",
+      "right": "Read",
+      "standard": "Description",
+      "outcome": "allowed",
+      "native_text": "allowed"
+    },
+    {
+      "context": "standard-profiles/owner-no-code-no/deny.oracle",
+      "method": "access",
+      "right": "Read",
+      "standard": "Description",
+      "outcome": "not_applicable",
+      "native_text": "error:{DataProcessor.Замеры.Form.Форма.Form(41)}: Error calling context method (AccessRight): Cannot apply the Read right to Catalog.ВладелецПробы"
+    },
+    {
+      "context": "standard-profiles/owner-no-code-no/deny.oracle",
+      "method": "verify",
+      "right": "Read",
+      "standard": "НеСуществует",
+      "outcome": "invalid_standard_path",
+      "native_text": "error:{DataProcessor.Замеры.Form.Форма.Form(38)}: Error calling context method (VerifyAccessRights): Invalid parameter value (parameter number '3') (НеСуществует)"
+    },
+    {
+      "context": "standard-profiles/owner-no-code-no/deny.oracle",
+      "method": "access",
+      "right": "Read",
+      "standard": "НеСуществует",
+      "outcome": "invalid_standard_path",
+      "native_text": "error:{DataProcessor.Замеры.Form.Форма.Form(41)}: Error calling context method (AccessRight): Invalid parameter value (parameter number '4') (НеСуществует)"
+    },
+    {
+      "context": "standard-profiles/owner-no-code-no/deny.oracle",
+      "method": "verify",
+      "right": "View",
+      "standard": "undefined",
+      "outcome": "denied",
+      "native_text": "error:{DataProcessor.Замеры.Form.Форма.Form(38)}: Error calling context method (VerifyAccessRights): Access violation!"
+    },
+    {
+      "context": "standard-profiles/owner-no-code-no/deny.oracle",
+      "method": "access",
+      "right": "View",
+      "standard": "undefined",
+      "outcome": "denied",
+      "native_text": "denied"
+    },
+    {
+      "context": "standard-profiles/owner-no-code-no/deny.oracle",
+      "method": "verify",
+      "right": "View",
+      "standard": "empty",
+      "outcome": "invalid_standard_path",
+      "native_text": "error:{DataProcessor.Замеры.Form.Форма.Form(38)}: Error calling context method (VerifyAccessRights): Invalid parameter value (parameter number '3')"
+    },
+    {
+      "context": "standard-profiles/owner-no-code-no/deny.oracle",
+      "method": "access",
+      "right": "View",
+      "standard": "empty",
+      "outcome": "invalid_standard_path",
+      "native_text": "error:{DataProcessor.Замеры.Form.Форма.Form(41)}: Error calling context method (AccessRight): Invalid parameter value (parameter number '4')"
+    },
+    {
+      "context": "standard-profiles/owner-no-code-no/deny.oracle",
+      "method": "verify",
+      "right": "View",
+      "standard": "Код",
+      "outcome": "denied",
+      "native_text": "error:{DataProcessor.Замеры.Form.Форма.Form(38)}: Error calling context method (VerifyAccessRights): Access violation!"
+    },
+    {
+      "context": "standard-profiles/owner-no-code-no/deny.oracle",
+      "method": "access",
+      "right": "View",
+      "standard": "Код",
+      "outcome": "denied",
+      "native_text": "denied"
+    },
+    {
+      "context": "standard-profiles/owner-no-code-no/deny.oracle",
+      "method": "verify",
+      "right": "View",
+      "standard": "Code",
+      "outcome": "denied",
+      "native_text": "error:{DataProcessor.Замеры.Form.Форма.Form(38)}: Error calling context method (VerifyAccessRights): Access violation!"
+    },
+    {
+      "context": "standard-profiles/owner-no-code-no/deny.oracle",
+      "method": "access",
+      "right": "View",
+      "standard": "Code",
+      "outcome": "denied",
+      "native_text": "denied"
+    },
+    {
+      "context": "standard-profiles/owner-no-code-no/deny.oracle",
+      "method": "verify",
+      "right": "View",
+      "standard": "Description",
+      "outcome": "denied",
+      "native_text": "error:{DataProcessor.Замеры.Form.Форма.Form(38)}: Error calling context method (VerifyAccessRights): Access violation!"
+    },
+    {
+      "context": "standard-profiles/owner-no-code-no/deny.oracle",
+      "method": "access",
+      "right": "View",
+      "standard": "Description",
+      "outcome": "denied",
+      "native_text": "denied"
+    },
+    {
+      "context": "standard-profiles/owner-no-code-no/deny.oracle",
+      "method": "verify",
+      "right": "View",
+      "standard": "НеСуществует",
+      "outcome": "invalid_standard_path",
+      "native_text": "error:{DataProcessor.Замеры.Form.Форма.Form(38)}: Error calling context method (VerifyAccessRights): Invalid parameter value (parameter number '3') (НеСуществует)"
+    },
+    {
+      "context": "standard-profiles/owner-no-code-no/deny.oracle",
+      "method": "access",
+      "right": "View",
+      "standard": "НеСуществует",
+      "outcome": "invalid_standard_path",
+      "native_text": "error:{DataProcessor.Замеры.Form.Форма.Form(41)}: Error calling context method (AccessRight): Invalid parameter value (parameter number '4') (НеСуществует)"
+    },
+    {
+      "context": "standard-profiles/owner-no-code-yes/deny.oracle",
+      "method": "verify",
+      "right": "Read",
+      "standard": "undefined",
+      "outcome": "denied",
+      "native_text": "error:{DataProcessor.Замеры.Form.Форма.Form(38)}: Error calling context method (VerifyAccessRights): Access violation!"
+    },
+    {
+      "context": "standard-profiles/owner-no-code-yes/deny.oracle",
+      "method": "access",
+      "right": "Read",
+      "standard": "undefined",
+      "outcome": "denied",
+      "native_text": "denied"
+    },
+    {
+      "context": "standard-profiles/owner-no-code-yes/deny.oracle",
+      "method": "verify",
+      "right": "Read",
+      "standard": "empty",
+      "outcome": "invalid_standard_path",
+      "native_text": "error:{DataProcessor.Замеры.Form.Форма.Form(38)}: Error calling context method (VerifyAccessRights): Invalid parameter value (parameter number '3')"
+    },
+    {
+      "context": "standard-profiles/owner-no-code-yes/deny.oracle",
+      "method": "access",
+      "right": "Read",
+      "standard": "empty",
+      "outcome": "invalid_standard_path",
+      "native_text": "error:{DataProcessor.Замеры.Form.Форма.Form(41)}: Error calling context method (AccessRight): Invalid parameter value (parameter number '4')"
+    },
+    {
+      "context": "standard-profiles/owner-no-code-yes/deny.oracle",
+      "method": "verify",
+      "right": "Read",
+      "standard": "Код",
+      "outcome": "allowed",
+      "native_text": "allowed"
+    },
+    {
+      "context": "standard-profiles/owner-no-code-yes/deny.oracle",
+      "method": "access",
+      "right": "Read",
+      "standard": "Код",
+      "outcome": "not_applicable",
+      "native_text": "error:{DataProcessor.Замеры.Form.Форма.Form(41)}: Error calling context method (AccessRight): Cannot apply the Read right to Catalog.ВладелецПробы"
+    },
+    {
+      "context": "standard-profiles/owner-no-code-yes/deny.oracle",
+      "method": "verify",
+      "right": "Read",
+      "standard": "Code",
+      "outcome": "allowed",
+      "native_text": "allowed"
+    },
+    {
+      "context": "standard-profiles/owner-no-code-yes/deny.oracle",
+      "method": "access",
+      "right": "Read",
+      "standard": "Code",
+      "outcome": "not_applicable",
+      "native_text": "error:{DataProcessor.Замеры.Form.Форма.Form(41)}: Error calling context method (AccessRight): Cannot apply the Read right to Catalog.ВладелецПробы"
+    },
+    {
+      "context": "standard-profiles/owner-no-code-yes/deny.oracle",
+      "method": "verify",
+      "right": "Read",
+      "standard": "Description",
+      "outcome": "allowed",
+      "native_text": "allowed"
+    },
+    {
+      "context": "standard-profiles/owner-no-code-yes/deny.oracle",
+      "method": "access",
+      "right": "Read",
+      "standard": "Description",
+      "outcome": "not_applicable",
+      "native_text": "error:{DataProcessor.Замеры.Form.Форма.Form(41)}: Error calling context method (AccessRight): Cannot apply the Read right to Catalog.ВладелецПробы"
+    },
+    {
+      "context": "standard-profiles/owner-no-code-yes/deny.oracle",
+      "method": "verify",
+      "right": "Read",
+      "standard": "НеСуществует",
+      "outcome": "invalid_standard_path",
+      "native_text": "error:{DataProcessor.Замеры.Form.Форма.Form(38)}: Error calling context method (VerifyAccessRights): Invalid parameter value (parameter number '3') (НеСуществует)"
+    },
+    {
+      "context": "standard-profiles/owner-no-code-yes/deny.oracle",
+      "method": "access",
+      "right": "Read",
+      "standard": "НеСуществует",
+      "outcome": "invalid_standard_path",
+      "native_text": "error:{DataProcessor.Замеры.Form.Форма.Form(41)}: Error calling context method (AccessRight): Invalid parameter value (parameter number '4') (НеСуществует)"
+    },
+    {
+      "context": "standard-profiles/owner-no-code-yes/deny.oracle",
+      "method": "verify",
+      "right": "View",
+      "standard": "undefined",
+      "outcome": "denied",
+      "native_text": "error:{DataProcessor.Замеры.Form.Форма.Form(38)}: Error calling context method (VerifyAccessRights): Access violation!"
+    },
+    {
+      "context": "standard-profiles/owner-no-code-yes/deny.oracle",
+      "method": "access",
+      "right": "View",
+      "standard": "undefined",
+      "outcome": "denied",
+      "native_text": "denied"
+    },
+    {
+      "context": "standard-profiles/owner-no-code-yes/deny.oracle",
+      "method": "verify",
+      "right": "View",
+      "standard": "empty",
+      "outcome": "invalid_standard_path",
+      "native_text": "error:{DataProcessor.Замеры.Form.Форма.Form(38)}: Error calling context method (VerifyAccessRights): Invalid parameter value (parameter number '3')"
+    },
+    {
+      "context": "standard-profiles/owner-no-code-yes/deny.oracle",
+      "method": "access",
+      "right": "View",
+      "standard": "empty",
+      "outcome": "invalid_standard_path",
+      "native_text": "error:{DataProcessor.Замеры.Form.Форма.Form(41)}: Error calling context method (AccessRight): Invalid parameter value (parameter number '4')"
+    },
+    {
+      "context": "standard-profiles/owner-no-code-yes/deny.oracle",
+      "method": "verify",
+      "right": "View",
+      "standard": "Код",
+      "outcome": "denied",
+      "native_text": "error:{DataProcessor.Замеры.Form.Форма.Form(38)}: Error calling context method (VerifyAccessRights): Access violation!"
+    },
+    {
+      "context": "standard-profiles/owner-no-code-yes/deny.oracle",
+      "method": "access",
+      "right": "View",
+      "standard": "Код",
+      "outcome": "denied",
+      "native_text": "denied"
+    },
+    {
+      "context": "standard-profiles/owner-no-code-yes/deny.oracle",
+      "method": "verify",
+      "right": "View",
+      "standard": "Code",
+      "outcome": "denied",
+      "native_text": "error:{DataProcessor.Замеры.Form.Форма.Form(38)}: Error calling context method (VerifyAccessRights): Access violation!"
+    },
+    {
+      "context": "standard-profiles/owner-no-code-yes/deny.oracle",
+      "method": "access",
+      "right": "View",
+      "standard": "Code",
+      "outcome": "denied",
+      "native_text": "denied"
+    },
+    {
+      "context": "standard-profiles/owner-no-code-yes/deny.oracle",
+      "method": "verify",
+      "right": "View",
+      "standard": "Description",
+      "outcome": "denied",
+      "native_text": "error:{DataProcessor.Замеры.Form.Форма.Form(38)}: Error calling context method (VerifyAccessRights): Access violation!"
+    },
+    {
+      "context": "standard-profiles/owner-no-code-yes/deny.oracle",
+      "method": "access",
+      "right": "View",
+      "standard": "Description",
+      "outcome": "denied",
+      "native_text": "denied"
+    },
+    {
+      "context": "standard-profiles/owner-no-code-yes/deny.oracle",
+      "method": "verify",
+      "right": "View",
+      "standard": "НеСуществует",
+      "outcome": "invalid_standard_path",
+      "native_text": "error:{DataProcessor.Замеры.Form.Форма.Form(38)}: Error calling context method (VerifyAccessRights): Invalid parameter value (parameter number '3') (НеСуществует)"
+    },
+    {
+      "context": "standard-profiles/owner-no-code-yes/deny.oracle",
+      "method": "access",
+      "right": "View",
+      "standard": "НеСуществует",
+      "outcome": "invalid_standard_path",
+      "native_text": "error:{DataProcessor.Замеры.Form.Форма.Form(41)}: Error calling context method (AccessRight): Invalid parameter value (parameter number '4') (НеСуществует)"
+    },
+    {
+      "context": "standard-profiles/owner-yes-code-no/deny.oracle",
+      "method": "verify",
+      "right": "Read",
+      "standard": "undefined",
+      "outcome": "allowed",
+      "native_text": "allowed"
+    },
+    {
+      "context": "standard-profiles/owner-yes-code-no/deny.oracle",
+      "method": "access",
+      "right": "Read",
+      "standard": "undefined",
+      "outcome": "allowed",
+      "native_text": "allowed"
+    },
+    {
+      "context": "standard-profiles/owner-yes-code-no/deny.oracle",
+      "method": "verify",
+      "right": "Read",
+      "standard": "empty",
+      "outcome": "invalid_standard_path",
+      "native_text": "error:{DataProcessor.Замеры.Form.Форма.Form(38)}: Error calling context method (VerifyAccessRights): Invalid parameter value (parameter number '3')"
+    },
+    {
+      "context": "standard-profiles/owner-yes-code-no/deny.oracle",
+      "method": "access",
+      "right": "Read",
+      "standard": "empty",
+      "outcome": "invalid_standard_path",
+      "native_text": "error:{DataProcessor.Замеры.Form.Форма.Form(41)}: Error calling context method (AccessRight): Invalid parameter value (parameter number '4')"
+    },
+    {
+      "context": "standard-profiles/owner-yes-code-no/deny.oracle",
+      "method": "verify",
+      "right": "Read",
+      "standard": "Код",
+      "outcome": "allowed",
+      "native_text": "allowed"
+    },
+    {
+      "context": "standard-profiles/owner-yes-code-no/deny.oracle",
+      "method": "access",
+      "right": "Read",
+      "standard": "Код",
+      "outcome": "not_applicable",
+      "native_text": "error:{DataProcessor.Замеры.Form.Форма.Form(41)}: Error calling context method (AccessRight): Cannot apply the Read right to Catalog.ВладелецПробы"
+    },
+    {
+      "context": "standard-profiles/owner-yes-code-no/deny.oracle",
+      "method": "verify",
+      "right": "Read",
+      "standard": "Code",
+      "outcome": "allowed",
+      "native_text": "allowed"
+    },
+    {
+      "context": "standard-profiles/owner-yes-code-no/deny.oracle",
+      "method": "access",
+      "right": "Read",
+      "standard": "Code",
+      "outcome": "not_applicable",
+      "native_text": "error:{DataProcessor.Замеры.Form.Форма.Form(41)}: Error calling context method (AccessRight): Cannot apply the Read right to Catalog.ВладелецПробы"
+    },
+    {
+      "context": "standard-profiles/owner-yes-code-no/deny.oracle",
+      "method": "verify",
+      "right": "Read",
+      "standard": "Description",
+      "outcome": "allowed",
+      "native_text": "allowed"
+    },
+    {
+      "context": "standard-profiles/owner-yes-code-no/deny.oracle",
+      "method": "access",
+      "right": "Read",
+      "standard": "Description",
+      "outcome": "not_applicable",
+      "native_text": "error:{DataProcessor.Замеры.Form.Форма.Form(41)}: Error calling context method (AccessRight): Cannot apply the Read right to Catalog.ВладелецПробы"
+    },
+    {
+      "context": "standard-profiles/owner-yes-code-no/deny.oracle",
+      "method": "verify",
+      "right": "Read",
+      "standard": "НеСуществует",
+      "outcome": "invalid_standard_path",
+      "native_text": "error:{DataProcessor.Замеры.Form.Форма.Form(38)}: Error calling context method (VerifyAccessRights): Invalid parameter value (parameter number '3') (НеСуществует)"
+    },
+    {
+      "context": "standard-profiles/owner-yes-code-no/deny.oracle",
+      "method": "access",
+      "right": "Read",
+      "standard": "НеСуществует",
+      "outcome": "invalid_standard_path",
+      "native_text": "error:{DataProcessor.Замеры.Form.Форма.Form(41)}: Error calling context method (AccessRight): Invalid parameter value (parameter number '4') (НеСуществует)"
+    },
+    {
+      "context": "standard-profiles/owner-yes-code-no/deny.oracle",
+      "method": "verify",
+      "right": "View",
+      "standard": "undefined",
+      "outcome": "allowed",
+      "native_text": "allowed"
+    },
+    {
+      "context": "standard-profiles/owner-yes-code-no/deny.oracle",
+      "method": "access",
+      "right": "View",
+      "standard": "undefined",
+      "outcome": "allowed",
+      "native_text": "allowed"
+    },
+    {
+      "context": "standard-profiles/owner-yes-code-no/deny.oracle",
+      "method": "verify",
+      "right": "View",
+      "standard": "empty",
+      "outcome": "invalid_standard_path",
+      "native_text": "error:{DataProcessor.Замеры.Form.Форма.Form(38)}: Error calling context method (VerifyAccessRights): Invalid parameter value (parameter number '3')"
+    },
+    {
+      "context": "standard-profiles/owner-yes-code-no/deny.oracle",
+      "method": "access",
+      "right": "View",
+      "standard": "empty",
+      "outcome": "invalid_standard_path",
+      "native_text": "error:{DataProcessor.Замеры.Form.Форма.Form(41)}: Error calling context method (AccessRight): Invalid parameter value (parameter number '4')"
+    },
+    {
+      "context": "standard-profiles/owner-yes-code-no/deny.oracle",
+      "method": "verify",
+      "right": "View",
+      "standard": "Код",
+      "outcome": "denied",
+      "native_text": "error:{DataProcessor.Замеры.Form.Форма.Form(38)}: Error calling context method (VerifyAccessRights): Access violation!"
+    },
+    {
+      "context": "standard-profiles/owner-yes-code-no/deny.oracle",
+      "method": "access",
+      "right": "View",
+      "standard": "Код",
+      "outcome": "denied",
+      "native_text": "denied"
+    },
+    {
+      "context": "standard-profiles/owner-yes-code-no/deny.oracle",
+      "method": "verify",
+      "right": "View",
+      "standard": "Code",
+      "outcome": "denied",
+      "native_text": "error:{DataProcessor.Замеры.Form.Форма.Form(38)}: Error calling context method (VerifyAccessRights): Access violation!"
+    },
+    {
+      "context": "standard-profiles/owner-yes-code-no/deny.oracle",
+      "method": "access",
+      "right": "View",
+      "standard": "Code",
+      "outcome": "denied",
+      "native_text": "denied"
+    },
+    {
+      "context": "standard-profiles/owner-yes-code-no/deny.oracle",
+      "method": "verify",
+      "right": "View",
+      "standard": "Description",
+      "outcome": "denied",
+      "native_text": "error:{DataProcessor.Замеры.Form.Форма.Form(38)}: Error calling context method (VerifyAccessRights): Access violation!"
+    },
+    {
+      "context": "standard-profiles/owner-yes-code-no/deny.oracle",
+      "method": "access",
+      "right": "View",
+      "standard": "Description",
+      "outcome": "denied",
+      "native_text": "denied"
+    },
+    {
+      "context": "standard-profiles/owner-yes-code-no/deny.oracle",
+      "method": "verify",
+      "right": "View",
+      "standard": "НеСуществует",
+      "outcome": "invalid_standard_path",
+      "native_text": "error:{DataProcessor.Замеры.Form.Форма.Form(38)}: Error calling context method (VerifyAccessRights): Invalid parameter value (parameter number '3') (НеСуществует)"
+    },
+    {
+      "context": "standard-profiles/owner-yes-code-no/deny.oracle",
+      "method": "access",
+      "right": "View",
+      "standard": "НеСуществует",
+      "outcome": "invalid_standard_path",
+      "native_text": "error:{DataProcessor.Замеры.Form.Форма.Form(41)}: Error calling context method (AccessRight): Invalid parameter value (parameter number '4') (НеСуществует)"
+    },
+    {
+      "context": "standard-profiles/owner-yes-code-yes/deny.oracle",
+      "method": "verify",
+      "right": "Read",
+      "standard": "undefined",
+      "outcome": "allowed",
+      "native_text": "allowed"
+    },
+    {
+      "context": "standard-profiles/owner-yes-code-yes/deny.oracle",
+      "method": "access",
+      "right": "Read",
+      "standard": "undefined",
+      "outcome": "allowed",
+      "native_text": "allowed"
+    },
+    {
+      "context": "standard-profiles/owner-yes-code-yes/deny.oracle",
+      "method": "verify",
+      "right": "Read",
+      "standard": "empty",
+      "outcome": "invalid_standard_path",
+      "native_text": "error:{DataProcessor.Замеры.Form.Форма.Form(38)}: Error calling context method (VerifyAccessRights): Invalid parameter value (parameter number '3')"
+    },
+    {
+      "context": "standard-profiles/owner-yes-code-yes/deny.oracle",
+      "method": "access",
+      "right": "Read",
+      "standard": "empty",
+      "outcome": "invalid_standard_path",
+      "native_text": "error:{DataProcessor.Замеры.Form.Форма.Form(41)}: Error calling context method (AccessRight): Invalid parameter value (parameter number '4')"
+    },
+    {
+      "context": "standard-profiles/owner-yes-code-yes/deny.oracle",
+      "method": "verify",
+      "right": "Read",
+      "standard": "Код",
+      "outcome": "allowed",
+      "native_text": "allowed"
+    },
+    {
+      "context": "standard-profiles/owner-yes-code-yes/deny.oracle",
+      "method": "access",
+      "right": "Read",
+      "standard": "Код",
+      "outcome": "not_applicable",
+      "native_text": "error:{DataProcessor.Замеры.Form.Форма.Form(41)}: Error calling context method (AccessRight): Cannot apply the Read right to Catalog.ВладелецПробы"
+    },
+    {
+      "context": "standard-profiles/owner-yes-code-yes/deny.oracle",
+      "method": "verify",
+      "right": "Read",
+      "standard": "Code",
+      "outcome": "allowed",
+      "native_text": "allowed"
+    },
+    {
+      "context": "standard-profiles/owner-yes-code-yes/deny.oracle",
+      "method": "access",
+      "right": "Read",
+      "standard": "Code",
+      "outcome": "not_applicable",
+      "native_text": "error:{DataProcessor.Замеры.Form.Форма.Form(41)}: Error calling context method (AccessRight): Cannot apply the Read right to Catalog.ВладелецПробы"
+    },
+    {
+      "context": "standard-profiles/owner-yes-code-yes/deny.oracle",
+      "method": "verify",
+      "right": "Read",
+      "standard": "Description",
+      "outcome": "allowed",
+      "native_text": "allowed"
+    },
+    {
+      "context": "standard-profiles/owner-yes-code-yes/deny.oracle",
+      "method": "access",
+      "right": "Read",
+      "standard": "Description",
+      "outcome": "not_applicable",
+      "native_text": "error:{DataProcessor.Замеры.Form.Форма.Form(41)}: Error calling context method (AccessRight): Cannot apply the Read right to Catalog.ВладелецПробы"
+    },
+    {
+      "context": "standard-profiles/owner-yes-code-yes/deny.oracle",
+      "method": "verify",
+      "right": "Read",
+      "standard": "НеСуществует",
+      "outcome": "invalid_standard_path",
+      "native_text": "error:{DataProcessor.Замеры.Form.Форма.Form(38)}: Error calling context method (VerifyAccessRights): Invalid parameter value (parameter number '3') (НеСуществует)"
+    },
+    {
+      "context": "standard-profiles/owner-yes-code-yes/deny.oracle",
+      "method": "access",
+      "right": "Read",
+      "standard": "НеСуществует",
+      "outcome": "invalid_standard_path",
+      "native_text": "error:{DataProcessor.Замеры.Form.Форма.Form(41)}: Error calling context method (AccessRight): Invalid parameter value (parameter number '4') (НеСуществует)"
+    },
+    {
+      "context": "standard-profiles/owner-yes-code-yes/deny.oracle",
+      "method": "verify",
+      "right": "View",
+      "standard": "undefined",
+      "outcome": "allowed",
+      "native_text": "allowed"
+    },
+    {
+      "context": "standard-profiles/owner-yes-code-yes/deny.oracle",
+      "method": "access",
+      "right": "View",
+      "standard": "undefined",
+      "outcome": "allowed",
+      "native_text": "allowed"
+    },
+    {
+      "context": "standard-profiles/owner-yes-code-yes/deny.oracle",
+      "method": "verify",
+      "right": "View",
+      "standard": "empty",
+      "outcome": "invalid_standard_path",
+      "native_text": "error:{DataProcessor.Замеры.Form.Форма.Form(38)}: Error calling context method (VerifyAccessRights): Invalid parameter value (parameter number '3')"
+    },
+    {
+      "context": "standard-profiles/owner-yes-code-yes/deny.oracle",
+      "method": "access",
+      "right": "View",
+      "standard": "empty",
+      "outcome": "invalid_standard_path",
+      "native_text": "error:{DataProcessor.Замеры.Form.Форма.Form(41)}: Error calling context method (AccessRight): Invalid parameter value (parameter number '4')"
+    },
+    {
+      "context": "standard-profiles/owner-yes-code-yes/deny.oracle",
+      "method": "verify",
+      "right": "View",
+      "standard": "Код",
+      "outcome": "allowed",
+      "native_text": "allowed"
+    },
+    {
+      "context": "standard-profiles/owner-yes-code-yes/deny.oracle",
+      "method": "access",
+      "right": "View",
+      "standard": "Код",
+      "outcome": "allowed",
+      "native_text": "allowed"
+    },
+    {
+      "context": "standard-profiles/owner-yes-code-yes/deny.oracle",
+      "method": "verify",
+      "right": "View",
+      "standard": "Code",
+      "outcome": "allowed",
+      "native_text": "allowed"
+    },
+    {
+      "context": "standard-profiles/owner-yes-code-yes/deny.oracle",
+      "method": "access",
+      "right": "View",
+      "standard": "Code",
+      "outcome": "allowed",
+      "native_text": "allowed"
+    },
+    {
+      "context": "standard-profiles/owner-yes-code-yes/deny.oracle",
+      "method": "verify",
+      "right": "View",
+      "standard": "Description",
+      "outcome": "denied",
+      "native_text": "error:{DataProcessor.Замеры.Form.Форма.Form(38)}: Error calling context method (VerifyAccessRights): Access violation!"
+    },
+    {
+      "context": "standard-profiles/owner-yes-code-yes/deny.oracle",
+      "method": "access",
+      "right": "View",
+      "standard": "Description",
+      "outcome": "denied",
+      "native_text": "denied"
+    },
+    {
+      "context": "standard-profiles/owner-yes-code-yes/deny.oracle",
+      "method": "verify",
+      "right": "View",
+      "standard": "НеСуществует",
+      "outcome": "invalid_standard_path",
+      "native_text": "error:{DataProcessor.Замеры.Form.Форма.Form(38)}: Error calling context method (VerifyAccessRights): Invalid parameter value (parameter number '3') (НеСуществует)"
+    },
+    {
+      "context": "standard-profiles/owner-yes-code-yes/deny.oracle",
+      "method": "access",
+      "right": "View",
+      "standard": "НеСуществует",
+      "outcome": "invalid_standard_path",
+      "native_text": "error:{DataProcessor.Замеры.Form.Форма.Form(41)}: Error calling context method (AccessRight): Invalid parameter value (parameter number '4') (НеСуществует)"
+    }
+  ],
+  "member_keys": {
+    "Code": {
+      "kind": -2,
+      "id": "03f171e8-326f-41c6-9fa5-932a0b12cddf"
+    },
+    "Description": {
+      "kind": -3,
+      "id": "03f171e8-326f-41c6-9fa5-932a0b12cddf"
+    }
+  },
+  "compatibility_mode": "Version8_3_27",
+  "script_variant": "English",
+  "compatibility_source": "Owned input Configuration.xml used for every role profile; only form source and roles changed."
+}

@@ -1,0 +1,25 @@
+﻿right.user=RootProbeDeny
+right.current=NO
+right.self=ERROR:{DataProcessor.Замеры.Form.Форма.Form(30)}: Error calling context method (AccessRight): You need administrative rights to perform operation.
+right.role.deny=NO
+right.administration=NO
+right.inapplicable=ERROR:{DataProcessor.Замеры.Form.Форма.Form(39)}: Error calling context method (AccessRight): Cannot apply the Чтение right to Configuration.Configuration
+right.unknown=ERROR:{DataProcessor.Замеры.Form.Форма.Form(42)}: Error calling context method (AccessRight): The right specified doesn't exist: UnknownProbeRight
+right.role.admin=YES
+right.role.save=YES
+right.role.save.ext=NO
+right.role.ext.save=NO
+right.role.ext.ext=YES
+right.role.processor=YES
+right.role.processor.save=NO
+right.role.processor.extensions=NO
+right.role.report=YES
+right.role.report.processor=NO
+right.privileged.current=YES
+right.privileged.role.deny=NO
+right.privileged.self=NO
+right.privileged.administration=YES
+right.privileged.inapplicable=ERROR:{DataProcessor.Замеры.Form.Форма.Form(64)}: Error calling context method (AccessRight): Cannot apply the Чтение right to Configuration.Configuration
+right.privileged.unknown=ERROR:{DataProcessor.Замеры.Form.Форма.Form(67)}: Error calling context method (AccessRight): The right specified doesn't exist: UnknownProbeRight
+
+completed=YES

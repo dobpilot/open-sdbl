@@ -1,0 +1,11 @@
+{
+  "platform": "8.3.27.2342",
+  "base": "demo",
+  "object": "d4becac6-bf5f-4947-a734-c702d399d5fc",
+  "files": {
+    "ИнтегрированныеСистемы.deflate": "6d6eb03ccf14d3ef1bab4556e4911df86e0c1866a6366253271bbbef9e0e35f8",
+    "ИнтегрированныеСистемы.config": "00624ba07a8d49168803a469393ddb43d25c657de48e36dfed2fa56d239361cc",
+    "ИнтегрированныеСистемы.xml": "754add6c90b7b496ca29f8b3ee962a0ca474bcb83804f35bef2ab445481b4974",
+    "ИнтегрированныеСистемы.mdo": "cc1e7db072c1b9a34c3024910ae6ba4a9e1db5ea105d424537faf033c04c9c59"
+  }
+}

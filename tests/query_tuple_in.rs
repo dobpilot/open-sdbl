@@ -32,7 +32,7 @@ fn a_tuple_membership_test_renders_as_exists() {
     );
     assert_contains(
         &sql,
-        "WHERE EXISTS (SELECT 1 FROM (SELECT \"П\".\"_code\"::text AS \"Код\", \"П\".\"_fld54\" AS \"ProbeAttribute\" FROM \"_reference53\" AS \"П\" WHERE (\"П\".\"_code\" = 'A')) AS \"__in\" WHERE \"__in\".\"Код\" = (\"Т\".\"_code\")::text AND \"__in\".\"ProbeAttribute\" = \"Т\".\"_fld54\")",
+        "WHERE EXISTS (SELECT 1 FROM (SELECT \"П\".\"_code\"::text AS \"Код\", \"П\".\"_fld54\" AS \"ProbeAttribute\" FROM \"_reference53\" AS \"П\" WHERE ((rtrim(CAST(\"П\".\"_code\" AS text), ' ') COLLATE \"C\") = (rtrim(CAST('A' AS text), ' ') COLLATE \"C\"))) AS \"__in\" WHERE \"__in\".\"Код\" = (\"Т\".\"_code\")::text AND \"__in\".\"ProbeAttribute\" = \"Т\".\"_fld54\")",
     );
     let negated = postgres(
         &snapshot,

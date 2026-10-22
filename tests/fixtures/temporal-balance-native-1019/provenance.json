@@ -1,0 +1,18 @@
+{
+  "source": "open-bsl/docs/research/fixtures/temporal-balance-native-1019",
+  "platform": "8.3.27.2342",
+  "scope": "Own file infobase only; 30 pairs manager/query Balance, source native CF/DT and untouched oracle",
+  "files": {
+    "Module.bsl": "4e0f900ee79fc5075a7f0f886cf6a3cf617f7b79ff08a1892e89093860405b67",
+    "README.md": "0bd04966371b2adb21d990c67e8d6a863ba52b516a1373c0894428e3c4dbc222",
+    "Register.xml": "9cd174c269c74e495886843305e06e8c7df3dd371e831bc95c42e68316a682ad",
+    "analysis.json": "e932c8cb4b8d541821771b7bd2725967d3ee57500e197bd60f51e2a1a98f24a2",
+    "checks.json": "ba712c899c65220a20139614c9a945a9e7120b243e197e3339f1a8893f4223c7",
+    "cleanup.json": "0dd9176a31192de67275eaf4b4f9f276ad7f6d809982d755c750413fa70294ac",
+    "native.cf": "b9bc2c22de25ca5f758ba9d96a407dd82fb8b6182b0513317cddd7afe8e79b54",
+    "native.dt": "e36b20549101080dc4dcdb40dba5f83948f368de1b67bce8f2df956ec3fbe3a9",
+    "platform.oracle": "a64c2866842f6ff5a47fbab552896688dd1375431f0b84b04173c8cf31c89e9b",
+    "АльфаМомента.xml": "d5595cc5940f324fcd8104748908775f541badf0c63da0275e606d9805cf3c6e",
+    "ЗамерДокумента.xml": "1b5276acd1b56d28bb17299f0030d45015a20036486c5bb7ce189299415114c8"
+  }
+}

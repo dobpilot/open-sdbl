@@ -1,0 +1,46 @@
+[
+  {
+    "label": "create",
+    "command": [
+      "/opt/1cv8/x86_64/8.3.27.2342/ibcmd",
+      "infobase",
+      "create",
+      "--db-path=/tmp/sdbl-enum19-preserved-payload-1013/remaining/fe9c408b-b39c-40b8-be5d-9061ba2198ec/native-ib",
+      "--create-database"
+    ],
+    "exit": 0,
+    "seconds": 2.42
+  },
+  {
+    "label": "load-cf",
+    "command": [
+      "/opt/1cv8/x86_64/8.3.27.2342/1cv8",
+      "DESIGNER",
+      "/F",
+      "/tmp/sdbl-enum19-preserved-payload-1013/remaining/fe9c408b-b39c-40b8-be5d-9061ba2198ec/native-ib",
+      "/LoadCfg",
+      "/tmp/sdbl-enum19-preserved-payload-1013/remaining/fe9c408b-b39c-40b8-be5d-9061ba2198ec/preserved-header19.cf",
+      "/DisableStartupDialogs",
+      "/Out",
+      "/tmp/sdbl-enum19-preserved-payload-1013/remaining/fe9c408b-b39c-40b8-be5d-9061ba2198ec/load-cf.log"
+    ],
+    "exit": 0,
+    "seconds": 7.62
+  },
+  {
+    "label": "dump-xml",
+    "command": [
+      "/opt/1cv8/x86_64/8.3.27.2342/1cv8",
+      "DESIGNER",
+      "/F",
+      "/tmp/sdbl-enum19-preserved-payload-1013/remaining/fe9c408b-b39c-40b8-be5d-9061ba2198ec/native-ib",
+      "/DumpConfigToFiles",
+      "/tmp/sdbl-enum19-preserved-payload-1013/remaining/fe9c408b-b39c-40b8-be5d-9061ba2198ec/native-xml",
+      "/DisableStartupDialogs",
+      "/Out",
+      "/tmp/sdbl-enum19-preserved-payload-1013/remaining/fe9c408b-b39c-40b8-be5d-9061ba2198ec/dump-xml.log"
+    ],
+    "exit": 0,
+    "seconds": 1.47
+  }
+]

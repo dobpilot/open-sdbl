@@ -1,0 +1,18 @@
+{
+  "pid": 467048,
+  "command": [
+    "/opt/1cv8/x86_64/8.3.27.2342/ibsrv",
+    "--config=/home/kan/\u0414\u043e\u043a\u0443\u043c\u0435\u043d\u0442\u044b/develop/open-bsl/target/diagnostics/system-settings-numeric-native-1015/server.yml",
+    "--data=/home/kan/\u0414\u043e\u043a\u0443\u043c\u0435\u043d\u0442\u044b/develop/open-bsl/target/diagnostics/system-settings-numeric-native-1015/server-data",
+    "--http-address=localhost",
+    "--http-port=55440",
+    "--direct-regport=55441",
+    "--direct-range=55442:55449",
+    "--monitor-address=localhost",
+    "--monitor-port=55451",
+    "--disable-ssh-gate",
+    "--disable-direct-gate",
+    "--schedule-jobs=deny"
+  ],
+  "started_epoch": 1792087977.7984774
+}

@@ -1,0 +1,224 @@
+[
+  {
+    "name": "DocumentObject.ПередачаОборудованияВМонтаж",
+    "kind": "TypeId",
+    "guid": "8e31cf7f-7138-4cd4-81de-0938d7068c9d",
+    "paths": [
+      [
+        1,
+        1
+      ]
+    ]
+  },
+  {
+    "name": "DocumentObject.ПередачаОборудованияВМонтаж",
+    "kind": "ValueId",
+    "guid": "8658f7e9-fd25-4618-bbf5-316c7219be97",
+    "paths": [
+      [
+        1,
+        2
+      ]
+    ]
+  },
+  {
+    "name": "DocumentRef.ПередачаОборудованияВМонтаж",
+    "kind": "TypeId",
+    "guid": "8614897a-7673-4387-b5e6-a7e9228f02ee",
+    "paths": [
+      [
+        1,
+        3
+      ]
+    ]
+  },
+  {
+    "name": "DocumentRef.ПередачаОборудованияВМонтаж",
+    "kind": "ValueId",
+    "guid": "5d9e4a8e-ec4b-4448-94f0-0fd51ae28be2",
+    "paths": [
+      [
+        1,
+        4
+      ]
+    ]
+  },
+  {
+    "name": "DocumentSelection.ПередачаОборудованияВМонтаж",
+    "kind": "TypeId",
+    "guid": "40d376c6-f3ba-4ca0-b97d-855dc0a270e7",
+    "paths": [
+      [
+        1,
+        5
+      ]
+    ]
+  },
+  {
+    "name": "DocumentSelection.ПередачаОборудованияВМонтаж",
+    "kind": "ValueId",
+    "guid": "1ac597fb-8c57-418e-9b44-42a258edd1ef",
+    "paths": [
+      [
+        1,
+        6
+      ]
+    ]
+  },
+  {
+    "name": "DocumentList.ПередачаОборудованияВМонтаж",
+    "kind": "TypeId",
+    "guid": "3b5987e7-f181-4516-a763-163ba2833b79",
+    "paths": [
+      [
+        1,
+        7
+      ]
+    ]
+  },
+  {
+    "name": "DocumentList.ПередачаОборудованияВМонтаж",
+    "kind": "ValueId",
+    "guid": "3f3bba78-5650-48d8-8830-6bb47bd63d6e",
+    "paths": [
+      [
+        1,
+        8
+      ]
+    ]
+  },
+  {
+    "name": "DocumentManager.ПередачаОборудованияВМонтаж",
+    "kind": "TypeId",
+    "guid": "7d5c446d-b918-454f-9de5-774f716466a9",
+    "paths": [
+      [
+        1,
+        26
+      ]
+    ]
+  },
+  {
+    "name": "DocumentManager.ПередачаОборудованияВМонтаж",
+    "kind": "ValueId",
+    "guid": "5605e3af-ed69-42f3-aceb-b08d6e39ef61",
+    "paths": [
+      [
+        1,
+        27
+      ]
+    ]
+  },
+  {
+    "name": "DocumentTabularSection.ПередачаОборудованияВМонтаж.Оборудование",
+    "kind": "TypeId",
+    "guid": "154d7f81-d9c7-4911-9447-1de216ec378c",
+    "paths": [
+      [
+        3,
+        2,
+        0,
+        1,
+        1
+      ]
+    ]
+  },
+  {
+    "name": "DocumentTabularSection.ПередачаОборудованияВМонтаж.Оборудование",
+    "kind": "ValueId",
+    "guid": "b922d5cf-7644-4560-bf0c-1e83c3e8e79f",
+    "paths": [
+      [
+        3,
+        2,
+        0,
+        1,
+        2
+      ]
+    ]
+  },
+  {
+    "name": "DocumentTabularSectionRow.ПередачаОборудованияВМонтаж.Оборудование",
+    "kind": "TypeId",
+    "guid": "4ba5bbee-3ae4-4115-8bc5-1d2c5ad240fb",
+    "paths": [
+      [
+        3,
+        2,
+        0,
+        1,
+        3
+      ]
+    ]
+  },
+  {
+    "name": "DocumentTabularSectionRow.ПередачаОборудованияВМонтаж.Оборудование",
+    "kind": "ValueId",
+    "guid": "eba2b5da-97a0-406a-bd6a-7cb0d72aa79a",
+    "paths": [
+      [
+        3,
+        2,
+        0,
+        1,
+        4
+      ]
+    ]
+  },
+  {
+    "name": "DocumentTabularSection.ПередачаОборудованияВМонтаж.СведенияПрослеживаемости",
+    "kind": "TypeId",
+    "guid": "c15c4ad4-5960-49fd-8c2f-07bedccdadde",
+    "paths": [
+      [
+        3,
+        3,
+        0,
+        1,
+        1
+      ]
+    ]
+  },
+  {
+    "name": "DocumentTabularSection.ПередачаОборудованияВМонтаж.СведенияПрослеживаемости",
+    "kind": "ValueId",
+    "guid": "4cb3ee82-4d38-41ec-9f49-2b627c9c7043",
+    "paths": [
+      [
+        3,
+        3,
+        0,
+        1,
+        2
+      ]
+    ]
+  },
+  {
+    "name": "DocumentTabularSectionRow.ПередачаОборудованияВМонтаж.СведенияПрослеживаемости",
+    "kind": "TypeId",
+    "guid": "82bf77fe-8330-409a-b021-4764b3c434b5",
+    "paths": [
+      [
+        3,
+        3,
+        0,
+        1,
+        3
+      ]
+    ]
+  },
+  {
+    "name": "DocumentTabularSectionRow.ПередачаОборудованияВМонтаж.СведенияПрослеживаемости",
+    "kind": "ValueId",
+    "guid": "06c409c2-3243-4c55-8f6b-946572c67715",
+    "paths": [
+      [
+        3,
+        3,
+        0,
+        1,
+        4
+      ]
+    ]
+  }
+]

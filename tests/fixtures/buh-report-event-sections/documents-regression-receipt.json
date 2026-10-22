@@ -1,0 +1,6 @@
+{
+  "exit_code": 0,
+  "rows": 455,
+  "exact_same_membership_names_order_type_presence_as_previous_sdk": true,
+  "baseline": "/tmp/open-sdbl-sales-book-sections-batch-1016/after.tsv"
+}

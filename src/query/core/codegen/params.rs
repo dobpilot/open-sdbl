@@ -23,6 +23,7 @@ pub(super) fn parameter_kind(value: &ParameterValue) -> ColumnKind {
             targets: vec![*object],
             runtime_typed: false,
         },
+        ParameterValue::Uuid(_) => ColumnKind::Uuid,
         ParameterValue::Binary(bytes) => ColumnKind::Binary {
             length: u32::try_from(bytes.len()).ok(),
         },
@@ -31,7 +32,9 @@ pub(super) fn parameter_kind(value: &ParameterValue) -> ColumnKind {
             .map(parameter_kind)
             .find(|kind| !kind.is_wildcard())
             .unwrap_or(ColumnKind::Null),
-        ParameterValue::Table { .. } => ColumnKind::Null,
+        ParameterValue::Table { .. }
+        | ParameterValue::PointInTime(_)
+        | ParameterValue::Boundary(_) => ColumnKind::Null,
     }
 }
 
@@ -61,7 +64,22 @@ pub(super) fn render_scalar_parameter(
             token,
         ),
         ParameterValue::Reference { id, .. } => Ok(dialect.binary_literal(id)),
+        ParameterValue::Uuid(id) => match dialect {
+            SqlDialect::Postgres => {
+                Ok(dialect.reference_uuid(&dialect.binary_literal(&id.to_1c_bytes())))
+            }
+            SqlDialect::MsSql { .. } => Err(QueryDiagnostic::at(
+                QueryDiagnosticKind::UnsupportedFeature,
+                Some(token),
+                "typed UUID parameters are supported only on PostgreSQL",
+            )),
+        },
         ParameterValue::Binary(bytes) => Ok(dialect.binary_literal(bytes)),
+        ParameterValue::PointInTime(_) | ParameterValue::Boundary(_) => Err(QueryDiagnostic::at(
+            QueryDiagnosticKind::UnsupportedFeature,
+            Some(token),
+            "temporal parameters are supported only as the Balance period argument",
+        )),
         ParameterValue::List(_) => Err(QueryDiagnostic::at(
             QueryDiagnosticKind::Parameter,
             Some(token),
@@ -106,7 +124,7 @@ pub(super) fn list_elements<'value>(
 }
 
 /// Renders `unscaled × 10^-scale` as a decimal literal.
-pub(super) fn decimal_text(unscaled: i128, scale: u8) -> String {
+pub(in crate::query::core) fn decimal_text(unscaled: i128, scale: u8) -> String {
     let negative = unscaled < 0;
     let mut digits = unscaled.unsigned_abs().to_string();
     let scale = usize::from(scale);

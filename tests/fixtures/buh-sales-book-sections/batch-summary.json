@@ -1,0 +1,140 @@
+{
+  "documents": 455,
+  "changed_rows": 4,
+  "unchanged_rows": 451,
+  "changed_profiles": {
+    "38/51": 4
+  },
+  "all_existing_own_attribute_metrics_unchanged": true,
+  "all_modern40_rows_unchanged": true,
+  "changes": [
+    {
+      "before": {
+        "owner_id": "0ebd6b91-5521-4922-8460-5ead88dd6012",
+        "name": "УдалитьОтражениеЗарплатыВУчете",
+        "class_tag": "38",
+        "class_len": "51",
+        "native_sections": "1",
+        "sdk_sections": "None",
+        "native_fields": "18",
+        "sdk_field_membership_total": "None",
+        "known_field_types": "0",
+        "section_order_and_names_match": "false",
+        "field_orders_and_names_match": "false",
+        "own_attributes": "5",
+        "own_order_matches": "true"
+      },
+      "after": {
+        "owner_id": "0ebd6b91-5521-4922-8460-5ead88dd6012",
+        "name": "УдалитьОтражениеЗарплатыВУчете",
+        "class_tag": "38",
+        "class_len": "51",
+        "native_sections": "1",
+        "sdk_sections": "1",
+        "native_fields": "18",
+        "sdk_field_membership_total": "18",
+        "known_field_types": "18",
+        "section_order_and_names_match": "true",
+        "field_orders_and_names_match": "true",
+        "own_attributes": "5",
+        "own_order_matches": "true"
+      }
+    },
+    {
+      "before": {
+        "owner_id": "39b1b6f4-5fe1-4e8b-9121-ff966a28fa74",
+        "name": "УдалитьРегистрацияОплатыНДСВБюджет",
+        "class_tag": "38",
+        "class_len": "51",
+        "native_sections": "2",
+        "sdk_sections": "None",
+        "native_fields": "14",
+        "sdk_field_membership_total": "None",
+        "known_field_types": "0",
+        "section_order_and_names_match": "false",
+        "field_orders_and_names_match": "false",
+        "own_attributes": "4",
+        "own_order_matches": "true"
+      },
+      "after": {
+        "owner_id": "39b1b6f4-5fe1-4e8b-9121-ff966a28fa74",
+        "name": "УдалитьРегистрацияОплатыНДСВБюджет",
+        "class_tag": "38",
+        "class_len": "51",
+        "native_sections": "2",
+        "sdk_sections": "2",
+        "native_fields": "14",
+        "sdk_field_membership_total": "14",
+        "known_field_types": "14",
+        "section_order_and_names_match": "true",
+        "field_orders_and_names_match": "true",
+        "own_attributes": "4",
+        "own_order_matches": "true"
+      }
+    },
+    {
+      "before": {
+        "owner_id": "0ecb08b7-1157-46e4-bb42-c2ee0dc12fa6",
+        "name": "УстановкаЦенНоменклатуры",
+        "class_tag": "38",
+        "class_len": "51",
+        "native_sections": "1",
+        "sdk_sections": "None",
+        "native_fields": "3",
+        "sdk_field_membership_total": "None",
+        "known_field_types": "0",
+        "section_order_and_names_match": "false",
+        "field_orders_and_names_match": "false",
+        "own_attributes": "5",
+        "own_order_matches": "true"
+      },
+      "after": {
+        "owner_id": "0ecb08b7-1157-46e4-bb42-c2ee0dc12fa6",
+        "name": "УстановкаЦенНоменклатуры",
+        "class_tag": "38",
+        "class_len": "51",
+        "native_sections": "1",
+        "sdk_sections": "1",
+        "native_fields": "3",
+        "sdk_field_membership_total": "3",
+        "known_field_types": "3",
+        "section_order_and_names_match": "true",
+        "field_orders_and_names_match": "true",
+        "own_attributes": "5",
+        "own_order_matches": "true"
+      }
+    },
+    {
+      "before": {
+        "owner_id": "642117be-dba4-4c6c-b5e7-c2821543a830",
+        "name": "ФормированиеЗаписейКнигиПродаж",
+        "class_tag": "38",
+        "class_len": "51",
+        "native_sections": "6",
+        "sdk_sections": "None",
+        "native_fields": "68",
+        "sdk_field_membership_total": "None",
+        "known_field_types": "0",
+        "section_order_and_names_match": "false",
+        "field_orders_and_names_match": "false",
+        "own_attributes": "7",
+        "own_order_matches": "true"
+      },
+      "after": {
+        "owner_id": "642117be-dba4-4c6c-b5e7-c2821543a830",
+        "name": "ФормированиеЗаписейКнигиПродаж",
+        "class_tag": "38",
+        "class_len": "51",
+        "native_sections": "6",
+        "sdk_sections": "6",
+        "native_fields": "68",
+        "sdk_field_membership_total": "68",
+        "known_field_types": "68",
+        "section_order_and_names_match": "true",
+        "field_orders_and_names_match": "true",
+        "own_attributes": "7",
+        "own_order_matches": "true"
+      }
+    }
+  ]
+}

@@ -1,0 +1,86 @@
+{
+  "DocumentRef.УведомлениеОКонтролируемыхСделках": {
+    "type_id": "67e952d8-c694-4237-98d4-948020588410",
+    "file": "/home/kan/Документы/develop/open-bsl/target/diagnostics/buh-native-config-1015/native-xml/Documents/УведомлениеОКонтролируемыхСделках.xml",
+    "sha256": "d7aca0b419ee173407809efaab87b5340ba290dd137a83124cef52d70f010c7b",
+    "generated_type_xml": "<ns0:GeneratedType xmlns:ns0=\"http://v8.1c.ru/8.3/xcf/readable\" name=\"DocumentRef.УведомлениеОКонтролируемыхСделках\" category=\"Ref\">\n\t\t\t\t<ns0:TypeId>67e952d8-c694-4237-98d4-948020588410</ns0:TypeId>\n\t\t\t\t<ns0:ValueId>b1774a9a-9207-493d-977a-5942d46975a6</ns0:ValueId>\n\t\t\t</ns0:GeneratedType>\n\t\t\t"
+  },
+  "CatalogRef.Организации": {
+    "type_id": "c92a1124-c41e-42a4-bda7-3bbac9c6039e",
+    "file": "/home/kan/Документы/develop/open-bsl/target/diagnostics/buh-native-config-1015/native-xml/Catalogs/Организации.xml",
+    "sha256": "37526b5a6e5c3a471bac58dc62e03522b87619f238be93746db19431cad24d8b",
+    "generated_type_xml": "<ns0:GeneratedType xmlns:ns0=\"http://v8.1c.ru/8.3/xcf/readable\" name=\"CatalogRef.Организации\" category=\"Ref\">\n\t\t\t\t<ns0:TypeId>c92a1124-c41e-42a4-bda7-3bbac9c6039e</ns0:TypeId>\n\t\t\t\t<ns0:ValueId>0debd38f-7da5-48f7-aeec-88faf8dc5960</ns0:ValueId>\n\t\t\t</ns0:GeneratedType>\n\t\t\t"
+  },
+  "CatalogRef.Контрагенты": {
+    "type_id": "9f6206b2-1ed6-423c-9b08-fd4978930c49",
+    "file": "/home/kan/Документы/develop/open-bsl/target/diagnostics/buh-native-config-1015/native-xml/Catalogs/Контрагенты.xml",
+    "sha256": "b342e11a92f516c0846b6e513ec9c6b684f8a7f5f6828182c4e620fa5b0ad903",
+    "generated_type_xml": "<ns0:GeneratedType xmlns:ns0=\"http://v8.1c.ru/8.3/xcf/readable\" name=\"CatalogRef.Контрагенты\" category=\"Ref\">\n\t\t\t\t<ns0:TypeId>9f6206b2-1ed6-423c-9b08-fd4978930c49</ns0:TypeId>\n\t\t\t\t<ns0:ValueId>4de6f07e-51ba-4906-8f3e-e0b45534c095</ns0:ValueId>\n\t\t\t</ns0:GeneratedType>\n\t\t\t"
+  },
+  "CatalogRef.ДоговорыКонтрагентов": {
+    "type_id": "376807bc-0d88-4c06-9eb2-42b72b970afb",
+    "file": "/home/kan/Документы/develop/open-bsl/target/diagnostics/buh-native-config-1015/native-xml/Catalogs/ДоговорыКонтрагентов.xml",
+    "sha256": "8790cf5abcff06c5ac48dd871ea30ea53095c83f7fa74bef347998a58d62e2e1",
+    "generated_type_xml": "<ns0:GeneratedType xmlns:ns0=\"http://v8.1c.ru/8.3/xcf/readable\" name=\"CatalogRef.ДоговорыКонтрагентов\" category=\"Ref\">\n\t\t\t\t<ns0:TypeId>376807bc-0d88-4c06-9eb2-42b72b970afb</ns0:TypeId>\n\t\t\t\t<ns0:ValueId>5d242c69-139a-4f95-a81b-7ac4bc859f97</ns0:ValueId>\n\t\t\t</ns0:GeneratedType>\n\t\t\t"
+  },
+  "CatalogRef.Валюты": {
+    "type_id": "655fd168-ab6a-4863-a2d5-401497aceec3",
+    "file": "/home/kan/Документы/develop/open-bsl/target/diagnostics/buh-native-config-1015/native-xml/Catalogs/Валюты.xml",
+    "sha256": "5116bc374cbd8cd5506e41a5270adebbaea753bd8e78983039a2af04ebfa8080",
+    "generated_type_xml": "<ns0:GeneratedType xmlns:ns0=\"http://v8.1c.ru/8.3/xcf/readable\" name=\"CatalogRef.Валюты\" category=\"Ref\">\n\t\t\t\t<ns0:TypeId>655fd168-ab6a-4863-a2d5-401497aceec3</ns0:TypeId>\n\t\t\t\t<ns0:ValueId>41989225-e708-4247-8f0e-65e24e6f8f9b</ns0:ValueId>\n\t\t\t</ns0:GeneratedType>\n\t\t\t"
+  },
+  "CatalogRef.ОсновныеСредства": {
+    "type_id": "1433c81a-03ff-4319-91c9-379dad7ac0e9",
+    "file": "/home/kan/Документы/develop/open-bsl/target/diagnostics/buh-native-config-1015/native-xml/Catalogs/ОсновныеСредства.xml",
+    "sha256": "887740c6d9fab09fac1d23f11ed1a421adc554992904f719bad61b7ce428ae77",
+    "generated_type_xml": "<ns0:GeneratedType xmlns:ns0=\"http://v8.1c.ru/8.3/xcf/readable\" name=\"CatalogRef.ОсновныеСредства\" category=\"Ref\">\n\t\t\t\t<ns0:TypeId>1433c81a-03ff-4319-91c9-379dad7ac0e9</ns0:TypeId>\n\t\t\t\t<ns0:ValueId>e35223e2-d4f5-4a9a-9889-4b3f08d8a60f</ns0:ValueId>\n\t\t\t</ns0:GeneratedType>\n\t\t\t"
+  },
+  "CatalogRef.НематериальныеАктивы": {
+    "type_id": "333415fd-35e0-47f1-88cc-720e5ebdb593",
+    "file": "/home/kan/Документы/develop/open-bsl/target/diagnostics/buh-native-config-1015/native-xml/Catalogs/НематериальныеАктивы.xml",
+    "sha256": "37c52241300739a9f3d16efc715b8656a77771db0e99ae5c5201732d77d314cf",
+    "generated_type_xml": "<ns0:GeneratedType xmlns:ns0=\"http://v8.1c.ru/8.3/xcf/readable\" name=\"CatalogRef.НематериальныеАктивы\" category=\"Ref\">\n\t\t\t\t<ns0:TypeId>333415fd-35e0-47f1-88cc-720e5ebdb593</ns0:TypeId>\n\t\t\t\t<ns0:ValueId>b5f395f8-f0a2-4e9a-bc7c-e8d17ff588f3</ns0:ValueId>\n\t\t\t</ns0:GeneratedType>\n\t\t\t"
+  },
+  "CatalogRef.ОбъектыСтроительства": {
+    "type_id": "8f1c87a0-7591-43e3-bbdb-d91040748838",
+    "file": "/home/kan/Документы/develop/open-bsl/target/diagnostics/buh-native-config-1015/native-xml/Catalogs/ОбъектыСтроительства.xml",
+    "sha256": "73eab02d05479a7fb47128d8c01660fd00f241d88d8b8ed3c71d295e6fb0bf37",
+    "generated_type_xml": "<ns0:GeneratedType xmlns:ns0=\"http://v8.1c.ru/8.3/xcf/readable\" name=\"CatalogRef.ОбъектыСтроительства\" category=\"Ref\">\n\t\t\t\t<ns0:TypeId>8f1c87a0-7591-43e3-bbdb-d91040748838</ns0:TypeId>\n\t\t\t\t<ns0:ValueId>caa01b81-4c40-4b01-a0cf-02e3247440cb</ns0:ValueId>\n\t\t\t</ns0:GeneratedType>\n\t\t\t"
+  },
+  "CatalogRef.Номенклатура": {
+    "type_id": "e18d5670-dd2f-4528-8897-d3f07ca77f21",
+    "file": "/home/kan/Документы/develop/open-bsl/target/diagnostics/buh-native-config-1015/native-xml/Catalogs/Номенклатура.xml",
+    "sha256": "9a6f0a5235c3b2e2b4d915c829f0968d41b42ca1c0ac91a6a108bdcbacb8b987",
+    "generated_type_xml": "<ns0:GeneratedType xmlns:ns0=\"http://v8.1c.ru/8.3/xcf/readable\" name=\"CatalogRef.Номенклатура\" category=\"Ref\">\n\t\t\t\t<ns0:TypeId>e18d5670-dd2f-4528-8897-d3f07ca77f21</ns0:TypeId>\n\t\t\t\t<ns0:ValueId>07f89865-bf90-4148-a6df-f416433a897c</ns0:ValueId>\n\t\t\t</ns0:GeneratedType>\n\t\t\t"
+  },
+  "CatalogRef.КлассификаторЕдиницИзмерения": {
+    "type_id": "a6be8b19-1f08-4c5f-8636-0dd052c33b35",
+    "file": "/home/kan/Документы/develop/open-bsl/target/diagnostics/buh-native-config-1015/native-xml/Catalogs/КлассификаторЕдиницИзмерения.xml",
+    "sha256": "a6cdcd017d445af7bb80548869302c76be32502afddc770de46b15c89573a75e",
+    "generated_type_xml": "<ns0:GeneratedType xmlns:ns0=\"http://v8.1c.ru/8.3/xcf/readable\" name=\"CatalogRef.КлассификаторЕдиницИзмерения\" category=\"Ref\">\n\t\t\t\t<ns0:TypeId>a6be8b19-1f08-4c5f-8636-0dd052c33b35</ns0:TypeId>\n\t\t\t\t<ns0:ValueId>260fd769-10c5-4efd-8792-a077b94ab892</ns0:ValueId>\n\t\t\t</ns0:GeneratedType>\n\t\t\t"
+  },
+  "EnumRef.СтавкиНДС": {
+    "type_id": "d3a0be91-8172-4fd4-9de8-6c72c72127b1",
+    "file": "/home/kan/Документы/develop/open-bsl/target/diagnostics/buh-native-config-1015/native-xml/Enums/СтавкиНДС.xml",
+    "sha256": "b2c23e161d4e9b526669d113554eab4737fefffe0fec9f3f142776b17e54e59e",
+    "generated_type_xml": "<ns0:GeneratedType xmlns:ns0=\"http://v8.1c.ru/8.3/xcf/readable\" name=\"EnumRef.СтавкиНДС\" category=\"Ref\">\n\t\t\t\t<ns0:TypeId>d3a0be91-8172-4fd4-9de8-6c72c72127b1</ns0:TypeId>\n\t\t\t\t<ns0:ValueId>04b5517d-1301-47e4-ae25-5f7662f84885</ns0:ValueId>\n\t\t\t</ns0:GeneratedType>\n\t\t\t"
+  },
+  "EnumRef.ТипыПредметовКонтролируемыхСделок": {
+    "type_id": "93a89ea9-16e8-4820-8758-2bebaa734e62",
+    "file": "/home/kan/Документы/develop/open-bsl/target/diagnostics/buh-native-config-1015/native-xml/Enums/ТипыПредметовКонтролируемыхСделок.xml",
+    "sha256": "83f94ce25fbc5292d39f0665f460ca7d39c12ebc047537dc120e0c9bcb161796",
+    "generated_type_xml": "<ns0:GeneratedType xmlns:ns0=\"http://v8.1c.ru/8.3/xcf/readable\" name=\"EnumRef.ТипыПредметовКонтролируемыхСделок\" category=\"Ref\">\n\t\t\t\t<ns0:TypeId>93a89ea9-16e8-4820-8758-2bebaa734e62</ns0:TypeId>\n\t\t\t\t<ns0:ValueId>4f9b0bfd-78cd-435f-8929-84a42d1c2004</ns0:ValueId>\n\t\t\t</ns0:GeneratedType>\n\t\t\t"
+  },
+  "EnumRef.ТипыКонтролируемыхСделок": {
+    "type_id": "96c62fa5-08d3-4c14-a5ac-e87047736dbd",
+    "file": "/home/kan/Документы/develop/open-bsl/target/diagnostics/buh-native-config-1015/native-xml/Enums/ТипыКонтролируемыхСделок.xml",
+    "sha256": "0e1198aac65b17c0b81b05cbe30bf932aa0c2cb62636ae897a220cabda446b2c",
+    "generated_type_xml": "<ns0:GeneratedType xmlns:ns0=\"http://v8.1c.ru/8.3/xcf/readable\" name=\"EnumRef.ТипыКонтролируемыхСделок\" category=\"Ref\">\n\t\t\t\t<ns0:TypeId>96c62fa5-08d3-4c14-a5ac-e87047736dbd</ns0:TypeId>\n\t\t\t\t<ns0:ValueId>619770f2-4aa1-4c5b-9308-fe393f32f28e</ns0:ValueId>\n\t\t\t</ns0:GeneratedType>\n\t\t\t"
+  },
+  "CatalogRef.СтраныМира": {
+    "type_id": "4ee4f6c6-683e-4abc-8890-ed6cde5a53cb",
+    "file": "/home/kan/Документы/develop/open-bsl/target/diagnostics/buh-native-config-1015/native-xml/Catalogs/СтраныМира.xml",
+    "sha256": "cf8f3cdbd57f49cf4a701fbedb226e2aec516e505d04627b259cf05b2f3358b0",
+    "generated_type_xml": "<ns0:GeneratedType xmlns:ns0=\"http://v8.1c.ru/8.3/xcf/readable\" name=\"CatalogRef.СтраныМира\" category=\"Ref\">\n\t\t\t\t<ns0:TypeId>4ee4f6c6-683e-4abc-8890-ed6cde5a53cb</ns0:TypeId>\n\t\t\t\t<ns0:ValueId>53269051-c07c-4b78-8dcd-4dbccb630d79</ns0:ValueId>\n\t\t\t</ns0:GeneratedType>\n\t\t\t"
+  }
+}

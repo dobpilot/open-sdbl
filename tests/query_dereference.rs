@@ -78,7 +78,10 @@ fn walks_the_chain_in_every_clause() {
              УПОРЯДОЧИТЬ ПО Т.Организация.Организация.Дата;"
         ),
     );
-    assert_contains(&filtered.sql, "WHERE (\"__ref2\".\"_code\" = 'A')");
+    assert_contains(
+        &filtered.sql,
+        "WHERE ((rtrim(CAST(\"__ref2\".\"_code\" AS text), ' ') COLLATE \"C\") = (rtrim(CAST('A' AS text), ' ') COLLATE \"C\"))",
+    );
     assert_contains(&filtered.sql, "ORDER BY \"__ref2\".\"_date_time\" ASC");
 
     let grouped = postgres(
@@ -308,7 +311,7 @@ fn resolves_the_computed_standard_fields() {
     );
     assert_contains(
         &english.sql,
-        "THEN 'Администраторы' ELSE '' END = 'Администраторы')",
+        "THEN 'Администраторы' ELSE '' END AS text), ' ') COLLATE \"C\") = (rtrim(CAST('Администраторы' AS text), ' ') COLLATE \"C\"))",
     );
 
     // SQL Server spells the literals as national strings.

@@ -452,6 +452,8 @@ pub(super) fn wrap_totals(
         ));
     }
     Ok(CompiledQuery {
+        forbidden_row_column: None,
+        logical_projection: None,
         sql,
         columns,
         deferred_presentations: compiled.deferred_presentations,

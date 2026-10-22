@@ -1,0 +1,2 @@
+extension=0; resources=65; descriptor=false; rights=false
+extension=1; resources=105; descriptor=true; rights=false

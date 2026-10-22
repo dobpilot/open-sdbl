@@ -1,0 +1,107 @@
+{
+  "document.deflate": {
+    "source_cf": "docs/research/fixtures/document-right-applicability-1019/native.cf",
+    "source_member": "1/f77edfd7-d0d4-532b-a649-399fb412f0a4",
+    "sha256": "8fa59ab261a6c5565d2da65b2379e0ecde117f73416f57bd30b8ddd80267dfa2"
+  },
+  "applicability/ControlReadOff.deflate": {
+    "source_cf": "docs/research/fixtures/document-right-applicability-1019/native.cf",
+    "source_member": "1/1818eca6-dabb-55d5-8275-38d6c66088d9.0",
+    "sha256": "60bd9a8175c15968a04a5a3f3298f01b17f90fad3d6ec00b484bafedd24609d3"
+  },
+  "applicability/ControlReadOn.deflate": {
+    "source_cf": "docs/research/fixtures/document-right-applicability-1019/native.cf",
+    "source_member": "1/d0c7f3bf-7e25-5068-9d5a-35fa41923ea2.0",
+    "sha256": "7ccb1089aec61f3cb27c715c589f6232febe1f7cc79b41c4acbb960985928a3b"
+  },
+  "applicability/ControlDenied.deflate": {
+    "source_cf": "docs/research/fixtures/document-right-applicability-1019/native.cf",
+    "source_member": "1/d1ff2f11-fda5-544e-8a1e-9123e6eec187.0",
+    "sha256": "b40eefe32d6e594f76c731d593ae8cf5b9825289bd580cfc3b0064dc2216386d"
+  },
+  "profiles/owner-all-children.deflate": {
+    "source": "docs/research/fixtures/document-right-profiles-1019/owner-all-children/ControlReadOn.rights.deflate",
+    "sha256": "af546cf4b03627f2495178ba834c896e29ae3f5727eb9f1302023036614751ba"
+  },
+  "profiles/number-refusal-default-yes.deflate": {
+    "source": "docs/research/fixtures/document-right-profiles-1019/number-refusal-default-yes/ControlReadOn.rights.deflate",
+    "sha256": "661580b91a797e48d50e2b5922fccb12d9247201df9d81c96cc09434ece730f8"
+  },
+  "profiles/date-attribute-refusal.deflate": {
+    "source": "docs/research/fixtures/document-right-profiles-1019/date-attribute-refusal/ControlReadOn.rights.deflate",
+    "sha256": "f1d13d2e6349b01329e636721432acdeda714a11fe8f87d07048fc5d890ba325"
+  },
+  "profiles/parent-refusal.deflate": {
+    "source": "docs/research/fixtures/document-right-profiles-1019/parent-refusal/ControlReadOn.rights.deflate",
+    "sha256": "2d992d608e6cde54862424cc34f47df1da90a375fed42e1a91a8f8ee21bfc7f9"
+  },
+  "profiles/independent-child.deflate": {
+    "source": "docs/research/fixtures/document-right-profiles-1019/independent-child/ControlReadOn.rights.deflate",
+    "sha256": "f76dec060b744145fbcae7ae2581f4afea7d62fd6794680565eb857e9110da9a"
+  },
+  "profiles/independent-default.deflate": {
+    "source": "docs/research/fixtures/document-right-profiles-1019/independent-default/ControlReadOn.rights.deflate",
+    "sha256": "c21861e6d320c15618a346c62cb98b5a1686b1f6750e5e6dcdb5fe3b3e4f0d3b"
+  },
+  "document-right-applicability-1019": {
+    "source": "docs/research/fixtures/document-right-applicability-1019/native-rows.json",
+    "sha256": "217935fca7cbbb7e5e39108e86b6940fc840ceacd72a4427e8de1b0d3065fa56"
+  },
+  "document-right-profiles-1019": {
+    "source": "docs/research/fixtures/document-right-profiles-1019/native-rows.json",
+    "sha256": "e7d31d12f0bf5cb726a076d1bf378e61d62b7de1d8c0c64ac19aba8e829b0c37"
+  },
+  "document.xml": {
+    "source": "docs/research/fixtures/document-right-applicability-1019/document.xml",
+    "sha256": "e6ba7474f8aca3778eb4deb7c2ac599d2f9847ddc53dd39e2268ab0a0260d674"
+  },
+  "cases.json": {
+    "source": "docs/research/fixtures/document-right-applicability-1019/cases.json",
+    "sha256": "0f928c23d8eaa34892a02eedfbe05a777ba230f0feead48a9df699ddff68c615"
+  },
+  "profiles/owner-all-children.xml": {
+    "source": "docs/research/fixtures/document-right-profiles-1019/owner-all-children/canonical-Rights.xml",
+    "sha256": "150a32e558ef5bb6fcaa1609088b17c50c62e3beb4f9e85213ff1fc019e4965b"
+  },
+  "profiles/number-refusal-default-yes.xml": {
+    "source": "docs/research/fixtures/document-right-profiles-1019/number-refusal-default-yes/canonical-Rights.xml",
+    "sha256": "f8eb57d09ed76985623dd6c251c0064eddf1b5a7cddfbebdfc88ebc824d39c00"
+  },
+  "profiles/date-attribute-refusal.xml": {
+    "source": "docs/research/fixtures/document-right-profiles-1019/date-attribute-refusal/canonical-Rights.xml",
+    "sha256": "035ac8a3984415f50cf9a0869c360b5be6f15886d8299bb0915838d52c06f7e4"
+  },
+  "profiles/parent-refusal.xml": {
+    "source": "docs/research/fixtures/document-right-profiles-1019/parent-refusal/canonical-Rights.xml",
+    "sha256": "7c23e874f0219550ad1e4d905f341fa04d0f97bff1caa325763a111094d80628"
+  },
+  "profiles/independent-child.xml": {
+    "source": "docs/research/fixtures/document-right-profiles-1019/independent-child/canonical-Rights.xml",
+    "sha256": "1415125c6e2f401f4e9fd271e30f86253ae776d0979eecbf838a3cc1800d0890"
+  },
+  "profiles/independent-default.xml": {
+    "source": "docs/research/fixtures/document-right-profiles-1019/independent-default/canonical-Rights.xml",
+    "sha256": "1a208201e19e72853eaca3bbd6e6b51e25f5c16b077fa49448e14d0a6f9ea9b2"
+  },
+  "docs/research/fixtures/document-right-applicability-1019/native.cf": {
+    "sha256": "0f26cce7ad22985d8c2d154852b565ab36bce674cbceda17696658ef1d8a47ee"
+  },
+  "docs/research/fixtures/document-right-profiles-1019/owner-all-children/native.cf": {
+    "sha256": "d4042ae4c78014cee62f7226b7aa4dd2db19b7cb097746be18fa9dfb7a178a65"
+  },
+  "docs/research/fixtures/document-right-profiles-1019/number-refusal-default-yes/native.cf": {
+    "sha256": "9744741ecf36cfa0b83fee702439ab784a0facc2ef11e22271b93be178230f7a"
+  },
+  "docs/research/fixtures/document-right-profiles-1019/date-attribute-refusal/native.cf": {
+    "sha256": "0beea8b0f47789ac1148fa4f8218b04c3da3bcd2a956e58fbbd9072229a4ca65"
+  },
+  "docs/research/fixtures/document-right-profiles-1019/parent-refusal/native.cf": {
+    "sha256": "b14d37cc8636274aecf70a503337de582d4616c2886c54a474d1f30edfe15e09"
+  },
+  "docs/research/fixtures/document-right-profiles-1019/independent-child/native.cf": {
+    "sha256": "2b2c204e7493c178c45de0d29390ab3636ee3d49b661eb6b036989e6ae764a36"
+  },
+  "docs/research/fixtures/document-right-profiles-1019/independent-default/native.cf": {
+    "sha256": "af3c3f68fc5d18b2dfac8ef6627e6244c6b1b1ee4dce946563317af4a003ef94"
+  }
+}

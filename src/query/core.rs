@@ -2,8 +2,14 @@
 
 mod ast;
 mod codegen;
+mod common_settings;
 mod diag;
 mod dialect;
+mod discovery;
+pub use discovery::{
+    QueryConstantReferences, QueryMetadataReference, QueryMetadataReferences,
+    query_metadata_references,
+};
 mod names;
 mod params;
 mod parser;
@@ -13,14 +19,20 @@ mod temp_tables;
 mod types;
 mod usage;
 
+pub(super) use crate::metadata::settings_storage::SettingsStorage;
+pub use common_settings::CommonSettingsSeparation;
+pub(super) use common_settings::compile as compile_settings_load;
+
 pub use diag::{QueryDiagnostic, QueryDiagnosticKind};
 pub use params::{
-    CompileOptions, InvalidParameterDate, ParameterColumn, ParameterDate, ParameterValue,
+    BoundaryKind, CompileOptions, InvalidParameterDate, ParameterBoundary, ParameterBoundaryValue,
+    ParameterColumn, ParameterDate, ParameterPointInTime, ParameterReference, ParameterValue,
     QueryParameter, SessionParameters,
 };
 pub use resolve::{
-    ColumnKind, ColumnOrigin, CompiledColumn, CompiledQuery, PresentationExpression,
-    PresentationPlan, PresentationRequest, PresentationTarget, QueryableColumn, QueryableField,
+    ColumnKind, ColumnOrigin, CompiledColumn, CompiledQuery, CompositeResultMember,
+    LogicalResultColumn, LogicalResultValue, PresentationExpression, PresentationPlan,
+    PresentationRequest, PresentationTarget, QueryableColumn, QueryableField,
     QueryableFieldCatalog, constants_table_fields, find_metadata_object, object_query_name,
     queryable_field_catalog, queryable_fields,
 };

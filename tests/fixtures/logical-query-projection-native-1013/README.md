@@ -1,0 +1,9 @@
+# Native logical result control
+
+Platform 8.3.27.2342, CompatibilityMode Version8_3_27. Only a copied OWN privileged-read filebase was used. Original demo/BUH/UNF were neither opened nor written. The existing own register contains one seeded row. Target has no Read right; its manager probe explicitly enables privileged mode and balances it afterwards. Normal read remains refused. SafeMode is NO; this control makes no active-safe-mode claim.
+
+The completed native oracle establishes one logical query column named ЧислоОпции. Boolean/String UNION produces Boolean No, Boolean Yes and String native-string. Composite CASE produces Boolean No in one column. Null/String UNION produces Null then String; Undefined/String UNION produces Undefined then String. All load/update/export/runtime operations exited 0. Actual exported XML and receipts are retained. No native byte-tag value was collected in this control: the existing measured TypeValue protocol supplies tag 1 Undefined and tags 2/5 Boolean/String. No field tag 0 is inferred from query Null.
+
+Earlier new-context attempts showed platform internal-error modals and timed out, including the canonical runner. Those attempts do not establish acceptance/rejection or its cause. Their bounded logs/actual XML remain in /tmp/sdbl-logical-projection-native-1013. The positive control reused the known working role/manager context and is stored in /tmp/sdbl-logical-priv-context-native-1013.
+
+SDK mapping is structural, zero-based in final physical columns. Composite storage fields expose measured Undefined tag 1 with no payload. CASE/UNION shapes whose Undefined meaning is lost through untagged SQLNULL coercion are unavailable. Derived/nested/totals/deferred and ambiguous Uuid/Binary→Null shapes are unavailable in this draft. SQLNULL and a byte discriminator are separate inputs. No decoder, grants or runtime values are manufactured by SDK.

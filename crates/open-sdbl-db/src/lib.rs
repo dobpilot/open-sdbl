@@ -46,6 +46,14 @@ pub mod credentials;
 pub mod db;
 pub mod error;
 pub mod extensions;
+mod indexed;
+pub use indexed::ConfigurationBootstrap;
+
+mod metadata_cache;
+mod metadata_inputs;
+pub use metadata_cache::ConfigurationMetadataCache;
+pub use metadata_inputs::{ConfigurationMetadataInputs, resolve_configuration_resources};
+
 pub mod limits;
 pub mod net;
 pub mod pipeline;

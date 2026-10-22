@@ -1,0 +1,6 @@
+owner	8bac013d-e4dc-43c2-980d-6190972b6678	1ece1a7b-59c8-4f1a-9c70-5577fbae18f4	39bbc410-cd99-45e4-addc-20cac2a4ba2d
+attribute	8bac013d-e4dc-43c2-980d-6190972b6678	3e5c6604-efa1-4ded-8dcd-b065e09aa50b	ТекстПробы
+attribute	8bac013d-e4dc-43c2-980d-6190972b6678	e4e855d6-f618-4335-b2f4-5d1ab7b99527	ФлагПробы
+section	8bac013d-e4dc-43c2-980d-6190972b6678	bd455998-ae36-4c7f-9301-52673ad17371	СтрокиПробы
+field	bd455998-ae36-4c7f-9301-52673ad17371	3deee86d-1dfb-4e8b-9625-bc9484e3b342	ТекстСтроки
+field	bd455998-ae36-4c7f-9301-52673ad17371	aa2ffc53-d789-4bc5-84e6-5ecf30286b65	ФлагСтроки

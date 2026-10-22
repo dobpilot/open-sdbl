@@ -1,3 +1,10 @@
+#[path = "config_header.rs"]
+mod header;
+pub use header::{
+    ConfigHeader, ConfigSectionIdentity, ConfigTypeIdentity, ConfigValueIdentity,
+    parse_config_header_bounded,
+};
+
 use std::borrow::Cow;
 use std::str::FromStr;
 
@@ -315,6 +322,20 @@ pub struct ConfigDeclaredType {
     pub qualifiers: Vec<Value>,
 }
 
+impl ConfigDeclaredType {
+    /// Распознаёт известное нативное семейство ссылок без раскрытия его состава.
+    /// `None` означает отсутствие известного семейства: GUID может обозначать
+    /// конкретный, именованный или неизвестный тип. Исходное объявление и его
+    /// квалификаторы сохраняются; неизвестная ссылка не становится пустым списком.
+    #[must_use]
+    pub fn reference_type_set(&self) -> Option<super::ReferenceTypeSet> {
+        if self.tag != "#" {
+            return None;
+        }
+        super::resolve::reference_category(self.reference.as_ref()?)
+    }
+}
+
 /// Известное типизированное значение заполнения реквизита.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ConfigFillingValue {
@@ -553,6 +574,18 @@ pub struct ConfigDescriptor {
     pub data_processor_tabular_sections: Option<Vec<Guid>>,
     /// GUID порождённого типа объекта обработки, отдельно от типа менеджера.
     pub data_processor_object_type: Option<Guid>,
+    /// Полные собственные реквизиты отчёта в порядке конфигурации.
+    /// `Some([])` — проверенная пустота, `None` — неизвестный или неполный состав.
+    pub report_attributes: Option<Vec<Guid>>,
+    /// Полные собственные реквизиты плана обмена в порядке конфигурации.
+    /// `Some([])` — проверенная пустота; `None` — неизвестная или неполная форма.
+    pub exchange_plan_attributes: Option<Vec<Guid>>,
+    /// Полные собственные части отчёта; поля частей перечислены отдельно.
+    /// `Some([])` — проверенная пустота, `None` — неизвестный или неполный состав.
+    pub report_tabular_sections: Option<Vec<Guid>>,
+    /// Приобретённый GUID порождённого типа объекта отчёта, отдельно от менеджера.
+    /// `None` — неизвестная форма или отсутствующая идентичность.
+    pub report_object_type: Option<Guid>,
     /// Настройки номера собственного бизнес-процесса; неизвестная форма — `None`.
     pub business_process_number: Option<BusinessProcessNumberSettings>,
     /// Полные собственные реквизиты в порядке конфигурации; `Some([])` — пусто,
@@ -1644,6 +1677,9 @@ impl<'input, 'resource> ConfigParser<'input, 'resource> {
                     if depth == 1
                         && value_count == reference_position
                         && !self.header_first_reference
+                        // Число 19 встречается у старого Enum и современного Report.
+                        // Его ссылку задаёт только проверенная полная проекция.
+                        && self.class_id != Some("19")
                         && self.object_reference_type.is_none()
                     {
                         self.object_reference_type = candidate
@@ -1659,14 +1695,22 @@ impl<'input, 'resource> ConfigParser<'input, 'resource> {
                         self.runtime_class_seen |= matches!(
                             self.class_id,
                             Some(
-                                "0" | "2"
+                                "0" | "1"
+                                    | "2"
                                     | "5"
+                                    | "14"
                                     | "16"
                                     | "17"
+                                    | "19"
                                     | "28"
+                                    | "32"
                                     | "33"
                                     | "34"
+                                    | "37"
+                                    | "38"
                                     | "40"
+                                    | "53"
+                                    | "54"
                                     | "56"
                                     | "57"
                             )
@@ -1895,6 +1939,25 @@ fn record_config_candidate<'input>(
     }
 }
 
+fn descriptor_identity<'a>(
+    self_reference: &'a ConfigCandidate<'_>,
+    name: &'a ConfigCandidate<'_>,
+) -> Option<(Guid, &'a str, &'a str)> {
+    let Some([marker, zero, guid]) = self_reference.as_list() else {
+        return None;
+    };
+    if zero.as_str() != Some("0") {
+        return None;
+    }
+    let guid = guid.as_str()?;
+    let Ok(object_guid) = Guid::from_str(guid) else {
+        return None;
+    };
+    let name = name.as_string()?;
+    let marker = marker.as_str()?;
+    Some((object_guid, name, marker))
+}
+
 #[allow(clippy::too_many_arguments)]
 fn project_config_descriptor(
     self_reference: &ConfigCandidate<'_>,
@@ -1906,22 +1969,7 @@ fn project_config_descriptor(
     tabular_section_header: bool,
     descriptors: &mut Vec<ProjectedConfigDescriptor>,
 ) {
-    let Some([marker, zero, guid]) = self_reference.as_list() else {
-        return;
-    };
-    if zero.as_str() != Some("0") {
-        return;
-    }
-    let Some(guid) = guid.as_str() else {
-        return;
-    };
-    let Ok(object_guid) = Guid::from_str(guid) else {
-        return;
-    };
-    let Some(name) = name.as_string() else {
-        return;
-    };
-    let Some(marker) = marker.as_str() else {
+    let Some((object_guid, name, marker)) = descriptor_identity(self_reference, name) else {
         return;
     };
     let synonyms = synonyms
@@ -1966,6 +2014,10 @@ fn project_config_descriptor(
             data_processor_attributes: None,
             data_processor_tabular_sections: None,
             data_processor_object_type: None,
+            report_attributes: None,
+            exchange_plan_attributes: None,
+            report_tabular_sections: None,
+            report_object_type: None,
             business_process_tabular_sections: None,
             business_process_standard_fill_checking: None,
             business_process_object_type: None,
@@ -2096,6 +2148,10 @@ fn collect_descriptors(
             data_processor_attributes: None,
             data_processor_tabular_sections: None,
             data_processor_object_type: None,
+            report_attributes: None,
+            exchange_plan_attributes: None,
+            report_tabular_sections: None,
+            report_object_type: None,
             business_process_tabular_sections: None,
             business_process_standard_fill_checking: None,
             business_process_object_type: None,
@@ -2136,20 +2192,29 @@ fn collect_descriptors(
     }
 }
 
-#[cfg(test)]
-fn parse_synonyms(value: &Value) -> Vec<Synonym> {
+pub(super) fn parse_synonyms(value: &Value) -> Vec<Synonym> {
     let Some(values) = value.as_list() else {
         return Vec::new();
     };
-    values[1..]
-        .chunks_exact(2)
-        .filter_map(|pair| {
-            Some(Synonym {
-                language: pair[0].as_string()?.to_owned(),
-                text: pair[1].as_string()?.to_owned(),
-            })
-        })
-        .collect()
+    streaming_synonyms(&values.iter().map(value_scalar).collect::<Vec<_>>())
+}
+
+fn value_scalar(value: &Value) -> SimpleValue<'_> {
+    match value {
+        Value::Atom(atom) => SimpleValue::Atom(atom),
+        Value::String(text) => SimpleValue::String(Cow::Borrowed(text)),
+        Value::Null | Value::List(_) => SimpleValue::Null,
+    }
+}
+
+pub(super) fn value_identity(window: &[Value]) -> Option<Guid> {
+    let [reference, name, _] = window else {
+        return None;
+    };
+    let values = reference.as_list()?;
+    let reference = ConfigCandidate::List(values.iter().map(value_scalar).collect());
+    let name = ConfigCandidate::Scalar(value_scalar(name));
+    descriptor_identity(&reference, &name).map(|(id, _, _)| id)
 }
 
 #[cfg(test)]

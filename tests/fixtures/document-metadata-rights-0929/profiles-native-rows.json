@@ -1,0 +1,2306 @@
+[
+  {
+    "profile": "owner-all-children",
+    "priv": "0",
+    "case": "owner",
+    "right": "Read",
+    "operation": "access",
+    "value": "YES"
+  },
+  {
+    "profile": "owner-all-children",
+    "priv": "0",
+    "case": "owner",
+    "right": "Read",
+    "operation": "verify",
+    "value": "OK"
+  },
+  {
+    "profile": "owner-all-children",
+    "priv": "0",
+    "case": "owner",
+    "right": "View",
+    "operation": "access",
+    "value": "YES"
+  },
+  {
+    "profile": "owner-all-children",
+    "priv": "0",
+    "case": "owner",
+    "right": "View",
+    "operation": "verify",
+    "value": "OK"
+  },
+  {
+    "profile": "owner-all-children",
+    "priv": "0",
+    "case": "number.ru",
+    "right": "Read",
+    "operation": "access",
+    "value": "ERROR:{DataProcessor.Замеры.Form.Форма.Form(20)}: Error calling context method (AccessRight): Cannot apply the Read right to Document.ЗамерДокумента"
+  },
+  {
+    "profile": "owner-all-children",
+    "priv": "0",
+    "case": "number.ru",
+    "right": "Read",
+    "operation": "verify",
+    "value": "OK"
+  },
+  {
+    "profile": "owner-all-children",
+    "priv": "0",
+    "case": "number.ru",
+    "right": "View",
+    "operation": "access",
+    "value": "YES"
+  },
+  {
+    "profile": "owner-all-children",
+    "priv": "0",
+    "case": "number.ru",
+    "right": "View",
+    "operation": "verify",
+    "value": "OK"
+  },
+  {
+    "profile": "owner-all-children",
+    "priv": "0",
+    "case": "number.en",
+    "right": "Read",
+    "operation": "access",
+    "value": "ERROR:{DataProcessor.Замеры.Form.Форма.Form(20)}: Error calling context method (AccessRight): Cannot apply the Read right to Document.ЗамерДокумента"
+  },
+  {
+    "profile": "owner-all-children",
+    "priv": "0",
+    "case": "number.en",
+    "right": "Read",
+    "operation": "verify",
+    "value": "OK"
+  },
+  {
+    "profile": "owner-all-children",
+    "priv": "0",
+    "case": "number.en",
+    "right": "View",
+    "operation": "access",
+    "value": "YES"
+  },
+  {
+    "profile": "owner-all-children",
+    "priv": "0",
+    "case": "number.en",
+    "right": "View",
+    "operation": "verify",
+    "value": "OK"
+  },
+  {
+    "profile": "owner-all-children",
+    "priv": "0",
+    "case": "date.ru",
+    "right": "Read",
+    "operation": "access",
+    "value": "ERROR:{DataProcessor.Замеры.Form.Форма.Form(20)}: Error calling context method (AccessRight): Cannot apply the Read right to Document.ЗамерДокумента"
+  },
+  {
+    "profile": "owner-all-children",
+    "priv": "0",
+    "case": "date.ru",
+    "right": "Read",
+    "operation": "verify",
+    "value": "OK"
+  },
+  {
+    "profile": "owner-all-children",
+    "priv": "0",
+    "case": "date.ru",
+    "right": "View",
+    "operation": "access",
+    "value": "YES"
+  },
+  {
+    "profile": "owner-all-children",
+    "priv": "0",
+    "case": "date.ru",
+    "right": "View",
+    "operation": "verify",
+    "value": "OK"
+  },
+  {
+    "profile": "owner-all-children",
+    "priv": "0",
+    "case": "date.en",
+    "right": "Read",
+    "operation": "access",
+    "value": "ERROR:{DataProcessor.Замеры.Form.Форма.Form(20)}: Error calling context method (AccessRight): Cannot apply the Read right to Document.ЗамерДокумента"
+  },
+  {
+    "profile": "owner-all-children",
+    "priv": "0",
+    "case": "date.en",
+    "right": "Read",
+    "operation": "verify",
+    "value": "OK"
+  },
+  {
+    "profile": "owner-all-children",
+    "priv": "0",
+    "case": "date.en",
+    "right": "View",
+    "operation": "access",
+    "value": "YES"
+  },
+  {
+    "profile": "owner-all-children",
+    "priv": "0",
+    "case": "date.en",
+    "right": "View",
+    "operation": "verify",
+    "value": "OK"
+  },
+  {
+    "profile": "owner-all-children",
+    "priv": "0",
+    "case": "attribute",
+    "right": "Read",
+    "operation": "access",
+    "value": "ERROR:{DataProcessor.Замеры.Form.Форма.Form(20)}: Error calling context method (AccessRight): Cannot apply the Read right to Document.ЗамерДокумента.Attribute.Заполняемый"
+  },
+  {
+    "profile": "owner-all-children",
+    "priv": "0",
+    "case": "attribute",
+    "right": "Read",
+    "operation": "verify",
+    "value": "OK"
+  },
+  {
+    "profile": "owner-all-children",
+    "priv": "0",
+    "case": "attribute",
+    "right": "View",
+    "operation": "access",
+    "value": "YES"
+  },
+  {
+    "profile": "owner-all-children",
+    "priv": "0",
+    "case": "attribute",
+    "right": "View",
+    "operation": "verify",
+    "value": "OK"
+  },
+  {
+    "profile": "owner-all-children",
+    "priv": "1",
+    "case": "owner",
+    "right": "Read",
+    "operation": "access",
+    "value": "YES"
+  },
+  {
+    "profile": "owner-all-children",
+    "priv": "1",
+    "case": "owner",
+    "right": "Read",
+    "operation": "verify",
+    "value": "OK"
+  },
+  {
+    "profile": "owner-all-children",
+    "priv": "1",
+    "case": "owner",
+    "right": "View",
+    "operation": "access",
+    "value": "YES"
+  },
+  {
+    "profile": "owner-all-children",
+    "priv": "1",
+    "case": "owner",
+    "right": "View",
+    "operation": "verify",
+    "value": "OK"
+  },
+  {
+    "profile": "owner-all-children",
+    "priv": "1",
+    "case": "number.ru",
+    "right": "Read",
+    "operation": "access",
+    "value": "ERROR:{DataProcessor.Замеры.Form.Форма.Form(20)}: Error calling context method (AccessRight): Cannot apply the Read right to Document.ЗамерДокумента"
+  },
+  {
+    "profile": "owner-all-children",
+    "priv": "1",
+    "case": "number.ru",
+    "right": "Read",
+    "operation": "verify",
+    "value": "OK"
+  },
+  {
+    "profile": "owner-all-children",
+    "priv": "1",
+    "case": "number.ru",
+    "right": "View",
+    "operation": "access",
+    "value": "YES"
+  },
+  {
+    "profile": "owner-all-children",
+    "priv": "1",
+    "case": "number.ru",
+    "right": "View",
+    "operation": "verify",
+    "value": "OK"
+  },
+  {
+    "profile": "owner-all-children",
+    "priv": "1",
+    "case": "number.en",
+    "right": "Read",
+    "operation": "access",
+    "value": "ERROR:{DataProcessor.Замеры.Form.Форма.Form(20)}: Error calling context method (AccessRight): Cannot apply the Read right to Document.ЗамерДокумента"
+  },
+  {
+    "profile": "owner-all-children",
+    "priv": "1",
+    "case": "number.en",
+    "right": "Read",
+    "operation": "verify",
+    "value": "OK"
+  },
+  {
+    "profile": "owner-all-children",
+    "priv": "1",
+    "case": "number.en",
+    "right": "View",
+    "operation": "access",
+    "value": "YES"
+  },
+  {
+    "profile": "owner-all-children",
+    "priv": "1",
+    "case": "number.en",
+    "right": "View",
+    "operation": "verify",
+    "value": "OK"
+  },
+  {
+    "profile": "owner-all-children",
+    "priv": "1",
+    "case": "date.ru",
+    "right": "Read",
+    "operation": "access",
+    "value": "ERROR:{DataProcessor.Замеры.Form.Форма.Form(20)}: Error calling context method (AccessRight): Cannot apply the Read right to Document.ЗамерДокумента"
+  },
+  {
+    "profile": "owner-all-children",
+    "priv": "1",
+    "case": "date.ru",
+    "right": "Read",
+    "operation": "verify",
+    "value": "OK"
+  },
+  {
+    "profile": "owner-all-children",
+    "priv": "1",
+    "case": "date.ru",
+    "right": "View",
+    "operation": "access",
+    "value": "YES"
+  },
+  {
+    "profile": "owner-all-children",
+    "priv": "1",
+    "case": "date.ru",
+    "right": "View",
+    "operation": "verify",
+    "value": "OK"
+  },
+  {
+    "profile": "owner-all-children",
+    "priv": "1",
+    "case": "date.en",
+    "right": "Read",
+    "operation": "access",
+    "value": "ERROR:{DataProcessor.Замеры.Form.Форма.Form(20)}: Error calling context method (AccessRight): Cannot apply the Read right to Document.ЗамерДокумента"
+  },
+  {
+    "profile": "owner-all-children",
+    "priv": "1",
+    "case": "date.en",
+    "right": "Read",
+    "operation": "verify",
+    "value": "OK"
+  },
+  {
+    "profile": "owner-all-children",
+    "priv": "1",
+    "case": "date.en",
+    "right": "View",
+    "operation": "access",
+    "value": "YES"
+  },
+  {
+    "profile": "owner-all-children",
+    "priv": "1",
+    "case": "date.en",
+    "right": "View",
+    "operation": "verify",
+    "value": "OK"
+  },
+  {
+    "profile": "owner-all-children",
+    "priv": "1",
+    "case": "attribute",
+    "right": "Read",
+    "operation": "access",
+    "value": "ERROR:{DataProcessor.Замеры.Form.Форма.Form(20)}: Error calling context method (AccessRight): Cannot apply the Read right to Document.ЗамерДокумента.Attribute.Заполняемый"
+  },
+  {
+    "profile": "owner-all-children",
+    "priv": "1",
+    "case": "attribute",
+    "right": "Read",
+    "operation": "verify",
+    "value": "OK"
+  },
+  {
+    "profile": "owner-all-children",
+    "priv": "1",
+    "case": "attribute",
+    "right": "View",
+    "operation": "access",
+    "value": "YES"
+  },
+  {
+    "profile": "owner-all-children",
+    "priv": "1",
+    "case": "attribute",
+    "right": "View",
+    "operation": "verify",
+    "value": "OK"
+  },
+  {
+    "profile": "number-refusal-default-yes",
+    "priv": "0",
+    "case": "owner",
+    "right": "Read",
+    "operation": "access",
+    "value": "YES"
+  },
+  {
+    "profile": "number-refusal-default-yes",
+    "priv": "0",
+    "case": "owner",
+    "right": "Read",
+    "operation": "verify",
+    "value": "OK"
+  },
+  {
+    "profile": "number-refusal-default-yes",
+    "priv": "0",
+    "case": "owner",
+    "right": "View",
+    "operation": "access",
+    "value": "YES"
+  },
+  {
+    "profile": "number-refusal-default-yes",
+    "priv": "0",
+    "case": "owner",
+    "right": "View",
+    "operation": "verify",
+    "value": "OK"
+  },
+  {
+    "profile": "number-refusal-default-yes",
+    "priv": "0",
+    "case": "number.ru",
+    "right": "Read",
+    "operation": "access",
+    "value": "ERROR:{DataProcessor.Замеры.Form.Форма.Form(20)}: Error calling context method (AccessRight): Cannot apply the Read right to Document.ЗамерДокумента"
+  },
+  {
+    "profile": "number-refusal-default-yes",
+    "priv": "0",
+    "case": "number.ru",
+    "right": "Read",
+    "operation": "verify",
+    "value": "OK"
+  },
+  {
+    "profile": "number-refusal-default-yes",
+    "priv": "0",
+    "case": "number.ru",
+    "right": "View",
+    "operation": "access",
+    "value": "NO"
+  },
+  {
+    "profile": "number-refusal-default-yes",
+    "priv": "0",
+    "case": "number.ru",
+    "right": "View",
+    "operation": "verify",
+    "value": "ERROR:{DataProcessor.Замеры.Form.Форма.Form(17)}: Error calling context method (VerifyAccessRights): Access violation!"
+  },
+  {
+    "profile": "number-refusal-default-yes",
+    "priv": "0",
+    "case": "number.en",
+    "right": "Read",
+    "operation": "access",
+    "value": "ERROR:{DataProcessor.Замеры.Form.Форма.Form(20)}: Error calling context method (AccessRight): Cannot apply the Read right to Document.ЗамерДокумента"
+  },
+  {
+    "profile": "number-refusal-default-yes",
+    "priv": "0",
+    "case": "number.en",
+    "right": "Read",
+    "operation": "verify",
+    "value": "OK"
+  },
+  {
+    "profile": "number-refusal-default-yes",
+    "priv": "0",
+    "case": "number.en",
+    "right": "View",
+    "operation": "access",
+    "value": "NO"
+  },
+  {
+    "profile": "number-refusal-default-yes",
+    "priv": "0",
+    "case": "number.en",
+    "right": "View",
+    "operation": "verify",
+    "value": "ERROR:{DataProcessor.Замеры.Form.Форма.Form(17)}: Error calling context method (VerifyAccessRights): Access violation!"
+  },
+  {
+    "profile": "number-refusal-default-yes",
+    "priv": "0",
+    "case": "date.ru",
+    "right": "Read",
+    "operation": "access",
+    "value": "ERROR:{DataProcessor.Замеры.Form.Форма.Form(20)}: Error calling context method (AccessRight): Cannot apply the Read right to Document.ЗамерДокумента"
+  },
+  {
+    "profile": "number-refusal-default-yes",
+    "priv": "0",
+    "case": "date.ru",
+    "right": "Read",
+    "operation": "verify",
+    "value": "OK"
+  },
+  {
+    "profile": "number-refusal-default-yes",
+    "priv": "0",
+    "case": "date.ru",
+    "right": "View",
+    "operation": "access",
+    "value": "YES"
+  },
+  {
+    "profile": "number-refusal-default-yes",
+    "priv": "0",
+    "case": "date.ru",
+    "right": "View",
+    "operation": "verify",
+    "value": "OK"
+  },
+  {
+    "profile": "number-refusal-default-yes",
+    "priv": "0",
+    "case": "date.en",
+    "right": "Read",
+    "operation": "access",
+    "value": "ERROR:{DataProcessor.Замеры.Form.Форма.Form(20)}: Error calling context method (AccessRight): Cannot apply the Read right to Document.ЗамерДокумента"
+  },
+  {
+    "profile": "number-refusal-default-yes",
+    "priv": "0",
+    "case": "date.en",
+    "right": "Read",
+    "operation": "verify",
+    "value": "OK"
+  },
+  {
+    "profile": "number-refusal-default-yes",
+    "priv": "0",
+    "case": "date.en",
+    "right": "View",
+    "operation": "access",
+    "value": "YES"
+  },
+  {
+    "profile": "number-refusal-default-yes",
+    "priv": "0",
+    "case": "date.en",
+    "right": "View",
+    "operation": "verify",
+    "value": "OK"
+  },
+  {
+    "profile": "number-refusal-default-yes",
+    "priv": "0",
+    "case": "attribute",
+    "right": "Read",
+    "operation": "access",
+    "value": "ERROR:{DataProcessor.Замеры.Form.Форма.Form(20)}: Error calling context method (AccessRight): Cannot apply the Read right to Document.ЗамерДокумента.Attribute.Заполняемый"
+  },
+  {
+    "profile": "number-refusal-default-yes",
+    "priv": "0",
+    "case": "attribute",
+    "right": "Read",
+    "operation": "verify",
+    "value": "OK"
+  },
+  {
+    "profile": "number-refusal-default-yes",
+    "priv": "0",
+    "case": "attribute",
+    "right": "View",
+    "operation": "access",
+    "value": "YES"
+  },
+  {
+    "profile": "number-refusal-default-yes",
+    "priv": "0",
+    "case": "attribute",
+    "right": "View",
+    "operation": "verify",
+    "value": "OK"
+  },
+  {
+    "profile": "number-refusal-default-yes",
+    "priv": "1",
+    "case": "owner",
+    "right": "Read",
+    "operation": "access",
+    "value": "YES"
+  },
+  {
+    "profile": "number-refusal-default-yes",
+    "priv": "1",
+    "case": "owner",
+    "right": "Read",
+    "operation": "verify",
+    "value": "OK"
+  },
+  {
+    "profile": "number-refusal-default-yes",
+    "priv": "1",
+    "case": "owner",
+    "right": "View",
+    "operation": "access",
+    "value": "YES"
+  },
+  {
+    "profile": "number-refusal-default-yes",
+    "priv": "1",
+    "case": "owner",
+    "right": "View",
+    "operation": "verify",
+    "value": "OK"
+  },
+  {
+    "profile": "number-refusal-default-yes",
+    "priv": "1",
+    "case": "number.ru",
+    "right": "Read",
+    "operation": "access",
+    "value": "ERROR:{DataProcessor.Замеры.Form.Форма.Form(20)}: Error calling context method (AccessRight): Cannot apply the Read right to Document.ЗамерДокумента"
+  },
+  {
+    "profile": "number-refusal-default-yes",
+    "priv": "1",
+    "case": "number.ru",
+    "right": "Read",
+    "operation": "verify",
+    "value": "OK"
+  },
+  {
+    "profile": "number-refusal-default-yes",
+    "priv": "1",
+    "case": "number.ru",
+    "right": "View",
+    "operation": "access",
+    "value": "YES"
+  },
+  {
+    "profile": "number-refusal-default-yes",
+    "priv": "1",
+    "case": "number.ru",
+    "right": "View",
+    "operation": "verify",
+    "value": "OK"
+  },
+  {
+    "profile": "number-refusal-default-yes",
+    "priv": "1",
+    "case": "number.en",
+    "right": "Read",
+    "operation": "access",
+    "value": "ERROR:{DataProcessor.Замеры.Form.Форма.Form(20)}: Error calling context method (AccessRight): Cannot apply the Read right to Document.ЗамерДокумента"
+  },
+  {
+    "profile": "number-refusal-default-yes",
+    "priv": "1",
+    "case": "number.en",
+    "right": "Read",
+    "operation": "verify",
+    "value": "OK"
+  },
+  {
+    "profile": "number-refusal-default-yes",
+    "priv": "1",
+    "case": "number.en",
+    "right": "View",
+    "operation": "access",
+    "value": "YES"
+  },
+  {
+    "profile": "number-refusal-default-yes",
+    "priv": "1",
+    "case": "number.en",
+    "right": "View",
+    "operation": "verify",
+    "value": "OK"
+  },
+  {
+    "profile": "number-refusal-default-yes",
+    "priv": "1",
+    "case": "date.ru",
+    "right": "Read",
+    "operation": "access",
+    "value": "ERROR:{DataProcessor.Замеры.Form.Форма.Form(20)}: Error calling context method (AccessRight): Cannot apply the Read right to Document.ЗамерДокумента"
+  },
+  {
+    "profile": "number-refusal-default-yes",
+    "priv": "1",
+    "case": "date.ru",
+    "right": "Read",
+    "operation": "verify",
+    "value": "OK"
+  },
+  {
+    "profile": "number-refusal-default-yes",
+    "priv": "1",
+    "case": "date.ru",
+    "right": "View",
+    "operation": "access",
+    "value": "YES"
+  },
+  {
+    "profile": "number-refusal-default-yes",
+    "priv": "1",
+    "case": "date.ru",
+    "right": "View",
+    "operation": "verify",
+    "value": "OK"
+  },
+  {
+    "profile": "number-refusal-default-yes",
+    "priv": "1",
+    "case": "date.en",
+    "right": "Read",
+    "operation": "access",
+    "value": "ERROR:{DataProcessor.Замеры.Form.Форма.Form(20)}: Error calling context method (AccessRight): Cannot apply the Read right to Document.ЗамерДокумента"
+  },
+  {
+    "profile": "number-refusal-default-yes",
+    "priv": "1",
+    "case": "date.en",
+    "right": "Read",
+    "operation": "verify",
+    "value": "OK"
+  },
+  {
+    "profile": "number-refusal-default-yes",
+    "priv": "1",
+    "case": "date.en",
+    "right": "View",
+    "operation": "access",
+    "value": "YES"
+  },
+  {
+    "profile": "number-refusal-default-yes",
+    "priv": "1",
+    "case": "date.en",
+    "right": "View",
+    "operation": "verify",
+    "value": "OK"
+  },
+  {
+    "profile": "number-refusal-default-yes",
+    "priv": "1",
+    "case": "attribute",
+    "right": "Read",
+    "operation": "access",
+    "value": "ERROR:{DataProcessor.Замеры.Form.Форма.Form(20)}: Error calling context method (AccessRight): Cannot apply the Read right to Document.ЗамерДокумента.Attribute.Заполняемый"
+  },
+  {
+    "profile": "number-refusal-default-yes",
+    "priv": "1",
+    "case": "attribute",
+    "right": "Read",
+    "operation": "verify",
+    "value": "OK"
+  },
+  {
+    "profile": "number-refusal-default-yes",
+    "priv": "1",
+    "case": "attribute",
+    "right": "View",
+    "operation": "access",
+    "value": "YES"
+  },
+  {
+    "profile": "number-refusal-default-yes",
+    "priv": "1",
+    "case": "attribute",
+    "right": "View",
+    "operation": "verify",
+    "value": "OK"
+  },
+  {
+    "profile": "date-attribute-refusal",
+    "priv": "0",
+    "case": "owner",
+    "right": "Read",
+    "operation": "access",
+    "value": "YES"
+  },
+  {
+    "profile": "date-attribute-refusal",
+    "priv": "0",
+    "case": "owner",
+    "right": "Read",
+    "operation": "verify",
+    "value": "OK"
+  },
+  {
+    "profile": "date-attribute-refusal",
+    "priv": "0",
+    "case": "owner",
+    "right": "View",
+    "operation": "access",
+    "value": "YES"
+  },
+  {
+    "profile": "date-attribute-refusal",
+    "priv": "0",
+    "case": "owner",
+    "right": "View",
+    "operation": "verify",
+    "value": "OK"
+  },
+  {
+    "profile": "date-attribute-refusal",
+    "priv": "0",
+    "case": "number.ru",
+    "right": "Read",
+    "operation": "access",
+    "value": "ERROR:{DataProcessor.Замеры.Form.Форма.Form(20)}: Error calling context method (AccessRight): Cannot apply the Read right to Document.ЗамерДокумента"
+  },
+  {
+    "profile": "date-attribute-refusal",
+    "priv": "0",
+    "case": "number.ru",
+    "right": "Read",
+    "operation": "verify",
+    "value": "OK"
+  },
+  {
+    "profile": "date-attribute-refusal",
+    "priv": "0",
+    "case": "number.ru",
+    "right": "View",
+    "operation": "access",
+    "value": "YES"
+  },
+  {
+    "profile": "date-attribute-refusal",
+    "priv": "0",
+    "case": "number.ru",
+    "right": "View",
+    "operation": "verify",
+    "value": "OK"
+  },
+  {
+    "profile": "date-attribute-refusal",
+    "priv": "0",
+    "case": "number.en",
+    "right": "Read",
+    "operation": "access",
+    "value": "ERROR:{DataProcessor.Замеры.Form.Форма.Form(20)}: Error calling context method (AccessRight): Cannot apply the Read right to Document.ЗамерДокумента"
+  },
+  {
+    "profile": "date-attribute-refusal",
+    "priv": "0",
+    "case": "number.en",
+    "right": "Read",
+    "operation": "verify",
+    "value": "OK"
+  },
+  {
+    "profile": "date-attribute-refusal",
+    "priv": "0",
+    "case": "number.en",
+    "right": "View",
+    "operation": "access",
+    "value": "YES"
+  },
+  {
+    "profile": "date-attribute-refusal",
+    "priv": "0",
+    "case": "number.en",
+    "right": "View",
+    "operation": "verify",
+    "value": "OK"
+  },
+  {
+    "profile": "date-attribute-refusal",
+    "priv": "0",
+    "case": "date.ru",
+    "right": "Read",
+    "operation": "access",
+    "value": "ERROR:{DataProcessor.Замеры.Form.Форма.Form(20)}: Error calling context method (AccessRight): Cannot apply the Read right to Document.ЗамерДокумента"
+  },
+  {
+    "profile": "date-attribute-refusal",
+    "priv": "0",
+    "case": "date.ru",
+    "right": "Read",
+    "operation": "verify",
+    "value": "OK"
+  },
+  {
+    "profile": "date-attribute-refusal",
+    "priv": "0",
+    "case": "date.ru",
+    "right": "View",
+    "operation": "access",
+    "value": "NO"
+  },
+  {
+    "profile": "date-attribute-refusal",
+    "priv": "0",
+    "case": "date.ru",
+    "right": "View",
+    "operation": "verify",
+    "value": "ERROR:{DataProcessor.Замеры.Form.Форма.Form(17)}: Error calling context method (VerifyAccessRights): Access violation!"
+  },
+  {
+    "profile": "date-attribute-refusal",
+    "priv": "0",
+    "case": "date.en",
+    "right": "Read",
+    "operation": "access",
+    "value": "ERROR:{DataProcessor.Замеры.Form.Форма.Form(20)}: Error calling context method (AccessRight): Cannot apply the Read right to Document.ЗамерДокумента"
+  },
+  {
+    "profile": "date-attribute-refusal",
+    "priv": "0",
+    "case": "date.en",
+    "right": "Read",
+    "operation": "verify",
+    "value": "OK"
+  },
+  {
+    "profile": "date-attribute-refusal",
+    "priv": "0",
+    "case": "date.en",
+    "right": "View",
+    "operation": "access",
+    "value": "NO"
+  },
+  {
+    "profile": "date-attribute-refusal",
+    "priv": "0",
+    "case": "date.en",
+    "right": "View",
+    "operation": "verify",
+    "value": "ERROR:{DataProcessor.Замеры.Form.Форма.Form(17)}: Error calling context method (VerifyAccessRights): Access violation!"
+  },
+  {
+    "profile": "date-attribute-refusal",
+    "priv": "0",
+    "case": "attribute",
+    "right": "Read",
+    "operation": "access",
+    "value": "ERROR:{DataProcessor.Замеры.Form.Форма.Form(20)}: Error calling context method (AccessRight): Cannot apply the Read right to Document.ЗамерДокумента.Attribute.Заполняемый"
+  },
+  {
+    "profile": "date-attribute-refusal",
+    "priv": "0",
+    "case": "attribute",
+    "right": "Read",
+    "operation": "verify",
+    "value": "OK"
+  },
+  {
+    "profile": "date-attribute-refusal",
+    "priv": "0",
+    "case": "attribute",
+    "right": "View",
+    "operation": "access",
+    "value": "NO"
+  },
+  {
+    "profile": "date-attribute-refusal",
+    "priv": "0",
+    "case": "attribute",
+    "right": "View",
+    "operation": "verify",
+    "value": "ERROR:{DataProcessor.Замеры.Form.Форма.Form(17)}: Error calling context method (VerifyAccessRights): Access violation!"
+  },
+  {
+    "profile": "date-attribute-refusal",
+    "priv": "1",
+    "case": "owner",
+    "right": "Read",
+    "operation": "access",
+    "value": "YES"
+  },
+  {
+    "profile": "date-attribute-refusal",
+    "priv": "1",
+    "case": "owner",
+    "right": "Read",
+    "operation": "verify",
+    "value": "OK"
+  },
+  {
+    "profile": "date-attribute-refusal",
+    "priv": "1",
+    "case": "owner",
+    "right": "View",
+    "operation": "access",
+    "value": "YES"
+  },
+  {
+    "profile": "date-attribute-refusal",
+    "priv": "1",
+    "case": "owner",
+    "right": "View",
+    "operation": "verify",
+    "value": "OK"
+  },
+  {
+    "profile": "date-attribute-refusal",
+    "priv": "1",
+    "case": "number.ru",
+    "right": "Read",
+    "operation": "access",
+    "value": "ERROR:{DataProcessor.Замеры.Form.Форма.Form(20)}: Error calling context method (AccessRight): Cannot apply the Read right to Document.ЗамерДокумента"
+  },
+  {
+    "profile": "date-attribute-refusal",
+    "priv": "1",
+    "case": "number.ru",
+    "right": "Read",
+    "operation": "verify",
+    "value": "OK"
+  },
+  {
+    "profile": "date-attribute-refusal",
+    "priv": "1",
+    "case": "number.ru",
+    "right": "View",
+    "operation": "access",
+    "value": "YES"
+  },
+  {
+    "profile": "date-attribute-refusal",
+    "priv": "1",
+    "case": "number.ru",
+    "right": "View",
+    "operation": "verify",
+    "value": "OK"
+  },
+  {
+    "profile": "date-attribute-refusal",
+    "priv": "1",
+    "case": "number.en",
+    "right": "Read",
+    "operation": "access",
+    "value": "ERROR:{DataProcessor.Замеры.Form.Форма.Form(20)}: Error calling context method (AccessRight): Cannot apply the Read right to Document.ЗамерДокумента"
+  },
+  {
+    "profile": "date-attribute-refusal",
+    "priv": "1",
+    "case": "number.en",
+    "right": "Read",
+    "operation": "verify",
+    "value": "OK"
+  },
+  {
+    "profile": "date-attribute-refusal",
+    "priv": "1",
+    "case": "number.en",
+    "right": "View",
+    "operation": "access",
+    "value": "YES"
+  },
+  {
+    "profile": "date-attribute-refusal",
+    "priv": "1",
+    "case": "number.en",
+    "right": "View",
+    "operation": "verify",
+    "value": "OK"
+  },
+  {
+    "profile": "date-attribute-refusal",
+    "priv": "1",
+    "case": "date.ru",
+    "right": "Read",
+    "operation": "access",
+    "value": "ERROR:{DataProcessor.Замеры.Form.Форма.Form(20)}: Error calling context method (AccessRight): Cannot apply the Read right to Document.ЗамерДокумента"
+  },
+  {
+    "profile": "date-attribute-refusal",
+    "priv": "1",
+    "case": "date.ru",
+    "right": "Read",
+    "operation": "verify",
+    "value": "OK"
+  },
+  {
+    "profile": "date-attribute-refusal",
+    "priv": "1",
+    "case": "date.ru",
+    "right": "View",
+    "operation": "access",
+    "value": "YES"
+  },
+  {
+    "profile": "date-attribute-refusal",
+    "priv": "1",
+    "case": "date.ru",
+    "right": "View",
+    "operation": "verify",
+    "value": "OK"
+  },
+  {
+    "profile": "date-attribute-refusal",
+    "priv": "1",
+    "case": "date.en",
+    "right": "Read",
+    "operation": "access",
+    "value": "ERROR:{DataProcessor.Замеры.Form.Форма.Form(20)}: Error calling context method (AccessRight): Cannot apply the Read right to Document.ЗамерДокумента"
+  },
+  {
+    "profile": "date-attribute-refusal",
+    "priv": "1",
+    "case": "date.en",
+    "right": "Read",
+    "operation": "verify",
+    "value": "OK"
+  },
+  {
+    "profile": "date-attribute-refusal",
+    "priv": "1",
+    "case": "date.en",
+    "right": "View",
+    "operation": "access",
+    "value": "YES"
+  },
+  {
+    "profile": "date-attribute-refusal",
+    "priv": "1",
+    "case": "date.en",
+    "right": "View",
+    "operation": "verify",
+    "value": "OK"
+  },
+  {
+    "profile": "date-attribute-refusal",
+    "priv": "1",
+    "case": "attribute",
+    "right": "Read",
+    "operation": "access",
+    "value": "ERROR:{DataProcessor.Замеры.Form.Форма.Form(20)}: Error calling context method (AccessRight): Cannot apply the Read right to Document.ЗамерДокумента.Attribute.Заполняемый"
+  },
+  {
+    "profile": "date-attribute-refusal",
+    "priv": "1",
+    "case": "attribute",
+    "right": "Read",
+    "operation": "verify",
+    "value": "OK"
+  },
+  {
+    "profile": "date-attribute-refusal",
+    "priv": "1",
+    "case": "attribute",
+    "right": "View",
+    "operation": "access",
+    "value": "YES"
+  },
+  {
+    "profile": "date-attribute-refusal",
+    "priv": "1",
+    "case": "attribute",
+    "right": "View",
+    "operation": "verify",
+    "value": "OK"
+  },
+  {
+    "profile": "parent-refusal",
+    "priv": "0",
+    "case": "owner",
+    "right": "Read",
+    "operation": "access",
+    "value": "YES"
+  },
+  {
+    "profile": "parent-refusal",
+    "priv": "0",
+    "case": "owner",
+    "right": "Read",
+    "operation": "verify",
+    "value": "OK"
+  },
+  {
+    "profile": "parent-refusal",
+    "priv": "0",
+    "case": "owner",
+    "right": "View",
+    "operation": "access",
+    "value": "NO"
+  },
+  {
+    "profile": "parent-refusal",
+    "priv": "0",
+    "case": "owner",
+    "right": "View",
+    "operation": "verify",
+    "value": "ERROR:{DataProcessor.Замеры.Form.Форма.Form(17)}: Error calling context method (VerifyAccessRights): Access violation!"
+  },
+  {
+    "profile": "parent-refusal",
+    "priv": "0",
+    "case": "number.ru",
+    "right": "Read",
+    "operation": "access",
+    "value": "ERROR:{DataProcessor.Замеры.Form.Форма.Form(20)}: Error calling context method (AccessRight): Cannot apply the Read right to Document.ЗамерДокумента"
+  },
+  {
+    "profile": "parent-refusal",
+    "priv": "0",
+    "case": "number.ru",
+    "right": "Read",
+    "operation": "verify",
+    "value": "OK"
+  },
+  {
+    "profile": "parent-refusal",
+    "priv": "0",
+    "case": "number.ru",
+    "right": "View",
+    "operation": "access",
+    "value": "NO"
+  },
+  {
+    "profile": "parent-refusal",
+    "priv": "0",
+    "case": "number.ru",
+    "right": "View",
+    "operation": "verify",
+    "value": "ERROR:{DataProcessor.Замеры.Form.Форма.Form(17)}: Error calling context method (VerifyAccessRights): Access violation!"
+  },
+  {
+    "profile": "parent-refusal",
+    "priv": "0",
+    "case": "number.en",
+    "right": "Read",
+    "operation": "access",
+    "value": "ERROR:{DataProcessor.Замеры.Form.Форма.Form(20)}: Error calling context method (AccessRight): Cannot apply the Read right to Document.ЗамерДокумента"
+  },
+  {
+    "profile": "parent-refusal",
+    "priv": "0",
+    "case": "number.en",
+    "right": "Read",
+    "operation": "verify",
+    "value": "OK"
+  },
+  {
+    "profile": "parent-refusal",
+    "priv": "0",
+    "case": "number.en",
+    "right": "View",
+    "operation": "access",
+    "value": "NO"
+  },
+  {
+    "profile": "parent-refusal",
+    "priv": "0",
+    "case": "number.en",
+    "right": "View",
+    "operation": "verify",
+    "value": "ERROR:{DataProcessor.Замеры.Form.Форма.Form(17)}: Error calling context method (VerifyAccessRights): Access violation!"
+  },
+  {
+    "profile": "parent-refusal",
+    "priv": "0",
+    "case": "date.ru",
+    "right": "Read",
+    "operation": "access",
+    "value": "ERROR:{DataProcessor.Замеры.Form.Форма.Form(20)}: Error calling context method (AccessRight): Cannot apply the Read right to Document.ЗамерДокумента"
+  },
+  {
+    "profile": "parent-refusal",
+    "priv": "0",
+    "case": "date.ru",
+    "right": "Read",
+    "operation": "verify",
+    "value": "OK"
+  },
+  {
+    "profile": "parent-refusal",
+    "priv": "0",
+    "case": "date.ru",
+    "right": "View",
+    "operation": "access",
+    "value": "NO"
+  },
+  {
+    "profile": "parent-refusal",
+    "priv": "0",
+    "case": "date.ru",
+    "right": "View",
+    "operation": "verify",
+    "value": "ERROR:{DataProcessor.Замеры.Form.Форма.Form(17)}: Error calling context method (VerifyAccessRights): Access violation!"
+  },
+  {
+    "profile": "parent-refusal",
+    "priv": "0",
+    "case": "date.en",
+    "right": "Read",
+    "operation": "access",
+    "value": "ERROR:{DataProcessor.Замеры.Form.Форма.Form(20)}: Error calling context method (AccessRight): Cannot apply the Read right to Document.ЗамерДокумента"
+  },
+  {
+    "profile": "parent-refusal",
+    "priv": "0",
+    "case": "date.en",
+    "right": "Read",
+    "operation": "verify",
+    "value": "OK"
+  },
+  {
+    "profile": "parent-refusal",
+    "priv": "0",
+    "case": "date.en",
+    "right": "View",
+    "operation": "access",
+    "value": "NO"
+  },
+  {
+    "profile": "parent-refusal",
+    "priv": "0",
+    "case": "date.en",
+    "right": "View",
+    "operation": "verify",
+    "value": "ERROR:{DataProcessor.Замеры.Form.Форма.Form(17)}: Error calling context method (VerifyAccessRights): Access violation!"
+  },
+  {
+    "profile": "parent-refusal",
+    "priv": "0",
+    "case": "attribute",
+    "right": "Read",
+    "operation": "access",
+    "value": "ERROR:{DataProcessor.Замеры.Form.Форма.Form(20)}: Error calling context method (AccessRight): Cannot apply the Read right to Document.ЗамерДокумента.Attribute.Заполняемый"
+  },
+  {
+    "profile": "parent-refusal",
+    "priv": "0",
+    "case": "attribute",
+    "right": "Read",
+    "operation": "verify",
+    "value": "OK"
+  },
+  {
+    "profile": "parent-refusal",
+    "priv": "0",
+    "case": "attribute",
+    "right": "View",
+    "operation": "access",
+    "value": "NO"
+  },
+  {
+    "profile": "parent-refusal",
+    "priv": "0",
+    "case": "attribute",
+    "right": "View",
+    "operation": "verify",
+    "value": "ERROR:{DataProcessor.Замеры.Form.Форма.Form(17)}: Error calling context method (VerifyAccessRights): Access violation!"
+  },
+  {
+    "profile": "parent-refusal",
+    "priv": "1",
+    "case": "owner",
+    "right": "Read",
+    "operation": "access",
+    "value": "YES"
+  },
+  {
+    "profile": "parent-refusal",
+    "priv": "1",
+    "case": "owner",
+    "right": "Read",
+    "operation": "verify",
+    "value": "OK"
+  },
+  {
+    "profile": "parent-refusal",
+    "priv": "1",
+    "case": "owner",
+    "right": "View",
+    "operation": "access",
+    "value": "YES"
+  },
+  {
+    "profile": "parent-refusal",
+    "priv": "1",
+    "case": "owner",
+    "right": "View",
+    "operation": "verify",
+    "value": "OK"
+  },
+  {
+    "profile": "parent-refusal",
+    "priv": "1",
+    "case": "number.ru",
+    "right": "Read",
+    "operation": "access",
+    "value": "ERROR:{DataProcessor.Замеры.Form.Форма.Form(20)}: Error calling context method (AccessRight): Cannot apply the Read right to Document.ЗамерДокумента"
+  },
+  {
+    "profile": "parent-refusal",
+    "priv": "1",
+    "case": "number.ru",
+    "right": "Read",
+    "operation": "verify",
+    "value": "OK"
+  },
+  {
+    "profile": "parent-refusal",
+    "priv": "1",
+    "case": "number.ru",
+    "right": "View",
+    "operation": "access",
+    "value": "YES"
+  },
+  {
+    "profile": "parent-refusal",
+    "priv": "1",
+    "case": "number.ru",
+    "right": "View",
+    "operation": "verify",
+    "value": "OK"
+  },
+  {
+    "profile": "parent-refusal",
+    "priv": "1",
+    "case": "number.en",
+    "right": "Read",
+    "operation": "access",
+    "value": "ERROR:{DataProcessor.Замеры.Form.Форма.Form(20)}: Error calling context method (AccessRight): Cannot apply the Read right to Document.ЗамерДокумента"
+  },
+  {
+    "profile": "parent-refusal",
+    "priv": "1",
+    "case": "number.en",
+    "right": "Read",
+    "operation": "verify",
+    "value": "OK"
+  },
+  {
+    "profile": "parent-refusal",
+    "priv": "1",
+    "case": "number.en",
+    "right": "View",
+    "operation": "access",
+    "value": "YES"
+  },
+  {
+    "profile": "parent-refusal",
+    "priv": "1",
+    "case": "number.en",
+    "right": "View",
+    "operation": "verify",
+    "value": "OK"
+  },
+  {
+    "profile": "parent-refusal",
+    "priv": "1",
+    "case": "date.ru",
+    "right": "Read",
+    "operation": "access",
+    "value": "ERROR:{DataProcessor.Замеры.Form.Форма.Form(20)}: Error calling context method (AccessRight): Cannot apply the Read right to Document.ЗамерДокумента"
+  },
+  {
+    "profile": "parent-refusal",
+    "priv": "1",
+    "case": "date.ru",
+    "right": "Read",
+    "operation": "verify",
+    "value": "OK"
+  },
+  {
+    "profile": "parent-refusal",
+    "priv": "1",
+    "case": "date.ru",
+    "right": "View",
+    "operation": "access",
+    "value": "YES"
+  },
+  {
+    "profile": "parent-refusal",
+    "priv": "1",
+    "case": "date.ru",
+    "right": "View",
+    "operation": "verify",
+    "value": "OK"
+  },
+  {
+    "profile": "parent-refusal",
+    "priv": "1",
+    "case": "date.en",
+    "right": "Read",
+    "operation": "access",
+    "value": "ERROR:{DataProcessor.Замеры.Form.Форма.Form(20)}: Error calling context method (AccessRight): Cannot apply the Read right to Document.ЗамерДокумента"
+  },
+  {
+    "profile": "parent-refusal",
+    "priv": "1",
+    "case": "date.en",
+    "right": "Read",
+    "operation": "verify",
+    "value": "OK"
+  },
+  {
+    "profile": "parent-refusal",
+    "priv": "1",
+    "case": "date.en",
+    "right": "View",
+    "operation": "access",
+    "value": "YES"
+  },
+  {
+    "profile": "parent-refusal",
+    "priv": "1",
+    "case": "date.en",
+    "right": "View",
+    "operation": "verify",
+    "value": "OK"
+  },
+  {
+    "profile": "parent-refusal",
+    "priv": "1",
+    "case": "attribute",
+    "right": "Read",
+    "operation": "access",
+    "value": "ERROR:{DataProcessor.Замеры.Form.Форма.Form(20)}: Error calling context method (AccessRight): Cannot apply the Read right to Document.ЗамерДокумента.Attribute.Заполняемый"
+  },
+  {
+    "profile": "parent-refusal",
+    "priv": "1",
+    "case": "attribute",
+    "right": "Read",
+    "operation": "verify",
+    "value": "OK"
+  },
+  {
+    "profile": "parent-refusal",
+    "priv": "1",
+    "case": "attribute",
+    "right": "View",
+    "operation": "access",
+    "value": "YES"
+  },
+  {
+    "profile": "parent-refusal",
+    "priv": "1",
+    "case": "attribute",
+    "right": "View",
+    "operation": "verify",
+    "value": "OK"
+  },
+  {
+    "profile": "independent-child",
+    "priv": "0",
+    "case": "owner",
+    "right": "Read",
+    "operation": "access",
+    "value": "YES"
+  },
+  {
+    "profile": "independent-child",
+    "priv": "0",
+    "case": "owner",
+    "right": "Read",
+    "operation": "verify",
+    "value": "OK"
+  },
+  {
+    "profile": "independent-child",
+    "priv": "0",
+    "case": "owner",
+    "right": "View",
+    "operation": "access",
+    "value": "NO"
+  },
+  {
+    "profile": "independent-child",
+    "priv": "0",
+    "case": "owner",
+    "right": "View",
+    "operation": "verify",
+    "value": "ERROR:{DataProcessor.Замеры.Form.Форма.Form(17)}: Error calling context method (VerifyAccessRights): Access violation!"
+  },
+  {
+    "profile": "independent-child",
+    "priv": "0",
+    "case": "number.ru",
+    "right": "Read",
+    "operation": "access",
+    "value": "ERROR:{DataProcessor.Замеры.Form.Форма.Form(20)}: Error calling context method (AccessRight): Cannot apply the Read right to Document.ЗамерДокумента"
+  },
+  {
+    "profile": "independent-child",
+    "priv": "0",
+    "case": "number.ru",
+    "right": "Read",
+    "operation": "verify",
+    "value": "OK"
+  },
+  {
+    "profile": "independent-child",
+    "priv": "0",
+    "case": "number.ru",
+    "right": "View",
+    "operation": "access",
+    "value": "NO"
+  },
+  {
+    "profile": "independent-child",
+    "priv": "0",
+    "case": "number.ru",
+    "right": "View",
+    "operation": "verify",
+    "value": "OK"
+  },
+  {
+    "profile": "independent-child",
+    "priv": "0",
+    "case": "number.en",
+    "right": "Read",
+    "operation": "access",
+    "value": "ERROR:{DataProcessor.Замеры.Form.Форма.Form(20)}: Error calling context method (AccessRight): Cannot apply the Read right to Document.ЗамерДокумента"
+  },
+  {
+    "profile": "independent-child",
+    "priv": "0",
+    "case": "number.en",
+    "right": "Read",
+    "operation": "verify",
+    "value": "OK"
+  },
+  {
+    "profile": "independent-child",
+    "priv": "0",
+    "case": "number.en",
+    "right": "View",
+    "operation": "access",
+    "value": "NO"
+  },
+  {
+    "profile": "independent-child",
+    "priv": "0",
+    "case": "number.en",
+    "right": "View",
+    "operation": "verify",
+    "value": "OK"
+  },
+  {
+    "profile": "independent-child",
+    "priv": "0",
+    "case": "date.ru",
+    "right": "Read",
+    "operation": "access",
+    "value": "ERROR:{DataProcessor.Замеры.Form.Форма.Form(20)}: Error calling context method (AccessRight): Cannot apply the Read right to Document.ЗамерДокумента"
+  },
+  {
+    "profile": "independent-child",
+    "priv": "0",
+    "case": "date.ru",
+    "right": "Read",
+    "operation": "verify",
+    "value": "OK"
+  },
+  {
+    "profile": "independent-child",
+    "priv": "0",
+    "case": "date.ru",
+    "right": "View",
+    "operation": "access",
+    "value": "NO"
+  },
+  {
+    "profile": "independent-child",
+    "priv": "0",
+    "case": "date.ru",
+    "right": "View",
+    "operation": "verify",
+    "value": "OK"
+  },
+  {
+    "profile": "independent-child",
+    "priv": "0",
+    "case": "date.en",
+    "right": "Read",
+    "operation": "access",
+    "value": "ERROR:{DataProcessor.Замеры.Form.Форма.Form(20)}: Error calling context method (AccessRight): Cannot apply the Read right to Document.ЗамерДокумента"
+  },
+  {
+    "profile": "independent-child",
+    "priv": "0",
+    "case": "date.en",
+    "right": "Read",
+    "operation": "verify",
+    "value": "OK"
+  },
+  {
+    "profile": "independent-child",
+    "priv": "0",
+    "case": "date.en",
+    "right": "View",
+    "operation": "access",
+    "value": "NO"
+  },
+  {
+    "profile": "independent-child",
+    "priv": "0",
+    "case": "date.en",
+    "right": "View",
+    "operation": "verify",
+    "value": "OK"
+  },
+  {
+    "profile": "independent-child",
+    "priv": "0",
+    "case": "attribute",
+    "right": "Read",
+    "operation": "access",
+    "value": "ERROR:{DataProcessor.Замеры.Form.Форма.Form(20)}: Error calling context method (AccessRight): Cannot apply the Read right to Document.ЗамерДокумента.Attribute.Заполняемый"
+  },
+  {
+    "profile": "independent-child",
+    "priv": "0",
+    "case": "attribute",
+    "right": "Read",
+    "operation": "verify",
+    "value": "OK"
+  },
+  {
+    "profile": "independent-child",
+    "priv": "0",
+    "case": "attribute",
+    "right": "View",
+    "operation": "access",
+    "value": "NO"
+  },
+  {
+    "profile": "independent-child",
+    "priv": "0",
+    "case": "attribute",
+    "right": "View",
+    "operation": "verify",
+    "value": "OK"
+  },
+  {
+    "profile": "independent-child",
+    "priv": "1",
+    "case": "owner",
+    "right": "Read",
+    "operation": "access",
+    "value": "YES"
+  },
+  {
+    "profile": "independent-child",
+    "priv": "1",
+    "case": "owner",
+    "right": "Read",
+    "operation": "verify",
+    "value": "OK"
+  },
+  {
+    "profile": "independent-child",
+    "priv": "1",
+    "case": "owner",
+    "right": "View",
+    "operation": "access",
+    "value": "YES"
+  },
+  {
+    "profile": "independent-child",
+    "priv": "1",
+    "case": "owner",
+    "right": "View",
+    "operation": "verify",
+    "value": "OK"
+  },
+  {
+    "profile": "independent-child",
+    "priv": "1",
+    "case": "number.ru",
+    "right": "Read",
+    "operation": "access",
+    "value": "ERROR:{DataProcessor.Замеры.Form.Форма.Form(20)}: Error calling context method (AccessRight): Cannot apply the Read right to Document.ЗамерДокумента"
+  },
+  {
+    "profile": "independent-child",
+    "priv": "1",
+    "case": "number.ru",
+    "right": "Read",
+    "operation": "verify",
+    "value": "OK"
+  },
+  {
+    "profile": "independent-child",
+    "priv": "1",
+    "case": "number.ru",
+    "right": "View",
+    "operation": "access",
+    "value": "YES"
+  },
+  {
+    "profile": "independent-child",
+    "priv": "1",
+    "case": "number.ru",
+    "right": "View",
+    "operation": "verify",
+    "value": "OK"
+  },
+  {
+    "profile": "independent-child",
+    "priv": "1",
+    "case": "number.en",
+    "right": "Read",
+    "operation": "access",
+    "value": "ERROR:{DataProcessor.Замеры.Form.Форма.Form(20)}: Error calling context method (AccessRight): Cannot apply the Read right to Document.ЗамерДокумента"
+  },
+  {
+    "profile": "independent-child",
+    "priv": "1",
+    "case": "number.en",
+    "right": "Read",
+    "operation": "verify",
+    "value": "OK"
+  },
+  {
+    "profile": "independent-child",
+    "priv": "1",
+    "case": "number.en",
+    "right": "View",
+    "operation": "access",
+    "value": "YES"
+  },
+  {
+    "profile": "independent-child",
+    "priv": "1",
+    "case": "number.en",
+    "right": "View",
+    "operation": "verify",
+    "value": "OK"
+  },
+  {
+    "profile": "independent-child",
+    "priv": "1",
+    "case": "date.ru",
+    "right": "Read",
+    "operation": "access",
+    "value": "ERROR:{DataProcessor.Замеры.Form.Форма.Form(20)}: Error calling context method (AccessRight): Cannot apply the Read right to Document.ЗамерДокумента"
+  },
+  {
+    "profile": "independent-child",
+    "priv": "1",
+    "case": "date.ru",
+    "right": "Read",
+    "operation": "verify",
+    "value": "OK"
+  },
+  {
+    "profile": "independent-child",
+    "priv": "1",
+    "case": "date.ru",
+    "right": "View",
+    "operation": "access",
+    "value": "YES"
+  },
+  {
+    "profile": "independent-child",
+    "priv": "1",
+    "case": "date.ru",
+    "right": "View",
+    "operation": "verify",
+    "value": "OK"
+  },
+  {
+    "profile": "independent-child",
+    "priv": "1",
+    "case": "date.en",
+    "right": "Read",
+    "operation": "access",
+    "value": "ERROR:{DataProcessor.Замеры.Form.Форма.Form(20)}: Error calling context method (AccessRight): Cannot apply the Read right to Document.ЗамерДокумента"
+  },
+  {
+    "profile": "independent-child",
+    "priv": "1",
+    "case": "date.en",
+    "right": "Read",
+    "operation": "verify",
+    "value": "OK"
+  },
+  {
+    "profile": "independent-child",
+    "priv": "1",
+    "case": "date.en",
+    "right": "View",
+    "operation": "access",
+    "value": "YES"
+  },
+  {
+    "profile": "independent-child",
+    "priv": "1",
+    "case": "date.en",
+    "right": "View",
+    "operation": "verify",
+    "value": "OK"
+  },
+  {
+    "profile": "independent-child",
+    "priv": "1",
+    "case": "attribute",
+    "right": "Read",
+    "operation": "access",
+    "value": "ERROR:{DataProcessor.Замеры.Form.Форма.Form(20)}: Error calling context method (AccessRight): Cannot apply the Read right to Document.ЗамерДокумента.Attribute.Заполняемый"
+  },
+  {
+    "profile": "independent-child",
+    "priv": "1",
+    "case": "attribute",
+    "right": "Read",
+    "operation": "verify",
+    "value": "OK"
+  },
+  {
+    "profile": "independent-child",
+    "priv": "1",
+    "case": "attribute",
+    "right": "View",
+    "operation": "access",
+    "value": "YES"
+  },
+  {
+    "profile": "independent-child",
+    "priv": "1",
+    "case": "attribute",
+    "right": "View",
+    "operation": "verify",
+    "value": "OK"
+  },
+  {
+    "profile": "independent-default",
+    "priv": "0",
+    "case": "owner",
+    "right": "Read",
+    "operation": "access",
+    "value": "YES"
+  },
+  {
+    "profile": "independent-default",
+    "priv": "0",
+    "case": "owner",
+    "right": "Read",
+    "operation": "verify",
+    "value": "OK"
+  },
+  {
+    "profile": "independent-default",
+    "priv": "0",
+    "case": "owner",
+    "right": "View",
+    "operation": "access",
+    "value": "NO"
+  },
+  {
+    "profile": "independent-default",
+    "priv": "0",
+    "case": "owner",
+    "right": "View",
+    "operation": "verify",
+    "value": "ERROR:{DataProcessor.Замеры.Form.Форма.Form(17)}: Error calling context method (VerifyAccessRights): Access violation!"
+  },
+  {
+    "profile": "independent-default",
+    "priv": "0",
+    "case": "number.ru",
+    "right": "Read",
+    "operation": "access",
+    "value": "ERROR:{DataProcessor.Замеры.Form.Форма.Form(20)}: Error calling context method (AccessRight): Cannot apply the Read right to Document.ЗамерДокумента"
+  },
+  {
+    "profile": "independent-default",
+    "priv": "0",
+    "case": "number.ru",
+    "right": "Read",
+    "operation": "verify",
+    "value": "OK"
+  },
+  {
+    "profile": "independent-default",
+    "priv": "0",
+    "case": "number.ru",
+    "right": "View",
+    "operation": "access",
+    "value": "NO"
+  },
+  {
+    "profile": "independent-default",
+    "priv": "0",
+    "case": "number.ru",
+    "right": "View",
+    "operation": "verify",
+    "value": "OK"
+  },
+  {
+    "profile": "independent-default",
+    "priv": "0",
+    "case": "number.en",
+    "right": "Read",
+    "operation": "access",
+    "value": "ERROR:{DataProcessor.Замеры.Form.Форма.Form(20)}: Error calling context method (AccessRight): Cannot apply the Read right to Document.ЗамерДокумента"
+  },
+  {
+    "profile": "independent-default",
+    "priv": "0",
+    "case": "number.en",
+    "right": "Read",
+    "operation": "verify",
+    "value": "OK"
+  },
+  {
+    "profile": "independent-default",
+    "priv": "0",
+    "case": "number.en",
+    "right": "View",
+    "operation": "access",
+    "value": "NO"
+  },
+  {
+    "profile": "independent-default",
+    "priv": "0",
+    "case": "number.en",
+    "right": "View",
+    "operation": "verify",
+    "value": "OK"
+  },
+  {
+    "profile": "independent-default",
+    "priv": "0",
+    "case": "date.ru",
+    "right": "Read",
+    "operation": "access",
+    "value": "ERROR:{DataProcessor.Замеры.Form.Форма.Form(20)}: Error calling context method (AccessRight): Cannot apply the Read right to Document.ЗамерДокумента"
+  },
+  {
+    "profile": "independent-default",
+    "priv": "0",
+    "case": "date.ru",
+    "right": "Read",
+    "operation": "verify",
+    "value": "OK"
+  },
+  {
+    "profile": "independent-default",
+    "priv": "0",
+    "case": "date.ru",
+    "right": "View",
+    "operation": "access",
+    "value": "NO"
+  },
+  {
+    "profile": "independent-default",
+    "priv": "0",
+    "case": "date.ru",
+    "right": "View",
+    "operation": "verify",
+    "value": "OK"
+  },
+  {
+    "profile": "independent-default",
+    "priv": "0",
+    "case": "date.en",
+    "right": "Read",
+    "operation": "access",
+    "value": "ERROR:{DataProcessor.Замеры.Form.Форма.Form(20)}: Error calling context method (AccessRight): Cannot apply the Read right to Document.ЗамерДокумента"
+  },
+  {
+    "profile": "independent-default",
+    "priv": "0",
+    "case": "date.en",
+    "right": "Read",
+    "operation": "verify",
+    "value": "OK"
+  },
+  {
+    "profile": "independent-default",
+    "priv": "0",
+    "case": "date.en",
+    "right": "View",
+    "operation": "access",
+    "value": "NO"
+  },
+  {
+    "profile": "independent-default",
+    "priv": "0",
+    "case": "date.en",
+    "right": "View",
+    "operation": "verify",
+    "value": "OK"
+  },
+  {
+    "profile": "independent-default",
+    "priv": "0",
+    "case": "attribute",
+    "right": "Read",
+    "operation": "access",
+    "value": "ERROR:{DataProcessor.Замеры.Form.Форма.Form(20)}: Error calling context method (AccessRight): Cannot apply the Read right to Document.ЗамерДокумента.Attribute.Заполняемый"
+  },
+  {
+    "profile": "independent-default",
+    "priv": "0",
+    "case": "attribute",
+    "right": "Read",
+    "operation": "verify",
+    "value": "OK"
+  },
+  {
+    "profile": "independent-default",
+    "priv": "0",
+    "case": "attribute",
+    "right": "View",
+    "operation": "access",
+    "value": "NO"
+  },
+  {
+    "profile": "independent-default",
+    "priv": "0",
+    "case": "attribute",
+    "right": "View",
+    "operation": "verify",
+    "value": "OK"
+  },
+  {
+    "profile": "independent-default",
+    "priv": "1",
+    "case": "owner",
+    "right": "Read",
+    "operation": "access",
+    "value": "YES"
+  },
+  {
+    "profile": "independent-default",
+    "priv": "1",
+    "case": "owner",
+    "right": "Read",
+    "operation": "verify",
+    "value": "OK"
+  },
+  {
+    "profile": "independent-default",
+    "priv": "1",
+    "case": "owner",
+    "right": "View",
+    "operation": "access",
+    "value": "YES"
+  },
+  {
+    "profile": "independent-default",
+    "priv": "1",
+    "case": "owner",
+    "right": "View",
+    "operation": "verify",
+    "value": "OK"
+  },
+  {
+    "profile": "independent-default",
+    "priv": "1",
+    "case": "number.ru",
+    "right": "Read",
+    "operation": "access",
+    "value": "ERROR:{DataProcessor.Замеры.Form.Форма.Form(20)}: Error calling context method (AccessRight): Cannot apply the Read right to Document.ЗамерДокумента"
+  },
+  {
+    "profile": "independent-default",
+    "priv": "1",
+    "case": "number.ru",
+    "right": "Read",
+    "operation": "verify",
+    "value": "OK"
+  },
+  {
+    "profile": "independent-default",
+    "priv": "1",
+    "case": "number.ru",
+    "right": "View",
+    "operation": "access",
+    "value": "YES"
+  },
+  {
+    "profile": "independent-default",
+    "priv": "1",
+    "case": "number.ru",
+    "right": "View",
+    "operation": "verify",
+    "value": "OK"
+  },
+  {
+    "profile": "independent-default",
+    "priv": "1",
+    "case": "number.en",
+    "right": "Read",
+    "operation": "access",
+    "value": "ERROR:{DataProcessor.Замеры.Form.Форма.Form(20)}: Error calling context method (AccessRight): Cannot apply the Read right to Document.ЗамерДокумента"
+  },
+  {
+    "profile": "independent-default",
+    "priv": "1",
+    "case": "number.en",
+    "right": "Read",
+    "operation": "verify",
+    "value": "OK"
+  },
+  {
+    "profile": "independent-default",
+    "priv": "1",
+    "case": "number.en",
+    "right": "View",
+    "operation": "access",
+    "value": "YES"
+  },
+  {
+    "profile": "independent-default",
+    "priv": "1",
+    "case": "number.en",
+    "right": "View",
+    "operation": "verify",
+    "value": "OK"
+  },
+  {
+    "profile": "independent-default",
+    "priv": "1",
+    "case": "date.ru",
+    "right": "Read",
+    "operation": "access",
+    "value": "ERROR:{DataProcessor.Замеры.Form.Форма.Form(20)}: Error calling context method (AccessRight): Cannot apply the Read right to Document.ЗамерДокумента"
+  },
+  {
+    "profile": "independent-default",
+    "priv": "1",
+    "case": "date.ru",
+    "right": "Read",
+    "operation": "verify",
+    "value": "OK"
+  },
+  {
+    "profile": "independent-default",
+    "priv": "1",
+    "case": "date.ru",
+    "right": "View",
+    "operation": "access",
+    "value": "YES"
+  },
+  {
+    "profile": "independent-default",
+    "priv": "1",
+    "case": "date.ru",
+    "right": "View",
+    "operation": "verify",
+    "value": "OK"
+  },
+  {
+    "profile": "independent-default",
+    "priv": "1",
+    "case": "date.en",
+    "right": "Read",
+    "operation": "access",
+    "value": "ERROR:{DataProcessor.Замеры.Form.Форма.Form(20)}: Error calling context method (AccessRight): Cannot apply the Read right to Document.ЗамерДокумента"
+  },
+  {
+    "profile": "independent-default",
+    "priv": "1",
+    "case": "date.en",
+    "right": "Read",
+    "operation": "verify",
+    "value": "OK"
+  },
+  {
+    "profile": "independent-default",
+    "priv": "1",
+    "case": "date.en",
+    "right": "View",
+    "operation": "access",
+    "value": "YES"
+  },
+  {
+    "profile": "independent-default",
+    "priv": "1",
+    "case": "date.en",
+    "right": "View",
+    "operation": "verify",
+    "value": "OK"
+  },
+  {
+    "profile": "independent-default",
+    "priv": "1",
+    "case": "attribute",
+    "right": "Read",
+    "operation": "access",
+    "value": "ERROR:{DataProcessor.Замеры.Form.Форма.Form(20)}: Error calling context method (AccessRight): Cannot apply the Read right to Document.ЗамерДокумента.Attribute.Заполняемый"
+  },
+  {
+    "profile": "independent-default",
+    "priv": "1",
+    "case": "attribute",
+    "right": "Read",
+    "operation": "verify",
+    "value": "OK"
+  },
+  {
+    "profile": "independent-default",
+    "priv": "1",
+    "case": "attribute",
+    "right": "View",
+    "operation": "access",
+    "value": "YES"
+  },
+  {
+    "profile": "independent-default",
+    "priv": "1",
+    "case": "attribute",
+    "right": "View",
+    "operation": "verify",
+    "value": "OK"
+  }
+]

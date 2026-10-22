@@ -146,6 +146,7 @@ pub(super) fn compile_branch(
         sql: mut projections,
         deferred_presentations,
         logical_columns,
+        logical_projection,
     } = render_selected_projections(&selected, &context, widen, mode.expand, storage_domain)?;
     // A composite value occupies several output columns, so the owner keys
     // are found by counting back from the end, where they were appended.
@@ -230,7 +231,12 @@ pub(super) fn compile_branch(
         .zip(std::iter::once(source).chain(joins.iter().map(|join| &join.source)))
     {
         finalize_constants_relation(scope, source.object, dialect)?;
-        finalize_aggregate_relation(scope, source.object, dialect)?;
+        // Свидетельство отказа проверяет существование исходного остатка.
+        // Свёртка без измерений давала бы одну NULL-строку даже на пустом
+        // наборе и ошибочно запрещала разрешённую проекцию только ресурса.
+        if !presentations.forbidden_balance_probe {
+            finalize_aggregate_relation(scope, source.object, dialect)?;
+        }
     }
     let mut sql = compile_branch_sql(
         ast,
@@ -263,6 +269,16 @@ pub(super) fn compile_branch(
     }
     dialect.append_limit(&mut sql, ast.top);
     Ok(CompiledBranch {
+        logical_projection: if owner_keys == 0
+            && deferred_presentations.is_empty()
+            && !totals
+            && source.nested.is_none()
+            && !joins.iter().any(|join| join.source.nested.is_some())
+        {
+            logical_projection
+        } else {
+            None
+        },
         sql,
         keyed_sql,
         sections,
@@ -1225,6 +1241,7 @@ fn push_owner_key(
     for scope in scopes {
         let sql = context.identity_sql(scope)?;
         selected.push(SelectedProjection::Generated {
+            composite: None,
             sql,
             label: "__owner".to_owned(),
             deferred: false,
@@ -1261,6 +1278,7 @@ struct JoinCondition {
 }
 
 struct RenderedProjections {
+    logical_projection: Option<Vec<crate::query::LogicalResultColumn>>,
     columns: Vec<CompiledColumn>,
     sql: Vec<String>,
     deferred_presentations: Vec<usize>,
@@ -1321,6 +1339,7 @@ fn compile_selected_projections(
                 let (sql, label, deferred) =
                     compile_presentation(context, token, *operation, argument, presentations)?;
                 selected.push(SelectedProjection::Generated {
+                    composite: None,
                     sql,
                     label: projection
                         .alias
@@ -1346,8 +1365,9 @@ fn compile_selected_projections(
                         || format!("__expr{number}"),
                         |alias| alias.lexeme.to_owned(),
                     );
-                    for member in members {
+                    for (index, member) in members.into_iter().enumerate() {
                         selected.push(SelectedProjection::Generated {
+                            composite: Some((label.clone(), member.type_tag, index == 0)),
                             sql: member.sql,
                             label: format!("{label}{}", member.suffix),
                             deferred: false,
@@ -1359,6 +1379,17 @@ fn compile_selected_projections(
                 let sql = compile_expression(expression, context)?;
                 let kind = expression_kind(expression, context)?;
                 selected.push(SelectedProjection::Generated {
+                    composite: if !kind.is_wildcard()
+                        && super::projection::contains_undefined(expression)
+                    {
+                        Some((
+                            String::new(),
+                            Some(super::projection::UNAVAILABLE_TAG),
+                            true,
+                        ))
+                    } else {
+                        None
+                    },
                     sql: if kind == ColumnKind::DateTime && !storage_domain {
                         context.dialect.date_scalar(&sql)
                     } else {
@@ -1380,6 +1411,7 @@ fn compile_selected_projections(
             } => {
                 let (sql, output_kind) = compile_aggregate(context, *kind, *distinct, argument)?;
                 selected.push(SelectedProjection::Generated {
+                    composite: None,
                     sql,
                     label: projection
                         .alias
@@ -1503,6 +1535,7 @@ fn render_selected_projections(
                 label,
                 deferred,
                 kind,
+                ..
             } => {
                 context.catalog.charge(1, None)?;
                 let (expression, kind) = if widen.contains(&columns.len()) {
@@ -1524,7 +1557,10 @@ fn render_selected_projections(
         }
         logical_columns.push(columns.len() - before);
     }
+    let logical_projection =
+        super::projection::selected_projection(selected, &logical_columns, &columns, expand);
     Ok(RenderedProjections {
+        logical_projection,
         columns,
         sql,
         deferred_presentations,
@@ -1545,6 +1581,7 @@ fn projection_scalar(
             label,
             deferred,
             kind,
+            ..
         } => (!*deferred).then(|| (sql.clone(), kind.clone(), label.clone())),
         SelectedProjection::Field(resolved) => match projected_members(resolved.field()).as_slice()
         {

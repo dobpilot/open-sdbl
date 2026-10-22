@@ -1,0 +1,17 @@
+{
+  "only_mutated_path": [
+    1,
+    9,
+    1,
+    4
+  ],
+  "only_mutated_field": "owner textual comment",
+  "before": "Сведения о доступных направлениях сдачи отчетности",
+  "after": "",
+  "native_known_own_declarations": 0,
+  "synthetic_known_own_declarations": 4,
+  "synthetic_catalog_membership_restored": true,
+  "synthetic_known_empty_sections": true,
+  "native_resource_unchanged": true,
+  "sdk_source_modified": false
+}

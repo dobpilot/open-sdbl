@@ -1,0 +1,107 @@
+[
+  {
+    "label": "owner-only",
+    "only_header_tag_2_to_3_guids": [
+      "4bb0f7c3-62f3-4352-9bc8-e243dd18fe4a"
+    ],
+    "native": false,
+    "exact_ast_diff": [
+      {
+        "path": [
+          1,
+          9,
+          1,
+          0
+        ],
+        "before": "2",
+        "after": "3"
+      }
+    ],
+    "known_declared_types": 0
+  },
+  {
+    "label": "children-only",
+    "only_header_tag_2_to_3_guids": [
+      "bc106ef9-3eeb-40d4-aa59-ae1855ba1744",
+      "73d8b319-9bea-4638-a602-23c12f37c227"
+    ],
+    "native": false,
+    "exact_ast_diff": [
+      {
+        "path": [
+          6,
+          2,
+          0,
+          1,
+          1,
+          1,
+          0
+        ],
+        "before": "2",
+        "after": "3"
+      },
+      {
+        "path": [
+          6,
+          3,
+          0,
+          1,
+          1,
+          1,
+          0
+        ],
+        "before": "2",
+        "after": "3"
+      }
+    ],
+    "known_declared_types": 0
+  },
+  {
+    "label": "owner-and-children",
+    "only_header_tag_2_to_3_guids": [
+      "4bb0f7c3-62f3-4352-9bc8-e243dd18fe4a",
+      "bc106ef9-3eeb-40d4-aa59-ae1855ba1744",
+      "73d8b319-9bea-4638-a602-23c12f37c227"
+    ],
+    "native": false,
+    "exact_ast_diff": [
+      {
+        "path": [
+          1,
+          9,
+          1,
+          0
+        ],
+        "before": "2",
+        "after": "3"
+      },
+      {
+        "path": [
+          6,
+          2,
+          0,
+          1,
+          1,
+          1,
+          0
+        ],
+        "before": "2",
+        "after": "3"
+      },
+      {
+        "path": [
+          6,
+          3,
+          0,
+          1,
+          1,
+          1,
+          0
+        ],
+        "before": "2",
+        "after": "3"
+      }
+    ],
+    "known_declared_types": 2
+  }
+]

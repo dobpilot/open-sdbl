@@ -1,0 +1,15 @@
+{
+  "native_sections": 6,
+  "native_fields": 68,
+  "qualified_type_rows": 201,
+  "reference_target_xmls": 42,
+  "native_section_order_matches_xml": true,
+  "native_field_order_matches_xml": true,
+  "every_type_reference_and_qualifier_matches_xml": true,
+  "compound_fields": 9,
+  "source_scope": "Direct own ChildObjects/TabularSection and each direct ChildObjects/Attribute only; generated reference TypeIds come from corresponding native XML, not owner GUIDs or SDK resolution.",
+  "section_generated_type_and_value_ids_verified": 24,
+  "all_field_identity_comments_empty": true,
+  "all_field_identity_flags_zero": true,
+  "current_sdk_field_declarations_known": 0
+}
