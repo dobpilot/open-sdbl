@@ -1,0 +1,4 @@
+    Checking open-sdbl v0.9.36 (/home/kan/Документы/develop/open-sdbl)
+    Checking open-sdbl-db v0.9.36 (/home/kan/Документы/develop/open-sdbl/crates/open-sdbl-db)
+    Checking open-sdbl-cli v0.9.36 (/home/kan/Документы/develop/open-sdbl/crates/open-sdbl-cli)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 3.80s

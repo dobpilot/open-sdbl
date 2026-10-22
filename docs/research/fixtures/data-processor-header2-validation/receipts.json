@@ -1,0 +1,40 @@
+[
+  {
+    "label": "fmt",
+    "command": [
+      "cargo",
+      "fmt",
+      "--all",
+      "--",
+      "--check"
+    ],
+    "exit": 0,
+    "seconds": 1.12
+  },
+  {
+    "label": "clippy",
+    "command": [
+      "cargo",
+      "clippy",
+      "--offline",
+      "--workspace",
+      "--all-targets",
+      "--",
+      "-D",
+      "warnings"
+    ],
+    "exit": 0,
+    "seconds": 5.63
+  },
+  {
+    "label": "tests",
+    "command": [
+      "cargo",
+      "test",
+      "--offline",
+      "--workspace"
+    ],
+    "exit": 101,
+    "seconds": 421.93
+  }
+]

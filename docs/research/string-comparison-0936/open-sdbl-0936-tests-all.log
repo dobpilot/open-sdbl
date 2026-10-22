@@ -1,0 +1,2036 @@
+   Compiling open-sdbl v0.9.36 (/home/kan/Документы/develop/open-sdbl)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.30s
+     Running unittests src/lib.rs (target/debug/deps/open_sdbl-e538f7f6c497e87a)
+
+running 189 tests
+test metadata::config::tests::extracts_matching_name_synonyms_and_comment ... ok
+test metadata::config::tests::extracts_a_nested_attribute_from_its_owner_resource ... ok
+test metadata::config::tests::ignores_suffixed_config_slots_without_decoding_them ... ok
+test metadata::config::tests::classifies_fields_from_information_register_collections ... ok
+test metadata::config::tests::classifies_accumulation_register_field_collections ... ok
+test metadata::config::tests::parses_empty_synonyms ... ok
+test metadata::config::tests::marks_only_descriptors_from_the_enum_values_collection ... ok
+test metadata::config::tests::reads_an_account_with_subaccounts_and_its_children ... ok
+test metadata::config::tests::projects_verified_catalog_predefined_rows ... ok
+test metadata::config::tests::reads_predefined_accounts_from_a_dot9_resource ... ok
+test metadata::config::tests::reads_predefined_kinds_from_a_dot7_resource ... ok
+test metadata::config::tests::streaming_projection_rejects_truncated_input ... ok
+test metadata::config::tests::reads_accounting_register_balance_flags_and_chart ... ok
+test metadata::container::tests::bounds_are_checked_before_collecting_documents ... ok
+test metadata::container::tests::broken_directory_is_not_reported_as_known_absence ... ok
+test metadata::container::tests::cyclic_chain_is_rejected ... ok
+test metadata::container::tests::missing_name_is_distinct_from_invalid_container ... ok
+test metadata::config::tests::streaming_projection_matches_the_generic_tree_projection ... ok
+test metadata::container::tests::multipart_storage_uses_the_existing_contents_codec ... ok
+test metadata::container::tests::missing_required_streams_are_errors ... ok
+test metadata::container::tests::native_scalar_and_storage_entries_match_the_measured_bytes ... ok
+test metadata::container::tests::scalar_setting_remains_an_internal_value ... ok
+test metadata::db_names::tests::collects_object_field_and_separator_entries ... ok
+test metadata::db_names::tests::keeps_similar_metadata_kinds_distinct ... ok
+test metadata::db_names::tests::streaming_projection_matches_the_generic_tree_and_validates_all_input ... ok
+test metadata::db_names::tests::rejects_a_decoded_map_without_entries ... ok
+test metadata::db_names::tests::indexes_fields_and_removes_data_separators ... ok
+test metadata::deflate::tests::inflates_a_literal_only_dynamic_block_with_an_empty_distance_tree ... ok
+test metadata::deflate::tests::rejects_multiple_zero_length_distance_codes ... ok
+test metadata::deflate::tests::covers_all_deflate_diagnostics_with_meaningful_offsets ... ok
+test metadata::deflate::tests::rejects_truncated_invalid_and_oversized_data ... ok
+test metadata::deflate::tests::inflates_stored_fixed_and_dynamic_blocks ... ok
+test metadata::extension::tests::parses_the_three_extension_attributes ... ok
+test metadata::extension::tests::builds_extension_metadata_with_field_mapping ... ok
+test metadata::guid::tests::converts_to_physical_one_c_byte_order ... ok
+test metadata::deflate::tests::reuses_huffman_storage_and_copies_back_references_by_slices ... ok
+test metadata::guid::tests::sql_uuid_permutation_inverts_physical_byte_order ... ok
+test metadata::guid::tests::validates_and_canonicalizes_guid ... ok
+test metadata::extension::tests::reports_a_malformed_field_record_and_keeps_valid_ones ... ok
+test metadata::identity::tests::ids_preserve_real_guid_bytes ... ok
+test metadata::identity::tests::standard_names_are_bilingual ... ok
+test metadata::normalize::tests::collapses_a_bare_value_type_field_without_an_empty_name ... ok
+test metadata::normalize::tests::collapses_reference_and_compound_members ... ok
+test metadata::normalize::tests::preserves_non_ascii_identifiers_without_corrupting_utf8 ... ok
+test metadata::db_names::tests::rejects_pathologically_deep_db_names ... ok
+test metadata::normalize::tests::recases_longest_tokens_and_compound_suffixes ... ok
+test metadata::normalize::tests::removes_one_physical_prefix_and_normalizes_the_date_standard_field ... ok
+test metadata::queries::tests::extension_queries_use_the_captured_config_cas_shape ... ok
+test metadata::deflate::tests::decodes_a_short_final_code_and_rejects_an_incomplete_tree_hole ... ok
+test metadata::queries::tests::layout_probes_use_portable_catalog_functions ... ok
+test metadata::queries::tests::legacy_catalog_avoids_lateral_and_ordinality ... ok
+test metadata::queries::tests::selectors_follow_the_detected_layout ... ok
+test metadata::queries::tests::legacy_variants_never_mention_part_numbers ... ok
+test metadata::queries::tests::the_extensions_statement_answers_identity_and_order ... ok
+test metadata::queries::tests::the_extension_catalog_names_only_the_columns_the_base_has ... ok
+test metadata::queries::tests::the_resource_predicate_matches_what_the_statements_select ... ok
+test metadata::queries::tests::the_fingerprint_statements_hash_content_without_moving_it ... ok
+test metadata::queries::tests::whole_table_statements_read_the_table_without_a_filter ... ok
+test metadata::resolve::tests::compares_arbitrary_postgres_names_against_schema_case_insensitively ... ok
+test metadata::resolve::tests::indexes_exact_and_compound_live_fields_without_prefix_collisions ... ok
+test metadata::config::tests::rejects_pathologically_deep_config ... ok
+test metadata::resolve::tests::infers_fixed_and_variable_allowed_length_from_postgres_types ... ok
+test metadata::resolve::tests::indexes_schema_field_owners_once_in_table_order ... ok
+test metadata::resolve::tests::live_names_are_recased_only_at_the_catalog_boundary ... ok
+test metadata::queries::tests::every_acquisition_query_is_select_only ... ok
+test metadata::resolve::resolution_indexes_tests::dependency_indexes_preserve_first_eligible_owner_and_all_table_exclusions ... ok
+test metadata::queries::tests::mssql_statements_avoid_functions_newer_than_sql_server_2008 ... ok
+test metadata::route_points::tests::native_four_variant_switch_preserves_complete_consideration_membership ... ok
+test metadata::route_points::tests::native_graph_matches_every_xml_member_and_preserves_owner ... ok
+test metadata::route_points::tests::unknown_count_member_identity_and_kind_never_produce_partial_membership ... ok
+test metadata::route_points::tests::known_empty_and_complete_resource_keep_owner_separate_from_type ... ok
+test metadata::resolve::resolution_indexes_tests::indexed_service_mapping_agrees_with_original_or_order_and_unicode_equality ... ok
+test metadata::runtime_metadata::buh_credit_document_tests::all_buh_document_members_match_native_xml_order_and_qualified_types ... ok
+test metadata::runtime_metadata::buh_credit_document_tests::the_known_document_class_retains_existing_native_number_and_empty_memberships ... ok
+test metadata::runtime_metadata::current56_catalog_types_tests::native_catalog_keeps_membership_and_matches_both_xml_types ... ok
+test metadata::runtime_metadata::buh_credit_document_tests::native_document_object_and_reference_identities_are_preserved ... ok
+test metadata::runtime_metadata::buh_credit_document_tests::verified_empty_document_membership_remains_known ... ok
+test metadata::runtime_metadata::buh_credit_document_tests::an_unmeasured_document_owner_identity_does_not_enable_attribute_projection ... ok
+test metadata::runtime_metadata::buh_credit_document_tests::modern_document_wrappers_keep_the_complete_ordered_membership ... ok
+test metadata::runtime_metadata::legacy14_boolean_constant_tests::malformed_constant_profiles_publish_nothing ... ok
+test metadata::runtime_metadata::buh_credit_document_tests::modern_document_identity_accepts_the_measured_older_attribute_wrapper ... ok
+test metadata::runtime_metadata::data_processor_tests::section_field_corruption_does_not_mix_neighbouring_sections ... ok
+test metadata::runtime_metadata::data_processor_tests::unmeasured_owner_header_wrapper_is_unknown ... ok
+test metadata::runtime_metadata::current40_header2_sections_tests::native_equipment_matches_ten_own_two_parts_ten_fields_and_twenty_xml_types ... ok
+test metadata::runtime_metadata::current40_header2_sections_tests::unknown_complete_own_metadata_does_not_enable_the_new_fallback ... ok
+test metadata::runtime_metadata::data_processor_tests::unresolvable_types_invalidate_owner_and_section_field_completeness ... ok
+test metadata::runtime_metadata::data_processor_tests::malformed_section_wrappers_and_duplicate_members_are_not_complete ... ok
+test metadata::runtime_metadata::buh_characteristic_tests::all_buh_characteristic_members_match_native_xml_order_and_qualified_types ... ok
+test metadata::runtime_metadata::legacy_buh_processor_tests::native_legacy_buh_processor_preserves_complete_ordered_members_and_types ... ok
+test metadata::runtime_metadata::legacy54_catalog_tests::native_two_ordered_date_time_attributes_and_empty_sections_match_xml ... ok
+test metadata::runtime_metadata::buh_credit_document_tests::missing_or_ambiguous_document_descriptors_keep_membership_unknown ... ok
+test metadata::runtime_metadata::legacy54_catalog_tests::unmeasured_nonempty_sections_are_not_fabricated_empty ... ok
+test metadata::runtime_metadata::buh_characteristic_tests::verified_empty_characteristic_membership_remains_known ... ok
+test metadata::runtime_metadata::buh_characteristic_tests::modern_characteristic_wrappers_keep_the_complete_ordered_membership ... ok
+test metadata::runtime_metadata::legacy_functional_option_mode_tests::existing_native_false_and_true_options_are_unchanged ... ok
+test metadata::runtime_metadata::legacy38_own_comment_tests::native_nine_own_one_section_eighteen_fields_match_thirty_two_xml_types ... ok
+test metadata::runtime_metadata::data_processor_tests::malformed_attribute_wrappers_and_missing_descriptors_invalidate_the_complete_list ... ok
+test metadata::runtime_metadata::legacy_functional_option_mode_tests::native_legacy_option_preserves_identity_location_and_true_mode ... ok
+test metadata::runtime_metadata::current40_header2_sections_tests::the_old_some_section_route_keeps_its_original_unknown_field_metadata ... ok
+test metadata::runtime_metadata::legacy_functional_option_mode_tests::malformed_old_profiles_publish_no_partial_mode_or_location ... ok
+test metadata::runtime_metadata::legacy_functional_option_mode_tests::six_native_text_comments_keep_complete_option_settings ... ok
+test metadata::runtime_metadata::legacy38_own_comment_tests::strict_identity_callers_keep_rejecting_nonempty_comments ... ok
+test metadata::runtime_metadata::legacy_conversion_empty_types_tests::native_conversion_processor_preserves_every_ordered_declaration_and_qualifier ... ok
+test metadata::runtime_metadata::legacy_news_characteristic_tests::native_news_characteristic_matches_all_xml_declarations_settings_and_generated_types ... ok
+test metadata::runtime_metadata::legacy_business_process_tests::all_legacy_business_process_members_match_the_complete_native_xml ... ok
+test metadata::runtime_metadata::legacy_business_process_tests::a_missing_or_ambiguous_descriptor_keeps_the_collection_unknown ... ok
+test metadata::runtime_metadata::legacy_report_directions_comment_tests::native_reporting_directions_textual_owner_comment_preserves_exact_xml_metadata ... ok
+test metadata::runtime_metadata::legacy_report_deliveries_tests::native_report_deliveries_preserves_all_sixteen_xml_qualified_attributes ... ok
+test metadata::runtime_metadata::legacy38_own_comment_tests::owner_and_section_identity_comments_remain_strict ... ok
+test metadata::runtime_metadata::legacy_buh_processor_tests::legacy_owner_validation_does_not_accept_unmeasured_headers ... ok
+test metadata::runtime_metadata::legacy_report_directions_comment_tests::previously_supported_empty_string_comment_retains_the_same_four_declarations ... ok
+test metadata::runtime_metadata::buh_characteristic_tests::missing_or_ambiguous_characteristic_descriptors_keep_membership_unknown ... ok
+test metadata::runtime_metadata::legacy_report_event_sections_tests::earlier_native_report_deliveries_section_uses_the_same_catalog_profile ... ok
+test metadata::runtime_metadata::legacy_buh_processor_tests::malformed_legacy_section_or_fields_remain_independently_unknown ... ok
+test metadata::runtime_metadata::legacy_report_event_sections_tests::native_report_event_section_preserves_four_ordered_xml_fields_and_own_attributes ... ok
+test metadata::runtime_metadata::legacy14_boolean_constant_tests::native_boolean_constant_and_both_conditional_links_match_xml ... ok
+test metadata::runtime_metadata::legacy_buh_processor_tests::malformed_legacy_collections_do_not_publish_a_prefix ... ok
+test metadata::runtime_metadata::report_metadata_tests::actual_native_empty_report_and_original_unf_report_are_complete ... ok
+test metadata::runtime_metadata::report_metadata_tests::malformed_missing_duplicate_attributes_are_unknown ... ok
+test metadata::runtime_metadata::legacy_vat_real_estate_tests::native_real_estate_vat_matches_ten_own_two_parts_24_fields_and_48_xml_types ... ok
+test metadata::runtime_metadata::report_metadata_tests::native_report_composition_matches_designer ... ok
+test metadata::runtime_metadata::legacy_sales_book_document_tests::native_sales_book_document_preserves_all_seven_xml_declarations_and_order ... ok
+test metadata::runtime_metadata::report_metadata_tests::ordered_guids_and_qualified_types_match_independent_designer_xml ... ok
+test metadata::runtime_metadata::report_metadata_tests::unsupported_report_owner_header_is_unknown ... ok
+test metadata::runtime_metadata::report_metadata_tests::unresolved_named_types_invalidate_complete_attributes_and_section_columns ... ok
+test metadata::runtime_metadata::current56_catalog_types_tests::malformed_late_rows_and_local_owner_publish_no_type_prefix ... ok
+test metadata::runtime_metadata::legacy_sales_book_sections_tests::native_sales_book_sections_match_all_six_sections_68_fields_and_201_qualified_types ... ok
+test metadata::runtime_metadata::report_metadata_tests::malformed_sections_and_columns_preserve_uncertainty ... ok
+test metadata::runtime_metadata::report_metadata_tests::verified_empty_collections_are_distinct_from_unknown ... ok
+test metadata::runtime_metadata::buh_credit_document_tests::invalid_buh_document_membership_never_returns_a_partial_list ... ok
+test metadata::runtime_metadata::tests::malformed_section_and_attribute_wrappers_never_publish_partial_membership ... ok
+test metadata::schema::tests::canonicalizes_inline_tabular_section_tables_and_owner_references ... ok
+test metadata::schema::tests::omits_the_non_physical_empty_composite_member ... ok
+test metadata::schema::tests::parses_tables_columns_references_and_indexes ... ok
+test metadata::schema::tests::preserves_a_table_when_one_column_has_an_unknown_type_tag ... ok
+test metadata::schema::tests::preserves_an_explicitly_empty_universal_reference_target ... ok
+test metadata::runtime_metadata::legacy_news_characteristic_tests::malformed_news_owners_do_not_enable_the_legacy_profile ... ok
+test metadata::schema::tests::projects_known_service_inline_tables_and_reports_unknown_kinds ... ok
+test metadata::schema::tests::rejects_non_schema_values ... ok
+test metadata::schema::tests::retains_a_table_and_reports_malformed_children ... ok
+test metadata::tests::categorizes_metadata_offsets_by_decoder_domain ... ok
+test metadata::users::language_tests::native_users_preserve_selected_and_known_default_language_without_mutation ... ok
+test metadata::users::language_tests::replacing_only_language_preserves_the_other_decoded_fields ... ok
+test metadata::users::language_tests::unsupported_truncated_and_wrong_typed_languages_remain_unknown ... ok
+test metadata::users::legacy_language_tests::malformed_legacy_structures_and_unmeasured_form_remain_unknown ... ok
+test metadata::users::legacy_language_tests::native_legacy_choices_preserve_identity_names_and_roles ... ok
+test metadata::users::separation_tests::historical_layouts_retain_empty_and_nonempty_bindings ... ok
+test metadata::users::separation_tests::inconsistent_optional_fields_and_suffix_kinds_remain_unknown ... ok
+test metadata::users::separation_tests::known_empty_is_distinct_from_unknown ... ok
+test metadata::users::separation_tests::rejects_incomplete_counts_and_unknown_layouts ... ok
+test metadata::users::separation_tests::rejects_missing_layout_sentinels ... ok
+test metadata::users::separation_tests::rejects_duplicates_and_unsupported_values_without_partial_results ... ok
+test metadata::users::separation_tests::retains_the_complete_string_binding ... ok
+test metadata::value::tests::parses_bom_nested_values_and_doubled_quotes ... ok
+test metadata::value::tests::preserves_unicode_whitespace_and_long_escaped_strings ... ok
+test metadata::value::tests::rejects_pathologically_deep_values ... ok
+test metadata::value::tests::rejects_truncated_and_trailing_values ... ok
+test query::core::codegen::params::tests::renders_decimals_from_unscaled_digits ... ok
+test query::core::codegen::tests::bounds_mssql_labels_by_utf16_code_units ... ok
+test query::core::codegen::tests::classifies_live_catalog_types_from_both_providers ... ok
+test query::core::codegen::tests::join_reuse_requires_the_complete_reference_identity ... ok
+test query::core::codegen::tests::metadata_names_use_one_allocation_free_case_fold ... ok
+test query::core::codegen::tests::quotes_identifiers_with_the_canonical_dialect_delimiters ... ok
+test query::core::resolve::extension_table_name_tests::requires_a_non_empty_numeric_extension_suffix ... ok
+test query::core::types::tests::round_trips_every_tag ... ok
+test query::mssql::tests::backend_defaults_to_the_newest_level ... ok
+test query::mssql::tests::maps_product_versions_to_levels ... ok
+test metadata::runtime_metadata::legacy_business_process_tests::legacy_unknown_mixed_and_duplicate_rows_do_not_publish_partial_membership ... ok
+test metadata::runtime_metadata::legacy_report_directions_comment_tests::nonstring_owner_comments_and_unrelated_invalid_guards_remain_unrecognized ... ok
+test metadata::runtime_metadata::tests::accumulation_unknown_kind_and_corrupt_members_preserve_independent_collections ... ok
+test metadata::runtime_metadata::tests::unknown_process_number_codes_do_not_erase_independently_complete_members ... ok
+test metadata::runtime_metadata::tests::unresolved_named_types_invalidate_process_owner_and_section_membership ... ok
+test metadata::runtime_metadata::tests::unknown_section_wrappers_do_not_publish_owner_membership ... ok
+test metadata::runtime_metadata::tests::standard_table_rejects_unknown_codes_duplicates_and_sparse_members ... ok
+test metadata::runtime_metadata::legacy_news_characteristic_tests::malformed_news_members_do_not_publish_partial_declarations_or_membership ... ok
+test metadata::runtime_metadata::legacy_conversion_empty_types_tests::malformed_conversion_declarations_do_not_publish_membership_or_a_prefix ... ok
+test metadata::runtime_metadata::legacy38_own_comment_tests::malformed_comments_and_late_own_rows_publish_no_prefix ... ok
+test metadata::runtime_metadata::buh_characteristic_tests::invalid_buh_characteristic_membership_never_returns_a_partial_list ... ok
+test metadata::runtime_metadata::legacy_sales_book_sections_tests::section_identities_cannot_alias_the_owner_or_its_existing_own_attributes ... ok
+test metadata::runtime_metadata::legacy54_catalog_tests::malformed_last_rows_and_owner_fail_closed_without_prefix ... ok
+test metadata::runtime_metadata::legacy_sales_book_document_tests::malformed_legacy_document_owner_does_not_enable_the_profile ... ok
+test metadata::runtime_metadata::legacy_report_deliveries_tests::malformed_legacy_catalog_never_publishes_an_attribute_prefix ... ok
+test metadata::runtime_metadata::legacy_report_event_sections_tests::invalid_late_catalog_sections_never_publish_prefixes_or_overwrite_own_attributes ... ok
+test metadata::runtime_metadata::legacy_vat_real_estate_tests::malformed_real_estate_own_profile_never_publishes_declaration_prefixes ... ok
+test metadata::runtime_metadata::legacy_sales_book_sections_tests::malformed_last_section_field_never_publishes_any_of_68_declarations ... ok
+test metadata::runtime_metadata::legacy_sales_book_sections_tests::malformed_last_section_never_publishes_section_or_field_prefixes ... ok
+test metadata::runtime_metadata::legacy_sales_book_document_tests::malformed_legacy_document_members_do_not_publish_a_prefix ... ok
+test metadata::runtime_metadata::legacy_vat_real_estate_tests::malformed_real_estate_sections_preserve_complete_own_types_without_field_prefix ... ok
+test metadata::runtime_metadata::current40_header2_sections_tests::malformed_header2_fallback_publishes_no_new_prefix_and_preserves_own_and_settings ... ok
+
+test result: ok. 189 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.35s
+
+     Running tests/access_expansion.rs (target/debug/deps/access_expansion-250128b494273dc6)
+
+running 10 tests
+test the_table_stands_for_the_directive_naming_it ... ok
+test substitutes_a_name_whatever_its_case ... ok
+test reports_where_a_text_stops_making_sense ... ok
+test reads_the_source_description_of_the_full_form ... ok
+test parses_a_restriction_into_its_nodes ... ok
+test names_a_missing_session_parameter ... ok
+test reports_an_outdated_template_as_its_message ... ok
+test expands_the_universal_branch_to_a_true_condition ... ok
+test expands_the_key_based_branch_into_a_correlated_condition ... ok
+test a_freely_granting_role_lifts_the_restriction ... ok
+
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.22s
+
+     Running tests/access_roles.rs (target/debug/deps/access_roles-367e1ac7297a0f07)
+
+running 8 tests
+test builds_the_rights_acquisition_statements ... ok
+test names_rights_by_identifier_and_by_spelling ... ok
+test refuses_a_resource_of_another_shape ... ok
+test projects_the_roles_collection_of_the_root_resource ... ok
+test catalogs_roles_from_their_descriptors ... ok
+test decodes_a_read_only_role_with_a_restriction_and_templates ... ok
+test keeps_refused_rights_and_members ... ok
+test rights_not_listed_follow_the_role_default ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.06s
+
+     Running tests/access_templates.rs (target/debug/deps/access_templates-11c0c391e544dacd)
+
+running 9 tests
+test a_nested_call_expands_within_the_body ... ok
+test a_call_substitutes_the_named_parameters_of_its_signature ... ok
+test a_call_substitutes_its_arguments_by_number ... ok
+test a_template_may_be_called_without_the_parenthesis ... ok
+test the_current_names_stand_for_the_table_and_the_right ... ok
+test a_directive_reads_the_functions_of_the_manual ... ok
+test two_number_signs_stand_for_one ... ok
+test a_template_naming_the_table_compiles_into_the_query ... FAILED
+test an_expanded_template_compiles_into_the_query ... FAILED
+
+failures:
+
+---- a_template_naming_the_table_compiles_into_the_query stdout ----
+
+thread 'a_template_naming_the_table_compiles_into_the_query' (3970886) panicked at tests/access_templates.rs:219:5:
+SELECT "__src"."_code"::text AS "Code" FROM (SELECT "__restricted"."_idrref" AS "_idrref", "__restricted"."_code" AS "_code", "__restricted"."_date_time" AS "_date_time", "__restricted"."_fld54" AS "_fld54" FROM "_reference53" AS "__restricted" WHERE ((rtrim(CAST("__restricted"."_code" AS text), ' ') COLLATE "C") = (rtrim(CAST('HQ' AS text), ' ') COLLATE "C"))) AS "__src"
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- an_expanded_template_compiles_into_the_query stdout ----
+
+thread 'an_expanded_template_compiles_into_the_query' (3970887) panicked at tests/access_templates.rs:191:5:
+SELECT "__src"."_code"::text AS "Code" FROM (SELECT "__restricted"."_idrref" AS "_idrref", "__restricted"."_code" AS "_code", "__restricted"."_date_time" AS "_date_time", "__restricted"."_fld54" AS "_fld54" FROM "_reference53" AS "__restricted" WHERE ((rtrim(CAST("__restricted"."_code" AS text), ' ') COLLATE "C") = (rtrim(CAST('HQ' AS text), ' ') COLLATE "C"))) AS "__src"
+
+
+failures:
+    a_template_naming_the_table_compiles_into_the_query
+    an_expanded_template_compiles_into_the_query
+
+test result: FAILED. 7 passed; 2 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+error: test failed, to rerun pass `-p open-sdbl --test access_templates`
+     Running tests/access_users.rs (target/debug/deps/access_users-67483711c34c6954)
+
+running 6 tests
+test provides_the_users_statements ... ok
+test the_identifier_of_a_user_is_stored_in_the_physical_order ... ok
+test refuses_a_malformed_blob ... ok
+test decodes_the_demo_users_with_their_roles ... ok
+test answers_whether_a_user_can_authenticate ... ok
+test the_login_flags_do_not_decide_whether_a_user_can_authenticate ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/buh_catalog_layout_56.rs (target/debug/deps/buh_catalog_layout_56-dbb07580d3b8c0ef)
+
+running 3 tests
+test same_name_common_module_does_not_acquire_catalog_membership ... ok
+test unknown_class_56_length_remains_unknown ... ok
+test measured_buh_catalogs_acquire_complete_own_attributes ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.65s
+
+     Running tests/business_task_reference.rs (target/debug/deps/business_task_reference-737bd541707a49e5)
+
+running 5 tests
+test guid_prefix_class_33_retains_its_existing_projection ... ok
+test platform_compiled_references_match_source_xml_instead_of_object_types ... ok
+test independently_compiled_no_standard_commands_changes_only_marker_not_reference_identity ... ok
+test unknown_or_incomplete_header_first_forms_never_fall_back_to_object_guid ... ok
+test all_eleven_demo_reference_targets_are_owned_by_the_right_descriptors ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.18s
+
+     Running tests/catalog_default_presentation.rs (target/debug/deps/catalog_default_presentation-d8905850f01a2f6f)
+
+running 3 tests
+test presentation_is_acquired_independently_of_code_type_and_lengths ... ok
+test unknown_presentation_never_falls_back_to_known_code_settings ... ok
+test acquired_unf_presentation_matches_both_native_xml_variants ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.53s
+
+     Running tests/catalog_hierarchy.rs (target/debug/deps/catalog_hierarchy-c3b223adf98dd5ec)
+
+running 3 tests
+test compact_native_prefixes_preserve_both_flags ... ok
+test unknown_or_missing_flags_do_not_default_to_false ... ok
+test hierarchy_matches_all_uuid_bound_native_xml_flags ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.54s
+
+     Running tests/catalog_own_attributes.rs (target/debug/deps/catalog_own_attributes-a6b54cc4a96d0fc2)
+
+running 3 tests
+test compact_and_known_empty_collections_preserve_membership ... ok
+test incomplete_or_ambiguous_collections_never_return_partial_membership ... ok
+test own_membership_matches_native_order_and_excludes_all_tabular_attributes ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.54s
+
+     Running tests/catalog_standard_attributes.rs (target/debug/deps/catalog_standard_attributes-483d2724edb8be38)
+
+running 3 tests
+test numeric_code_and_zero_description_length_are_acquired_without_sql ... ok
+test unknown_catalog_settings_never_become_zero_lengths ... ok
+test acquired_unf_catalog_settings_match_uuid_bound_native_xml ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.55s
+
+     Running tests/catalog_tabular_sections.rs (target/debug/deps/catalog_tabular_sections-2d6a972277f19c2b)
+
+running 3 tests
+test compact_membership_and_known_empty_are_preserved ... ok
+test incomplete_or_unknown_membership_is_not_guessed ... ok
+test tabular_membership_matches_all_native_catalogs ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.63s
+
+     Running tests/characteristic_settings.rs (target/debug/deps/characteristic_settings-3cf7b15336879eaa)
+
+running 5 tests
+test native_settings_and_own_attributes_match_independent_xml ... ok
+test malformed_native_attribute_body_and_named_attribute_cycle_are_unknown ... ok
+test unknown_types_and_incomplete_collections_do_not_publish_partial_success ... ok
+test acquired_named_value_types_use_existing_expansion_and_cycle_detection ... ok
+test original_demo_uses_its_actual_attribute_type_instead_of_control_type ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s
+
+     Running tests/common_settings_load.rs (target/debug/deps/common_settings_load-f7aacb156c8d8055)
+
+running 10 tests
+test existing_literal_renderer_escapes_quotes_and_preserves_explicit_empty_user ... ok
+test active_empty_value_remains_distinct_from_an_inactive_separator ... ok
+test missing_duplicate_and_extra_states_fail_closed ... ok
+test global_condition_and_inactive_scopes_remain_distinct_for_both_types ... ok
+test missing_or_ambiguous_dbnames_and_uncovered_flags_fail_closed ... ok
+test complete_active_scope_constrains_user_keys_and_every_separator ... ok
+test unsupported_types_and_backend_fail_before_sql ... ok
+test inactive_scope_retains_false_and_empty_value_predicates ... ok
+test numeric_inactive_scope_has_a_typed_zero ... ok
+test numeric_values_use_the_shared_exact_decimal_renderer ... ok
+
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/config_headers_0932.rs (target/debug/deps/config_headers_0932-8456fc86dbc00f36)
+
+running 2 tests
+test own_header_does_not_accept_a_nested_attribute_and_checks_the_rest ... ok
+test own_headers_agree_with_native_config_corpora ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.57s
+
+     Running tests/configuration_fingerprint_scope.rs (target/debug/deps/configuration_fingerprint_scope-0146578b9f433cb6)
+
+running 2 tests
+test each_provider_fingerprint_covers_the_filtered_metadata_rows_only ... ok
+test code_and_service_resources_outside_the_metadata_filter_are_excluded ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/corpus_fixture.rs (target/debug/deps/corpus_fixture-06f8af92f6f004e3)
+
+running 1 test
+test prune_the_full_dump_to_a_fixture ... ignored, maintenance: builds a fixture from a full base dump
+
+test result: ok. 0 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/data_processor_0911.rs (target/debug/deps/data_processor_0911-2bf1f1bb0728c622)
+
+running 4 tests
+test independently_recompiled_section_fields_keep_non_alphabetic_xml_order ... ok
+test corrupted_sections_and_unmeasured_class_never_publish_partial_membership ... ok
+test native_cf_members_match_independent_designer_xml_order_and_types ... ok
+test corrupted_attribute_membership_is_unknown_without_erasing_sections ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running tests/data_processor_header2.rs (target/debug/deps/data_processor_header2-02b56b62683cfe8e)
+
+running 4 tests
+test invalid_last_legacy_declaration_does_not_mutate_earlier_attributes ... ok
+test exact_native_legacy_owner_retains_order_types_and_empty_sections ... ok
+test legacy_identity_is_not_enabled_for_other_owners_or_modern_owner_headers ... ok
+test malformed_legacy_identity_and_declaration_remain_unknown ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests/document_metadata_rights.rs (target/debug/deps/document_metadata_rights-ad9653add7805001)
+
+running 5 tests
+test acquired_document_owner_read_is_applicable ... ok
+test unsupported_rights_paths_and_number_settings_are_not_guessed ... ok
+test acquired_membership_and_child_description_are_both_required ... ok
+test independent_document_defaults_with_explicit_children_remain_unsupported ... ok
+test replays_all_432_retained_native_document_observations ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.16s
+
+     Running tests/document_numbering_096.rs (target/debug/deps/document_numbering_096-ee75f2c40e94372a)
+
+running 3 tests
+test native_minimum_covers_every_periodicity_and_two_shared_numerator_links ... ok
+test unmeasured_and_malformed_numbering_is_unknown_without_fabricated_absence ... ok
+test all_native_unf_documents_match_periodicity_and_numerator_object_identity ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.20s
+
+     Running tests/document_register_membership_096.rs (target/debug/deps/document_register_membership_096-91b19e72078c67dd)
+
+running 3 tests
+test unrelated_guids_do_not_change_known_membership ... ok
+test malformed_or_unknown_register_collections_never_return_partial_success ... ok
+test all_native_document_registers_match_exact_xml_order_and_identity ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.15s
+
+     Running tests/enum_header19.rs (target/debug/deps/enum_header19-aa190f86288a8b7b)
+
+running 4 tests
+test unchanged_header19_enum_matches_native_ref_and_survives_snapshot_resolution ... ok
+test malformed_legacy_enum_profiles_never_publish_manager_as_reference ... ok
+test modern_enum_and_report_keep_distinct_native_contracts ... ok
+test all_five_unchanged_buh_enums_match_their_native_ref_categories ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/enum_reference_type_096.rs (target/debug/deps/enum_reference_type_096-88682d5392ec2773)
+
+running 1 test
+test every_native_enum_reference_identity_differs_from_its_manager ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.85s
+
+     Running tests/extension_roles.rs (target/debug/deps/extension_roles-6e4d7f263f713d00)
+
+running 8 tests
+test never_guesses_the_activity_of_a_record_it_could_not_follow ... ok
+test reads_the_root_key_of_an_extension ... ok
+test reads_the_record_of_an_extension ... ok
+test builds_the_statements_of_the_extension_store ... ok
+test reads_whether_the_base_applies_an_extension ... ok
+test reads_the_rights_and_the_name_of_an_extension_role ... ok
+test parses_a_resource_of_several_records ... ok
+test reads_the_resource_index_of_an_extension ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/extension_structure.rs (target/debug/deps/extension_structure-93e4afcdc499d2db)
+
+running 12 tests
+test a_root_index_without_the_record_names_no_configuration_root ... ok
+test an_object_adopted_by_name_has_no_link ... ok
+test an_unfamiliar_tail_answers_unknown_rather_than_a_guess ... ok
+test refuses_an_entry_counting_what_it_does_not_hold ... ok
+test an_object_of_the_extension_s_own_has_no_link ... ok
+test the_version_an_extension_record_carries ... ok
+test an_adopted_catalog_carries_its_link_to_the_base ... ok
+test the_configuration_itself_is_adopted_without_a_link ... ok
+test decodes_the_catalog_of_the_configuration ... ok
+test the_catalog_lists_every_described_object ... ok
+test the_root_index_names_the_configuration_root ... ok
+test every_description_of_both_extensions_decodes_in_the_measured_shape ... ok
+
+test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/fill_checking_096.rs (target/debug/deps/fill_checking_096-397b580e5d17daa9)
+
+running 4 tests
+test an_unknown_attribute_mode_remains_unknown_without_erasing_usage_and_type ... ok
+test native_country_settings_do_not_guess_code_or_description_defaults ... ok
+test malformed_unknown_and_sparse_standard_settings_are_not_partial_or_empty ... ok
+test native_fill_checking_matches_every_verified_owner_and_field_through_the_snapshot ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 12.10s
+
+     Running tests/functional_option_content.rs (target/debug/deps/functional_option_content-5344ac48ba6d7b95)
+
+running 4 tests
+test retained_unf_populated_content_preserves_independent_fields ... ok
+test native_populated_content_preserves_location_and_both_flags ... ok
+test malformed_populated_content_never_publishes_partial_option_fields ... ok
+test native_populated_options_keep_typed_location_after_source_removal ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests/header_types_0933.rs (target/debug/deps/header_types_0933-149707b62503d2db)
+
+running 3 tests
+test a_class_number_alone_does_not_publish_a_route_point_type ... ok
+test unknown_and_measured_empty_type_positions_remain_distinct ... ok
+test generated_types_and_sections_agree_with_native_config_corpora ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 43.47s
+
+     Running tests/lexer.rs (target/debug/deps/lexer-6f92c404a722716c)
+
+running 26 tests
+test byte_spans_preserve_multibyte_source_text ... ok
+test classifies_every_operator_and_punctuation_lexeme ... ok
+test handles_empty_input_comments_at_eof_and_crlf_positions ... ok
+test every_token_span_round_trips_to_its_lexeme ... ok
+test recognizes_accumulation_virtual_tables_bilingually ... ok
+test iterator_yields_one_diagnostic_and_then_fuses ... ok
+test recognizes_count_bilingually ... ok
+test recognizes_date_functions_bilingually ... ok
+test recognizes_period_arithmetic_keywords_bilingually ... ok
+test recognizes_russian_and_english_keywords_case_insensitively ... ok
+test recognizes_date_part_keywords_bilingually ... ok
+test recognizes_slice_first_bilingually ... ok
+test recognizes_slice_last_bilingually ... ok
+test recognizes_sum_min_max_and_avg_bilingually ... ok
+test recognizes_the_refs_operator_bilingually ... ok
+test recognizes_value_function_bilingually ... ok
+test rejects_a_parameter_without_a_name ... ok
+test recognizes_totals_keywords_bilingually ... ok
+test recognizes_temporary_table_keywords_bilingually ... ok
+test reports_bom_and_other_unexpected_characters_with_positions ... ok
+test rejects_malformed_hexadecimal_binary_literals ... ok
+test reports_the_opening_quote_of_an_unterminated_string ... ok
+test tokenizes_decimal_numbers_without_consuming_a_trailing_period ... ok
+test tokenizes_a_representative_query_with_positions ... ok
+test tokenizes_hexadecimal_binary_literals_as_one_token ... ok
+test recognizes_the_complete_bilingual_keyword_table ... ok
+
+test result: ok. 26 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/metadata_conformance.rs (target/debug/deps/metadata_conformance-36194994387fac42)
+
+running 1 test
+test resolves_the_catalog_and_attribute_verified_in_the_test_infobase ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/metadata_lookup.rs (target/debug/deps/metadata_lookup-0d0ee4dd6e1f1918)
+
+running 3 tests
+test looks_up_attributes_and_predefined_values_by_stable_identity ... ok
+test exercises_every_lookup_error_variant ... ok
+test reads_the_reference_targets_a_type_description_names ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.33s
+
+     Running tests/metadata_rights.rs (target/debug/deps/metadata_rights-93df751d4284f666)
+
+running 4 tests
+test zero_length_standard_settings_are_not_inferred_as_applicable_or_nonexistent ... ok
+test rejects_missing_owners_settings_and_unmeasured_rights_without_grant_inference ... ok
+test replays_all_492_native_observations_without_combining_role_fragments ... ok
+test independent_attribute_defaults_without_parent_remain_explicitly_unsupported ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.18s
+
+     Running tests/metadata_synonyms.rs (target/debug/deps/metadata_synonyms-85f8c7db67f7d919)
+
+running 7 tests
+test the_synonyms_the_fixture_carries_reach_the_resolved_items ... ok
+test an_item_without_a_descriptor_carries_nothing_and_presents_its_name ... ok
+test a_missing_language_falls_back_to_the_metadata_name ... ok
+test a_blank_synonym_counts_as_absent ... ok
+test an_attribute_synonym_reaches_the_resolved_field ... ok
+test an_object_synonym_reaches_the_resolved_object_and_the_snapshot ... ok
+test the_language_is_matched_case_insensitively ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/minimal_document_membership_096.rs (target/debug/deps/minimal_document_membership_096-c7b0656cfee49b0c)
+
+running 1 test
+test native_minimal_document_has_two_independent_sections_and_a_verified_empty_one ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/native_extension_properties.rs (target/debug/deps/native_extension_properties-6d0ec21783425367)
+
+running 5 tests
+test native_extension_uuid_matches_the_physical_reference_permutation ... ok
+test unknown_header_flags_invalid_unicode_and_fake_complete_tails_do_not_grant_properties ... ok
+test native_absent_version_is_known_but_truncation_is_unknown ... ok
+test every_truncated_native_property_record_keeps_its_properties_unknown ... ok
+test native_mode_profile_hash_and_version_are_kept_separate ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/native_extension_purpose.rs (target/debug/deps/native_extension_purpose-8237e556953bcfc5)
+
+running 5 tests
+test name_changes_do_not_change_purpose ... ok
+test unknown_purpose_and_unmeasured_header_keep_the_catalog_without_a_default ... ok
+test all_native_purposes_match_installed_extension_info_and_xml ... ok
+test older_native_compatibility_modes_confirm_the_same_three_codes ... ok
+test damaged_and_truncated_native_roots_never_invent_purpose ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.69s
+
+     Running tests/native_legacy_extension_headers.rs (target/debug/deps/native_legacy_extension_headers-64fd4be243caf6b9)
+
+running 2 tests
+test unsupported_legacy_tail_keeps_identity_but_does_not_infer_a_link ... ok
+test every_missing_buh_header_matches_native_xml_identity_name_and_belonging ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests/native_root_right_guids.rs (target/debug/deps/native_root_right_guids-2fdb958211d604b7)
+
+running 2 tests
+test named_root_rights_match_independently_measured_native_identifiers ... ok
+test single_right_role_grants_match_native_positive_and_cross_negative_checks ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/query_accounting.rs (target/debug/deps/query_accounting-069ce2906e115972)
+
+running 31 tests
+test resolves_purposes_balance_flags_and_the_chart ... ok
+test resolves_a_predefined_account ... ok
+test balances_derive_their_debit_and_credit_parts_at_the_grain_read ... ok
+test exposes_accounts_and_the_sides_of_non_balance_fields ... ok
+test compiles_the_extra_dimension_values_table ... ok
+test balance_and_turnovers_answer_opening_turnover_and_closing ... ok
+test grouped_statements_accept_expressions_of_grouped_fields ... ok
+test conditions_of_virtual_tables_dereference_through_a_join ... ok
+test expanded_balances_are_parts_of_the_finest_grain_sums ... ok
+test accounting_virtual_tables_take_the_platform_arity ... ok
+test records_with_ext_dimensions_expose_both_sides ... ok
+test dr_cr_turnovers_group_by_both_accounts_and_both_sides ... ok
+test ordering_by_a_compound_field_spreads_over_its_columns ... ok
+test a_long_named_composite_field_spreads_undefined_over_its_members ... ok
+test listed_kinds_pick_the_level_that_carries_them ... ok
+test a_derived_fixed_reference_joins_a_runtime_typed_field ... ok
+test inner_and_left_joins_take_any_condition ... ok
+test a_join_condition_dereferences_through_a_cast ... ok
+test shared_names_of_a_nested_source_fall_back_to_labels ... ok
+test long_aliases_of_nested_sources_resolve_by_their_text ... ok
+test extra_dimensions_are_positional_dimensions_of_the_aggregates ... ok
+test records_conditions_read_side_less_names_on_either_side ... FAILED
+test records_take_the_first_n_in_the_given_or_record_order ... ok
+test a_value_dereferenced_across_targets_compares_by_its_reference_member ... ok
+test the_extra_dimension_kinds_of_the_chart_answer_to_their_names ... ok
+test turnovers_fold_the_two_sides_of_a_record ... ok
+test turnovers_without_extra_dimensions_take_the_balanced_account_condition ... ok
+test turnovers_prune_unread_dimensions_and_split_by_period ... ok
+test union_spreads_undefined_over_a_composite_extra_dimension ... ok
+test tuple_membership_accepts_references_of_several_types ... ok
+test turnovers_expose_the_correspondence_of_each_side ... ok
+
+failures:
+
+---- records_conditions_read_side_less_names_on_either_side stdout ----
+SQL SELECT "Д"."_accountdtrref" AS "Дт" FROM (SELECT "__aggregate_base"."_period" AS "_period", "__aggregate_base"."_periodadjustment" AS "_periodadjustment", "__aggregate_base"."_recordertref" AS "_recordertref", "__aggregate_base"."_recorderrref" AS "_recorderrref", "__aggregate_base"."_lineno" AS "_lineno", "__aggregate_base"."_active" AS "_active", "__aggregate_base"."_accountdtrref" AS "_accountdtrref", "__aggregate_base"."_accountctrref" AS "_accountctrref", "__aggregate_base"."_fld38457rref" AS "_fld38457rref", "__aggregate_base"."_fld38458dtrref" AS "_fld38458dtrref", "__aggregate_base"."_fld38458ctrref" AS "_fld38458ctrref", "__aggregate_base"."_fld38459dtrref" AS "_fld38459dtrref", "__aggregate_base"."_fld38459ctrref" AS "_fld38459ctrref", "__aggregate_base"."_fld38460" AS "_fld38460", "__aggregate_base"."_fld38461dt" AS "_fld38461dt", "__aggregate_base"."_fld38461ct" AS "_fld38461ct", "__aggregate_base"."_fld38462dt" AS "_fld38462dt", "__aggregate_base"."_fld38462ct" AS "_fld38462ct", "__aggregate_base"."_fld38463dt" AS "_fld38463dt", "__aggregate_base"."_fld38463ct" AS "_fld38463ct", "__aggregate_base"."_fld38464dt" AS "_fld38464dt", "__aggregate_base"."_fld38464ct" AS "_fld38464ct", "__aggregate_base"."_fld38465dt" AS "_fld38465dt", "__aggregate_base"."_fld38465ct" AS "_fld38465ct", "__aggregate_base"."_fld38466" AS "_fld38466", "__aggregate_base"."_fld38467" AS "_fld38467", "__aggregate_base"."_fld2331" AS "_fld2331", "__aggregate_base"."_valuedt1_type" AS "_valuedt1_type", "__aggregate_base"."_valuedt1_rtref" AS "_valuedt1_rtref", "__aggregate_base"."_valuedt1_rrref" AS "_valuedt1_rrref", "__aggregate_base"."_kinddt1rref" AS "_kinddt1rref", "__aggregate_base"."_valuedt2_type" AS "_valuedt2_type", "__aggregate_base"."_valuedt2_rtref" AS "_valuedt2_rtref", "__aggregate_base"."_valuedt2_rrref" AS "_valuedt2_rrref", "__aggregate_base"."_kinddt2rref" AS "_kinddt2rref", "__aggregate_base"."_valuedt3_type" AS "_valuedt3_type", "__aggregate_base"."_valuedt3_rtref" AS "_valuedt3_rtref", "__aggregate_base"."_valuedt3_rrref" AS "_valuedt3_rrref", "__aggregate_base"."_kinddt3rref" AS "_kinddt3rref", "__aggregate_base"."_valuect1_type" AS "_valuect1_type", "__aggregate_base"."_valuect1_rtref" AS "_valuect1_rtref", "__aggregate_base"."_valuect1_rrref" AS "_valuect1_rrref", "__aggregate_base"."_kindct1rref" AS "_kindct1rref", "__aggregate_base"."_valuect2_type" AS "_valuect2_type", "__aggregate_base"."_valuect2_rtref" AS "_valuect2_rtref", "__aggregate_base"."_valuect2_rrref" AS "_valuect2_rrref", "__aggregate_base"."_kindct2rref" AS "_kindct2rref", "__aggregate_base"."_valuect3_type" AS "_valuect3_type", "__aggregate_base"."_valuect3_rtref" AS "_valuect3_rtref", "__aggregate_base"."_valuect3_rrref" AS "_valuect3_rrref", "__aggregate_base"."_kindct3rref" AS "_kindct3rref" FROM "_accrg38456" AS "__aggregate_base" WHERE ("__aggregate_base"."_period" >= TIMESTAMP '2024-01-01 00:00:00') AND ("__aggregate_base"."_period" < TIMESTAMP '2024-12-31 23:59:59') AND "__aggregate_base"."_fld2331" = 0 AND (((("__aggregate_base"."_fld38457rref" = NULL) AND ("__aggregate_base"."_accountdtrref" = NULL)) AND ("__aggregate_base"."_valuedt1_type" = NULL)) OR ((("__aggregate_base"."_fld38457rref" = NULL) AND ("__aggregate_base"."_accountctrref" = NULL)) AND ("__aggregate_base"."_valuect1_type" = NULL)))) AS "Д"
+SQL SELECT "Д"."_accountdtrref" AS "Дт" FROM (SELECT "__aggregate_base"."_period" AS "_period", "__aggregate_base"."_periodadjustment" AS "_periodadjustment", "__aggregate_base"."_recordertref" AS "_recordertref", "__aggregate_base"."_recorderrref" AS "_recorderrref", "__aggregate_base"."_lineno" AS "_lineno", "__aggregate_base"."_active" AS "_active", "__aggregate_base"."_accountdtrref" AS "_accountdtrref", "__aggregate_base"."_accountctrref" AS "_accountctrref", "__aggregate_base"."_fld38457rref" AS "_fld38457rref", "__aggregate_base"."_fld38458dtrref" AS "_fld38458dtrref", "__aggregate_base"."_fld38458ctrref" AS "_fld38458ctrref", "__aggregate_base"."_fld38459dtrref" AS "_fld38459dtrref", "__aggregate_base"."_fld38459ctrref" AS "_fld38459ctrref", "__aggregate_base"."_fld38460" AS "_fld38460", "__aggregate_base"."_fld38461dt" AS "_fld38461dt", "__aggregate_base"."_fld38461ct" AS "_fld38461ct", "__aggregate_base"."_fld38462dt" AS "_fld38462dt", "__aggregate_base"."_fld38462ct" AS "_fld38462ct", "__aggregate_base"."_fld38463dt" AS "_fld38463dt", "__aggregate_base"."_fld38463ct" AS "_fld38463ct", "__aggregate_base"."_fld38464dt" AS "_fld38464dt", "__aggregate_base"."_fld38464ct" AS "_fld38464ct", "__aggregate_base"."_fld38465dt" AS "_fld38465dt", "__aggregate_base"."_fld38465ct" AS "_fld38465ct", "__aggregate_base"."_fld38466" AS "_fld38466", "__aggregate_base"."_fld38467" AS "_fld38467", "__aggregate_base"."_fld2331" AS "_fld2331", "__aggregate_base"."_valuedt1_type" AS "_valuedt1_type", "__aggregate_base"."_valuedt1_rtref" AS "_valuedt1_rtref", "__aggregate_base"."_valuedt1_rrref" AS "_valuedt1_rrref", "__aggregate_base"."_kinddt1rref" AS "_kinddt1rref", "__aggregate_base"."_valuedt2_type" AS "_valuedt2_type", "__aggregate_base"."_valuedt2_rtref" AS "_valuedt2_rtref", "__aggregate_base"."_valuedt2_rrref" AS "_valuedt2_rrref", "__aggregate_base"."_kinddt2rref" AS "_kinddt2rref", "__aggregate_base"."_valuedt3_type" AS "_valuedt3_type", "__aggregate_base"."_valuedt3_rtref" AS "_valuedt3_rtref", "__aggregate_base"."_valuedt3_rrref" AS "_valuedt3_rrref", "__aggregate_base"."_kinddt3rref" AS "_kinddt3rref", "__aggregate_base"."_valuect1_type" AS "_valuect1_type", "__aggregate_base"."_valuect1_rtref" AS "_valuect1_rtref", "__aggregate_base"."_valuect1_rrref" AS "_valuect1_rrref", "__aggregate_base"."_kindct1rref" AS "_kindct1rref", "__aggregate_base"."_valuect2_type" AS "_valuect2_type", "__aggregate_base"."_valuect2_rtref" AS "_valuect2_rtref", "__aggregate_base"."_valuect2_rrref" AS "_valuect2_rrref", "__aggregate_base"."_kindct2rref" AS "_kindct2rref", "__aggregate_base"."_valuect3_type" AS "_valuect3_type", "__aggregate_base"."_valuect3_rtref" AS "_valuect3_rtref", "__aggregate_base"."_valuect3_rrref" AS "_valuect3_rrref", "__aggregate_base"."_kindct3rref" AS "_kindct3rref" FROM "_accrg38456" AS "__aggregate_base" LEFT JOIN "_acc69" AS "__ref1" ON "__aggregate_base"."_accountdtrref" = "__ref1"."_idrref" AND "__ref1"."_fld2331" = 0 LEFT JOIN "_reference380" AS "__ref2" ON "__aggregate_base"."_fld38457rref" = "__ref2"."_idrref" AND "__ref2"."_fld2331" = 0 LEFT JOIN "_acc69" AS "__ref3" ON "__aggregate_base"."_accountctrref" = "__ref3"."_idrref" AND "__ref3"."_fld2331" = 0 WHERE ("__aggregate_base"."_period" >= TIMESTAMP '2024-01-01 00:00:00') AND ("__aggregate_base"."_period" < TIMESTAMP '2024-12-31 23:59:59') AND "__aggregate_base"."_fld2331" = 0 AND ((((rtrim(CAST("__ref1"."_code" AS text), ' ') COLLATE "C") = (rtrim(CAST('51' AS text), ' ') COLLATE "C")) AND ((rtrim(CAST("__ref2"."_description" AS text), ' ') COLLATE "C") = (rtrim(CAST('А' AS text), ' ') COLLATE "C"))) OR (((rtrim(CAST("__ref3"."_code" AS text), ' ') COLLATE "C") = (rtrim(CAST('51' AS text), ' ') COLLATE "C")) AND ((rtrim(CAST("__ref2"."_description" AS text), ' ') COLLATE "C") = (rtrim(CAST('А' AS text), ' ') COLLATE "C"))))) AS "Д"
+
+thread 'records_conditions_read_side_less_names_on_either_side' (3973590) panicked at tests/query_accounting.rs:75:5:
+expected "(\"__ref1\".\"_code\" = '51')" in
+SELECT "Д"."_accountdtrref" AS "Дт" FROM (SELECT "__aggregate_base"."_period" AS "_period", "__aggregate_base"."_periodadjustment" AS "_periodadjustment", "__aggregate_base"."_recordertref" AS "_recordertref", "__aggregate_base"."_recorderrref" AS "_recorderrref", "__aggregate_base"."_lineno" AS "_lineno", "__aggregate_base"."_active" AS "_active", "__aggregate_base"."_accountdtrref" AS "_accountdtrref", "__aggregate_base"."_accountctrref" AS "_accountctrref", "__aggregate_base"."_fld38457rref" AS "_fld38457rref", "__aggregate_base"."_fld38458dtrref" AS "_fld38458dtrref", "__aggregate_base"."_fld38458ctrref" AS "_fld38458ctrref", "__aggregate_base"."_fld38459dtrref" AS "_fld38459dtrref", "__aggregate_base"."_fld38459ctrref" AS "_fld38459ctrref", "__aggregate_base"."_fld38460" AS "_fld38460", "__aggregate_base"."_fld38461dt" AS "_fld38461dt", "__aggregate_base"."_fld38461ct" AS "_fld38461ct", "__aggregate_base"."_fld38462dt" AS "_fld38462dt", "__aggregate_base"."_fld38462ct" AS "_fld38462ct", "__aggregate_base"."_fld38463dt" AS "_fld38463dt", "__aggregate_base"."_fld38463ct" AS "_fld38463ct", "__aggregate_base"."_fld38464dt" AS "_fld38464dt", "__aggregate_base"."_fld38464ct" AS "_fld38464ct", "__aggregate_base"."_fld38465dt" AS "_fld38465dt", "__aggregate_base"."_fld38465ct" AS "_fld38465ct", "__aggregate_base"."_fld38466" AS "_fld38466", "__aggregate_base"."_fld38467" AS "_fld38467", "__aggregate_base"."_fld2331" AS "_fld2331", "__aggregate_base"."_valuedt1_type" AS "_valuedt1_type", "__aggregate_base"."_valuedt1_rtref" AS "_valuedt1_rtref", "__aggregate_base"."_valuedt1_rrref" AS "_valuedt1_rrref", "__aggregate_base"."_kinddt1rref" AS "_kinddt1rref", "__aggregate_base"."_valuedt2_type" AS "_valuedt2_type", "__aggregate_base"."_valuedt2_rtref" AS "_valuedt2_rtref", "__aggregate_base"."_valuedt2_rrref" AS "_valuedt2_rrref", "__aggregate_base"."_kinddt2rref" AS "_kinddt2rref", "__aggregate_base"."_valuedt3_type" AS "_valuedt3_type", "__aggregate_base"."_valuedt3_rtref" AS "_valuedt3_rtref", "__aggregate_base"."_valuedt3_rrref" AS "_valuedt3_rrref", "__aggregate_base"."_kinddt3rref" AS "_kinddt3rref", "__aggregate_base"."_valuect1_type" AS "_valuect1_type", "__aggregate_base"."_valuect1_rtref" AS "_valuect1_rtref", "__aggregate_base"."_valuect1_rrref" AS "_valuect1_rrref", "__aggregate_base"."_kindct1rref" AS "_kindct1rref", "__aggregate_base"."_valuect2_type" AS "_valuect2_type", "__aggregate_base"."_valuect2_rtref" AS "_valuect2_rtref", "__aggregate_base"."_valuect2_rrref" AS "_valuect2_rrref", "__aggregate_base"."_kindct2rref" AS "_kindct2rref", "__aggregate_base"."_valuect3_type" AS "_valuect3_type", "__aggregate_base"."_valuect3_rtref" AS "_valuect3_rtref", "__aggregate_base"."_valuect3_rrref" AS "_valuect3_rrref", "__aggregate_base"."_kindct3rref" AS "_kindct3rref" FROM "_accrg38456" AS "__aggregate_base" LEFT JOIN "_acc69" AS "__ref1" ON "__aggregate_base"."_accountdtrref" = "__ref1"."_idrref" AND "__ref1"."_fld2331" = 0 LEFT JOIN "_reference380" AS "__ref2" ON "__aggregate_base"."_fld38457rref" = "__ref2"."_idrref" AND "__ref2"."_fld2331" = 0 LEFT JOIN "_acc69" AS "__ref3" ON "__aggregate_base"."_accountctrref" = "__ref3"."_idrref" AND "__ref3"."_fld2331" = 0 WHERE ("__aggregate_base"."_period" >= TIMESTAMP '2024-01-01 00:00:00') AND ("__aggregate_base"."_period" < TIMESTAMP '2024-12-31 23:59:59') AND "__aggregate_base"."_fld2331" = 0 AND ((((rtrim(CAST("__ref1"."_code" AS text), ' ') COLLATE "C") = (rtrim(CAST('51' AS text), ' ') COLLATE "C")) AND ((rtrim(CAST("__ref2"."_description" AS text), ' ') COLLATE "C") = (rtrim(CAST('А' AS text), ' ') COLLATE "C"))) OR (((rtrim(CAST("__ref3"."_code" AS text), ' ') COLLATE "C") = (rtrim(CAST('51' AS text), ' ') COLLATE "C")) AND ((rtrim(CAST("__ref2"."_description" AS text), ' ') COLLATE "C") = (rtrim(CAST('А' AS text), ' ') COLLATE "C"))))) AS "Д"
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    records_conditions_read_side_less_names_on_either_side
+
+test result: FAILED. 30 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 49.70s
+
+error: test failed, to rerun pass `-p open-sdbl --test query_accounting`
+     Running tests/query_average.rs (target/debug/deps/query_average-c090ac8740005aa8)
+
+running 3 tests
+test refuses_distinct_wildcard_and_source_free_averages ... ok
+test averages_a_whole_table_and_nested_values ... ok
+test averages_fields_and_expressions_in_grouped_branches ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/query_bare_rls_parameter_0930.rs (target/debug/deps/query_bare_rls_parameter_0930-acd523d02b2237f6)
+
+running 1 test
+test direct_rls_parameter_preserves_its_origin_on_both_backends ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests/query_column_origin.rs (target/debug/deps/query_column_origin-aa95648e22bc2301)
+
+running 10 tests
+test every_member_of_a_composite_field_names_the_same_field ... ok
+test an_alias_does_not_hide_where_a_column_came_from ... ok
+test a_nested_section_result_carries_origins_too ... ok
+test a_suffixed_label_keeps_its_origin ... ok
+test every_projected_field_carries_its_origin ... ok
+test an_expression_an_aggregate_and_a_literal_have_no_origin ... ok
+test a_tabular_section_names_its_owner_and_its_section ... ok
+test the_generated_sql_is_unchanged_by_the_origin ... ok
+test a_dereference_names_the_target_not_the_source ... ok
+test a_single_type_reference_is_not_a_composite_member ... ok
+
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/query_comma_sources.rs (target/debug/deps/query_comma_sources-a7692e74fa0deb30)
+
+running 6 tests
+test renders_comma_sources_as_a_cross_join_chain ... FAILED
+test keeps_the_wildcard_and_ambiguity_refusals ... ok
+test groups_a_full_join_with_its_comma_element ... ok
+test joins_stay_attached_to_their_comma_element ... ok
+test accepts_derived_virtual_temporary_and_constant_sources ... ok
+test filters_comma_sources_by_separators_like_the_base ... ok
+
+failures:
+
+---- renders_comma_sources_as_a_cross_join_chain stdout ----
+
+thread 'renders_comma_sources_as_a_cross_join_chain' (3974716) panicked at tests/query_comma_sources.rs:26:5:
+expected "FROM \"_reference53\" AS \"p\" CROSS JOIN \"_reference57\" AS \"o\" WHERE (\"p\".\"_code\" = \"o\".\"_code\")" in
+SELECT "p"."_code"::text AS "К", "o"."_code"::text AS "О" FROM "_reference53" AS "p" CROSS JOIN "_reference57" AS "o" WHERE ((rtrim(CAST("p"."_code" AS text), ' ') COLLATE "C") = (rtrim(CAST("o"."_code" AS text), ' ') COLLATE "C")) ORDER BY 1 ASC
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    renders_comma_sources_as_a_cross_join_chain
+
+test result: FAILED. 5 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+error: test failed, to rerun pass `-p open-sdbl --test query_comma_sources`
+     Running tests/query_compile.rs (target/debug/deps/query_compile-6af6038951ba2654)
+
+running 167 tests
+test a_parameter_source_needs_a_value_table ... ok
+test a_zero_top_count_answers_no_rows ... ok
+test bounds_count_aggregate_shapes ... ok
+test addresses_a_source_by_its_alias_alone ... ok
+test a_case_compared_with_a_value_drops_alternatives_of_another_kind ... FAILED
+test applies_slice_first_lower_bound_before_and_where_after_ranking ... ok
+test applies_slice_last_parameters_before_and_where_after_ranking ... ok
+test accepts_auto_order_and_compiles_record_auto_number ... ok
+test applies_balance_period_and_condition_before_outer_where ... ok
+test casts_character_expressions_to_text_on_postgres ... FAILED
+test applies_projection_aliases_and_diagnoses_a_missing_alias ... ok
+test accepts_date_parameters_as_virtual_table_periods ... ok
+test accepts_constants_and_concatenates_strings ... ok
+test compiles_bounded_accumulation_register_turnovers ... ok
+test appends_rows_through_a_union_all_definition ... ok
+test compiles_count_all_and_distinct_field ... ok
+test compiles_case_expressions_in_projections_and_predicates ... FAILED
+test compiles_catalog_value_as_a_predefined_id_lookup ... ok
+test compiles_binary_literals_for_each_sql_dialect ... ok
+test compiles_a_russian_catalog_query_through_authoritative_metadata ... FAILED
+test compiles_current_accumulation_register_balances ... ok
+test compiles_enumeration_value_in_physical_one_c_byte_order ... ok
+test compiles_datetime_and_begin_of_period_for_postgres ... ok
+test aggregates_arbitrary_scalar_expressions ... ok
+test chains_several_joins_in_source_order ... ok
+test compiles_english_distinct_wildcard_and_real_document_date_spelling ... ok
+test compiles_a_projected_tabular_section_as_a_nested_result ... ok
+test compiles_date_functions_in_joined_projection_and_filter ... ok
+test compiles_datetime_and_begin_of_period_for_mssql_year_offset ... ok
+test compiles_information_register_slice_first_by_config_dimensions ... ok
+test accepts_index_clauses_without_generating_indexes ... ok
+test compiles_mixed_union_operators_and_orders_the_combined_result ... ok
+test compiles_mssql_extension_tables_as_one_source_relation ... ok
+test compiles_grouped_branches_with_having_and_ordering ... ok
+test compiles_mssql_historical_balance_without_postgres_aggregate_syntax ... ok
+test compiles_in_lists_in_source_free_and_joined_queries ... ok
+test compiles_native_mssql_projection_filter_and_limit ... ok
+test compiles_in_list_with_several_catalog_values ... ok
+test compiles_document_tabular_section_from_extension_table ... ok
+test compiles_inner_left_and_right_join_spellings_and_repeated_terminators ... ok
+test compiles_empty_references_for_reference_kinds ... ok
+test compiles_information_register_slice_last_by_config_dimensions ... ok
+test compiles_russian_descending_order ... ok
+test compiles_join_key_with_additional_in_and_value_predicates ... ok
+test compiles_source_free_arithmetic_and_rejects_fields_without_from ... ok
+test compiles_mssql_presentation_from_a_source_with_extension_tables ... ok
+test compiles_scalar_parameters_on_both_dialects ... FAILED
+test compiles_source_free_literals_and_scalar_presentations ... ok
+test compiles_like_predicates_with_escape_and_negation ... ok
+test compiles_reference_uuid_in_both_dialects ... ok
+test compiles_reference_joins_independently_in_union_branches ... ok
+test compiles_sum_min_max_and_count_distinct_together ... ok
+test compiles_safe_batched_deferred_presentation_lookups ... ok
+test compiles_in_subqueries_with_reference_widening ... ok
+test compiles_through_one_backend_generic_api ... ok
+test compiles_fixed_and_multi_target_reference_presentations ... ok
+test compiles_scalar_casts_on_both_dialects ... ok
+test corrects_case_dates_once_on_mssql ... ok
+test diagnoses_empty_and_malformed_in_lists ... ok
+test compiles_range_predicates ... ok
+test compiles_nested_sources_with_grouping_joins_and_dereference ... ok
+test compiles_reference_parameters_lists_and_output_format_literals ... ok
+test diagnoses_a_tabular_section_missing_from_schema_storage ... ok
+test dereferences_a_reference_property_with_one_reused_left_join ... FAILED
+test diagnoses_incompatible_conditional_branches ... ok
+test compiles_temporary_table_references_and_dates ... ok
+test diagnoses_invalid_value_kinds_paths_and_names ... ok
+test decodes_uuid_of_dereferenced_and_compound_references ... ok
+test diagnoses_missing_fields_and_ambiguous_bare_objects ... ok
+test compiles_temporary_tables_as_common_table_expressions ... ok
+test diagnoses_invalid_uuid_arguments ... ok
+test dereferences_references_inside_join_conditions ... FAILED
+test diagnoses_parameter_binding_failures ... FAILED
+test covers_syntax_ambiguity_liveness_and_presentation_diagnostic_kinds ... ok
+test compiles_every_begin_of_period_kind_for_both_dialects ... ok
+test drops_and_redefines_temporary_tables ... ok
+test diagnoses_union_kind_mismatches_and_accepts_null_branches ... ok
+test exposes_standard_and_custom_fields_for_description ... ok
+test emits_only_the_temporary_tables_a_statement_reaches ... ok
+test filters_a_statement_without_a_source ... ok
+test diagnoses_invalid_join_chains ... ok
+test exposes_typed_diagnostic_sources_and_metadata_token_positions ... ok
+test emits_unique_utf8_safe_output_labels_at_each_dialect_limit ... ok
+test indexed_metadata_lookups_use_guids_and_numeric_standard_fields ... ok
+test diagnoses_invalid_grouping ... ok
+test dereferences_composite_references_across_targets ... ok
+test diagnoses_invalid_casts ... ok
+test expands_a_compound_projection_and_rejects_it_in_predicates ... ok
+test groups_reference_keys_by_every_physical_member ... ok
+test indexes_live_and_schema_tables_including_extension_variants ... ok
+test flattens_a_group_of_nested_joins ... ok
+test defers_a_universal_reference_reached_through_a_join_path ... ok
+test keeps_temporary_tables_across_batches_and_failures ... FAILED
+test keeps_additional_full_join_predicates_in_on ... ok
+test joined_statements_order_by_unprojected_fields ... ok
+test diagnoses_temporary_table_failures ... ok
+test leaves_where_and_order_clauses_after_an_unaliased_source ... ok
+test negation_binds_looser_than_a_comparison ... FAILED
+test dialect_levels_differ_only_where_newer_functions_were_used ... ok
+test grouped_statements_take_dereferences_of_keys_and_aggregate_ordering ... ok
+test keeps_the_declared_gaps_declared ... ok
+test orders_a_distinct_statement_by_a_projected_reference_of_several_types ... ok
+test labels_an_unaliased_dereference_by_its_segments_run_together ... ok
+test prepared_queries_are_bound_to_their_resolved_snapshot ... ok
+test orders_by_computed_expressions ... FAILED
+test orders_a_distinct_statement_by_its_projection ... ok
+test prepares_one_guid_batch_and_compiles_safe_presentations ... ok
+test prepares_and_compiles_mssql_presentations ... ok
+test presents_the_reference_of_a_source ... ok
+test groups_by_dereferenced_keys_aliases_and_expressions ... ok
+test presentation_plans_are_required_and_field_ids_are_validated ... ok
+test joins_the_same_object_under_several_aliases_with_dereference ... ok
+test presents_an_expression_as_its_value ... ok
+test enforces_presentation_batch_boundaries_for_both_backends ... ok
+test narrows_references_with_and_without_dereference ... ok
+test presents_a_mixed_case_branch_by_branch ... ok
+test queryable_field_catalog_reflects_each_immutable_resolved_snapshot ... ok
+test presents_a_scalar_from_a_dereferenced_join_alias_without_a_plan ... ok
+test preserves_native_mssql_rowversion_projection ... ok
+test rejects_an_ambiguous_schema_reference_target ... ok
+test reads_names_and_sources_real_configurations_use ... ok
+test preserves_presentations_through_full_join_and_union_branches ... ok
+test rejects_parameters_and_unsupported_clauses_before_sql_generation ... ok
+test presents_an_aggregate ... ok
+test rejects_incompatible_union_projections_and_branch_local_ordering ... ok
+test rejects_wildcard_and_distinct_for_non_count_aggregates ... ok
+test rejects_union_branches_with_different_compound_expansion_widths ... ok
+test qualifies_an_unaliased_source_by_its_full_metadata_name ... ok
+test rejects_slice_last_for_invalid_sources_and_arguments ... ok
+test diagnoses_invalid_nested_queries ... ok
+test rejects_slice_first_for_invalid_sources_and_arguments ... ok
+test reports_structured_column_kinds_for_fields_scalars_and_aggregates ... ok
+test resolves_accumulation_register_field_purpose_from_config ... ok
+test resolves_a_one_hop_reference_from_one_join_side ... ok
+test preserves_sql_server_2008_goldens_for_begin_of_period ... ok
+test renders_boolean_predicates_as_comparisons_on_mssql ... ok
+test reports_resolution_mismatches_without_dropping_unknown_columns ... ok
+test resolves_only_authoritative_enumeration_value_descriptors ... ok
+test resolves_information_register_field_purpose_from_config ... ok
+test renders_full_join_natively ... ok
+test resolves_mssql_schema_table_names_with_the_shared_case_rule ... ok
+test validates_mssql_year_offsets_at_backend_construction ... ok
+test supports_slice_first_as_a_join_source ... ok
+test supports_slice_last_as_a_join_source ... ok
+test translates_mssql_year_offset_in_date_projection_and_filter ... ok
+test states_the_types_the_server_resolves_by ... ok
+test supports_balance_and_turnovers_as_join_sources ... ok
+test presents_references_reached_through_dereferenced_join_paths ... ok
+test validates_datetime_components_periods_and_mssql_offset_range ... ok
+test rejects_unsafe_or_ambiguous_join_shapes ... ok
+test the_alias_wildcard_of_the_only_source_projects_every_field ... ok
+test supports_a_qualified_reference_path_and_rejects_non_references ... ok
+test tests_a_tabular_section_column_with_exists ... ok
+test widens_references_in_case_isnull_and_union ... ok
+test preserves_mssql_goldens_for_dialect_sensitive_features ... ok
+test widens_reference_equalities_in_join_conditions ... ok
+test rejects_invalid_accumulation_virtual_table_shapes ... ok
+test reuses_a_dereference_join_only_when_the_complete_key_matches ... ok
+test extension_projection_scans_are_budgeted_once_after_the_field_cache_miss ... ok
+test bounds_batches_compiled_without_a_manager ... ok
+test unrelated_catalog_tables_do_not_consume_the_work_budget ... ok
+test accepts_a_wide_legitimate_union_within_the_work_budget ... ok
+test compiles_the_binary_operator_budget_boundary_without_recursion ... ok
+test compilation_work_does_not_scale_with_information_base_size ... ok
+test rejects_pathologically_deep_query_expressions ... ok
+test bounds_total_work_for_repeated_tabular_section_union_branches ... ok
+test names_the_standard_fields_of_processes_and_tasks ... ok
+
+failures:
+
+---- a_case_compared_with_a_value_drops_alternatives_of_another_kind stdout ----
+
+thread 'a_case_compared_with_a_value_drops_alternatives_of_another_kind' (3974718) panicked at tests/query_compile.rs:79:13:
+backend outcomes differ for SELECT Code FROM Catalog.OpenSdblMetadataProbe WHERE CASE WHEN Date > DATETIME(2020, 1, 1) THEN Code ELSE FALSE END = "A";: PostgreSQL=Err(QueryDiagnostic { kind: UnsupportedFeature, message: "expression kinds differ: Boolean where String { length: Some(9) } was expected", offset: 106, line: 1, column: 107, source: None, missing_parameter: None, missing_session_parameter: false, missing_separation_condition: None }), MSSQL=Ok(CompiledQuery { forbidden_row_column: None, logical_projection: Some([LogicalResultColumn { name: "Code", value: Scalar { column: 0 } }]), sql: "SELECT [__src].[_code] AS [Code] FROM [_reference53] AS [__src] WHERE (CASE WHEN ([__src].[_date_time] > CONVERT(datetime2, '2020-01-01T00:00:00', 126)) THEN [__src].[_code] ELSE NULL END = N'A')", columns: [CompiledColumn { label: "Code", kind: String { length: Some(9) }, origin: Some(ColumnOrigin { object: ObjectId([184, 186, 199, 107, 201, 27, 77, 120, 138, 112, 255, 163, 159, 141, 230, 148]), table_part: None, field: Standard(Code), composite_member: false }), name: "Code" }], deferred_presentations: [], nested: [], service_columns: [] })
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- casts_character_expressions_to_text_on_postgres stdout ----
+
+thread 'casts_character_expressions_to_text_on_postgres' (3974736) panicked at tests/query_compile.rs:6347:9:
+(CASE WHEN ("__src"."_code" = 'A') THEN "__src"."_code" ELSE 'B' END)::text AS "Р"
+SELECT (COALESCE("__src"."_code", 'нет'))::text AS "Е", (CASE WHEN ((rtrim(CAST("__src"."_code" AS text), ' ') COLLATE "C") = (rtrim(CAST('A' AS text), ' ') COLLATE "C")) THEN "__src"."_code" ELSE 'B' END)::text AS "Р" FROM "_reference53" AS "__src"
+
+---- compiles_case_expressions_in_projections_and_predicates stdout ----
+
+thread 'compiles_case_expressions_in_projections_and_predicates' (3974743) panicked at tests/query_compile.rs:3990:5:
+assertion failed: postgres.sql.contains("(CASE WHEN \"__src\".\"_fld77\" THEN 'Да' WHEN (\"__src\".\"_code\" = 'A') THEN 'A' ELSE 'Нет' END)::text AS \"Статус\"")
+
+---- compiles_a_russian_catalog_query_through_authoritative_metadata stdout ----
+
+thread 'compiles_a_russian_catalog_query_through_authoritative_metadata' (3974740) panicked at tests/query_compile.rs:1781:5:
+assertion `left == right` failed
+  left: "SELECT \"p\".\"_code\"::text AS \"Код\", \"p\".\"_fld54\" AS \"ProbeAttribute\" FROM \"_reference53\" AS \"p\" WHERE ((rtrim(CAST(\"p\".\"_code\" AS text), ' ') COLLATE \"C\") = (rtrim(CAST('A' AS text), ' ') COLLATE \"C\")) ORDER BY \"p\".\"_code\" ASC LIMIT 5"
+ right: "SELECT \"p\".\"_code\"::text AS \"Код\", \"p\".\"_fld54\" AS \"ProbeAttribute\" FROM \"_reference53\" AS \"p\" WHERE (\"p\".\"_code\" = 'A') ORDER BY \"p\".\"_code\" ASC LIMIT 5"
+
+---- compiles_scalar_parameters_on_both_dialects stdout ----
+
+thread 'compiles_scalar_parameters_on_both_dialects' (3974778) panicked at tests/query_compile.rs:4413:5:
+assertion failed: postgres.sql.ends_with("WHERE ((((\"__src\".\"_code\" = 'A''B') AND (\"__src\".\"_date_time\" >= TIMESTAMP '2024-01-01 00:00:00')) AND TRUE) AND (\"__src\".\"_fld77\" = TRUE))")
+
+---- dereferences_a_reference_property_with_one_reused_left_join stdout ----
+
+thread 'dereferences_a_reference_property_with_one_reused_left_join' (3974790) panicked at tests/query_compile.rs:2448:5:
+assertion `left == right` failed
+  left: "SELECT \"__ref1\".\"_code\"::text AS \"ОрганизацияКод\" FROM \"_reference53\" AS \"__src\" LEFT JOIN \"_reference57\" AS \"__ref1\" ON \"__src\".\"_fld54\" = \"__ref1\".\"_idrref\" WHERE ((rtrim(CAST(\"__ref1\".\"_code\" AS text), ' ') COLLATE \"C\") = (rtrim(CAST('A' AS text), ' ') COLLATE \"C\")) ORDER BY \"__ref1\".\"_code\" ASC"
+ right: "SELECT \"__ref1\".\"_code\"::text AS \"ОрганизацияКод\" FROM \"_reference53\" AS \"__src\" LEFT JOIN \"_reference57\" AS \"__ref1\" ON \"__src\".\"_fld54\" = \"__ref1\".\"_idrref\" WHERE (\"__ref1\".\"_code\" = 'A') ORDER BY \"__ref1\".\"_code\" ASC"
+
+---- dereferences_references_inside_join_conditions stdout ----
+
+thread 'dereferences_references_inside_join_conditions' (3974792) panicked at tests/query_compile.rs:6197:5:
+assertion failed: extra.sql.contains("(\"__left_ref1\".\"_code\" = 'A')")
+
+---- diagnoses_parameter_binding_failures stdout ----
+
+thread 'diagnoses_parameter_binding_failures' (3974803) panicked at tests/query_compile.rs:4669:5:
+assertion failed: bound.sql.ends_with("WHERE (\"__src\".\"_code\" = 'X')")
+
+---- keeps_temporary_tables_across_batches_and_failures stdout ----
+
+thread 'keeps_temporary_tables_across_batches_and_failures' (3974825) panicked at tests/query_compile.rs:5736:5:
+assertion failed: read.contains("WHERE (\"__src\".\"_code\" = 'A')")
+
+---- negation_binds_looser_than_a_comparison stdout ----
+
+thread 'negation_binds_looser_than_a_comparison' (3974831) panicked at tests/query_compile.rs:6555:5:
+SELECT "Т"."_code"::text AS "Код" FROM "_reference53" AS "Т" WHERE (NOT ((rtrim(CAST("Т"."_code" AS text), ' ') COLLATE "C") = (rtrim(CAST('а' AS text), ' ') COLLATE "C")))
+
+---- orders_by_computed_expressions stdout ----
+
+thread 'orders_by_computed_expressions' (3974834) panicked at tests/query_compile.rs:6412:5:
+SELECT "__src"."_code"::text AS "Код" FROM "_reference53" AS "__src" ORDER BY CASE WHEN ((rtrim(CAST("__src"."_code" AS text), ' ') COLLATE "C") = (rtrim(CAST('A' AS text), ' ') COLLATE "C")) THEN 0 ELSE 1 END ASC, COALESCE("__src"."_code", '') DESC
+
+
+failures:
+    a_case_compared_with_a_value_drops_alternatives_of_another_kind
+    casts_character_expressions_to_text_on_postgres
+    compiles_a_russian_catalog_query_through_authoritative_metadata
+    compiles_case_expressions_in_projections_and_predicates
+    compiles_scalar_parameters_on_both_dialects
+    dereferences_a_reference_property_with_one_reused_left_join
+    dereferences_references_inside_join_conditions
+    diagnoses_parameter_binding_failures
+    keeps_temporary_tables_across_batches_and_failures
+    negation_binds_looser_than_a_comparison
+    orders_by_computed_expressions
+
+test result: FAILED. 156 passed; 11 failed; 0 ignored; 0 measured; 0 filtered out; finished in 7.59s
+
+error: test failed, to rerun pass `-p open-sdbl --test query_compile`
+     Running tests/query_conditional_separation_0914.rs (target/debug/deps/query_conditional_separation_0914-fc0c0675b5bc557c)
+
+running 10 tests
+test conditions_are_separate_replaceable_values ... ok
+test native_config_and_xml_condition_references_agree ... ok
+test unknown_named_separator_settings_do_not_become_an_absent_condition ... ok
+test independent_postgres ... ok
+test shared_postgres ... ok
+test shared_mssql ... ok
+test independent_mssql ... ok
+test condition_filters_virtual_base_reads_for_both_backends ... ok
+test conditional_string_empty_and_unsupported_empty_types ... ok
+test demo_condition_target_is_the_acquired_boolean_constant ... ok
+
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 7.56s
+
+     Running tests/query_constants.rs (target/debug/deps/query_constants-9d90089b6be7d606)
+
+running 7 tests
+test joins_the_constants_table_with_a_catalog ... ok
+test a_single_constant_source_answers_to_значение ... ok
+test diagnoses_unknown_constants_and_disabled_separators ... ok
+test lists_every_live_constant_with_its_value_field ... ok
+test a_statement_without_constant_fields_still_sees_one_row ... ok
+test wildcard_reads_every_constant_and_an_unqualified_source_is_named_constants ... ok
+test reads_only_the_referenced_constants_as_one_aggregated_row ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running tests/query_corpus.rs (target/debug/deps/query_corpus-7c954b2ee3fd97e3)
+
+running 5 tests
+test dump_field_kinds ... ignored
+test locate_the_corpus_gaps ... ignored, maintenance: reports where the corpus stops
+test rerecord_the_demo_corpus ... ignored, maintenance: rewrites the recorded results
+test writes_the_corpus_for_sql_server ... ignored, maintenance: writes the corpus compiled for SQL Server
+test compiles_the_demo_corpus_as_recorded ... FAILED
+
+failures:
+
+---- compiles_the_demo_corpus_as_recorded stdout ----
+
+thread 'compiles_the_demo_corpus_as_recorded' (3975289) panicked at tests/query_corpus.rs:850:5:
+8 of 382 corpus queries changed:
+query 1 (ВЫБРАТЬ 	Идентификаторы.Ссылка, 	Идентификаторы.ВерсияДанных, 	Иден…):
+  expected: SELECT "Идентификаторы"."_idrref" AS "Ссылка", "Идентификаторы"."_version" AS "ВерсияДанных", "Идентификаторы"."_marked" AS "ПометкаУдаления", CASE WHEN (substr
+  actual:   SELECT "Идентификаторы"."_idrref" AS "Ссылка", "Идентификаторы"."_version" AS "ВерсияДанных", "Идентификаторы"."_marked" AS "ПометкаУдаления", CASE WHEN ((rtrim
+query 60 (ВЫБРАТЬ РАЗРЕШЕННЫЕ 	ВариантыОтчетовПереопределяемый.Ссылка, 	Вариан…):
+  expected: SELECT "ВариантыОтчетовПереопределяемый"."_idrref" AS "Ссылка", "ВариантыОтчетовПереопределяемый"."_marked" AS "ПометкаУдаления", (COALESCE("ВариантыКонфигураци
+  actual:   SELECT "ВариантыОтчетовПереопределяемый"."_idrref" AS "Ссылка", "ВариантыОтчетовПереопределяемый"."_marked" AS "ПометкаУдаления", (COALESCE("ВариантыКонфигураци
+query 233 (ВЫБРАТЬ 	ДанныеОКВЭД.Раздел КАК Раздел, 	ДанныеОКВЭД.Код КАК Код, 	Дан…):
+  expected: SELECT "ДанныеОКВЭД"."_fld15239"::text AS "Раздел", "ДанныеОКВЭД"."_fld15237"::text AS "Код", "ДанныеОКВЭД"."_fld15238"::text AS "Наименование", (CASE WHEN ("Да
+  actual:   SELECT "ДанныеОКВЭД"."_fld15239"::text AS "Раздел", "ДанныеОКВЭД"."_fld15237"::text AS "Код", "ДанныеОКВЭД"."_fld15238"::text AS "Наименование", (CASE WHEN ((rt
+query 234 (ВЫБРАТЬ 	ВЫБОР 		КОГДА ДанныеОКВЭД.Иерархия = "" 			ТОГДА ДанныеОКВЭД.…):
+  expected: SELECT (CASE WHEN ("ДанныеОКВЭД"."_fld15241" = '') THEN ("ДанныеОКВЭД"."_fld15237")::text ELSE ((("ДанныеОКВЭД"."_fld15237")::text || (',')::text || ("ДанныеОКВ
+  actual:   SELECT (CASE WHEN ((rtrim(CAST("ДанныеОКВЭД"."_fld15241" AS text), ' ') COLLATE "C") = (rtrim(CAST('' AS text), ' ') COLLATE "C")) THEN ("ДанныеОКВЭД"."_fld1523
+query 235 (ВЫБРАТЬ 	Идентификаторы.Ссылка, 	Идентификаторы.ВерсияДанных, 	Иден…):
+  expected: SELECT "Идентификаторы"."_idrref" AS "Ссылка", "Идентификаторы"."_version" AS "ВерсияДанных", "Идентификаторы"."_marked" AS "ПометкаУдаления", CASE WHEN (substr
+  actual:   SELECT "Идентификаторы"."_idrref" AS "Ссылка", "Идентификаторы"."_version" AS "ВерсияДанных", "Идентификаторы"."_marked" AS "ПометкаУдаления", CASE WHEN ((rtrim
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    compiles_the_demo_corpus_as_recorded
+
+test result: FAILED. 0 passed; 1 failed; 4 ignored; 0 measured; 0 filtered out; finished in 18.74s
+
+error: test failed, to rerun pass `-p open-sdbl --test query_corpus`
+     Running tests/query_date_functions.rs (target/debug/deps/query_date_functions-1e6bfbf03b4cbbee)
+
+running 12 tests
+test period_keywords_remain_usable_as_names ... ok
+test period_functions_serve_as_group_keys_and_nest ... ok
+test date_functions_accept_parameters_bound_or_not ... ok
+test nested_source_free_dates_stay_in_the_storage_domain ... ok
+test date_diff_shifts_operands_to_the_logical_date_under_a_year_offset ... ok
+test end_of_ten_days_period_stops_at_the_month_end ... ok
+test date_diff_counts_boundaries_on_both_dialects ... ok
+test date_add_takes_the_count_from_fields_parameters_and_expressions ... ok
+test date_add_rounds_or_truncates_the_count_like_the_platform ... ok
+test virtual_table_periods_accept_nested_functions_and_parameters ... ok
+test end_of_period_is_the_last_second_of_every_period ... ok
+test reports_period_and_argument_diagnostics ... ok
+
+test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests/query_date_parts.rs (target/debug/deps/query_date_parts-7c2b1221605f3da6)
+
+running 5 tests
+test parts_group_filter_and_nest ... ok
+test part_keywords_stay_usable_as_periods_aliases_and_names ... ok
+test takes_parts_from_the_logical_date_under_a_year_offset ... ok
+test rejects_non_date_arguments ... ok
+test extracts_every_part_as_an_integer_on_both_dialects ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/query_dereference.rs (target/debug/deps/query_dereference-2abf5435772e2530)
+
+running 14 tests
+test shares_the_joins_of_a_repeated_prefix ... ok
+test accepts_an_alias_written_without_as ... ok
+test walks_the_chain_in_every_clause ... FAILED
+test renders_a_logical_expression_as_a_value ... ok
+test walks_a_reference_chain ... ok
+test dereferences_standard_fields_through_a_composite_reference ... ok
+test accepts_the_selection_modifiers_in_any_order ... ok
+test walks_the_chain_through_a_composite_reference ... ok
+test reads_a_filter_criterion ... ok
+test spreads_a_mixed_kind_dereference_over_members ... ok
+test reads_a_document_journal ... ok
+test resolves_the_computed_standard_fields ... FAILED
+test reads_the_point_in_time_pair ... ok
+test joins_only_the_declared_targets_of_a_composite ... ok
+
+failures:
+
+---- walks_the_chain_in_every_clause stdout ----
+
+thread 'walks_the_chain_in_every_clause' (3975950) panicked at tests/query_dereference.rs:19:5:
+expected "WHERE (\"__ref2\".\"_code\" = 'A')" in
+SELECT "Т"."_code"::text AS "К" FROM "_reference53" AS "Т" LEFT JOIN "_reference57" AS "__ref1" ON "Т"."_fld54" = "__ref1"."_idrref" LEFT JOIN "_reference57" AS "__ref2" ON "__ref1"."_fld54" = "__ref2"."_idrref" WHERE ((rtrim(CAST("__ref2"."_code" AS text), ' ') COLLATE "C") = (rtrim(CAST('A' AS text), ' ') COLLATE "C")) ORDER BY "__ref2"."_date_time" ASC
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- resolves_the_computed_standard_fields stdout ----
+
+thread 'resolves_the_computed_standard_fields' (3975946) panicked at tests/query_dereference.rs:19:5:
+expected "THEN 'Администраторы' ELSE '' END = 'Администраторы')" in
+SELECT CASE WHEN "__ref1"."_predefinedid" IS NULL THEN NULL::text WHEN "__ref1"."_predefinedid" = decode('b5786f0d29e6182246ca59783c39be2b', 'hex') THEN 'Администраторы' ELSE '' END AS "П" FROM "_reference84" AS "Т" LEFT JOIN "_reference84" AS "__ref1" ON "Т"."_parentidrref" = "__ref1"."_idrref" AND "__ref1"."_fld731" = 0 WHERE "Т"."_fld731" = 0 AND ((rtrim(CAST(CASE WHEN "Т"."_predefinedid" IS NULL THEN NULL::text WHEN "Т"."_predefinedid" = decode('b5786f0d29e6182246ca59783c39be2b', 'hex') THEN 'Администраторы' ELSE '' END AS text), ' ') COLLATE "C") = (rtrim(CAST('Администраторы' AS text), ' ') COLLATE "C"))
+
+
+failures:
+    resolves_the_computed_standard_fields
+    walks_the_chain_in_every_clause
+
+test result: FAILED. 12 passed; 2 failed; 0 ignored; 0 measured; 0 filtered out; finished in 7.95s
+
+error: test failed, to rerun pass `-p open-sdbl --test query_dereference`
+     Running tests/query_discovery_0933.rs (target/debug/deps/query_discovery_0933-f2422e1cbe5bcb68)
+
+running 5 tests
+test temporary_tables_literals_and_parameters_do_not_become_metadata ... ok
+test constants_distinguish_qualified_fields_labels_stars_and_ambiguity ... ok
+test discovers_direct_objects_from_existing_nested_expression_ast_only ... ok
+test malformed_and_overdeep_queries_keep_positional_diagnostics ... ok
+test direct_discovery_accepts_the_existing_binary_operator_budget_boundary ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.10s
+
+     Running tests/query_field_usage.rs (target/debug/deps/query_field_usage-84082a204f00fbcb)
+
+running 9 tests
+test a_field_in_two_roles_is_reported_in_both ... ok
+test a_having_predicate_is_its_own_role ... ok
+test a_field_read_only_by_the_filter_is_reported_as_a_predicate ... ok
+test a_join_condition_is_its_own_role ... ok
+test collecting_the_report_changes_no_sql ... ok
+test a_dereference_names_the_object_the_path_ended_on ... ok
+test a_tabular_section_is_named_with_its_section ... ok
+test grouping_and_ordering_are_their_own_roles ... ok
+test an_aggregate_argument_and_an_expression_are_different_roles ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/query_hierarchy.rs (target/debug/deps/query_hierarchy-584ffd68a1b278a9)
+
+running 4 tests
+test falls_back_to_membership_without_a_parent_column ... ok
+test descends_from_the_seeds_of_a_nested_query ... FAILED
+test negates_and_accepts_constant_seeds ... ok
+test reports_unsupported_operands ... ok
+
+failures:
+
+---- descends_from_the_seeds_of_a_nested_query stdout ----
+
+thread 'descends_from_the_seeds_of_a_nested_query' (3976241) panicked at tests/query_hierarchy.rs:26:5:
+expected "SELECT \"__seeds\".\"Ссылка\" AS \"__node\" FROM (SELECT \"Г\".\"_idrref\" AS \"Ссылка\" FROM \"_reference53\" AS \"Г\" WHERE (\"Г\".\"_code\" = 'A')) AS \"__seeds\" UNION ALL SELECT \"__catalog\".\"_idrref\" FROM \"_reference53\" AS \"__catalog\" JOIN \"__hier_1\" ON \"__catalog\".\"_parentidrref\" = \"__hier_1\".\"__node\"" in
+WITH RECURSIVE "__hier_1" AS (SELECT "__seeds"."Ссылка" AS "__node" FROM (SELECT "Г"."_idrref" AS "Ссылка" FROM "_reference53" AS "Г" WHERE ((rtrim(CAST("Г"."_code" AS text), ' ') COLLATE "C") = (rtrim(CAST('A' AS text), ' ') COLLATE "C"))) AS "__seeds" UNION ALL SELECT "__catalog"."_idrref" FROM "_reference53" AS "__catalog" JOIN "__hier_1" ON "__catalog"."_parentidrref" = "__hier_1"."__node") SELECT "__src"."_code"::text AS "Код" FROM "_reference53" AS "__src" WHERE EXISTS (SELECT 1 FROM "__hier_1" WHERE "__node" = "__src"."_idrref")
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    descends_from_the_seeds_of_a_nested_query
+
+test result: FAILED. 3 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+error: test failed, to rerun pass `-p open-sdbl --test query_hierarchy`
+     Running tests/query_logical_projection.rs (target/debug/deps/query_logical_projection-b2ecfe4f9bf26271)
+
+running 9 tests
+test binary_null_tag_alternative_is_unavailable ... ok
+test composite_reference_uses_the_emitted_payload_cell ... ok
+test accepted_union_spreads_scalars_into_one_final_recipe ... ok
+test scalar_occurrences_keep_full_aliases_and_independent_indices ... ok
+test long_aliases_survive_physical_label_truncation ... ok
+test an_invalid_discriminator_catalog_kind_is_unavailable ... ok
+test untagged_undefined_coercion_is_unavailable_without_changing_sql ... ok
+test boolean_string_field_and_case_are_single_occurrences ... ok
+test unknown_valueless_composite_and_special_results_are_unavailable ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/query_materialized.rs (target/debug/deps/query_materialized-83c0f12b413b957a)
+
+running 17 tests
+test mssql_does_not_reread_legacy_table ... ok
+test mssql_callback_failure_keeps_manager ... ok
+test postgres_callback_failure_keeps_manager ... ok
+test mssql_retains_fixed_reference ... ok
+test postgres_does_not_reread_legacy_table ... ok
+test mssql_callback_sees_logical_date_and_retention_restores_storage_date ... ok
+test mssql_packet_dependency_and_drop ... ok
+test postgres_packet_dependency_and_drop ... ok
+test postgres_captures_rows_once_and_appends_only_new_rows ... ok
+test mssql_rejects_wrong_rows_and_preserves_empty_types ... ok
+test postgres_retains_fixed_reference ... ok
+test postgres_rejects_wrong_rows_and_preserves_empty_types ... ok
+test mssql_captures_rows_once_and_appends_only_new_rows ... ok
+test postgres_preflights_later_session_parameter ... ok
+test mssql_preflights_later_session_parameter ... ok
+test postgres_null_and_memory_budget ... ok
+test mssql_null_and_memory_budget ... ok
+
+test result: ok. 17 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+
+     Running tests/query_missing_parameter_identity.rs (target/debug/deps/query_missing_parameter_identity-5d68e04b8584b570)
+
+running 3 tests
+test an_unbound_query_parameter_keeps_its_name_and_position ... ok
+test an_unused_parameter_does_not_claim_to_be_missing ... ok
+test a_separator_failure_identifies_a_missing_session_parameter ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests/query_ordinary_rls_0921.rs (target/debug/deps/query_ordinary_rls_0921-1d624185a886465e)
+
+running 5 tests
+test executes_measured_paths_on_disposable_postgres_when_requested ... ok
+test allowed_keeps_filtered_sql_and_no_forbidden_marker ... ok
+test binds_current_session_and_manager_parameters_in_both_branches ... ok
+test refuses_unmeasured_forms_and_backend_explicitly ... ok
+test exposes_one_statement_marker_without_changing_logical_column_indices ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests/query_parameter_tables.rs (target/debug/deps/query_parameter_tables-2107cc156b04357c)
+
+running 7 tests
+test an_empty_table_answers_no_rows ... ok
+test renders_for_sql_server_and_travels_with_a_temporary_table ... ok
+test the_preparation_pass_sees_the_columns_the_text_names ... ok
+test inlines_the_rows_as_a_cte_of_the_statement ... ok
+test reports_unbound_and_malformed_tables ... ok
+test references_of_several_objects_widen_to_the_payload ... ok
+test joins_a_catalog_of_the_buh_fixture ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 16.99s
+
+     Running tests/query_refs.rs (target/debug/deps/query_refs-b719aa91fecce21f)
+
+running 7 tests
+test fixed_target_fields_are_always_of_their_type ... ok
+test tests_the_payload_prefix_of_a_derived_column ... ok
+test tests_a_field_cast_to_the_named_target ... ok
+test reports_incompatible_operands ... ok
+test compares_the_type_member_of_a_composite_field ... ok
+test spreads_union_branches_over_the_members_of_a_composite ... ok
+test compares_a_reference_with_a_composite_subquery ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 7.73s
+
+     Running tests/query_registers.rs (target/debug/deps/query_registers-e1d36c015d885ae9)
+
+running 14 tests
+test completion_method_without_a_periodicity_is_accepted ... ok
+test names_the_movement_type_as_the_query_does ... ok
+test auto_splits_by_the_fields_the_statement_reads ... ok
+test groups_turnovers_by_recorder_and_record ... ok
+test the_period_periodicity_does_not_split ... ok
+test groups_turnovers_by_the_requested_period ... ok
+test accepts_virtual_tables_without_an_argument_list ... ok
+test periodic_balances_are_refused_on_sql_server_2008 ... ok
+test balance_and_turnovers_split_by_recorder_and_record ... ok
+test turnovers_of_a_balance_register_answer_receipts_and_expenses ... ok
+test sums_over_the_dimensions_the_statement_never_reads ... ok
+test compiles_the_balance_and_turnovers_table ... ok
+test auto_balances_run_over_the_grain_the_statement_reads ... ok
+test reads_a_reference_pair_as_a_value ... ok
+
+test result: ok. 14 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 7.60s
+
+     Running tests/query_restrictions.rs (target/debug/deps/query_restrictions-ea0c19e565917007)
+
+running 13 tests
+test rejects_the_keyword_outside_the_first_top_level_branch ... ok
+test resolves_session_parameters_after_query_parameters ... FAILED
+test accepts_the_keyword_before_distinct_and_top_without_changing_sql ... ok
+test keeps_nested_queries_of_a_restriction_unrestricted ... FAILED
+test stores_filtered_rows_in_temporary_tables_and_leaves_other_statements_alone ... ok
+test wraps_the_extension_union_of_a_restricted_source ... ok
+test restricts_tabular_sections_by_section_name ... ok
+test restricts_joined_sources_independently ... ok
+test wraps_a_restricted_source_in_a_derived_table_with_dereference_and_session_value ... FAILED
+test diagnoses_restriction_failures_inside_the_restriction_text ... ok
+test requests_every_target_of_allowed_statements ... ok
+test conjoins_restrictions_into_virtual_table_predicates ... ok
+test accepts_the_platform_form_of_a_restriction_with_the_current_table_qualifier ... FAILED
+
+failures:
+
+---- resolves_session_parameters_after_query_parameters stdout ----
+
+thread 'resolves_session_parameters_after_query_parameters' (3977196) panicked at tests/query_restrictions.rs:433:5:
+assertion failed: fallback.sql.ends_with("WHERE (\"__src\".\"_code\" = 'S')")
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- keeps_nested_queries_of_a_restriction_unrestricted stdout ----
+
+thread 'keeps_nested_queries_of_a_restriction_unrestricted' (3977193) panicked at tests/query_restrictions.rs:621:5:
+SELECT "p"."_code"::text AS "Code" FROM (SELECT "__restricted"."_idrref" AS "_idrref", "__restricted"."_code" AS "_code", "__restricted"."_date_time" AS "_date_time", "__restricted"."_fld54" AS "_fld54" FROM "_reference53" AS "__restricted" WHERE ("__restricted"."_idrref" IN (SELECT "О"."_idrref" AS "Ссылка" FROM "_reference57" AS "О" WHERE ((rtrim(CAST("О"."_code" AS text), ' ') COLLATE "C") = (rtrim(CAST('HQ' AS text), ' ') COLLATE "C"))))) AS "p" LEFT JOIN (SELECT "__restricted"."_idrref" AS "_idrref", "__restricted"."_code" AS "_code", "__restricted"."_date_time" AS "_date_time" FROM "_reference57" AS "__restricted" WHERE ("__restricted"."_code" <> 'hidden')) AS "o" ON "p"."_fld54" = "o"."_idrref"
+
+---- wraps_a_restricted_source_in_a_derived_table_with_dereference_and_session_value stdout ----
+
+thread 'wraps_a_restricted_source_in_a_derived_table_with_dereference_and_session_value' (3977200) panicked at tests/query_restrictions.rs:199:5:
+SELECT "p"."_code"::text AS "Code" FROM (SELECT "__restricted"."_idrref" AS "_idrref", "__restricted"."_code" AS "_code", "__restricted"."_date_time" AS "_date_time", "__restricted"."_fld54" AS "_fld54" FROM "_reference53" AS "__restricted" LEFT JOIN "_reference57" AS "__ref1" ON "__restricted"."_fld54" = "__ref1"."_idrref" WHERE (((rtrim(CAST("__ref1"."_code" AS text), ' ') COLLATE "C") = (rtrim(CAST('HQ' AS text), ' ') COLLATE "C")) OR ((rtrim(CAST("__restricted"."_code" AS text), ' ') COLLATE "C") = (rtrim(CAST('free' AS text), ' ') COLLATE "C")))) AS "p" WHERE ("p"."_code" <> 'X') ORDER BY "p"."_code" ASC
+
+---- accepts_the_platform_form_of_a_restriction_with_the_current_table_qualifier stdout ----
+
+thread 'accepts_the_platform_form_of_a_restriction_with_the_current_table_qualifier' (3977190) panicked at tests/query_restrictions.rs:718:5:
+SELECT "p"."_code"::text AS "Code" FROM (SELECT "__restricted"."_idrref" AS "_idrref", "__restricted"."_code" AS "_code", "__restricted"."_date_time" AS "_date_time", "__restricted"."_fld54" AS "_fld54" FROM "_reference53" AS "__restricted" WHERE (TRUE IN (SELECT TRUE AS "column1" FROM "_reference53" AS "К" WHERE ((rtrim(CAST("К"."_code" AS text), ' ') COLLATE "C") = (rtrim(CAST("__restricted"."_code" AS text), ' ') COLLATE "C")) LIMIT 1))) AS "p"
+
+
+failures:
+    accepts_the_platform_form_of_a_restriction_with_the_current_table_qualifier
+    keeps_nested_queries_of_a_restriction_unrestricted
+    resolves_session_parameters_after_query_parameters
+    wraps_a_restricted_source_in_a_derived_table_with_dereference_and_session_value
+
+test result: FAILED. 9 passed; 4 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+error: test failed, to rerun pass `-p open-sdbl --test query_restrictions`
+     Running tests/query_scalar_functions.rs (target/debug/deps/query_scalar_functions-5763a90ff0863c4e)
+
+running 5 tests
+test checks_argument_kinds_and_arity ... ok
+test counts_characters_and_finds_substrings ... ok
+test renders_arithmetic_functions ... ok
+test keeps_the_names_usable_as_identifiers ... ok
+test renders_string_functions_on_both_dialects ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/query_separator_use_0913.rs (target/debug/deps/query_separator_use_0913-bd99c22b1fb8fa94)
+
+running 6 tests
+test disabled_independent_mssql ... ok
+test disabled_independent_postgres ... ok
+test disabled_shared_reads_without_a_value_or_predicate ... ok
+test a_read_table_without_separator_columns_does_not_request_other_tables_values ... ok
+test lazy_parameters_mssql ... ok
+test lazy_parameters_postgres ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+
+     Running tests/query_separators.rs (target/debug/deps/query_separators-b7059b28ee150583)
+
+running 13 tests
+test projects_separation_settings_from_the_class_list_tail ... ok
+test a_snapshot_without_separators_is_unchanged ... ok
+test filters_register_virtual_tables_inside_their_base_reads ... ok
+test resolves_separation_settings_from_the_probe_resources ... ok
+test filters_a_plain_source_by_the_session_value_before_the_query_filter ... FAILED
+test places_predicates_by_join_shape ... FAILED
+test filters_constants_nested_queries_and_restricted_sources ... ok
+test the_use_flag_rejects_independent_and_query_parameters_never_supply_it ... ok
+test reports_a_separator_whose_settings_are_missing ... ok
+test a_shared_separator_defaults_to_the_empty_value_and_falls_back_to_its_name ... ok
+test extension_branches_are_filtered_individually ... ok
+test an_independent_separator_without_a_value_is_a_parameter_diagnostic ... ok
+test virtual_tables_request_usage_before_value_and_refuse_disabled_independent ... ok
+
+failures:
+
+---- filters_a_plain_source_by_the_session_value_before_the_query_filter stdout ----
+
+thread 'filters_a_plain_source_by_the_session_value_before_the_query_filter' (3977222) panicked at tests/query_separators.rs:209:5:
+assertion `left == right` failed
+  left: "SELECT \"Т\".\"_idrref\" AS \"Ссылка\" FROM \"_reference53\" AS \"Т\" WHERE \"Т\".\"_fld56\" = 7 AND \"Т\".\"_fld57\" = 7 AND ((rtrim(CAST(\"Т\".\"_fld54\" AS text), ' ') COLLATE \"C\") = (rtrim(CAST('x' AS text), ' ') COLLATE \"C\"))"
+ right: "SELECT \"Т\".\"_idrref\" AS \"Ссылка\" FROM \"_reference53\" AS \"Т\" WHERE \"Т\".\"_fld56\" = 7 AND \"Т\".\"_fld57\" = 7 AND (\"Т\".\"_fld54\" = 'x')"
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- places_predicates_by_join_shape stdout ----
+
+thread 'places_predicates_by_join_shape' (3977225) panicked at tests/query_separators.rs:321:5:
+assertion `left == right` failed
+  left: "SELECT \"Т\".\"_idrref\" AS \"Ссылка\", \"П\".\"_fld54\"::text AS \"Артикул\", \"__left_ref1\".\"_fld54\"::text AS \"А\" FROM \"_reference53\" AS \"Т\" LEFT JOIN \"_reference53\" AS \"П\" ON \"Т\".\"_fld55rref\" = \"П\".\"_idrref\" AND \"П\".\"_fld56\" = 7 AND \"П\".\"_fld57\" = 7 LEFT JOIN \"_reference53\" AS \"__left_ref1\" ON \"Т\".\"_fld55rref\" = \"__left_ref1\".\"_idrref\" AND \"__left_ref1\".\"_fld56\" = 7 AND \"__left_ref1\".\"_fld57\" = 7 WHERE \"Т\".\"_fld56\" = 7 AND \"Т\".\"_fld57\" = 7 AND ((rtrim(CAST(\"Т\".\"_fld54\" AS text), ' ') COLLATE \"C\") = (rtrim(CAST('x' AS text), ' ') COLLATE \"C\"))"
+ right: "SELECT \"Т\".\"_idrref\" AS \"Ссылка\", \"П\".\"_fld54\"::text AS \"Артикул\", \"__left_ref1\".\"_fld54\"::text AS \"А\" FROM \"_reference53\" AS \"Т\" LEFT JOIN \"_reference53\" AS \"П\" ON \"Т\".\"_fld55rref\" = \"П\".\"_idrref\" AND \"П\".\"_fld56\" = 7 AND \"П\".\"_fld57\" = 7 LEFT JOIN \"_reference53\" AS \"__left_ref1\" ON \"Т\".\"_fld55rref\" = \"__left_ref1\".\"_idrref\" AND \"__left_ref1\".\"_fld56\" = 7 AND \"__left_ref1\".\"_fld57\" = 7 WHERE \"Т\".\"_fld56\" = 7 AND \"Т\".\"_fld57\" = 7 AND (\"Т\".\"_fld54\" = 'x')"
+
+
+failures:
+    filters_a_plain_source_by_the_session_value_before_the_query_filter
+    places_predicates_by_join_shape
+
+test result: FAILED. 11 passed; 2 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.07s
+
+error: test failed, to rerun pass `-p open-sdbl --test query_separators`
+     Running tests/query_shared_bound_value_0927.rs (target/debug/deps/query_shared_bound_value_0927-4a72fa01d8d7733a)
+
+running 4 tests
+test number_mssql ... ok
+test string_postgres ... ok
+test string_mssql ... ok
+test number_postgres ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.08s
+
+     Running tests/query_strict_restrictions.rs (target/debug/deps/query_strict_restrictions-96db616205f36041)
+
+running 27 tests
+test a_temporary_table_of_an_unrestricted_batch_is_refused ... ok
+test a_target_without_a_decision_fails_compilation ... ok
+test a_decision_for_a_target_nobody_reads_is_an_error ... ok
+test a_broken_condition_never_compiles_unfiltered ... ok
+test a_denied_target_reads_through_a_false_predicate ... ok
+test a_presentation_lookup_reads_its_target_through_the_decision ... ok
+test a_prepared_restricted_query_keeps_its_mode ... ok
+test a_condition_supplied_the_old_way_answers_a_restricted_target ... ok
+test a_nested_tabular_section_projection_is_refused ... ok
+test a_deferred_presentation_compiles_in_the_restricted_mode ... ok
+test a_missing_decision_names_the_tabular_section ... ok
+test a_query_without_the_keyword_is_still_filtered ... ok
+test a_presentation_read_is_requested_and_filtered ... ok
+test an_explicit_allowance_reads_without_a_wrapper ... ok
+test a_hierarchy_control_point_of_totals_is_refused ... ok
+test two_answers_about_one_target_are_refused ... ok
+test constructs_without_a_filtered_read_are_refused ... ok
+test a_temporary_table_of_the_same_restricted_batch_is_readable ... ok
+test a_virtual_table_is_filtered_in_the_restricted_mode ... ok
+test the_reads_of_a_condition_stay_outside_the_request ... ok
+test a_dereference_target_is_requested_and_filtered ... ok
+test nested_queries_union_branches_and_joins_are_filtered ... ok
+test every_statement_of_a_mixed_batch_is_filtered ... ok
+test each_candidate_of_a_composite_reference_is_requested_and_filtered ... ok
+test one_target_read_through_several_aliases_is_requested_once_and_filtered_everywhere ... ok
+test a_filter_criterion_is_refused_in_the_restricted_mode ... ok
+test a_document_journal_is_a_target_like_any_other_source ... ok
+
+test result: ok. 27 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 7.68s
+
+     Running tests/query_string_equality_0936.rs (target/debug/deps/query_string_equality_0936-29757118bd3790c4)
+
+running 4 tests
+test sql_server_and_inequality_keep_the_existing_path ... ok
+test incompatible_number_and_boolean_do_not_cast_to_the_string_field ... ok
+test native_string_equality_trims_only_trailing_spaces_and_keeps_case ... ok
+test literal_and_reversed_operands_use_the_same_measured_path ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/query_system_values.rs (target/debug/deps/query_system_values-0e51dfb55446111e)
+
+running 4 tests
+test an_unknown_system_value_is_a_syntax_error ... ok
+test system_values_are_numbers_in_a_projection ... ok
+test compares_the_record_kind_with_a_system_value ... ok
+test exposes_the_standard_fields_of_a_chart_of_accounts ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 16.64s
+
+     Running tests/query_temporal_0928.rs (target/debug/deps/query_temporal_0928-cfff76281eb9136c)
+
+running 7 tests
+test temporal_references_require_document_metadata_even_when_empty ... ok
+test legacy_parameter_binding_errors_keep_their_early_diagnostic ... ok
+test temporal_parameters_do_not_escape_into_scalar_or_turnover_positions ... ok
+test temporal_balances_keep_restrictions_and_required_access_decisions ... ok
+test measured_date_and_empty_point_boundaries_keep_inclusion ... ok
+test nonempty_points_preserve_recorder_and_storage_type_for_both_dialects ... ok
+test point_projection_has_an_explicit_logical_recipe ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 7.46s
+
+     Running tests/query_totals.rs (target/debug/deps/query_totals-b924e26d57965d49)
+
+running 7 tests
+test projects_expression_order_keys_as_hidden_columns ... ok
+test keeps_the_temporary_table_with_list_ahead_of_the_totals_cte ... ok
+test nests_levels_and_counts_the_period_as_text_when_needed ... ok
+test accepts_union_top_parameters_and_periods ... ok
+test renders_overall_and_one_level_in_traversal_order ... ok
+test renders_hierarchy_totals_with_recursive_ctes ... ok
+test reports_totals_diagnostics ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests/query_tuple_in.rs (target/debug/deps/query_tuple_in-78a35a92f6ec9006)
+
+running 4 tests
+test a_string_membership_test_compares_text_with_text ... ok
+test a_tuple_membership_test_renders_as_exists ... FAILED
+test a_tuple_needs_a_matching_subquery ... ok
+test a_tuple_is_accepted_in_a_virtual_table_condition ... ok
+
+failures:
+
+---- a_tuple_membership_test_renders_as_exists stdout ----
+
+thread 'a_tuple_membership_test_renders_as_exists' (3978148) panicked at tests/query_tuple_in.rs:22:5:
+expected "WHERE EXISTS (SELECT 1 FROM (SELECT \"П\".\"_code\"::text AS \"Код\", \"П\".\"_fld54\" AS \"ProbeAttribute\" FROM \"_reference53\" AS \"П\" WHERE (\"П\".\"_code\" = 'A')) AS \"__in\" WHERE \"__in\".\"Код\" = (\"Т\".\"_code\")::text AND \"__in\".\"ProbeAttribute\" = \"Т\".\"_fld54\")" in
+SELECT "Т"."_code"::text AS "Код" FROM "_reference53" AS "Т" WHERE EXISTS (SELECT 1 FROM (SELECT "П"."_code"::text AS "Код", "П"."_fld54" AS "ProbeAttribute" FROM "_reference53" AS "П" WHERE ((rtrim(CAST("П"."_code" AS text), ' ') COLLATE "C") = (rtrim(CAST('A' AS text), ' ') COLLATE "C"))) AS "__in" WHERE "__in"."Код" = ("Т"."_code")::text AND "__in"."ProbeAttribute" = "Т"."_fld54")
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    a_tuple_membership_test_renders_as_exists
+
+test result: FAILED. 3 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 16.55s
+
+error: test failed, to rerun pass `-p open-sdbl --test query_tuple_in`
+     Running tests/query_types.rs (target/debug/deps/query_types-d78c02122f3f8966)
+
+running 14 tests
+test decodes_type_values_by_name ... ok
+test compares_a_composite_field_with_a_list ... ok
+test classifies_bound_parameters ... ok
+test compares_a_composite_field_with_a_value ... ok
+test compiles_type_literals ... ok
+test reads_the_type_member_of_a_derived_column ... ok
+test projects_alternatives_of_different_types_by_member ... ok
+test narrows_an_expression_to_a_metadata_type ... ok
+test compares_value_types_with_type_literals ... ok
+test compiles_the_simple_case_form ... ok
+test tests_compound_fields_for_null ... ok
+test encodes_the_type_of_every_value ... ok
+test compiles_the_undefined_literal ... ok
+test reports_unsupported_type_arguments ... ok
+
+test result: ok. 14 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/query_uuid_values.rs (target/debug/deps/query_uuid_values-db46470ef9e34034)
+
+running 7 tests
+test raw_binary_parameters_are_not_uuid_parameters ... ok
+test unknown_binary_declarations_keep_their_existing_kind ... ok
+test typed_parameters_keep_uuid_kind_and_existing_byte_order ... ok
+test the_new_uuid_forms_reject_unmeasured_sql_server ... ok
+test a_native_uuid_attribute_is_not_an_arbitrary_binary_column ... ok
+test derived_and_union_columns_preserve_uuid ... ok
+test ambiguous_or_qualified_declarations_do_not_reclassify_binary ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests/reference_dump_conformance.rs (target/debug/deps/reference_dump_conformance-4d1fb20bffdffcb7)
+
+running 6 tests
+test captured_catalog_shapes_preserve_compounds_and_provider_types ... ok
+test reference_dumps_decode_to_the_expected_encodings ... ok
+test whole_schema_storage_dumps_cover_the_real_column_alphabet ... ok
+test shared_provider_entries_keep_canonical_identity_across_renumbering ... ok
+test whole_db_names_dumps_accept_shared_and_nil_guids ... ok
+test whole_dump_resolution_is_deterministic_at_reference_scale ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.11s
+
+     Running tests/runtime_metadata_096.rs (target/debug/deps/runtime_metadata_096-5fde4d8e99f0fd14)
+
+running 5 tests
+test native_number_variants_and_known_empty_document_collections_are_preserved ... ok
+test event_retains_typed_filling_values_and_named_reference_identity ... ok
+test malformed_collection_and_unknown_fill_value_are_not_guessed ... ok
+test snapshot_expands_all_named_members_and_rejects_cycles_or_duplicates ... ok
+test settings_and_members_match_every_uuid_in_the_native_xml_corpus ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 4.67s
+
+     Running tests/runtime_object_099.rs (target/debug/deps/runtime_object_099-570481a36a5b1110)
+
+running 7 tests
+test native_business_process_members_and_types_are_complete_and_separate ... ok
+test native_standard_required_setting_preserves_other_policies ... ok
+test three_native_sections_preserve_order_separate_fields_and_verified_empty_membership ... ok
+test business_process_acquisition_survives_snapshot_and_tasks_remain_unaffected ... ok
+test corrupted_members_and_settings_are_unknown_without_partial_success ... ok
+test native_register_kinds_order_and_empty_members_match_xml_oracle ... ok
+test native_number_variants_and_standard_keys_match_independent_xml_controls ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
+
+     Running tests/runtime_options_0912.rs (target/debug/deps/runtime_options_0912-806d2c4b59429e1c)
+
+running 11 tests
+test unsupported_flags_links_and_parameter_count_never_become_defaults_or_partial_success ... ok
+test unknown_nonzero_condition_remains_unknown_without_losing_verified_membership ... ok
+test unknown_parameter_use_invalidates_complete_root_membership ... ok
+test native_disabled_and_separate_are_independent_of_present_settings ... ok
+test native_sources_flags_and_complete_parameter_membership_survive_resolution ... ok
+test complete_information_register_membership_is_not_reconstructed_from_surviving_fields ... ok
+test malformed_root_inventory_does_not_claim_completeness ... ok
+test missing_inventory_member_or_unknown_separation_never_produces_partial_content ... ok
+test native_compiler_discards_inapplicable_explicit_constant_from_disabled_content ... ok
+test native_catalog_use_register_profiles_explicit_auto_and_multiple_links_are_preserved ... ok
+test complete_runtime_content_matches_native_class_applicability_order_and_condition ... ok
+
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.19s
+
+     Running tests/selected_metadata_0932.rs (target/debug/deps/selected_metadata_0932-a7b2b3f90010db27)
+
+running 3 tests
+test selected_explicit_extension_keeps_its_field_and_table_mapping ... ok
+test selected_query_mappings_match_full_resolution_and_omit_unreached_objects ... ok
+test selected_separators_keep_their_flags_and_report_missing_settings ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running tests/selected_settings_0935.rs (target/debug/deps/selected_settings_0935-a29bd49149c79d37)
+
+running 1 test
+test native_settings_declarations_and_separator_mappings_survive_selection ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running tests/service_table_fixtures.rs (target/debug/deps/service_table_fixtures-dcd0d2a51f73dc35)
+
+running 10 tests
+test extension_field_number_collision_retains_the_base_mapping_and_reports_it ... ok
+test reports_a_service_db_names_entry_without_a_matching_schema_table ... ok
+test resolve_reports_malformed_extension_restructure ... ok
+test top_level_service_declarations_parse_from_live_fixtures ... ok
+test live_service_tables_resolve_as_typed_metadata ... ok
+test change_registration_resolves_by_registered_object_ownership ... ok
+test extension_reference_attribute_dereferences ... ok
+test extension_restructure_makes_attributes_queryable ... ok
+test extension_adds_columns_absent_from_the_base_declaration ... ok
+test compiles_service_table_sources_on_both_dialects ... ok
+
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests/session_shape_096.rs (target/debug/deps/session_shape_096-e86ee6e3b41fc259)
+
+running 5 tests
+test demo_common_name_and_string_qualifiers_are_acquired_for_its_explicit_catalog ... ok
+test unsupported_or_incomplete_common_usage_is_never_partial ... ok
+test catalog_unknown_codes_and_incomplete_owners_remain_unknown ... ok
+test native_common_attributes_preserve_complete_explicit_content_and_auto_use ... ok
+test native_catalog_modes_and_complete_owners_survive_snapshot_acquisition ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 7.38s
+
+     Running tests/settings_user_namespace_0926.rs (target/debug/deps/settings_user_namespace_0926-ce96bb6c3642d2e0)
+
+running 3 tests
+test retained_native_oracles_distinguish_user_namespaces_for_authorized_profiles ... ok
+test measured_mvarchar_user_namespace_is_exact_without_changing_other_keys ... ok
+test exact_user_filter_retains_complete_string_and_numeric_separator_states ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/stored_value_text.rs (target/debug/deps/stored_value_text-08218b951c9c0ef3)
+
+running 5 tests
+test compressed_text_owns_the_same_payload_and_obeys_the_decoded_byte_limit ... ok
+test distinct_native_structure_storage_envelope_is_not_guessed ... ok
+test text_extraction_does_not_parse_or_rewrite_the_brace_grammar ... ok
+test malformed_framing_utf8_and_external_reference_are_not_guessed ... ok
+test plain_text_borrows_and_preserves_the_exact_serialized_payload_without_bom ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/system_settings_load.rs (target/debug/deps/system_settings_load-8fd1bd157803e7f1)
+
+running 15 tests
+test common_table_cannot_supply_a_missing_system_table ... ok
+test existing_literal_renderer_escapes_quotes_and_preserves_explicit_empty_user ... ok
+test active_empty_value_remains_distinct_from_an_inactive_separator ... ok
+test complete_active_scope_constrains_user_keys_and_every_separator ... ok
+test inactive_scope_retains_false_and_empty_value_predicates ... ok
+test missing_duplicate_and_extra_states_fail_closed ... ok
+test numeric_inactive_scope_has_a_typed_zero ... ok
+test numeric_values_use_the_shared_exact_decimal_renderer ... ok
+test global_condition_and_inactive_scopes_remain_distinct_for_both_types ... ok
+test missing_or_ambiguous_dbnames_and_uncovered_flags_fail_closed ... ok
+test unsupported_types_and_backend_fail_before_sql ... ok
+test generated_queries_read_the_four_distinct_native_numeric_payloads ... ok
+test system_table_keys_and_payload_require_supported_scalar_columns ... ok
+test native_replay_queries_keep_storage_and_scope_independent ... ok
+test native_payloads_reuse_the_bounded_scalar_and_storage_decoder ... ok
+
+test result: ok. 15 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/tabular_section_membership_096.rs (target/debug/deps/tabular_section_membership_096-b7df63b272601a86)
+
+running 4 tests
+test separate_sections_and_empty_membership_do_not_leak_neighbors ... ok
+test unknown_member_declaration_remains_unknown_with_known_membership ... ok
+test malformed_membership_is_unknown_without_damaging_other_sections ... ok
+test all_native_document_sections_match_exact_xml_membership ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 6.75s
+
+     Running tests/value_storage.rs (target/debug/deps/value_storage-a38200fc7b395e64)
+
+running 4 tests
+test builds_the_statements_reading_the_content ... ok
+test decodes_a_stored_map ... ok
+test refuses_content_that_is_neither_the_serialization_nor_deflate ... ok
+test reads_the_reference_a_column_holds ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/main.rs (target/debug/deps/open_sdbl-d9dc1223b1fcd114)
+
+running 51 tests
+test access::tests::parses_access_commands ... ok
+test app::tests::lex_help_does_not_read_standard_input ... ok
+test args::tests::carries_socks5_proxy_credentials_into_connection_options ... ok
+test args::tests::accepts_inline_option_values_and_rejects_option_like_values ... ok
+test args::tests::parses_inline_values_and_rejects_option_like_values ... ok
+test args::tests::parses_mssql_provider_defaults_and_explicit_tls_exception ... ok
+test args::tests::parses_private_ca_files_for_both_database_providers ... ok
+test args::tests::refuses_postgres_plaintext_without_explicit_opt_in ... ok
+test args::tests::rejects_mssql_only_tls_flag_for_postgres ... ok
+test args::tests::selects_secure_postgres_ssl_modes_with_flag_precedence ... ok
+test args::tests::rejects_password_bearing_command_line_flags ... ok
+test auth::pgpass::tests::parses_escaped_password_records ... ok
+test auth::pgpass::tests::parses_password_file_escaping_and_wildcards ... ok
+test error::tests::recognizes_broken_standard_output ... ok
+test output::tests::preserves_only_trusted_usage_layout ... ok
+test output::tests::escapes_controls_and_truncates_at_character_boundaries ... ok
+test auth::pgpass::tests::reads_the_first_matching_secure_password_record ... ok
+test auth::pgpass::tests::rejects_non_regular_and_wrong_owner_password_files ... ok
+test progress::tests::renders_exact_resource_and_byte_totals ... ok
+test repl::completion::tests::candidate_deduplication_keeps_the_first_case_insensitive_spelling ... ok
+test repl::completion::tests::completes_commands_keywords_and_cyrillic_metadata_case_insensitively ... ok
+test repl::completion::tests::completes_service_sources_under_their_owners ... ok
+test repl::completion::tests::finds_completion_boundary_without_splitting_utf8_or_dotted_names ... ok
+test repl::completion::tests::does_not_attach_virtual_tables_to_catalogs ... ok
+test repl::completion::tests::highlights_lexer_tokens_without_changing_display_text ... ok
+test repl::completion::tests::restricts_source_completion_to_the_qualified_metadata_hierarchy ... ok
+test repl::completion::tests::stores_reference_completion_aliases_linearly_and_expands_only_a_typed_path ... ok
+test repl::describe::tests::labels_temporary_table_column_kinds ... ok
+test repl::completion::tests::completes_virtual_tables_by_resolved_register_kind ... ok
+test repl::presentation::tests::catalog_default_presentation_is_description_space_code ... ok
+test repl::presentation::tests::document_default_presentation_is_type_number_and_period ... ok
+test repl::describe::tests::lists_and_completes_session_temporary_tables ... ok
+test params::tests::stores_session_parameters_for_every_query ... ok
+test repl::presentation::tests::splits_binary_deferred_payloads ... ok
+test repl::presentation::tests::unresolved_deferred_presentations_are_visible ... ok
+test repl::render::tests::aligns_cjk_by_display_columns ... ok
+test params::tests::stores_lists_and_filters_parameters_by_reference ... ok
+test params::tests::parses_table_literals ... ok
+test params::tests::rejects_malformed_literals ... ok
+test repl::presentation::tests::presentation_cache_uses_the_production_lookup_and_clears_on_refresh ... ok
+test params::tests::parses_every_literal_form ... ok
+test repl::terminal::tests::footer_fits_the_last_terminal_row ... ok
+test repl::describe::tests::lists_temporary_tables_placed_in_this_session ... ok
+test repl::terminal::tests::recognizes_multiline_termination_outside_strings_and_comments ... ok
+test repl::terminal::tests::validates_cyrillic_bytes_without_terminating_the_reader ... ok
+test repl::tests::exits_after_an_error_when_the_database_session_is_dead ... ok
+test repl::tests::formats_sql_generation_duration_compactly ... ok
+test repl::tests::the_prompt_names_the_current_user ... ok
+test repl::terminal::tests::bounds_non_interactive_input_lines_and_drains_the_remainder ... ok
+test app::tests::bounds_lex_rows ... ok
+test repl::render::tests::bounds_table_rows_cells_and_terminal_width ... ok
+
+test result: ok. 51 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
+
+     Running tests/cli.rs (target/debug/deps/cli-c88359bcc28ab7c4)
+
+running 5 tests
+test warns_when_mssql_certificate_verification_is_disabled ... ok
+test lexes_a_named_file ... ok
+test returns_a_positional_diagnostic ... ok
+test lexes_standard_input ... ok
+test closed_stdout_pipe_is_quiet_success ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running tests/metadata_cli.rs (target/debug/deps/metadata_cli-3ca63cab08618c71)
+
+running 4 tests
+test plaintext_opt_in_error_preserves_help_line_breaks ... ok
+test obsolete_psql_option_is_rejected_before_connecting ... ok
+test invalid_socks5_proxy_is_rejected_before_connecting ... ok
+test metadata_help_and_required_options_are_reported ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests/repl_cli.rs (target/debug/deps/repl_cli-5b64bfb14383c1c4)
+
+running 3 tests
+test console_help_accepts_piped_input_without_connecting ... ok
+test repl_remains_a_compatibility_alias ... ok
+test console_validates_provider_and_required_options_before_connecting ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running unittests src/lib.rs (target/debug/deps/open_sdbl_db-40c1dac7e86543e0)
+
+running 151 tests
+test access::tests::collapses_a_condition_to_one_line_outside_its_strings ... ok
+test access::tests::decisions_refuse_to_answer_without_a_current_user ... ok
+test access::tests::a_role_the_base_carries_no_rights_of_is_asked_for_once ... ok
+test access::tests::decisions_refuse_to_answer_for_a_role_whose_rights_are_unread ... ok
+test access::tests::user_language::shared_rows_retain_all_six_native_legacy_languages ... ok
+test access::tests::user_language::ordinary_database_rows_retain_selected_and_default_language ... ok
+test access_cache::tests::names_the_parameters_the_cache_carries ... ok
+test access_cache::tests::reads_the_hexadecimal_a_provider_may_answer ... ok
+test blocking::indexed_tests::indexed_blocking_calls_forward_and_keep_lifecycle_precedence ... ok
+test blocking::metadata_inputs_tests::discovery_forwarding_preserves_closed_and_async_precedence ... ok
+test access::tests::decodes_users_from_rows_and_lists_them ... ok
+test blocking::tests::a_refused_connection_does_not_carry_the_password ... ok
+test blocking::tests::a_session_can_move_to_another_thread ... ok
+test blocking::tests::answers_the_error_the_asynchronous_path_answers ... ok
+test access::tests::lists_roles_with_a_filter ... ok
+test blocking::tests::every_call_after_close_answers_session_closed ... ok
+test blocking::tests::refuses_to_block_inside_an_asynchronous_runtime ... ok
+test blocking::tests::a_closed_session_answers_session_closed_inside_a_runtime_too ... ok
+test blocking::tests::selected_and_access_calls_refuse_async_context_while_open ... ok
+test blocking::tests::the_blocking_module_carries_no_second_sql_path ... ok
+test blocking::tests::two_sessions_are_two_connections ... ok
+test cells::tests::converts_days_to_civil_dates ... ok
+test cells::tests::decodes_postgres_numeric_wire_format ... ok
+test cells::tests::formats_scaled_integers_with_declared_scale ... ok
+test cells::tests::renders_cells_with_one_policy ... ok
+test credentials::tests::a_missing_secret_is_named_by_its_variable_only ... ok
+test credentials::tests::builds_credentials_from_owned_strings ... ok
+test credentials::tests::never_prints_a_secret ... ok
+test blocking::tests::selected_and_access_calls_use_the_open_session ... ok
+test access::tests::derives_nothing_without_a_current_user ... ok
+test db::mssql::cells::tests::decodes_tds_values_into_typed_cells ... ok
+test db::mssql::metadata::tests::a_denied_target_returns_no_row_from_the_server ... ignored, requires OPEN_SDBL_MSSQL_TEST_USER, MSSQL_PASSWORD, and a live 1C database
+test db::mssql::metadata::tests::compiles_begin_of_period_on_a_sql_server_2008_base ... ignored, requires OPEN_SDBL_MSSQL_TEST_* pointing at a SQL Server 2008 R2 base
+test db::mssql::metadata::tests::reads_dereferences_and_presents_the_mssql_demo_extension_table ... ignored, requires the MSSQL demo database and its _Reference18X1 extension table
+test db::mssql::metadata::tests::reads_metadata_from_a_legacy_mssql_base_without_part_numbers ... ignored, requires OPEN_SDBL_MSSQL_TEST_* pointing at a platform 8.2 base without PartNo
+test db::mssql::metadata::tests::reads_metadata_from_the_mssql_demo_database ... ignored, requires OPEN_SDBL_MSSQL_TEST_USER, MSSQL_PASSWORD, and a live 1C database
+test db::mssql::metadata::tests::reads_native_rowversion_from_the_mssql_demo_database ... ignored, requires the MSSQL demo database and its _ДемоЗаказПокупателя document
+test db::mssql::metadata::tests::stopping_a_streaming_read_ends_the_statement ... ignored, requires OPEN_SDBL_MSSQL_TEST_USER, MSSQL_PASSWORD, and a live 1C database
+test db::mssql::metadata::tests::the_configuration_fingerprint_is_stable_across_reads ... ignored, requires OPEN_SDBL_MSSQL_TEST_USER, MSSQL_PASSWORD, and a live 1C database
+test db::postgres::cells::tests::decodes_binary_protocol_values_into_typed_cells ... ok
+test db::mssql::session::tests::failed_mssql_cleanup_poisons_the_session_state ... ok
+test blocking::tests::answers_what_the_asynchronous_path_answers ... ok
+test db::mssql::session::tests::timeout_requires_dropping_mssql_without_rollback ... ok
+test db::postgres::metadata::selected_tests::selected_config_predicates_use_validated_literals_for_mvarchar ... ok
+test extensions::tests::native_descriptor_promising_rights_is_not_an_empty_role ... ok
+test access::tests::field_read_0923::foreign_fields_tabular_sections_and_unknown_standards_remain_denied ... ok
+test extensions::tests::unknown_or_incomplete_no_rights_profiles_stay_unreadable ... ok
+test indexed::tests::addressed_queries_escape_names_and_preserve_indexed_columns ... ok
+test indexed::tests::addressed_results_are_complete_and_in_request_order ... ok
+test indexed::tests::bootstrap_and_repeated_reads_only_address_requested_resources_and_reuse_layout ... ok
+test extensions::tests::native_role_without_a_rights_subobject_has_complete_empty_rights ... ok
+test extensions::tests::finds_the_resources_of_a_role_by_name ... ok
+test indexed::tests::indexed_failure_rolls_back_and_bootstrap_counts_both_resources ... ok
+test indexed::tests::requests_are_bounded_deduplicated_and_right_trimmed ... ok
+test indexed::tests::multipart_limit_is_checked_before_assembly_and_gaps_fail ... ok
+test access::tests::field_check_requires_selected_user_and_every_roles_rights ... ok
+test access::tests::missing_rls_parameter_keeps_its_name_through_both_database_apis ... ok
+test db::postgres::session::tests::aborts_a_stalled_driver_on_close ... ok
+test metadata_inputs::extension_metadata_tests::extension_physical_discovery_reuses_layout_and_does_not_read_config ... ok
+test metadata_inputs::extension_metadata_tests::extension_structure_stream_stops_at_retention_limit ... ok
+test metadata_cache::tests::explicit_extension_and_prepared_queries_use_the_cached_snapshot_fingerprint ... ok
+test metadata_inputs::tests::filename_discovery_is_bounded_and_never_selects_binarydata ... ok
+test access::tests::field_read_0923::native_register_and_document_owner_read_is_required_for_both_defaults ... ok
+test metadata_inputs::tests::physical_discovery_is_reused_without_config_scans_or_repeated_sql ... ok
+test net::socks5::tests::authenticates_to_socks5_with_username_and_password ... ok
+test net::socks5::tests::encodes_ip_targets_in_socks5_connect_requests ... ok
+test net::socks5::tests::parses_socks5_proxy_endpoints ... ok
+test net::socks5::tests::rejects_socks5_authentication_downgrade ... ok
+test net::socks5::tests::reports_missing_socks5_authentication_credentials ... ok
+test net::socks5::tests::reports_socks5_reply_before_a_malformed_reserved_byte ... ok
+test net::socks5::tests::sends_database_hostname_to_socks5_proxy ... ok
+test metadata_inputs::tests::role_only_access_cache_survives_growing_and_reordered_query_snapshots ... ok
+test pipeline::configuration_tests::a_metadata_read_asks_for_no_extension_catalog ... ok
+test pipeline::configuration_tests::a_provider_without_the_whole_read_says_so ... ok
+test pipeline::configuration_tests::answers_an_unknown_activity_rather_than_guessing_it ... ok
+test pipeline::configuration_tests::answers_the_metadata_read_plus_every_resource ... ok
+test pipeline::configuration_tests::assembles_a_split_resource_once ... ok
+test db::postgres::session::tests::aborts_a_stalled_postgres_driver_on_close ... ok
+test pipeline::configuration_tests::keeps_a_resource_the_metadata_filter_rejects ... ok
+test pipeline::configuration_tests::keeps_the_activity_of_an_extension ... ok
+test access::tests::field_read_0923::incomplete_owner_types_and_nonperiodic_period_are_not_authorized ... ok
+test pipeline::configuration_tests::keeps_two_extensions_apart ... ok
+test pipeline::configuration_tests::refuses_a_configuration_larger_than_the_ceiling_before_reading_it ... ok
+test pipeline::configuration_tests::refuses_a_broken_part_sequence_naming_the_resource ... ok
+test pipeline::configuration_tests::refuses_a_table_that_outgrew_its_totals ... ok
+test access::tests::constant_values_still_reject_unread_roles_and_mismatched_identifiers ... ok
+test access::tests::assembles_rights_resources_from_rows ... ok
+test pipeline::configuration_tests::rolls_back_and_publishes_nothing_when_a_read_fails ... ok
+test pipeline::configuration_tests::selected_read_applies_limit_only_to_retained_resources ... ok
+test pipeline::configuration_tests::never_merges_resources_two_extensions_name_alike ... ok
+test pipeline::configuration_tests::selected_read_rolls_back_when_bootstrap_is_rejected ... ok
+test pipeline::configuration_tests::reports_a_resource_the_store_does_not_carry ... ok
+test access::tests::shows_the_restriction_templates_of_a_role ... ok
+test pipeline::configuration_tests::selected_read_accepts_full_totals_above_retention_limits ... ok
+test metadata_cache::tests::compressed_budget_failure_does_not_poison_a_later_valid_admission ... ok
+test metadata_cache::tests::admission_failures_preserve_facts_and_budgets ... ok
+test access::tests::describes_a_role_without_metadata_by_identifier ... ok
+test pipeline::configuration_tests::selected_read_keeps_bootstrap_and_selected_names_but_resolves_all_metadata ... ok
+test access::tests::another_role_can_grant_the_constant_value ... ok
+test access::tests::a_constant_value_does_not_bypass_an_object_read_refusal ... ok
+test pipeline::data_processor_0911_tests::selected_configuration_preserves_processor_metadata_after_discarding_resource_bytes ... ok
+test pipeline::extension_details_tests::a_configuration_root_not_in_the_measured_shape_answers_no_catalog ... ok
+test pipeline::extension_details_tests::a_value_outside_the_measured_range_is_unknown_not_coerced ... ok
+test pipeline::extension_details_tests::a_declared_object_without_its_header_answers_no_headers ... ok
+test pipeline::extension_details_tests::an_adopted_object_links_to_the_base_through_its_own_header ... ok
+test pipeline::extension_details_tests::an_unknown_runtime_property_header_answers_unknown_properties ... ok
+test pipeline::extension_details_tests::an_older_base_answers_scope_and_distribution_unknown ... ok
+test net::socks5::tests::times_out_silent_postgres_startup_through_socks5 ... ok
+test pipeline::extension_details_tests::identity_order_and_activity_of_an_applied_and_a_not_applied_extension ... ok
+test pipeline::extension_details_tests::the_catalog_lists_the_classes_and_objects ... ok
+test pipeline::extension_details_tests::the_measured_fixture_answers_every_header ... ok
+test pipeline::extension_details_tests::a_damaged_resource_that_is_no_description_leaves_the_list_complete ... ok
+test pipeline::extension_details_tests::what_the_extensions_table_records ... ok
+test access::tests::lists_the_restrictions_of_the_rights_read ... ok
+test pipeline::extension_details_tests::a_version_is_answered_only_when_the_record_carries_one ... ok
+test pipeline::tests::decodes_provider_neutral_catalog_rows ... ok
+test pipeline::tests::assembles_ordered_parts_into_whole_resources ... ok
+test pipeline::extension_details_tests::the_content_hash_is_the_key_of_the_root ... ok
+test pipeline::tests::rejects_gaps_and_late_starts_in_part_sequences ... ok
+test pipeline::extension_details_tests::unmeasured_scope_codes_stay_raw_and_have_no_typed_mapping ... ok
+test restrict::tests::derived_restrictions_yield_to_typed_ones_and_are_forgotten ... ok
+test access::tests::an_attribute_without_an_exact_grant_stays_denied_despite_the_default_flag ... ok
+test restrict::tests::parses_restriction_commands ... ok
+test rows::tests::an_error_from_the_caller_ends_the_read ... ok
+test rows::tests::an_error_from_the_source_ends_the_read ... ok
+test rows::tests::reading_to_the_end_sees_every_row_in_order ... ok
+test restrict::tests::stores_lists_and_filters_restrictions_by_request ... ok
+test access::tests::standard_and_section_fields_fail_closed_when_member_mapping_is_unknown ... ok
+test rows::tests::stopping_reads_nothing_further ... ok
+test pipeline::extension_details_tests::one_damaged_description_answers_no_headers ... ok
+test pipeline::report_metadata_tests::selected_configuration_preserves_report_metadata_after_discarding_resource_bytes ... ok
+test pipeline::tests::times_out_only_when_the_config_pipeline_stops_making_progress ... ok
+test pipeline::tests::streamed_config_decoding_preserves_order_and_propagates_errors ... ok
+test access::tests::field_check_rejects_an_explicitly_denied_filter_and_accepts_a_second_grant ... ok
+test pipeline::extension_purpose_tests::damaged_configuration_root_keeps_other_acquired_fields_and_other_extensions ... ok
+test pipeline::extension_purpose_tests::shared_acquisition_preserves_all_three_native_purposes ... ok
+test pipeline::extension_purpose_tests::renamed_inactive_and_unknown_scope_do_not_determine_purpose ... ok
+test access::tests::verified_catalog_programmatic_reads_follow_object_read_without_ui_defaults ... ok
+test access::tests::the_constant_value_uses_object_read_independently_of_attribute_defaults ... ok
+test pipeline::extension_purpose_tests::older_compatibility_generations_use_the_same_shared_acquisition ... ok
+test access::tests::verified_catalog_still_denies_explicit_member_read_and_unsupported_standard_fields ... ok
+test pipeline::runtime_object_099_tests::selected_configuration_preserves_process_and_register_metadata_even_when_bytes_are_discarded ... ok
+test metadata_inputs::tests::explicit_resolution_reports_machine_readable_separator_dependencies ... ok
+test pipeline::tests::copied_native_point_guids_never_mix_process_owners_or_names ... ok
+test pipeline::tests::route_point_graph_is_attached_to_its_owner_across_batch_order ... ok
+test session::tests::times_out_a_stalled_post_handshake_server_call ... ok
+test access::tests::field_read_0923::explicit_member_read_role_union_and_complete_selected_roles_are_preserved ... ok
+test pipeline::data_processor_0911_tests::selected_configuration_preserves_runtime_options_and_full_inventory_without_resource_bytes ... ok
+test metadata_cache::tests::native_admission_drops_compressed_buffers_and_never_needs_old_bytes_again ... ok
+test metadata_cache::tests::native_separator_admission_preserves_strict_failures_and_complete_projection ... ok
+test access::metadata_right_cache_tests::unreadable_roles_cannot_be_hidden_by_another_grant ... ok
+
+test result: ok. 143 passed; 0 failed; 8 ignored; 0 measured; 0 filtered out; finished in 0.22s
+
+     Running tests/accumulation_access.rs (target/debug/deps/accumulation_access-38cae96c9f2baf50)
+
+running 3 tests
+test accumulation_multiple_roles_keep_existing_rls_conditions ... ok
+test incomplete_native_members_remain_unverified ... ok
+test native_dimensions_and_resources_follow_owner_read_not_view_or_defaults ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.06s
+
+     Running tests/document_metadata_rights.rs (target/debug/deps/document_metadata_rights-30836258f77d3cfb)
+
+running 1 test
+test replays_432_document_observations_through_existing_complete_role_cache ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.12s
+
+     Running tests/metadata_rights.rs (target/debug/deps/metadata_rights-c9f771a14445167d)
+
+running 2 tests
+test missing_role_is_an_error_even_beside_a_complete_grant ... ok
+test replays_native_matrix_through_complete_cached_access_store ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.18s
+
+     Running tests/selected_settings.rs (target/debug/deps/selected_settings-f7616534a2a4ecb8)
+
+running 2 tests
+test settings_live_facts_keep_prepared_snapshot_validation_strict ... ok
+test native_settings_require_missing_descriptors_then_cache_matches_whole_sql ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
+
+     Running tests/session_transactions.rs (target/debug/deps/session_transactions-da1bb435f1dc4a30)
+
+running 6 tests
+test blocking_lifecycle_and_runtime_rules_match_async_session ... ok
+test close_drop_and_connection_loss_cleanup_server_state ... ok
+test explicit_query_cancellation_rolls_back_without_false_active_state ... ok
+test async_errors_and_timeouts_rollback_actual_transaction ... ok
+test abandoned_async_operation_refuses_reuse_and_never_reports_active ... ok
+test async_lifecycle_reuses_connection_and_transaction_and_isolates_sessions ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests open_sdbl
+
+running 9 tests
+test src/query/core/temp_tables.rs - query::core::temp_tables::TempTablesManager (line 77) - compile ... ok
+test src/query/core/resolve.rs - query::core::resolve::ColumnOrigin (line 1276) ... ok
+test src/query/core/params.rs - query::core::params::CompileOptions (line 411) ... ok
+test src/query.rs - query::PrepareOptions (line 337) ... ok
+test src/metadata/queries.rs - metadata::queries::is_config_metadata_resource (line 26) ... ok
+test src/metadata/resolve.rs - metadata::resolve::MetadataObject::synonym (line 136) ... ok
+test src/query/core/restrict.rs - query::core::restrict::AccessDecision (line 144) ... ok
+test src/query/core/restrict.rs - query::core::restrict::AccessRestriction (line 46) ... ok
+test src/query/core/params.rs - query::core::params::SessionParameters (line 307) ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+running 3 tests
+test src/lib.rs - query (line 62) - compile fail ... ok
+test src/metadata/resolve.rs - metadata::resolve::MetadataSnapshot (line 611) - compile fail ... ok
+test src/query.rs - query::Backend (line 53) - compile fail ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+
+all doctests ran in 0.22s; merged doctests compilation took 0.18s
+   Doc-tests open_sdbl_db
+
+running 3 tests
+test crates/open-sdbl-db/src/blocking.rs - blocking::BlockingDatabaseSession (line 432) - compile ... ok
+test crates/open-sdbl-db/src/indexed.rs - indexed::ConfigurationBootstrap (line 11) - compile ... ok
+test crates/open-sdbl-db/src/lib.rs - (line 18) - compile ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+all doctests ran in 0.38s; merged doctests compilation took 0.37s
+error: 10 targets failed:
+    `-p open-sdbl --test access_templates`
+    `-p open-sdbl --test query_accounting`
+    `-p open-sdbl --test query_comma_sources`
+    `-p open-sdbl --test query_compile`
+    `-p open-sdbl --test query_corpus`
+    `-p open-sdbl --test query_dereference`
+    `-p open-sdbl --test query_hierarchy`
+    `-p open-sdbl --test query_restrictions`
+    `-p open-sdbl --test query_separators`
+    `-p open-sdbl --test query_tuple_in`

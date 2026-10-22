@@ -1,0 +1,6 @@
+- [x] Reproduce native populated Content acquisition failure.
+- [x] Validate measured Content and malformed regressions without altering legacy tests.
+- [x] Implement connection-bound async and blocking transaction lifecycle and state.
+- [x] Verify lifecycle, errors, limits, cleanup and parity on own PostgreSQL controls; live SQL Server is unavailable.
+- [x] Run formatting, Clippy, workspace tests, rustdoc and strict OpenSpec validation.
+- [ ] Apply approved release version and archive after review.

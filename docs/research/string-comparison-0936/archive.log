@@ -1,0 +1,12 @@
+
+Proposal warnings in proposal.md (non-blocking):
+  ⚠ Change must have a Why section. Missing required sections. Expected headers: "## Why" and "## What Changes". Ensure deltas are documented in specs/ using delta headers.
+Task status: ✓ Complete
+
+Specs to update:
+  query-compilation: update
+Applying changes to openspec/specs/query-compilation/spec.md:
+  + 1 added
+Totals: + 1, ~ 0, - 0, → 0
+Specs updated successfully.
+Change 'compile-measured-postgres-string-equality' archived as '2026-10-21-compile-measured-postgres-string-equality'.

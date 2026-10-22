@@ -1,0 +1,16 @@
+# Measured legacy data processor attribute headers
+
+Existing contract: `openspec/specs/onec-metadata/spec.md`, Requirement **Acquire data processor object metadata**. The current exact original resource contains valid complete ordered membership but SDK reports None because the typed-declaration and membership paths only accept header3. A narrow bug fix can restore the existing contract without public API additions. If maintainers classify this newly measured shape as a compatibility promise, validate a delta change before implementation.
+
+## Evidence
+Native 8.3.27.2342 LoadCfg/DumpConfigToFiles succeeds on the unchanged original owner and its exact four child resources plus payloads. Original compressed owner SHA256 `980b486fa50f486f84c473ce383ec4d64588ee93fbc75c4fd90d4222c4cfb06a`; inflated SHA256 `39896f9351c117171d41175e387cef0e03b89b0e741dc6f666acce436fec1b15`. Every original resource is byte-identical after CF packing and re-extraction. Config only replaces the own empty data processor membership UUID; versions contains exact original version tokens for the imported resources. No original databases were changed.
+
+Native ordered attribute GUIDs/names/types are in native-oracle.json. Both strings retain Length0/150 Variable. Pattern reference `0a52f9de-73ea-4507-81e8-66217bead73a` maps to native `v8:TypeSet cfg:ExchangePlanRef`, without an external object placeholder. This is a generated type family, and must not be relabelled as a specific ExchangePlan object. Zero tabular sections, two forms and two templates are measured. BSL modules were not executed.
+
+## Minimal implementation scope
+Keep the existing class17/12 owner checks and existing header3 path. Recognize only the measured legacy attribute identity header2/8, self-reference `{1,0,<non-nil-guid>}`, valid nonempty name and the remaining measured field shapes, inside the existing own data processor collection wrapper0/2, attribute body27/23, typed declaration wrapper2/3. Use the same validated legacy attribute identity in BOTH typed-declaration projection (`attribute_bodies`) and complete membership validation (`complete_attributes`); changing one alone does not restore completeness. Do not globally relax `header` or infer membership from names/SQL/source. Preserve existing Pattern decoding, GUID reference and qualifiers. Header2/10 or unknown owners/lengths are outside this control.
+
+Start from an exact native fixture regression: current owner attributes None and all three typed declarations None must reproduce red. After fix require the exact three ordered GUIDs, String empty qualifiers / String150,1 / reference0a52..., and Some(empty) sections. Cross-check the actual XML oracle. Add negative header length, invalid self-reference, nil/duplicate/missing GUID, malformed Pattern and wrong row/body shape cases: unknown must remain None. Keep modern header3 fixtures and Report behavior green with unchanged existing expectations. No API/version/main changes have been made in this investigation.
+
+## Failed predecessor
+The owner-only transplant was rejected with generic configuration integrity error. This does not establish a unique cause. The completed control includes all declared child resources and consistent versions tokens; no owner membership or payload bytes were modified.

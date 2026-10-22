@@ -1,0 +1,252 @@
+--- a/tests/query_accounting.rs
++++ b/tests/query_accounting.rs
+@@ -809,8 +809,8 @@
+     )
+     .unwrap();
+     println!("SQL {dereferenced}");
+-    assert_contains(&dereferenced, "(\"__ref1\".\"_code\" = '51')");
+-    assert_contains(&dereferenced, "(\"__ref3\".\"_code\" = '51')");
++    assert_contains(&dereferenced, "((rtrim(CAST(\"__ref1\".\"_code\" AS text), ' ') COLLATE \"C\") = (rtrim(CAST('51' AS text), ' ') COLLATE \"C\"))");
++    assert_contains(&dereferenced, "((rtrim(CAST(\"__ref3\".\"_code\" AS text), ' ') COLLATE \"C\") = (rtrim(CAST('51' AS text), ' ') COLLATE \"C\"))");
+     assert_contains(
+         &dereferenced,
+         "\"__aggregate_base\".\"_accountctrref\" = \"__ref3\".\"_idrref\"",
+--- a/tests/query_comma_sources.rs
++++ b/tests/query_comma_sources.rs
+@@ -36,7 +36,7 @@
+     let compiled = postgres(&snapshot, query);
+     assert_contains(
+         &compiled.sql,
+-        "FROM \"_reference53\" AS \"p\" CROSS JOIN \"_reference57\" AS \"o\" WHERE (\"p\".\"_code\" = \"o\".\"_code\")",
++        "FROM \"_reference53\" AS \"p\" CROSS JOIN \"_reference57\" AS \"o\" WHERE ((rtrim(CAST(\"p\".\"_code\" AS text), ' ') COLLATE \"C\") = (rtrim(CAST(\"o\".\"_code\" AS text), ' ') COLLATE \"C\"))",
+     );
+     assert_eq!(compiled.columns.len(), 2);
+     let mssql = compile(&snapshot, MsSqlBackend::new(0).unwrap(), query).unwrap();
+--- a/tests/query_compile.rs
++++ b/tests/query_compile.rs
+@@ -1780,7 +1780,7 @@
+     assert_eq!(labels(&compiled), ["Код", "ProbeAttribute"]);
+     assert_eq!(
+         compiled.sql,
+-        "SELECT \"p\".\"_code\"::text AS \"Код\", \"p\".\"_fld54\" AS \"ProbeAttribute\" FROM \"_reference53\" AS \"p\" WHERE (\"p\".\"_code\" = 'A') ORDER BY \"p\".\"_code\" ASC LIMIT 5"
++        "SELECT \"p\".\"_code\"::text AS \"Код\", \"p\".\"_fld54\" AS \"ProbeAttribute\" FROM \"_reference53\" AS \"p\" WHERE ((rtrim(CAST(\"p\".\"_code\" AS text), ' ') COLLATE \"C\") = (rtrim(CAST('A' AS text), ' ') COLLATE \"C\")) ORDER BY \"p\".\"_code\" ASC LIMIT 5"
+     );
+ }
+ 
+@@ -2447,7 +2447,7 @@
+     assert_eq!(compiled.sql.matches(" LEFT JOIN ").count(), 1);
+     assert_eq!(
+         compiled.sql,
+-        "SELECT \"__ref1\".\"_code\"::text AS \"ОрганизацияКод\" FROM \"_reference53\" AS \"__src\" LEFT JOIN \"_reference57\" AS \"__ref1\" ON \"__src\".\"_fld54\" = \"__ref1\".\"_idrref\" WHERE (\"__ref1\".\"_code\" = 'A') ORDER BY \"__ref1\".\"_code\" ASC"
++        "SELECT \"__ref1\".\"_code\"::text AS \"ОрганизацияКод\" FROM \"_reference53\" AS \"__src\" LEFT JOIN \"_reference57\" AS \"__ref1\" ON \"__src\".\"_fld54\" = \"__ref1\".\"_idrref\" WHERE ((rtrim(CAST(\"__ref1\".\"_code\" AS text), ' ') COLLATE \"C\") = (rtrim(CAST('A' AS text), ' ') COLLATE \"C\")) ORDER BY \"__ref1\".\"_code\" ASC"
+     );
+ }
+ 
+@@ -3988,7 +3988,7 @@
+         ]
+     );
+     assert!(postgres.sql.contains(
+-        "(CASE WHEN \"__src\".\"_fld77\" THEN 'Да' WHEN (\"__src\".\"_code\" = 'A') THEN 'A' ELSE 'Нет' END)::text AS \"Статус\""
++        "(CASE WHEN \"__src\".\"_fld77\" THEN 'Да' WHEN ((rtrim(CAST(\"__src\".\"_code\" AS text), ' ') COLLATE \"C\") = (rtrim(CAST('A' AS text), ' ') COLLATE \"C\")) THEN 'A' ELSE 'Нет' END)::text AS \"Статус\""
+     ));
+     assert!(
+         postgres
+@@ -4411,7 +4411,7 @@
+         "SELECT 15.50 AS \"N\", ('A''B')::text AS \"S\", TIMESTAMP '2024-01-01 00:00:00' AS \"D\", NULL AS \"Z\" FROM"
+     ));
+     assert!(postgres.sql.ends_with(
+-        "WHERE ((((\"__src\".\"_code\" = 'A''B') AND (\"__src\".\"_date_time\" >= TIMESTAMP '2024-01-01 00:00:00')) AND TRUE) AND (\"__src\".\"_fld77\" = TRUE))"
++        "WHERE (((((rtrim(CAST(\"__src\".\"_code\" AS text), ' ') COLLATE \"C\") = (rtrim(CAST('A''B' AS text), ' ') COLLATE \"C\")) AND (\"__src\".\"_date_time\" >= TIMESTAMP '2024-01-01 00:00:00')) AND TRUE) AND (\"__src\".\"_fld77\" = TRUE))"
+     ));
+ 
+     let mssql =
+@@ -4666,7 +4666,7 @@
+             )]),
+         )
+         .unwrap();
+-    assert!(bound.sql.ends_with("WHERE (\"__src\".\"_code\" = 'X')"));
++    assert!(bound.sql.ends_with("WHERE ((rtrim(CAST(\"__src\".\"_code\" AS text), ' ') COLLATE \"C\") = (rtrim(CAST('X' AS text), ' ') COLLATE \"C\"))"));
+     assert!(matches!(
+         prepared.compile(&snapshot, &[]),
+         Err(error) if error.kind() == QueryDiagnosticKind::Parameter
+@@ -5733,7 +5733,7 @@
+ 
+     // The definition froze the parameter, so reading it needs no values.
+     let read = postgres_batch(&mut session, &snapshot, "ВЫБРАТЬ Т.Имя ИЗ ВТ КАК Т;");
+-    assert!(read.contains("WHERE (\"__src\".\"_code\" = 'A')"));
++    assert!(read.contains("WHERE ((rtrim(CAST(\"__src\".\"_code\" AS text), ' ') COLLATE \"C\") = (rtrim(CAST('A' AS text), ' ') COLLATE \"C\"))"));
+ 
+     let before = session
+         .tables()
+@@ -6194,7 +6194,7 @@
+             .sql
+             .contains("LEFT JOIN \"_reference57\" AS \"__left_ref1\" ON")
+     );
+-    assert!(extra.sql.contains("(\"__left_ref1\".\"_code\" = 'A')"));
++    assert!(extra.sql.contains("((rtrim(CAST(\"__left_ref1\".\"_code\" AS text), ' ') COLLATE \"C\") = (rtrim(CAST('A' AS text), ' ') COLLATE \"C\"))"));
+ 
+     // A dereference of an earlier source inside a later condition groups
+     // that earlier source.
+@@ -6342,7 +6342,7 @@
+     .unwrap();
+     for needle in [
+         "(COALESCE(\"__src\".\"_code\", 'нет'))::text AS \"Е\"",
+-        "(CASE WHEN (\"__src\".\"_code\" = 'A') THEN \"__src\".\"_code\" ELSE 'B' END)::text AS \"Р\"",
++        "(CASE WHEN ((rtrim(CAST(\"__src\".\"_code\" AS text), ' ') COLLATE \"C\") = (rtrim(CAST('A' AS text), ' ') COLLATE \"C\")) THEN \"__src\".\"_code\" ELSE 'B' END)::text AS \"Р\"",
+     ] {
+         assert!(compiled.sql.contains(needle), "{needle}\n{}", compiled.sql);
+     }
+@@ -6411,7 +6411,7 @@
+     .unwrap();
+     assert!(
+         compiled.sql.ends_with(
+-            "ORDER BY CASE WHEN (\"__src\".\"_code\" = 'A') THEN 0 ELSE 1 END ASC, COALESCE(\"__src\".\"_code\", '') DESC"
++            "ORDER BY CASE WHEN ((rtrim(CAST(\"__src\".\"_code\" AS text), ' ') COLLATE \"C\") = (rtrim(CAST('A' AS text), ' ') COLLATE \"C\")) THEN 0 ELSE 1 END ASC, COALESCE(\"__src\".\"_code\", '') DESC"
+         ),
+         "{}",
+         compiled.sql
+@@ -6555,7 +6555,7 @@
+     assert!(
+         compiled
+             .sql
+-            .ends_with("WHERE (NOT (\"Т\".\"_code\" = 'а'))"),
++            .ends_with("WHERE (NOT ((rtrim(CAST(\"Т\".\"_code\" AS text), ' ') COLLATE \"C\") = (rtrim(CAST('а' AS text), ' ') COLLATE \"C\")))"),
+         "{}",
+         compiled.sql
+     );
+@@ -6571,7 +6571,7 @@
+     assert!(
+         conjunction
+             .sql
+-            .ends_with("WHERE ((NOT (\"Т\".\"_code\" = 'а')) AND (\"Т\".\"_code\" = 'б'))"),
++            .ends_with("WHERE ((NOT ((rtrim(CAST(\"Т\".\"_code\" AS text), ' ') COLLATE \"C\") = (rtrim(CAST('а' AS text), ' ') COLLATE \"C\"))) AND ((rtrim(CAST(\"Т\".\"_code\" AS text), ' ') COLLATE \"C\") = (rtrim(CAST('б' AS text), ' ') COLLATE \"C\")))"),
+         "{}",
+         conjunction.sql
+     );
+--- a/tests/query_dereference.rs
++++ b/tests/query_dereference.rs
+@@ -78,7 +78,7 @@
+              УПОРЯДОЧИТЬ ПО Т.Организация.Организация.Дата;"
+         ),
+     );
+-    assert_contains(&filtered.sql, "WHERE (\"__ref2\".\"_code\" = 'A')");
++    assert_contains(&filtered.sql, "WHERE ((rtrim(CAST(\"__ref2\".\"_code\" AS text), ' ') COLLATE \"C\") = (rtrim(CAST('A' AS text), ' ') COLLATE \"C\"))");
+     assert_contains(&filtered.sql, "ORDER BY \"__ref2\".\"_date_time\" ASC");
+ 
+     let grouped = postgres(
+@@ -308,7 +308,7 @@
+     );
+     assert_contains(
+         &english.sql,
+-        "THEN 'Администраторы' ELSE '' END = 'Администраторы')",
++        "THEN 'Администраторы' ELSE '' END AS text), ' ') COLLATE \"C\") = (rtrim(CAST('Администраторы' AS text), ' ') COLLATE \"C\"))",
+     );
+ 
+     // SQL Server spells the literals as national strings.
+--- a/tests/query_hierarchy.rs
++++ b/tests/query_hierarchy.rs
+@@ -55,7 +55,7 @@
+     // down the parent column of the target catalog.
+     assert_contains(
+         &compiled.sql,
+-        "SELECT \"__seeds\".\"Ссылка\" AS \"__node\" FROM (SELECT \"Г\".\"_idrref\" AS \"Ссылка\" FROM \"_reference53\" AS \"Г\" WHERE (\"Г\".\"_code\" = 'A')) AS \"__seeds\" UNION ALL SELECT \"__catalog\".\"_idrref\" FROM \"_reference53\" AS \"__catalog\" JOIN \"__hier_1\" ON \"__catalog\".\"_parentidrref\" = \"__hier_1\".\"__node\"",
++        "SELECT \"__seeds\".\"Ссылка\" AS \"__node\" FROM (SELECT \"Г\".\"_idrref\" AS \"Ссылка\" FROM \"_reference53\" AS \"Г\" WHERE ((rtrim(CAST(\"Г\".\"_code\" AS text), ' ') COLLATE \"C\") = (rtrim(CAST('A' AS text), ' ') COLLATE \"C\"))) AS \"__seeds\" UNION ALL SELECT \"__catalog\".\"_idrref\" FROM \"_reference53\" AS \"__catalog\" JOIN \"__hier_1\" ON \"__catalog\".\"_parentidrref\" = \"__hier_1\".\"__node\"",
+     );
+     assert_contains(
+         &compiled.sql,
+--- a/tests/query_restrictions.rs
++++ b/tests/query_restrictions.rs
+@@ -198,7 +198,7 @@
+     let compiled = compile_both(&snapshot, source, &options).unwrap();
+     assert!(
+         compiled.sql.contains(
+-            "FROM (SELECT \"__restricted\".\"_idrref\" AS \"_idrref\", \"__restricted\".\"_code\" AS \"_code\", \"__restricted\".\"_date_time\" AS \"_date_time\", \"__restricted\".\"_fld54\" AS \"_fld54\" FROM \"_reference53\" AS \"__restricted\" LEFT JOIN \"_reference57\" AS \"__ref1\" ON \"__restricted\".\"_fld54\" = \"__ref1\".\"_idrref\" WHERE ((\"__ref1\".\"_code\" = 'HQ') OR (\"__restricted\".\"_code\" = 'free'))) AS \"p\""
++            "FROM (SELECT \"__restricted\".\"_idrref\" AS \"_idrref\", \"__restricted\".\"_code\" AS \"_code\", \"__restricted\".\"_date_time\" AS \"_date_time\", \"__restricted\".\"_fld54\" AS \"_fld54\" FROM \"_reference53\" AS \"__restricted\" LEFT JOIN \"_reference57\" AS \"__ref1\" ON \"__restricted\".\"_fld54\" = \"__ref1\".\"_idrref\" WHERE (((rtrim(CAST(\"__ref1\".\"_code\" AS text), ' ') COLLATE \"C\") = (rtrim(CAST('HQ' AS text), ' ') COLLATE \"C\")) OR ((rtrim(CAST(\"__restricted\".\"_code\" AS text), ' ') COLLATE \"C\") = (rtrim(CAST('free' AS text), ' ') COLLATE \"C\")))) AS \"p\""
+         ),
+         "{}",
+         compiled.sql
+@@ -430,7 +430,7 @@
+ 
+     let fallback =
+         compile_both(&snapshot, source, &CompileOptions::new().session(&session)).unwrap();
+-    assert!(fallback.sql.ends_with("WHERE (\"__src\".\"_code\" = 'S')"));
++    assert!(fallback.sql.ends_with("WHERE ((rtrim(CAST(\"__src\".\"_code\" AS text), ' ') COLLATE \"C\") = (rtrim(CAST('S' AS text), ' ') COLLATE \"C\"))"));
+ 
+     let query = [QueryParameter::new(
+         "код",
+@@ -445,7 +445,7 @@
+     assert!(
+         overridden
+             .sql
+-            .ends_with("WHERE (\"__src\".\"_code\" = 'Q')")
++            .ends_with("WHERE ((rtrim(CAST(\"__src\".\"_code\" AS text), ' ') COLLATE \"C\") = (rtrim(CAST('Q' AS text), ' ') COLLATE \"C\"))")
+     );
+ 
+     let missing = compile_both(&snapshot, source, &CompileOptions::new()).unwrap_err();
+@@ -478,7 +478,7 @@
+     )
+     .unwrap();
+     assert!(visible.sql.contains(
+-        "WHERE (\"__restricted\".\"_code\" = 'S')) AS \"__src\" WHERE (\"__src\".\"_code\" = 'Q')"
++        "WHERE ((rtrim(CAST(\"__restricted\".\"_code\" AS text), ' ') COLLATE \"C\") = (rtrim(CAST('S' AS text), ' ') COLLATE \"C\"))) AS \"__src\" WHERE ((rtrim(CAST(\"__src\".\"_code\" AS text), ' ') COLLATE \"C\") = (rtrim(CAST('Q' AS text), ' ') COLLATE \"C\"))"
+     ));
+ }
+ 
+@@ -619,7 +619,7 @@
+     .unwrap();
+ 
+     assert!(compiled.sql.contains(
+-        "WHERE (\"__restricted\".\"_idrref\" IN (SELECT \"О\".\"_idrref\" AS \"Ссылка\" FROM \"_reference57\" AS \"О\" WHERE (\"О\".\"_code\" = 'HQ')))) AS \"p\""
++        "WHERE (\"__restricted\".\"_idrref\" IN (SELECT \"О\".\"_idrref\" AS \"Ссылка\" FROM \"_reference57\" AS \"О\" WHERE ((rtrim(CAST(\"О\".\"_code\" AS text), ' ') COLLATE \"C\") = (rtrim(CAST('HQ' AS text), ' ') COLLATE \"C\"))))) AS \"p\""
+     ), "{}", compiled.sql);
+     assert!(compiled.sql.contains(
+         "LEFT JOIN (SELECT \"__restricted\".\"_idrref\" AS \"_idrref\", \"__restricted\".\"_code\" AS \"_code\", \"__restricted\".\"_date_time\" AS \"_date_time\" FROM \"_reference57\" AS \"__restricted\" WHERE (\"__restricted\".\"_code\" <> 'hidden')) AS \"o\""
+@@ -718,7 +718,7 @@
+     assert!(
+         correlated
+             .sql
+-            .contains("WHERE (\"К\".\"_code\" = \"__restricted\".\"_code\")"),
++            .contains("WHERE ((rtrim(CAST(\"К\".\"_code\" AS text), ' ') COLLATE \"C\") = (rtrim(CAST(\"__restricted\".\"_code\" AS text), ' ') COLLATE \"C\"))"),
+         "{}",
+         correlated.sql
+     );
+@@ -739,7 +739,7 @@
+     .unwrap();
+     assert!(
+         joined.sql.contains(
+-            "FROM \"_reference53\" AS \"__restricted\" WHERE EXISTS (SELECT 1 FROM (VALUES (1)) AS \"__restriction_row\"(\"__row\") LEFT JOIN \"_reference53\" AS \"К\" ON (\"К\".\"_code\" = \"__restricted\".\"_code\") WHERE (\"К\".\"_code\" = 'A'))"
++            "FROM \"_reference53\" AS \"__restricted\" WHERE EXISTS (SELECT 1 FROM (VALUES (1)) AS \"__restriction_row\"(\"__row\") LEFT JOIN \"_reference53\" AS \"К\" ON ((rtrim(CAST(\"К\".\"_code\" AS text), ' ') COLLATE \"C\") = (rtrim(CAST(\"__restricted\".\"_code\" AS text), ' ') COLLATE \"C\")) WHERE ((rtrim(CAST(\"К\".\"_code\" AS text), ' ') COLLATE \"C\") = (rtrim(CAST('A' AS text), ' ') COLLATE \"C\")))"
+         ),
+         "{}",
+         joined.sql
+--- a/tests/query_separators.rs
++++ b/tests/query_separators.rs
+@@ -208,7 +208,7 @@
+     );
+     assert_eq!(
+         sql,
+-        "SELECT \"Т\".\"_idrref\" AS \"Ссылка\" FROM \"_reference53\" AS \"Т\" WHERE \"Т\".\"_fld56\" = 7 AND \"Т\".\"_fld57\" = 7 AND (\"Т\".\"_fld54\" = 'x')"
++        "SELECT \"Т\".\"_idrref\" AS \"Ссылка\" FROM \"_reference53\" AS \"Т\" WHERE \"Т\".\"_fld56\" = 7 AND \"Т\".\"_fld57\" = 7 AND ((rtrim(CAST(\"Т\".\"_fld54\" AS text), ' ') COLLATE \"C\") = (rtrim(CAST('x' AS text), ' ') COLLATE \"C\"))"
+     );
+     let mssql = compile(
+         &snapshot,
+@@ -320,7 +320,7 @@
+     );
+     assert_eq!(
+         left,
+-        "SELECT \"Т\".\"_idrref\" AS \"Ссылка\", \"П\".\"_fld54\"::text AS \"Артикул\", \"__left_ref1\".\"_fld54\"::text AS \"А\" FROM \"_reference53\" AS \"Т\" LEFT JOIN \"_reference53\" AS \"П\" ON \"Т\".\"_fld55rref\" = \"П\".\"_idrref\" AND \"П\".\"_fld56\" = 7 AND \"П\".\"_fld57\" = 7 LEFT JOIN \"_reference53\" AS \"__left_ref1\" ON \"Т\".\"_fld55rref\" = \"__left_ref1\".\"_idrref\" AND \"__left_ref1\".\"_fld56\" = 7 AND \"__left_ref1\".\"_fld57\" = 7 WHERE \"Т\".\"_fld56\" = 7 AND \"Т\".\"_fld57\" = 7 AND (\"Т\".\"_fld54\" = 'x')"
++        "SELECT \"Т\".\"_idrref\" AS \"Ссылка\", \"П\".\"_fld54\"::text AS \"Артикул\", \"__left_ref1\".\"_fld54\"::text AS \"А\" FROM \"_reference53\" AS \"Т\" LEFT JOIN \"_reference53\" AS \"П\" ON \"Т\".\"_fld55rref\" = \"П\".\"_idrref\" AND \"П\".\"_fld56\" = 7 AND \"П\".\"_fld57\" = 7 LEFT JOIN \"_reference53\" AS \"__left_ref1\" ON \"Т\".\"_fld55rref\" = \"__left_ref1\".\"_idrref\" AND \"__left_ref1\".\"_fld56\" = 7 AND \"__left_ref1\".\"_fld57\" = 7 WHERE \"Т\".\"_fld56\" = 7 AND \"Т\".\"_fld57\" = 7 AND ((rtrim(CAST(\"Т\".\"_fld54\" AS text), ' ') COLLATE \"C\") = (rtrim(CAST('x' AS text), ' ') COLLATE \"C\"))"
+     );
+ 
+     let right = postgres_sql(
+--- a/tests/query_tuple_in.rs
++++ b/tests/query_tuple_in.rs
+@@ -32,7 +32,7 @@
+     );
+     assert_contains(
+         &sql,
+-        "WHERE EXISTS (SELECT 1 FROM (SELECT \"П\".\"_code\"::text AS \"Код\", \"П\".\"_fld54\" AS \"ProbeAttribute\" FROM \"_reference53\" AS \"П\" WHERE (\"П\".\"_code\" = 'A')) AS \"__in\" WHERE \"__in\".\"Код\" = (\"Т\".\"_code\")::text AND \"__in\".\"ProbeAttribute\" = \"Т\".\"_fld54\")",
++        "WHERE EXISTS (SELECT 1 FROM (SELECT \"П\".\"_code\"::text AS \"Код\", \"П\".\"_fld54\" AS \"ProbeAttribute\" FROM \"_reference53\" AS \"П\" WHERE ((rtrim(CAST(\"П\".\"_code\" AS text), ' ') COLLATE \"C\") = (rtrim(CAST('A' AS text), ' ') COLLATE \"C\"))) AS \"__in\" WHERE \"__in\".\"Код\" = (\"Т\".\"_code\")::text AND \"__in\".\"ProbeAttribute\" = \"Т\".\"_fld54\")",
+     );
+     let negated = postgres(
+         &snapshot,

@@ -1,0 +1,9 @@
+# Design
+
+Resolution uses the acquired snapshot and a known bilingual Right. Supported owners are catalogs; owner Read/View and Code/Description Read/View are the measured boundary. Other rights/kinds and missing standard settings fail explicitly. Code/Description existence follows positive acquired configured length; zero-length cases are not measured and remain unsupported. Read of a valid standard target is NotApplicable; View is Applicable. The host chooses operator-specific policy and privileged bypass only after successful resolution.
+
+A private resolved target carries owner, right and an optional exact member pair. Code is (-2, 03f171e8-326f-41c6-9fa5-932a0b12cddf); Description is (-3, same GUID). Evaluation first gates owner permission inside each role, then reads an explicit child right or its attribute default, and only then ORs complete role results. AccessRight retains parent gating even with independentRightsOfChildObjects. The retained single-role independent=true/defaults=false profile shows VerifyAccessRights permits explicit Code View while owner View is false, unlike AccessRight; expose a separate cached verification evaluator. Unknown independent/default combinations remain explicit errors rather than inferred grants. No XML implication inference is added: native compiled rights already contain owner Read implied by View.
+
+AccessStore rejects every missing or unreadable requested role before evaluating any grant. An inapplicable resolved target is an explicit evaluation error, never a denial or grant. Existing query/RLS authorization code is untouched.
+
+Evidence: open-bsl/docs/research/fixtures/verify-access-rights-native-1017, including 384 standard observations and 108 multiple-role observations, native CF and compiled role resources. Tests retain compact compiled resources and oracle rows with source hashes. No full-platform or other metadata-kind claim is made.

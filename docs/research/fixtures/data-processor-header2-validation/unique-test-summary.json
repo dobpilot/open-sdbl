@@ -1,0 +1,5 @@
+{
+  "passed": 939,
+  "ignored": 13,
+  "accounting": "Core full run + all remaining workspace packages + core doctests; final focused fixture increased 2 to 4 tests. Failed sandbox DB-lib run excluded, replaced by successful authorized loopback run."
+}

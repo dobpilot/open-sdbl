@@ -1,0 +1,78 @@
+[
+  {
+    "label": "remaining-workspace-tests",
+    "command": [
+      "cargo",
+      "test",
+      "--offline",
+      "--workspace",
+      "--exclude",
+      "open-sdbl"
+    ],
+    "exit": 0,
+    "seconds": 0.65
+  },
+  {
+    "label": "core-doctests",
+    "command": [
+      "cargo",
+      "test",
+      "--offline",
+      "-p",
+      "open-sdbl",
+      "--doc"
+    ],
+    "exit": 0,
+    "seconds": 0.5
+  },
+  {
+    "label": "final-fmt",
+    "command": [
+      "cargo",
+      "fmt",
+      "--all",
+      "--",
+      "--check"
+    ],
+    "exit": 0,
+    "seconds": 1.12
+  },
+  {
+    "label": "final-clippy",
+    "command": [
+      "cargo",
+      "clippy",
+      "--offline",
+      "--workspace",
+      "--all-targets",
+      "--",
+      "-D",
+      "warnings"
+    ],
+    "exit": 0,
+    "seconds": 0.26
+  },
+  {
+    "label": "rustdoc",
+    "command": [
+      "cargo",
+      "doc",
+      "--offline",
+      "--workspace",
+      "--no-deps"
+    ],
+    "exit": 0,
+    "seconds": 2.86
+  },
+  {
+    "label": "openspec",
+    "command": [
+      "openspec",
+      "validate",
+      "--all",
+      "--strict"
+    ],
+    "exit": 0,
+    "seconds": 1.03
+  }
+]

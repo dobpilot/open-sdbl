@@ -1,0 +1,11 @@
+# Design
+
+The reached document is the measured class40/53 form with a version2/8 owner identity. The owner gate accepts precisely2/8 or existing3/9 identities in that class. It reuses object_header without changing that shared helper;2/10 support in unrelated contexts does not enable this document form. Classes37/50 and38/51 remain outside scope.
+
+Own-attribute rows validate independently against measured5/5 or6/7 wrappers, a27/23 body, typed header2/3 and identity2/8 or3/9. Native BUH uses both wrappers among modern documents, so selecting one wrapper for the whole class would regress892modern members. Reuse collection, object_header and declaration; do not infer GUIDs, names or types. Exactly one descriptor must exist for each unique member. All rows and declarations validate before any complete membership is published. An unresolved named type also invalidates its owner's complete membership through the existing resolution pass.
+
+The complete native23 fixture matches XML-derived tag, target-reference GUID and qualifiers. Target GeneratedType Ref identities come from retained native XML for the three referenced objects; owner Object/Ref identities are independently asserted. The all455-document inventory checks the structural scope:20affected owners recover188members,384modern owners retain8496typed members, and51other legacy owners remain unchanged. Inventory type presence does not replace the exact23-field type oracle.
+
+The implementation adds no dependencies, public APIs, numbering behavior, tabular-section features or consumer workarounds. Full verification retains the pre-existing unapproved UUID SQL corpus expectation failure; no archive or release commit is permitted while that gate remains red.
+
+The contextual owner gate restores the existing common projection for the known class40/53; it does not artificially suppress its previously implemented fields. The reached native XML confirms String number type, length9, variable length, nonperiodical numbering, no numerator, no register records and no tabular sections. Raw class positions11=1,12=9,13=0,44=1 and24={0,0} agree with that existing measured projection. A dedicated regression asserts these values without adding any numbering algorithm or other object form.

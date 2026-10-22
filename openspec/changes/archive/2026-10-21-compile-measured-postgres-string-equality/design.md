@@ -1,0 +1,3 @@
+# Design
+
+Use existing operand type resolution before literal conversion. For PostgreSQL scalar string equality, compare text operands after trimming trailing ASCII spaces with deterministic C collation. String versus Number, Boolean or DateTime yields a nullable false expression; compile both operands to retain field discovery and authorization. No implicit string conversion. NULL keeps its SQL propagation. Contextually typed CASE, composite/reference, inequality, ordering, IN and SQL Server paths remain unchanged. Native evidence: open-bsl/tests/conformance/measure/1c/measure-catalog-find-attribute.{bsl,platform.txt}. The synthetic SQL schema control proves comparison execution, not Config decoding.

@@ -785,3 +785,269 @@ Acquired extensions SHALL expose an optional typed ConfigurationExtensionPurpose
 #### Scenario: Other properties change
 - **WHEN** an extension name, activation, scope or version changes without changing purpose
 - **THEN** its acquired purpose remains unchanged
+
+### Requirement: Bootstrap configuration without resolving metadata
+Asynchronous and blocking database sessions SHALL provide bootstrap acquisition containing storage layout, root and caller-selected configuration descriptor resources, and the raw extension catalog. Bootstrap SHALL NOT read other Config resources, ConfigCAS bodies, DBNames, SchemaStorage or live-table catalogs, and SHALL NOT construct a MetadataSnapshot. Existing selector callbacks SHALL determine the descriptor from root and inspect the descriptor.
+
+#### Scenario: Discover a configuration
+- **WHEN** bootstrap succeeds
+- **THEN** it returns exactly root, descriptor, layout and extension catalog without a full metadata read
+
+### Requirement: Read explicitly addressed configuration resources
+Both session forms SHALL read requested Config names and typed ConfigCAS content keys using SQL predicates before resource collection. Repeated requests SHALL be deduplicated in first-request order. Missing resources and noncontiguous parts SHALL fail the complete call rather than return partial success. Empty requests SHALL NOT query resource tables. Existing compressed-byte and resource-count limits SHALL bound each collection, including accumulation of multipart resources before assembly completes.
+
+#### Scenario: Read two resources and then one more
+- **WHEN** a session reads two named resources and later another resource
+- **THEN** each query addresses only that call's names and reuses the known storage layout
+
+#### Scenario: Missing part or resource
+- **WHEN** any requested resource is missing or its part sequence skips a part
+- **THEN** the call fails and does not return a shortened result
+
+#### Scenario: Empty or repeated requests
+- **WHEN** a request is empty or contains repeated names
+- **THEN** empty requests read no resource table and repeated names produce one result per distinct name in request order
+
+#### Scenario: Limits before assembly completes
+- **WHEN** incoming parts exceed the configured compressed-byte limit
+- **THEN** the read fails before appending those parts to an assembled resource
+
+### Requirement: Preserve session lifecycle for indexed reads
+Indexed operations SHALL reuse the owning connection, cache detected layout, use existing read-only transaction cleanup, limits and timeouts, and preserve SQL Server poisoning and blocking closed-session/async-context diagnostics. Reads SHALL NOT promise an atomic snapshot across calls or compute a fingerprint per session.
+
+#### Scenario: Closed blocking session
+- **WHEN** an indexed operation is called after close, including inside an asynchronous runtime
+- **THEN** it reports SessionClosed before checking asynchronous context
+
+#### Scenario: Repeated addressed reads
+- **WHEN** bootstrap is followed by addressed reads
+- **THEN** they use the same connection without probing layout again
+
+### Requirement: Acquire reusable physical metadata inputs
+Asynchronous and blocking sessions SHALL provide DBNames, SchemaStorage and live catalog discovery with the detected layout without reading Config, ConfigCAS or constructing logical object details. The returned inputs SHALL be reusable by pure resolution without further SQL.
+
+#### Scenario: Repeated hydration
+- **WHEN** a caller acquires physical inputs once and resolves two explicitly supplied resource sets
+- **THEN** DBNames, SchemaStorage and live catalog are read once and neither resolution performs database I/O
+
+### Requirement: Resolve explicitly supplied resources only
+The SDK SHALL build a MetadataSnapshot and ResolutionReport from explicitly supplied Config resources, explicit extension structures and reusable physical inputs. It SHALL reuse existing resource decoders and resolver, project physical inputs to the reached objects and their tables/fields, and SHALL NOT fetch additional Config or ConfigCAS resources. Missing related settings SHALL remain unknown or diagnosed, never guessed defaults. Separator flags SHALL survive projection.
+
+#### Scenario: One reached object
+- **WHEN** explicit resources describe one object in a larger physical index
+- **THEN** its supported query mappings agree with whole resolution and unrelated logical objects are not materialized
+
+#### Scenario: Missing separator descriptor
+- **WHEN** a selected table contains a known separator whose settings resource was not supplied
+- **THEN** resolution fails with machine-readable missing descriptor GUIDs before returning a usable snapshot rather than silently disabling separation
+
+#### Scenario: Explicit extension structure
+- **WHEN** callers supply extension DBNames, schema and descriptors
+- **THEN** the selected metadata preserves their supported physical mappings without acquiring extension bodies
+
+#### Scenario: Missing bound parameter descriptor
+- **WHEN** supplied separator settings reference an unacquired parameter descriptor
+- **THEN** the helper reports that parameter GUID as a missing dependency rather than substituting a fallback parameter name
+
+### Requirement: Discover resource names and headers without logical detail decoding
+Both session forms SHALL provide a bounded deterministic list of physical Config resource names without reading BinaryData. A bounded header decoder SHALL expose measured declaration identities and localized presentation facts without constructing detailed descriptors or attributes. It SHALL reuse established header identity rules and reject malformed data.
+
+#### Scenario: Missing module slot
+- **WHEN** a configuration object has no manager or object-module slot in the filename index
+- **THEN** discovery does not require an attempted body read to learn that it is absent
+
+#### Scenario: Header discovery
+- **WHEN** a supported descriptor contains nested attributes
+- **THEN** header discovery returns the same own identity and name as full decoding without materializing the attributes
+
+### Requirement: Preserve identities and access caches during hydration
+Objects and fields SHALL retain their GUID-based identities across growing or reordered metadata subsets. A role-only AccessStore SHALL retain loaded users and rights when used with later query snapshots without reset. Prepared query fingerprint checks SHALL remain enforced across snapshot changes.
+
+#### Scenario: Grow a query subset
+- **WHEN** one access store is used with two query snapshots whose object order and extent differ
+- **THEN** the same GUID has the same object/field identity and the same loaded role right is evaluated without losing cached users or rights
+
+### Requirement: Discover measured generated types and section identities
+Bounded Config header discovery SHALL expose supported measured reference/object generated type identities and tabular-section/enum-value GUID/name identities with existing localized synonyms and measured business-process route-point reference types and recognized member GUIDs without constructing detailed attribute descriptors. Unknown forms SHALL remain distinct from measured absence.
+
+#### Scenario: Native header parity
+- **WHEN** supported demo, buh or unf descriptors are projected lightly
+- **THEN** generated identities and section membership agree with the detailed measured decoder
+
+#### Scenario: Immutable declaration presentations
+- **WHEN** a consumer registers immutable enum members and business-process type aliases
+- **THEN** lightweight discovery preserves measured own/member synonyms and the measured route-point reference type without decoding attribute details
+
+#### Scenario: Resolve a dependency naming a nested member
+- **WHEN** a functional option names an attribute GUID rather than its owner's GUID
+- **THEN** header discovery provides the recognized member-to-resource ownership facts with the same identity rule as detailed decoding
+
+### Requirement: Discover direct query metadata references
+The SDK SHALL project direct metadata kind/name references from its existing bounded query parser for sources, nested queries, VALUE, TYPE, reference casts and reference tests. It SHALL use existing case folding to deduplicate and SHALL exclude aliases, literals and temporary tables. Constants SHALL retain statically distinguishable referenced names; a star or unresolved ambiguity MAY request all constants. The result SHALL NOT claim a transitive or RLS closure.
+
+#### Scenario: Nested metadata expressions
+- **WHEN** a query refers to objects through nested sources and metadata expressions
+- **THEN** discovery returns structured deduplicated references without requiring a resolved snapshot
+
+#### Scenario: Constants selection
+- **WHEN** constant fields are distinguishable from aliases and other sources
+- **THEN** discovery returns only their names; ambiguous references or an actual star explicitly request the whole constants collection
+
+#### Scenario: Malformed input
+- **WHEN** input is malformed or exceeds existing parser limits
+- **THEN** discovery returns the ordinary positional query diagnostic
+
+### Requirement: Acquire extension physical metadata independently
+Async and blocking sessions SHALL expose bounded acquisition of existing extension restructure metadata with cached layout and read-only cleanup, without Config or ConfigCAS acquisition.
+
+#### Scenario: Reuse discovery
+- **WHEN** physical extension metadata is acquired independently
+- **THEN** only the existing extension restructure reader/decoder is used and the returned structures can be supplied to explicit-resource resolution
+
+### Requirement: Reuse admitted immutable selected resources
+A public cache SHALL admit newly reached immutable Config resources under ordinary count/compressed/decoded byte limits, parse each admitted resource once, and retain parsed facts without retaining compressed buffers. Duplicate filenames SHALL be rejected before decoding. Failed admission SHALL preserve existing facts and budgets.
+
+#### Scenario: Resolve after later reachability
+- **WHEN** a caller admits a new resource after an earlier successful admission
+- **THEN** subsequent resolution uses both resources' parsed facts without decoding the earlier resource or retaining its compressed buffer
+
+#### Scenario: Admission failure
+- **WHEN** an admission is duplicate, malformed or over budget
+- **THEN** it fails without altering the previously admitted facts or consuming their remaining budget
+
+### Requirement: Preserve strict selected resolution
+Cached resolution SHALL use the same finalization, explicit extension handling, strict separator/missing descriptor checks, ordering, stable identities, reports and fingerprints as stateless selected resolution. The existing stateless function SHALL preserve its contract. Prepared-query snapshot validation SHALL remain enforced.
+
+#### Scenario: Native facts parity
+- **WHEN** identical native selected resources including separator and extension cases are resolved through either path
+- **THEN** snapshot facts, report, fingerprint and prepared-query compatibility agree
+
+### Requirement: Index repeated pure-resolution name lookups equivalently
+Per-resolution schema and dependency-owner indexes SHALL preserve the existing identifier equality and source-order precedence. They SHALL NOT change names_equal, serialized formats or metadata interpretation.
+
+#### Scenario: Competing service-table matches
+- **WHEN** alias, numbered and extra-dimension candidates match different schema rows
+- **THEN** indexed lookup selects the same earliest matching row as the original scan
+
+#### Scenario: Competing dependency owners
+- **WHEN** multiple objects share an equivalent physical table name
+- **THEN** dependency resolution selects the same first eligible nonservice owner and preserves the original duplicate-table exclusion
+
+### Requirement: Preserve supported settings storage in selected resolution
+Selected and cached metadata resolution SHALL retain acquired physical facts for the already supported common and system settings stores, including their required separator field mappings, even without a Config object owner. It SHALL use the same fixed storage identities as existing settings load compilers and SHALL NOT include unrelated ownerless tables.
+#### Scenario: Settings load parity
+- **WHEN** acquired supported settings tables and required separator descriptors are supplied
+- **THEN** selected, cached and whole metadata compile equivalent settings load SQL and enforce equivalent complete scope validation
+#### Scenario: Missing separator descriptor
+- **WHEN** supported settings storage contains a known separator whose required descriptor is not supplied
+- **THEN** strict selected and cached resolution report the missing descriptor GUID without issuing unfiltered settings SQL
+#### Scenario: Unrelated table
+- **WHEN** an acquired ownerless table is not a supported settings store
+- **THEN** selected resolution excludes it unless existing reached-object rules select it
+#### Scenario: Snapshot validation
+- **WHEN** acquired settings storage changes the selected snapshot facts
+- **THEN** the existing snapshot fingerprint and prepared-query validation rules remain enforced
+
+### Requirement: Discover measured defined-type identity in bounded headers
+Bounded Config header discovery SHALL expose the generated identity of a defined type recognized by the same measured wrapper rule as full descriptor decoding. Unknown wrapper forms SHALL remain distinct from measured absent GUIDs. Existing object, reference and route-point identities and bounded parsing errors SHALL remain unchanged.
+
+#### Scenario: Native defined-type parity
+- **WHEN** a native measured defined-type description is decoded as a header and as a full descriptor
+- **THEN** both expose the same defined-type GUID without constructing detailed attribute descriptors in the header path
+
+#### Scenario: Unknown or malformed shape
+- **WHEN** the defined-type wrapper is unknown or its owner header does not match the resource
+- **THEN** the header does not invent a known defined-type identity and retains existing parse error behavior
+
+#### Scenario: Measured absence representation
+- **WHEN** a recognized defined-type wrapper contains a nil generated type GUID
+- **THEN** its identity is absent rather than unknown
+
+### Requirement: Borrow original admitted Config facts
+ConfigurationMetadataCache SHALL expose parsed_resource(&self, file_name: &str) -> Option<&ParsedConfigResource> borrowing the original immutable parsed facts of a successfully admitted resource by its exact admitted filename. An unadmitted filename SHALL return None. Lookup SHALL perform no parsing, decoding, cloning, SQL or I/O and SHALL index existing facts without retaining another copy of facts or bytes. Admission limits, failed-admission behavior and resolution SHALL remain unchanged.
+
+#### Scenario: Original native facts survive resolution
+- **WHEN** a caller admits an existing native Config resource and repeatedly reads it before and after resolution
+- **THEN** the borrowed facts equal independent parsing of that resource and reads refer to the same stored facts, regardless of snapshot descriptor transformations
+
+#### Scenario: Exact and absent names
+- **WHEN** a caller requests an unadmitted filename, including a differently cased filename
+- **THEN** lookup returns None under the existing exact admitted-name policy
+
+#### Scenario: Rejected admission preserves lookup
+- **WHEN** a duplicate, malformed or over-budget admission fails
+- **THEN** already admitted original facts remain available unchanged and a rejected new filename is absent
+
+### Requirement: Runtime metadata facts without query snapshot finalization
+The core SHALL expose RuntimeMetadataFacts as a distinct immutable runtime-only view containing normalized descriptors, resolved objects and values, schema, separator facts, criteria and roles. It SHALL expose common_attribute_separation(Guid) distinguishing missing or ambiguous physical fields from ordinary fields and separator fields without constructing ordinary query fields. It SHALL NOT expose a query fingerprint or permit query preparation as a MetadataSnapshot. MetadataSnapshot SHALL expose runtime_facts() borrowing the same common facts without cloning.
+
+#### Scenario: Runtime facts agree with full resolution
+- **WHEN** the same selected inputs, admitted resources and extensions are resolved as runtime facts and as a complete snapshot
+- **THEN** every exposed runtime fact and object identity lookup agrees with the complete snapshot
+- **AND** runtime-only resolution does not build ordinary query fields, query indexes, comparison reports or a fingerprint
+
+### Requirement: Strict cached runtime metadata resolution
+ConfigurationMetadataCache SHALL expose resolve_runtime using already admitted parsed resources without parsing, decoding, SQL or I/O. It SHALL apply the same extension merging, normalization and strict separator descriptor validation as complete cached resolution. Existing complete resolution, fingerprints, reports and prepared-query snapshot ownership SHALL remain unchanged.
+
+#### Scenario: Growing runtime resources
+- **WHEN** immutable resources are admitted incrementally and runtime facts are requested after each growth
+- **THEN** facts agree with complete resolution for that accumulated resource set and previously returned results remain unchanged
+
+#### Scenario: Missing separator dependencies
+- **WHEN** runtime resolution lacks a required separator or bound parameter descriptor
+- **THEN** it returns the same typed missing dependency or unsupported settings error as complete resolution
+
+#### Scenario: Common attribute classification preserves uncertainty
+- **WHEN** selected physical facts contain zero, one ordinary, one separator or multiple fields for a common attribute GUID
+- **THEN** classification returns None, Some(false), Some(true) or None respectively, matching complete snapshot field lookup
+
+### Requirement: Finalize queries from resolved runtime facts
+The core SHALL expose explicit query finalization from immutable RuntimeMetadataFacts without repeating physical selection, extension merging or descriptor normalization. Complete fields, query indices, comparison reports and fingerprints SHALL match ordinary complete resolution for the same inputs. Finalization SHALL preserve the original runtime facts.
+
+#### Scenario: A query follows runtime hydration
+- **WHEN** a caller finalizes already resolved runtime facts
+- **THEN** the resulting complete snapshot matches ordinary complete resolution and the borrowed runtime facts remain unchanged
+
+#### Scenario: Accumulated resources grow
+- **WHEN** new resources are admitted after older runtime facts were published
+- **THEN** finalizing older facts preserves their old composition and finalizing new facts reflects the new composition
+
+### Requirement: Strict cache finalization
+ConfigurationMetadataCache SHALL expose finalization of caller-selected runtime facts with the same missing and unsupported separator descriptor diagnostics as ordinary cached resolution. It SHALL perform no decoding, SQL or I/O.
+
+#### Scenario: Required bound parameter is missing
+- **WHEN** supplied runtime facts lack a required separator parameter descriptor
+- **THEN** strict cache finalization returns the same descriptor diagnostic as ordinary cached resolution
+
+### Requirement: Classify native generic reference declarations
+The core SHALL expose ReferenceTypeSet with Kind(MetadataKind) and Any, ConfigDeclaredType::reference_type_set(), and ReferenceTypeSet::contains_kind(). Classification SHALL reuse the existing measured generic GUID mapping only for reference-tag declarations. It SHALL preserve raw declarations and qualifiers and SHALL NOT interpret an unrecognized reference as an empty successful type list.
+
+#### Scenario: Native generic families
+- **WHEN** the paired native DEMO generic attribute is decoded
+- **THEN** its eight known families are classified in source order without rewriting its raw GUIDs
+
+#### Scenario: Unknown or primitive declaration
+- **WHEN** a primitive declaration or unrecognized reference GUID is classified
+- **THEN** no family is reported and its original declaration remains unchanged
+
+### Requirement: Preserve generic families through normalization
+Known generic families SHALL remain classifiable after existing named alias resolution and in runtime facts, complete snapshots and explicit finalization. Classification SHALL NOT expand only the reached subset as if it were a complete family, change SQL/rights semantics, or return successful partial lists for previously unknown normalization states. Membership SHALL use the same reference kinds as existing SQL category handling.
+
+#### Scenario: Named alias includes a family and a qualified primitive
+- **WHEN** the alias is resolved
+- **THEN** the generic family remains recognizable and primitive qualifiers are preserved in all metadata views
+
+#### Scenario: A lazy snapshot has only one reached catalog
+- **WHEN** its attribute declares every catalog reference
+- **THEN** the family remains explicit rather than being replaced by that single catalog
+
+### Requirement: Decode measured native session parameter declarations
+For the measured native root typed session parameter envelope, metadata acquisition SHALL preserve the complete declared type Pattern in the owning ConfigDescriptor. Raw reference identifiers and primitive qualifiers SHALL remain unchanged. Unknown or incomplete declarations and unrecognized envelopes SHALL remain unknown rather than returning a successful prefix or borrowing another descriptor's Pattern.
+
+#### Scenario: Native UUID session parameter
+- **WHEN** the paired native DEMO UUID session parameter resource is decoded
+- **THEN** its descriptor contains the raw UUID reference declaration matching the XML and EDT type
+
+#### Scenario: Incomplete or foreign typed envelope
+- **WHEN** a Pattern member is unknown or the measured envelope or owner identity does not match
+- **THEN** no successful declared type list is published for that envelope

@@ -1,0 +1,29 @@
+   Compiling open-sdbl v0.9.35 (/home/kan/Документы/develop/open-sdbl)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.26s
+     Running tests/query_string_equality_0936.rs (target/debug/deps/query_string_equality_0936-4f6890685a40870d)
+
+running 2 tests
+test incompatible_number_and_boolean_do_not_cast_to_the_string_field ... FAILED
+test native_string_equality_trims_only_trailing_spaces_and_keeps_case ... FAILED
+
+failures:
+
+---- incompatible_number_and_boolean_do_not_cast_to_the_string_field stdout ----
+
+thread 'incompatible_number_and_boolean_do_not_cast_to_the_string_field' (3956788) panicked at tests/query_string_equality_0936.rs:24:9:
+SELECT "__src"."_code"::text AS "Code" FROM "_reference53" AS "__src" WHERE ("__src"."_code" = 17)
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- native_string_equality_trims_only_trailing_spaces_and_keeps_case stdout ----
+
+thread 'native_string_equality_trims_only_trailing_spaces_and_keeps_case' (3956789) panicked at tests/query_string_equality_0936.rs:12:9:
+SELECT "__src"."_code"::text AS "Code" FROM "_reference53" AS "__src" WHERE ("__src"."_code" = 'AbC')
+
+
+failures:
+    incompatible_number_and_boolean_do_not_cast_to_the_string_field
+    native_string_equality_trims_only_trailing_spaces_and_keeps_case
+
+test result: FAILED. 0 passed; 2 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+error: test failed, to rerun pass `-p open-sdbl --test query_string_equality_0936`

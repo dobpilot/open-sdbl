@@ -1,0 +1,15 @@
+# Design
+
+Use QueryCompiler::compile_common_settings_load(user_name, object_key, settings_key, separators). CommonSettingsSeparation represents Active { guid, value: ParameterValue }, Inactive { guid }, or ConditionDisabled { guid }. An omitted entry is unknown, not inactive. The host resolves an omitted user name to the acquired principal name; an explicit empty name remains empty.
+
+Require the acquired live _commonsettings table and standard key/data columns. Match each observed separator value column to one DBNames Fld entry and its DataSeparationUse entry by GUID. Every observed separator/flag must be accounted for exactly once. Incomplete/ambiguous mappings, duplicate/extra/missing supplied states and unsupported value types fail before execution. Only measured string and numeric kinds are accepted, classified through the existing ColumnKind. Restrict execution to PostgreSQL until another provider is measured.
+
+Inactive scope matches false and the typed empty value (empty string or zero). ConditionDisabled matches true and the typed empty value, regardless of the use parameter. Active matches true and the supplied value of the corresponding type. Reuse the existing parameter decimal renderer for numbers. Canonicalization belongs to the SDK; the host resolves the global condition before requesting use/value parameters.
+
+Own native PostgreSQL controls cover Independent and IndependentAndShared. False global conditions select the canonical true/empty scope even when use is false or unset and value is unset. True conditions with use=false select false/empty. Numeric active values 101/202 select their own rows; explicit zero sees the false-condition row. String controls establish the same condition rule with empty string. Evidence is retained in open-bsl docs/research/fixtures/common-settings-conditional-native-1015 and common-settings-numeric-native-1015. The API revision is unpublished; no release version or published compatibility changes here.
+
+The existing dialect quotes all names and values. Output selects only _settingsdata with LIMIT 2: the host distinguishes no row, one row and ambiguous duplicate rows. Existing DatabaseSession::query owns read-only transactions/timeouts. Existing decode_common_setting owns byte decoding; BSL materialization remains outside this SDK.
+
+## Verification
+
+Ten focused compilation tests pass, including numeric inactive scope, globally disabled string/numeric scope, exact numeric rendering and wrong-type rejection. Earlier generated SQL was executed through the existing read-only SDK session against own native scalar/storage and root/A/B settings. The BSL adapter additionally matched numeric 101/202/0 to 21/22/20 and preserved uninitialized parameters when the condition was false. The final revision passed workspace tests, formatting, all-target Clippy, warning-free rustdoc and strict validation. The earlier 975-test run predates the numeric API revision; final logs are retained as sdk-numeric-final-*-1015.log in open-bsl diagnostics. No publishing or archive has occurred.

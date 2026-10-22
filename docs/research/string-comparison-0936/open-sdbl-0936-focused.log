@@ -1,0 +1,14 @@
+   Compiling open-sdbl v0.9.36 (/home/kan/Документы/develop/open-sdbl)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.22s
+     Running tests/query_string_equality_0936.rs (target/debug/deps/query_string_equality_0936-29757118bd3790c4)
+
+running 6 tests
+test native_date_field_compared_with_a_string_is_not_a_provider_cast ... ok
+test contextual_mixed_case_comparison_keeps_its_existing_type_selection ... ok
+test sql_server_and_inequality_keep_the_existing_path ... ok
+test incompatible_number_and_boolean_do_not_cast_to_the_string_field ... ok
+test native_string_equality_trims_only_trailing_spaces_and_keeps_case ... ok
+test literal_and_reversed_operands_use_the_same_measured_path ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+

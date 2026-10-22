@@ -1,0 +1,9 @@
+   Compiling open-sdbl v0.9.36 (/home/kan/Документы/develop/open-sdbl)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.24s
+     Running tests/query_accounting.rs (target/debug/deps/query_accounting-069ce2906e115972)
+
+running 1 test
+test records_conditions_read_side_less_names_on_either_side ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 30 filtered out; finished in 17.15s
+

@@ -1,0 +1,12 @@
+   Compiling open-sdbl v0.9.15 (/tmp/open-sdbl-data-processor-header2-fix-1013)
+    Finished `test` profile [unoptimized] target(s) in 0.22s
+     Running tests/data_processor_header2.rs (/tmp/open-sdbl-enum-header19-fix-1013/target/debug/deps/data_processor_header2-a5c87e5b9c5c1058)
+
+running 4 tests
+test exact_native_legacy_owner_retains_order_types_and_empty_sections ... ok
+test invalid_last_legacy_declaration_does_not_mutate_earlier_attributes ... ok
+test legacy_identity_is_not_enabled_for_other_owners_or_modern_owner_headers ... ok
+test malformed_legacy_identity_and_declaration_remain_unknown ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+

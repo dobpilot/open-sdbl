@@ -1,0 +1,3 @@
+# Design
+
+Use the existing session-only parameter binding selected by restriction mode. Carry that provenance into missing-value diagnostics. Preparation remains unbound; query values cannot satisfy restriction parameters. No parser or SQL generator duplication. Existing preprocessor restriction expansion and DB error propagation remain unchanged. Native evidence is retained by open-bsl under docs/research/fixtures/rls-bare-parameter-native-1020/privilege-guard. The compile diagnostic is observed by the host adapter; DatabaseSession and BlockingDatabaseSession use the existing expansion error protocol without a new API.

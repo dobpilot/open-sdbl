@@ -1,0 +1,11 @@
+--- a/tests/query_accounting.rs
++++ b/tests/query_accounting.rs
+@@ -822,7 +822,7 @@
+         "\"__aggregate_base\".\"_accountctrref\" = \"__ref3\".\"_idrref\"",
+     );
+     assert_eq!(
+-        dereferenced.matches("\"_description\" = 'А'").count(),
++        dereferenced.matches("\"_description\" AS text), ' ') COLLATE \"C\") = (rtrim(CAST('А' AS text)").count(),
+         2,
+         "{dereferenced}"
+     );

@@ -1,0 +1,336 @@
+   Compiling open-sdbl v0.9.36 (/home/kan/Документы/develop/open-sdbl)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.24s
+     Running tests/access_templates.rs (target/debug/deps/access_templates-11c0c391e544dacd)
+
+running 9 tests
+test a_nested_call_expands_within_the_body ... ok
+test a_call_substitutes_its_arguments_by_number ... ok
+test a_call_substitutes_the_named_parameters_of_its_signature ... ok
+test a_directive_reads_the_functions_of_the_manual ... ok
+test a_template_may_be_called_without_the_parenthesis ... ok
+test the_current_names_stand_for_the_table_and_the_right ... ok
+test two_number_signs_stand_for_one ... ok
+test an_expanded_template_compiles_into_the_query ... ok
+test a_template_naming_the_table_compiles_into_the_query ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/query_accounting.rs (target/debug/deps/query_accounting-069ce2906e115972)
+
+running 31 tests
+test balance_and_turnovers_answer_opening_turnover_and_closing ... ok
+test dr_cr_turnovers_group_by_both_accounts_and_both_sides ... ok
+test grouped_statements_accept_expressions_of_grouped_fields ... ok
+test conditions_of_virtual_tables_dereference_through_a_join ... ok
+test records_with_ext_dimensions_expose_both_sides ... ok
+test compiles_the_extra_dimension_values_table ... ok
+test expanded_balances_are_parts_of_the_finest_grain_sums ... ok
+test records_take_the_first_n_in_the_given_or_record_order ... ok
+test shared_names_of_a_nested_source_fall_back_to_labels ... ok
+test exposes_accounts_and_the_sides_of_non_balance_fields ... ok
+test listed_kinds_pick_the_level_that_carries_them ... ok
+test resolves_purposes_balance_flags_and_the_chart ... ok
+test resolves_a_predefined_account ... ok
+test a_join_condition_dereferences_through_a_cast ... ok
+test long_aliases_of_nested_sources_resolve_by_their_text ... ok
+test a_derived_fixed_reference_joins_a_runtime_typed_field ... ok
+test accounting_virtual_tables_take_the_platform_arity ... ok
+test ordering_by_a_compound_field_spreads_over_its_columns ... ok
+test extra_dimensions_are_positional_dimensions_of_the_aggregates ... ok
+test a_long_named_composite_field_spreads_undefined_over_its_members ... ok
+test balances_derive_their_debit_and_credit_parts_at_the_grain_read ... ok
+test a_value_dereferenced_across_targets_compares_by_its_reference_member ... ok
+test inner_and_left_joins_take_any_condition ... ok
+test records_conditions_read_side_less_names_on_either_side ... FAILED
+test the_extra_dimension_kinds_of_the_chart_answer_to_their_names ... ok
+test turnovers_fold_the_two_sides_of_a_record ... ok
+test turnovers_without_extra_dimensions_take_the_balanced_account_condition ... ok
+test tuple_membership_accepts_references_of_several_types ... ok
+test turnovers_expose_the_correspondence_of_each_side ... ok
+test turnovers_prune_unread_dimensions_and_split_by_period ... ok
+test union_spreads_undefined_over_a_composite_extra_dimension ... ok
+
+failures:
+
+---- records_conditions_read_side_less_names_on_either_side stdout ----
+SQL SELECT "Д"."_accountdtrref" AS "Дт" FROM (SELECT "__aggregate_base"."_period" AS "_period", "__aggregate_base"."_periodadjustment" AS "_periodadjustment", "__aggregate_base"."_recordertref" AS "_recordertref", "__aggregate_base"."_recorderrref" AS "_recorderrref", "__aggregate_base"."_lineno" AS "_lineno", "__aggregate_base"."_active" AS "_active", "__aggregate_base"."_accountdtrref" AS "_accountdtrref", "__aggregate_base"."_accountctrref" AS "_accountctrref", "__aggregate_base"."_fld38457rref" AS "_fld38457rref", "__aggregate_base"."_fld38458dtrref" AS "_fld38458dtrref", "__aggregate_base"."_fld38458ctrref" AS "_fld38458ctrref", "__aggregate_base"."_fld38459dtrref" AS "_fld38459dtrref", "__aggregate_base"."_fld38459ctrref" AS "_fld38459ctrref", "__aggregate_base"."_fld38460" AS "_fld38460", "__aggregate_base"."_fld38461dt" AS "_fld38461dt", "__aggregate_base"."_fld38461ct" AS "_fld38461ct", "__aggregate_base"."_fld38462dt" AS "_fld38462dt", "__aggregate_base"."_fld38462ct" AS "_fld38462ct", "__aggregate_base"."_fld38463dt" AS "_fld38463dt", "__aggregate_base"."_fld38463ct" AS "_fld38463ct", "__aggregate_base"."_fld38464dt" AS "_fld38464dt", "__aggregate_base"."_fld38464ct" AS "_fld38464ct", "__aggregate_base"."_fld38465dt" AS "_fld38465dt", "__aggregate_base"."_fld38465ct" AS "_fld38465ct", "__aggregate_base"."_fld38466" AS "_fld38466", "__aggregate_base"."_fld38467" AS "_fld38467", "__aggregate_base"."_fld2331" AS "_fld2331", "__aggregate_base"."_valuedt1_type" AS "_valuedt1_type", "__aggregate_base"."_valuedt1_rtref" AS "_valuedt1_rtref", "__aggregate_base"."_valuedt1_rrref" AS "_valuedt1_rrref", "__aggregate_base"."_kinddt1rref" AS "_kinddt1rref", "__aggregate_base"."_valuedt2_type" AS "_valuedt2_type", "__aggregate_base"."_valuedt2_rtref" AS "_valuedt2_rtref", "__aggregate_base"."_valuedt2_rrref" AS "_valuedt2_rrref", "__aggregate_base"."_kinddt2rref" AS "_kinddt2rref", "__aggregate_base"."_valuedt3_type" AS "_valuedt3_type", "__aggregate_base"."_valuedt3_rtref" AS "_valuedt3_rtref", "__aggregate_base"."_valuedt3_rrref" AS "_valuedt3_rrref", "__aggregate_base"."_kinddt3rref" AS "_kinddt3rref", "__aggregate_base"."_valuect1_type" AS "_valuect1_type", "__aggregate_base"."_valuect1_rtref" AS "_valuect1_rtref", "__aggregate_base"."_valuect1_rrref" AS "_valuect1_rrref", "__aggregate_base"."_kindct1rref" AS "_kindct1rref", "__aggregate_base"."_valuect2_type" AS "_valuect2_type", "__aggregate_base"."_valuect2_rtref" AS "_valuect2_rtref", "__aggregate_base"."_valuect2_rrref" AS "_valuect2_rrref", "__aggregate_base"."_kindct2rref" AS "_kindct2rref", "__aggregate_base"."_valuect3_type" AS "_valuect3_type", "__aggregate_base"."_valuect3_rtref" AS "_valuect3_rtref", "__aggregate_base"."_valuect3_rrref" AS "_valuect3_rrref", "__aggregate_base"."_kindct3rref" AS "_kindct3rref" FROM "_accrg38456" AS "__aggregate_base" WHERE ("__aggregate_base"."_period" >= TIMESTAMP '2024-01-01 00:00:00') AND ("__aggregate_base"."_period" < TIMESTAMP '2024-12-31 23:59:59') AND "__aggregate_base"."_fld2331" = 0 AND (((("__aggregate_base"."_fld38457rref" = NULL) AND ("__aggregate_base"."_accountdtrref" = NULL)) AND ("__aggregate_base"."_valuedt1_type" = NULL)) OR ((("__aggregate_base"."_fld38457rref" = NULL) AND ("__aggregate_base"."_accountctrref" = NULL)) AND ("__aggregate_base"."_valuect1_type" = NULL)))) AS "Д"
+SQL SELECT "Д"."_accountdtrref" AS "Дт" FROM (SELECT "__aggregate_base"."_period" AS "_period", "__aggregate_base"."_periodadjustment" AS "_periodadjustment", "__aggregate_base"."_recordertref" AS "_recordertref", "__aggregate_base"."_recorderrref" AS "_recorderrref", "__aggregate_base"."_lineno" AS "_lineno", "__aggregate_base"."_active" AS "_active", "__aggregate_base"."_accountdtrref" AS "_accountdtrref", "__aggregate_base"."_accountctrref" AS "_accountctrref", "__aggregate_base"."_fld38457rref" AS "_fld38457rref", "__aggregate_base"."_fld38458dtrref" AS "_fld38458dtrref", "__aggregate_base"."_fld38458ctrref" AS "_fld38458ctrref", "__aggregate_base"."_fld38459dtrref" AS "_fld38459dtrref", "__aggregate_base"."_fld38459ctrref" AS "_fld38459ctrref", "__aggregate_base"."_fld38460" AS "_fld38460", "__aggregate_base"."_fld38461dt" AS "_fld38461dt", "__aggregate_base"."_fld38461ct" AS "_fld38461ct", "__aggregate_base"."_fld38462dt" AS "_fld38462dt", "__aggregate_base"."_fld38462ct" AS "_fld38462ct", "__aggregate_base"."_fld38463dt" AS "_fld38463dt", "__aggregate_base"."_fld38463ct" AS "_fld38463ct", "__aggregate_base"."_fld38464dt" AS "_fld38464dt", "__aggregate_base"."_fld38464ct" AS "_fld38464ct", "__aggregate_base"."_fld38465dt" AS "_fld38465dt", "__aggregate_base"."_fld38465ct" AS "_fld38465ct", "__aggregate_base"."_fld38466" AS "_fld38466", "__aggregate_base"."_fld38467" AS "_fld38467", "__aggregate_base"."_fld2331" AS "_fld2331", "__aggregate_base"."_valuedt1_type" AS "_valuedt1_type", "__aggregate_base"."_valuedt1_rtref" AS "_valuedt1_rtref", "__aggregate_base"."_valuedt1_rrref" AS "_valuedt1_rrref", "__aggregate_base"."_kinddt1rref" AS "_kinddt1rref", "__aggregate_base"."_valuedt2_type" AS "_valuedt2_type", "__aggregate_base"."_valuedt2_rtref" AS "_valuedt2_rtref", "__aggregate_base"."_valuedt2_rrref" AS "_valuedt2_rrref", "__aggregate_base"."_kinddt2rref" AS "_kinddt2rref", "__aggregate_base"."_valuedt3_type" AS "_valuedt3_type", "__aggregate_base"."_valuedt3_rtref" AS "_valuedt3_rtref", "__aggregate_base"."_valuedt3_rrref" AS "_valuedt3_rrref", "__aggregate_base"."_kinddt3rref" AS "_kinddt3rref", "__aggregate_base"."_valuect1_type" AS "_valuect1_type", "__aggregate_base"."_valuect1_rtref" AS "_valuect1_rtref", "__aggregate_base"."_valuect1_rrref" AS "_valuect1_rrref", "__aggregate_base"."_kindct1rref" AS "_kindct1rref", "__aggregate_base"."_valuect2_type" AS "_valuect2_type", "__aggregate_base"."_valuect2_rtref" AS "_valuect2_rtref", "__aggregate_base"."_valuect2_rrref" AS "_valuect2_rrref", "__aggregate_base"."_kindct2rref" AS "_kindct2rref", "__aggregate_base"."_valuect3_type" AS "_valuect3_type", "__aggregate_base"."_valuect3_rtref" AS "_valuect3_rtref", "__aggregate_base"."_valuect3_rrref" AS "_valuect3_rrref", "__aggregate_base"."_kindct3rref" AS "_kindct3rref" FROM "_accrg38456" AS "__aggregate_base" LEFT JOIN "_acc69" AS "__ref1" ON "__aggregate_base"."_accountdtrref" = "__ref1"."_idrref" AND "__ref1"."_fld2331" = 0 LEFT JOIN "_reference380" AS "__ref2" ON "__aggregate_base"."_fld38457rref" = "__ref2"."_idrref" AND "__ref2"."_fld2331" = 0 LEFT JOIN "_acc69" AS "__ref3" ON "__aggregate_base"."_accountctrref" = "__ref3"."_idrref" AND "__ref3"."_fld2331" = 0 WHERE ("__aggregate_base"."_period" >= TIMESTAMP '2024-01-01 00:00:00') AND ("__aggregate_base"."_period" < TIMESTAMP '2024-12-31 23:59:59') AND "__aggregate_base"."_fld2331" = 0 AND ((((rtrim(CAST("__ref1"."_code" AS text), ' ') COLLATE "C") = (rtrim(CAST('51' AS text), ' ') COLLATE "C")) AND ((rtrim(CAST("__ref2"."_description" AS text), ' ') COLLATE "C") = (rtrim(CAST('А' AS text), ' ') COLLATE "C"))) OR (((rtrim(CAST("__ref3"."_code" AS text), ' ') COLLATE "C") = (rtrim(CAST('51' AS text), ' ') COLLATE "C")) AND ((rtrim(CAST("__ref2"."_description" AS text), ' ') COLLATE "C") = (rtrim(CAST('А' AS text), ' ') COLLATE "C"))))) AS "Д"
+
+thread 'records_conditions_read_side_less_names_on_either_side' (3985950) panicked at tests/query_accounting.rs:824:5:
+assertion `left == right` failed: SELECT "Д"."_accountdtrref" AS "Дт" FROM (SELECT "__aggregate_base"."_period" AS "_period", "__aggregate_base"."_periodadjustment" AS "_periodadjustment", "__aggregate_base"."_recordertref" AS "_recordertref", "__aggregate_base"."_recorderrref" AS "_recorderrref", "__aggregate_base"."_lineno" AS "_lineno", "__aggregate_base"."_active" AS "_active", "__aggregate_base"."_accountdtrref" AS "_accountdtrref", "__aggregate_base"."_accountctrref" AS "_accountctrref", "__aggregate_base"."_fld38457rref" AS "_fld38457rref", "__aggregate_base"."_fld38458dtrref" AS "_fld38458dtrref", "__aggregate_base"."_fld38458ctrref" AS "_fld38458ctrref", "__aggregate_base"."_fld38459dtrref" AS "_fld38459dtrref", "__aggregate_base"."_fld38459ctrref" AS "_fld38459ctrref", "__aggregate_base"."_fld38460" AS "_fld38460", "__aggregate_base"."_fld38461dt" AS "_fld38461dt", "__aggregate_base"."_fld38461ct" AS "_fld38461ct", "__aggregate_base"."_fld38462dt" AS "_fld38462dt", "__aggregate_base"."_fld38462ct" AS "_fld38462ct", "__aggregate_base"."_fld38463dt" AS "_fld38463dt", "__aggregate_base"."_fld38463ct" AS "_fld38463ct", "__aggregate_base"."_fld38464dt" AS "_fld38464dt", "__aggregate_base"."_fld38464ct" AS "_fld38464ct", "__aggregate_base"."_fld38465dt" AS "_fld38465dt", "__aggregate_base"."_fld38465ct" AS "_fld38465ct", "__aggregate_base"."_fld38466" AS "_fld38466", "__aggregate_base"."_fld38467" AS "_fld38467", "__aggregate_base"."_fld2331" AS "_fld2331", "__aggregate_base"."_valuedt1_type" AS "_valuedt1_type", "__aggregate_base"."_valuedt1_rtref" AS "_valuedt1_rtref", "__aggregate_base"."_valuedt1_rrref" AS "_valuedt1_rrref", "__aggregate_base"."_kinddt1rref" AS "_kinddt1rref", "__aggregate_base"."_valuedt2_type" AS "_valuedt2_type", "__aggregate_base"."_valuedt2_rtref" AS "_valuedt2_rtref", "__aggregate_base"."_valuedt2_rrref" AS "_valuedt2_rrref", "__aggregate_base"."_kinddt2rref" AS "_kinddt2rref", "__aggregate_base"."_valuedt3_type" AS "_valuedt3_type", "__aggregate_base"."_valuedt3_rtref" AS "_valuedt3_rtref", "__aggregate_base"."_valuedt3_rrref" AS "_valuedt3_rrref", "__aggregate_base"."_kinddt3rref" AS "_kinddt3rref", "__aggregate_base"."_valuect1_type" AS "_valuect1_type", "__aggregate_base"."_valuect1_rtref" AS "_valuect1_rtref", "__aggregate_base"."_valuect1_rrref" AS "_valuect1_rrref", "__aggregate_base"."_kindct1rref" AS "_kindct1rref", "__aggregate_base"."_valuect2_type" AS "_valuect2_type", "__aggregate_base"."_valuect2_rtref" AS "_valuect2_rtref", "__aggregate_base"."_valuect2_rrref" AS "_valuect2_rrref", "__aggregate_base"."_kindct2rref" AS "_kindct2rref", "__aggregate_base"."_valuect3_type" AS "_valuect3_type", "__aggregate_base"."_valuect3_rtref" AS "_valuect3_rtref", "__aggregate_base"."_valuect3_rrref" AS "_valuect3_rrref", "__aggregate_base"."_kindct3rref" AS "_kindct3rref" FROM "_accrg38456" AS "__aggregate_base" LEFT JOIN "_acc69" AS "__ref1" ON "__aggregate_base"."_accountdtrref" = "__ref1"."_idrref" AND "__ref1"."_fld2331" = 0 LEFT JOIN "_reference380" AS "__ref2" ON "__aggregate_base"."_fld38457rref" = "__ref2"."_idrref" AND "__ref2"."_fld2331" = 0 LEFT JOIN "_acc69" AS "__ref3" ON "__aggregate_base"."_accountctrref" = "__ref3"."_idrref" AND "__ref3"."_fld2331" = 0 WHERE ("__aggregate_base"."_period" >= TIMESTAMP '2024-01-01 00:00:00') AND ("__aggregate_base"."_period" < TIMESTAMP '2024-12-31 23:59:59') AND "__aggregate_base"."_fld2331" = 0 AND ((((rtrim(CAST("__ref1"."_code" AS text), ' ') COLLATE "C") = (rtrim(CAST('51' AS text), ' ') COLLATE "C")) AND ((rtrim(CAST("__ref2"."_description" AS text), ' ') COLLATE "C") = (rtrim(CAST('А' AS text), ' ') COLLATE "C"))) OR (((rtrim(CAST("__ref3"."_code" AS text), ' ') COLLATE "C") = (rtrim(CAST('51' AS text), ' ') COLLATE "C")) AND ((rtrim(CAST("__ref2"."_description" AS text), ' ') COLLATE "C") = (rtrim(CAST('А' AS text), ' ') COLLATE "C"))))) AS "Д"
+  left: 0
+ right: 2
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    records_conditions_read_side_less_names_on_either_side
+
+test result: FAILED. 30 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 51.37s
+
+error: test failed, to rerun pass `-p open-sdbl --test query_accounting`
+     Running tests/query_comma_sources.rs (target/debug/deps/query_comma_sources-a7692e74fa0deb30)
+
+running 6 tests
+test groups_a_full_join_with_its_comma_element ... ok
+test keeps_the_wildcard_and_ambiguity_refusals ... ok
+test renders_comma_sources_as_a_cross_join_chain ... ok
+test accepts_derived_virtual_temporary_and_constant_sources ... ok
+test joins_stay_attached_to_their_comma_element ... ok
+test filters_comma_sources_by_separators_like_the_base ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+
+     Running tests/query_compile.rs (target/debug/deps/query_compile-6af6038951ba2654)
+
+running 167 tests
+test a_parameter_source_needs_a_value_table ... ok
+test a_zero_top_count_answers_no_rows ... ok
+test addresses_a_source_by_its_alias_alone ... ok
+test applies_slice_first_lower_bound_before_and_where_after_ranking ... ok
+test bounds_count_aggregate_shapes ... ok
+test applies_slice_last_parameters_before_and_where_after_ranking ... ok
+test applies_balance_period_and_condition_before_outer_where ... ok
+test accepts_auto_order_and_compiles_record_auto_number ... ok
+test compiles_a_russian_catalog_query_through_authoritative_metadata ... ok
+test applies_projection_aliases_and_diagnoses_a_missing_alias ... ok
+test a_case_compared_with_a_value_drops_alternatives_of_another_kind ... ok
+test accepts_date_parameters_as_virtual_table_periods ... ok
+test accepts_constants_and_concatenates_strings ... ok
+test appends_rows_through_a_union_all_definition ... ok
+test compiles_count_all_and_distinct_field ... ok
+test compiles_catalog_value_as_a_predefined_id_lookup ... ok
+test compiles_bounded_accumulation_register_turnovers ... ok
+test chains_several_joins_in_source_order ... ok
+test aggregates_arbitrary_scalar_expressions ... ok
+test compiles_binary_literals_for_each_sql_dialect ... ok
+test compiles_case_expressions_in_projections_and_predicates ... ok
+test compiles_datetime_and_begin_of_period_for_postgres ... ok
+test compiles_enumeration_value_in_physical_one_c_byte_order ... ok
+test compiles_current_accumulation_register_balances ... ok
+test compiles_date_functions_in_joined_projection_and_filter ... ok
+test compiles_english_distinct_wildcard_and_real_document_date_spelling ... ok
+test compiles_a_projected_tabular_section_as_a_nested_result ... ok
+test casts_character_expressions_to_text_on_postgres ... ok
+test accepts_index_clauses_without_generating_indexes ... ok
+test compiles_information_register_slice_first_by_config_dimensions ... ok
+test compiles_datetime_and_begin_of_period_for_mssql_year_offset ... ok
+test compiles_mixed_union_operators_and_orders_the_combined_result ... ok
+test compiles_information_register_slice_last_by_config_dimensions ... ok
+test compiles_mssql_extension_tables_as_one_source_relation ... ok
+test compiles_in_lists_in_source_free_and_joined_queries ... ok
+test compiles_in_list_with_several_catalog_values ... ok
+test compiles_grouped_branches_with_having_and_ordering ... ok
+test compiles_native_mssql_projection_filter_and_limit ... ok
+test compiles_inner_left_and_right_join_spellings_and_repeated_terminators ... ok
+test compiles_empty_references_for_reference_kinds ... ok
+test compiles_mssql_historical_balance_without_postgres_aggregate_syntax ... ok
+test compiles_join_key_with_additional_in_and_value_predicates ... ok
+test compiles_russian_descending_order ... ok
+test compiles_source_free_arithmetic_and_rejects_fields_without_from ... ok
+test compiles_document_tabular_section_from_extension_table ... ok
+test compiles_reference_uuid_in_both_dialects ... ok
+test compiles_reference_joins_independently_in_union_branches ... ok
+test compiles_mssql_presentation_from_a_source_with_extension_tables ... ok
+test compiles_in_subqueries_with_reference_widening ... ok
+test compiles_source_free_literals_and_scalar_presentations ... ok
+test compiles_like_predicates_with_escape_and_negation ... ok
+test compiles_sum_min_max_and_count_distinct_together ... ok
+test compiles_safe_batched_deferred_presentation_lookups ... ok
+test compiles_through_one_backend_generic_api ... ok
+test compiles_range_predicates ... ok
+test compiles_fixed_and_multi_target_reference_presentations ... ok
+test compiles_scalar_parameters_on_both_dialects ... ok
+test corrects_case_dates_once_on_mssql ... ok
+test compiles_nested_sources_with_grouping_joins_and_dereference ... ok
+test compiles_scalar_casts_on_both_dialects ... ok
+test compiles_temporary_table_references_and_dates ... ok
+test compiles_reference_parameters_lists_and_output_format_literals ... ok
+test diagnoses_empty_and_malformed_in_lists ... ok
+test dereferences_a_reference_property_with_one_reused_left_join ... ok
+test compiles_temporary_tables_as_common_table_expressions ... ok
+test diagnoses_invalid_value_kinds_paths_and_names ... ok
+test diagnoses_invalid_uuid_arguments ... ok
+test decodes_uuid_of_dereferenced_and_compound_references ... ok
+test covers_syntax_ambiguity_liveness_and_presentation_diagnostic_kinds ... ok
+test diagnoses_a_tabular_section_missing_from_schema_storage ... ok
+test diagnoses_incompatible_conditional_branches ... ok
+test compiles_every_begin_of_period_kind_for_both_dialects ... ok
+test diagnoses_union_kind_mismatches_and_accepts_null_branches ... ok
+test diagnoses_parameter_binding_failures ... ok
+test diagnoses_invalid_grouping ... ok
+test drops_and_redefines_temporary_tables ... ok
+test diagnoses_missing_fields_and_ambiguous_bare_objects ... ok
+test diagnoses_invalid_join_chains ... ok
+test exposes_standard_and_custom_fields_for_description ... ok
+test dereferences_composite_references_across_targets ... ok
+test emits_only_the_temporary_tables_a_statement_reaches ... ok
+test exposes_typed_diagnostic_sources_and_metadata_token_positions ... ok
+test filters_a_statement_without_a_source ... ok
+test emits_unique_utf8_safe_output_labels_at_each_dialect_limit ... ok
+test indexed_metadata_lookups_use_guids_and_numeric_standard_fields ... ok
+test dereferences_references_inside_join_conditions ... ok
+test defers_a_universal_reference_reached_through_a_join_path ... ok
+test groups_reference_keys_by_every_physical_member ... ok
+test expands_a_compound_projection_and_rejects_it_in_predicates ... ok
+test indexes_live_and_schema_tables_including_extension_variants ... ok
+test diagnoses_invalid_casts ... ok
+test flattens_a_group_of_nested_joins ... ok
+test keeps_additional_full_join_predicates_in_on ... ok
+test joined_statements_order_by_unprojected_fields ... ok
+test leaves_where_and_order_clauses_after_an_unaliased_source ... ok
+test diagnoses_temporary_table_failures ... ok
+test dialect_levels_differ_only_where_newer_functions_were_used ... ok
+test keeps_temporary_tables_across_batches_and_failures ... ok
+test keeps_the_declared_gaps_declared ... ok
+test orders_a_distinct_statement_by_a_projected_reference_of_several_types ... ok
+test labels_an_unaliased_dereference_by_its_segments_run_together ... ok
+test grouped_statements_take_dereferences_of_keys_and_aggregate_ordering ... ok
+test orders_a_distinct_statement_by_its_projection ... ok
+test prepared_queries_are_bound_to_their_resolved_snapshot ... ok
+test negation_binds_looser_than_a_comparison ... ok
+test presents_an_aggregate ... ok
+test prepares_and_compiles_mssql_presentations ... ok
+test joins_the_same_object_under_several_aliases_with_dereference ... ok
+test presents_the_reference_of_a_source ... ok
+test groups_by_dereferenced_keys_aliases_and_expressions ... ok
+test prepares_one_guid_batch_and_compiles_safe_presentations ... ok
+test presentation_plans_are_required_and_field_ids_are_validated ... ok
+test presents_an_expression_as_its_value ... ok
+test orders_by_computed_expressions ... ok
+test narrows_references_with_and_without_dereference ... ok
+test queryable_field_catalog_reflects_each_immutable_resolved_snapshot ... ok
+test enforces_presentation_batch_boundaries_for_both_backends ... ok
+test presents_a_mixed_case_branch_by_branch ... ok
+test presents_a_scalar_from_a_dereferenced_join_alias_without_a_plan ... ok
+test reads_names_and_sources_real_configurations_use ... ok
+test rejects_parameters_and_unsupported_clauses_before_sql_generation ... ok
+test preserves_native_mssql_rowversion_projection ... ok
+test diagnoses_invalid_nested_queries ... ok
+test rejects_wildcard_and_distinct_for_non_count_aggregates ... ok
+test preserves_presentations_through_full_join_and_union_branches ... ok
+test rejects_union_branches_with_different_compound_expansion_widths ... ok
+test rejects_an_ambiguous_schema_reference_target ... ok
+test qualifies_an_unaliased_source_by_its_full_metadata_name ... ok
+test resolves_accumulation_register_field_purpose_from_config ... ok
+test rejects_slice_last_for_invalid_sources_and_arguments ... ok
+test resolves_information_register_field_purpose_from_config ... ok
+test reports_structured_column_kinds_for_fields_scalars_and_aggregates ... ok
+test resolves_only_authoritative_enumeration_value_descriptors ... ok
+test reports_resolution_mismatches_without_dropping_unknown_columns ... ok
+test renders_boolean_predicates_as_comparisons_on_mssql ... ok
+test preserves_sql_server_2008_goldens_for_begin_of_period ... ok
+test resolves_a_one_hop_reference_from_one_join_side ... ok
+test renders_full_join_natively ... ok
+test resolves_mssql_schema_table_names_with_the_shared_case_rule ... ok
+test rejects_incompatible_union_projections_and_branch_local_ordering ... ok
+test states_the_types_the_server_resolves_by ... ok
+test rejects_slice_first_for_invalid_sources_and_arguments ... ok
+test supports_slice_first_as_a_join_source ... ok
+test rejects_unsafe_or_ambiguous_join_shapes ... ok
+test supports_balance_and_turnovers_as_join_sources ... ok
+test translates_mssql_year_offset_in_date_projection_and_filter ... ok
+test validates_mssql_year_offsets_at_backend_construction ... ok
+test presents_references_reached_through_dereferenced_join_paths ... ok
+test supports_slice_last_as_a_join_source ... ok
+test the_alias_wildcard_of_the_only_source_projects_every_field ... ok
+test validates_datetime_components_periods_and_mssql_offset_range ... ok
+test supports_a_qualified_reference_path_and_rejects_non_references ... ok
+test tests_a_tabular_section_column_with_exists ... ok
+test reuses_a_dereference_join_only_when_the_complete_key_matches ... ok
+test widens_references_in_case_isnull_and_union ... ok
+test preserves_mssql_goldens_for_dialect_sensitive_features ... ok
+test widens_reference_equalities_in_join_conditions ... ok
+test rejects_invalid_accumulation_virtual_table_shapes ... ok
+test bounds_batches_compiled_without_a_manager ... ok
+test extension_projection_scans_are_budgeted_once_after_the_field_cache_miss ... ok
+test unrelated_catalog_tables_do_not_consume_the_work_budget ... ok
+test compiles_the_binary_operator_budget_boundary_without_recursion ... ok
+test accepts_a_wide_legitimate_union_within_the_work_budget ... ok
+test compilation_work_does_not_scale_with_information_base_size ... ok
+test rejects_pathologically_deep_query_expressions ... ok
+test bounds_total_work_for_repeated_tabular_section_union_branches ... ok
+test names_the_standard_fields_of_processes_and_tasks ... ok
+
+test result: ok. 167 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 7.59s
+
+     Running tests/query_dereference.rs (target/debug/deps/query_dereference-2abf5435772e2530)
+
+running 14 tests
+test accepts_an_alias_written_without_as ... ok
+test accepts_the_selection_modifiers_in_any_order ... ok
+test shares_the_joins_of_a_repeated_prefix ... ok
+test dereferences_standard_fields_through_a_composite_reference ... ok
+test walks_a_reference_chain ... ok
+test renders_a_logical_expression_as_a_value ... ok
+test walks_the_chain_in_every_clause ... ok
+test walks_the_chain_through_a_composite_reference ... ok
+test reads_a_filter_criterion ... ok
+test reads_a_document_journal ... ok
+test joins_only_the_declared_targets_of_a_composite ... ok
+test spreads_a_mixed_kind_dereference_over_members ... ok
+test resolves_the_computed_standard_fields ... ok
+test reads_the_point_in_time_pair ... ok
+
+test result: ok. 14 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 8.20s
+
+     Running tests/query_hierarchy.rs (target/debug/deps/query_hierarchy-584ffd68a1b278a9)
+
+running 4 tests
+test falls_back_to_membership_without_a_parent_column ... ok
+test negates_and_accepts_constant_seeds ... ok
+test descends_from_the_seeds_of_a_nested_query ... ok
+test reports_unsupported_operands ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/query_restrictions.rs (target/debug/deps/query_restrictions-ea0c19e565917007)
+
+running 13 tests
+test rejects_the_keyword_outside_the_first_top_level_branch ... ok
+test accepts_the_keyword_before_distinct_and_top_without_changing_sql ... ok
+test wraps_the_extension_union_of_a_restricted_source ... ok
+test stores_filtered_rows_in_temporary_tables_and_leaves_other_statements_alone ... ok
+test restricts_tabular_sections_by_section_name ... ok
+test restricts_joined_sources_independently ... ok
+test keeps_nested_queries_of_a_restriction_unrestricted ... ok
+test resolves_session_parameters_after_query_parameters ... ok
+test requests_every_target_of_allowed_statements ... ok
+test diagnoses_restriction_failures_inside_the_restriction_text ... ok
+test wraps_a_restricted_source_in_a_derived_table_with_dereference_and_session_value ... ok
+test conjoins_restrictions_into_virtual_table_predicates ... ok
+test accepts_the_platform_form_of_a_restriction_with_the_current_table_qualifier ... ok
+
+test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests/query_separators.rs (target/debug/deps/query_separators-b7059b28ee150583)
+
+running 13 tests
+test projects_separation_settings_from_the_class_list_tail ... ok
+test a_snapshot_without_separators_is_unchanged ... ok
+test filters_register_virtual_tables_inside_their_base_reads ... ok
+test the_use_flag_rejects_independent_and_query_parameters_never_supply_it ... ok
+test places_predicates_by_join_shape ... ok
+test an_independent_separator_without_a_value_is_a_parameter_diagnostic ... ok
+test reports_a_separator_whose_settings_are_missing ... ok
+test filters_a_plain_source_by_the_session_value_before_the_query_filter ... ok
+test extension_branches_are_filtered_individually ... ok
+test filters_constants_nested_queries_and_restricted_sources ... ok
+test resolves_separation_settings_from_the_probe_resources ... ok
+test a_shared_separator_defaults_to_the_empty_value_and_falls_back_to_its_name ... ok
+test virtual_tables_request_usage_before_value_and_refuse_disabled_independent ... ok
+
+test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.06s
+
+     Running tests/query_tuple_in.rs (target/debug/deps/query_tuple_in-78a35a92f6ec9006)
+
+running 4 tests
+test a_string_membership_test_compares_text_with_text ... ok
+test a_tuple_needs_a_matching_subquery ... ok
+test a_tuple_membership_test_renders_as_exists ... ok
+test a_tuple_is_accepted_in_a_virtual_table_condition ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 16.57s
+
+error: 1 target failed:
+    `-p open-sdbl --test query_accounting`

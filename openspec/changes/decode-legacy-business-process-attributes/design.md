@@ -1,0 +1,5 @@
+# Design
+
+The existing collection id 87c988de-ecbf-413b-87b0-b9516df05e28 belongs to business-process attributes. Select the measured wrapper shape from the first row: legacy 2/5 or existing 3/7; the existing whole-list check then requires the same shape for every row. Keep the 27/23 body, membership uniqueness, complete descriptor/type validation and independent owner/section properties unchanged. Unknown markers, lengths and mixed wrapper collections stay unknown. Empty collections retain existing checked-empty behavior.
+
+Native evidence: open-bsl docs/research/fixtures/buh-business-process-attributes/full-config-native-proof.md. All 85148 original Config resources survived CF packing and extraction byte-for-byte. Native 8.3.27.2342 accepted the complete CF in a new own file infobase and exported BusinessProcesses/Задание.xml with 27 exact UUID/name/type entries. Original BUH was acquired read-only; Enterprise was never started for either original or full clone. The earlier owner-only refusal is retained as a failed incomplete input, not positive evidence.

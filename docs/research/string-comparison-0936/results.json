@@ -1,0 +1,21 @@
+{
+  "version": "0.9.36",
+  "fmt_exit_code": 0,
+  "clippy_exit_code": 0,
+  "rustdoc_exit_code": 0,
+  "tests": {
+    "passed": 1153,
+    "failed": 0,
+    "ignored": 13,
+    "test_targets": 100,
+    "workspace_exit_code": 0
+  },
+  "strict_openspec_exit_code": 0,
+  "archive": "openspec/changes/archive/2026-10-21-compile-measured-postgres-string-equality",
+  "archived_requirements_preserved_exactly": true,
+  "old_requirement_names_preserved": true,
+  "runtime_unchanged_during_final_checks": true,
+  "native_oracles_unchanged": true,
+  "sql_server": "Unchanged compilation path; no live SQL Server available.",
+  "archive_nonblocking_warning": "Archived proposal has no Why/What Changes section headers; strict validation passed before and after archive. Archive not rewritten."
+}

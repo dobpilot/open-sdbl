@@ -52,6 +52,14 @@ identifier as `Right::Other(guid)`.
 - **WHEN** an identifier the table does not list is named
 - **THEN** it is `Right::Other` with that identifier
 
+#### Scenario: Independently measured configuration rights
+- **WHEN** native single-right role resources are decoded
+- **THEN** d8682bbb-7800-4aa0-8590-d3cb11fe2a29 is SaveUserData
+- **AND** 399d7390-8d83-4a57-b4d7-c902c15b701f is ConfigurationExtensionsAdministration
+- **AND** 7b8359dd-7d4e-4bcd-a61c-b4b26eae19c6 is InteractiveOpenExtDataProcessors
+- **AND** eb29e198-c338-4a20-a253-be6fc3dd44d9 is InteractiveOpenExtReports
+- **AND** the named grants match the retained native positive and cross-negative checks
+
 ### Requirement: Catalog the roles of a configuration
 The library SHALL list the roles a configuration declares from the roles
 collection of the configuration root and name them from their bare-GUID
