@@ -14,10 +14,20 @@ preserve existing public behavior.
 Recognition and validation of native empty-role resources SHALL reside in the
 core metadata decoder. The database crate SHALL orchestrate acquisition without
 interpreting native role serialization or manufacturing compressed decoder input.
+The core SHALL expose `parse_role_without_rights(&Guid, &[u8]) -> Option<RoleRights>`
+using the default decoded-byte ceiling. It SHALL return empty rights only for
+the measured complete own-role descriptor matching the supplied non-nil GUID;
+unknown, malformed, borrowed, mismatched or rights-bearing descriptors SHALL
+return None. Existing rights-resource decoder signatures and behavior SHALL
+remain unchanged.
 
 #### Scenario: Acquired empty-role resource
 - **WHEN** acquisition supplies a measured valid empty-role descriptor
 - **THEN** core decoding produces typed empty rights while malformed or unknown formats remain distinguishable
+
+#### Scenario: Descriptor does not prove empty rights
+- **WHEN** the descriptor is malformed, has an unsupported shape, promises a rights subobject or names another role
+- **THEN** the core returns None and acquisition does not treat the role as successfully loaded
 
 ### Requirement: Validate runtime facts through focused internal records
 Runtime metadata projection SHALL separate format recognition, validation and

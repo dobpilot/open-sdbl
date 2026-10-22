@@ -13,13 +13,15 @@ These boundaries make behavior difficult to audit and extend safely.
   keep name resolution and dialect rendering explicit at their existing boundaries.
 - Move empty-role format recognition into the dependency-free core decoder with
   a typed internal construction path; keep resource acquisition in open-sdbl-db.
+- Add `parse_role_without_rights(&Guid, &[u8]) -> Option<RoleRights>` to cross
+  the crate boundary while preserving the existing acquisition decisions.
 - Split runtime metadata format handling into focused modules and introduce
   validated internal records before mutating published runtime facts.
-- Preserve public API, accepted measured formats, diagnostics, ordering and SQL.
+- Preserve existing public API, accepted measured formats, diagnostics, ordering and SQL.
 
 ## Impact
 Affected capabilities: crate-architecture, onec-metadata, query-compilation.
-This change is a proposal for subsequent implementation. It does not introduce
+This change implements the internal refactor and the additive core decoder. It does not introduce
 new format support, a public ConfigDescriptor redesign, incremental resolution,
 new dependencies, or changes to SQL/runtime semantics. The four concrete review
 defects are repaired separately by `fix-reviewed-runtime-regressions`.

@@ -18,7 +18,12 @@ preserving the existing public structs and all measured compatibility behavior.
    internally, rather than decoding a synthetic compressed fixture. Unknown,
    malformed and genuinely empty roles stay distinct. Keep resource naming,
    fetching and provider errors in the database crate. Prefer existing decoder
-   entry points; any necessary new public API requires a spec amendment first.
+   entry points for `.0` rights resources. Those APIs cannot validate a
+   descriptor against its expected role GUID. Add the narrowly scoped
+   `parse_role_without_rights(&Guid, &[u8]) -> Option<RoleRights>` entry point:
+   it uses the default decoded-byte limit and returns None for malformed,
+   unknown, borrowed, mismatched or rights-bearing descriptors. This preserves
+   the database loader's existing unreadable-role behavior and adds no format.
 3. Split `src/metadata/runtime_metadata.rs` projection by existing format/fact families. Parse
    and validate a family-specific internal record, then apply it to runtime facts.
    Retain ConfigDescriptor as the public compatibility input. Explicitly model
@@ -41,3 +46,38 @@ states and duplicated policy; pair extraction with narrowly scoped internal type
 Do not normalize diagnostics, broaden format heuristics or regenerate expected
 fixtures merely to make parity tests pass. Document any discovered behavior
 change in a separate validated change before implementing it.
+
+## Implementation inventory
+
+`codegen/scalar_policy.rs` owns comparison eligibility (PostgreSQL, `=`, no
+contextual CASE), classification from resolved scalar kinds, and the exact
+scalar-projection rule for Undefined. Name resolution and authorization remain
+at the original call sites. `expression.rs` renders the selected SQL policy;
+`ast::expression_children` owns shared traversal without a source-context dependency.
+Non-equality, SQL NULL, contextual CASE and MSSQL retain their existing paths.
+
+Runtime projection now has these private boundaries:
+
+| Module | Responsibility |
+| --- | --- |
+| `runtime_metadata.rs` | Object-envelope recognition and ordered dispatch |
+| `values` | Strict shapes and Absent/Malformed/Known collection recognition |
+| `attributes`, `sections` | Profile validation and application of complete checked collections |
+| `catalogs_documents` | Legacy/current families and independent typed document settings |
+| `objects` | Reports, processors, registers and reference object profiles |
+| `configuration` | Functional options, common attributes and their resolution |
+| `fill_checking` | Object and attribute fill-checking rules |
+| `named_types`, `identity` | Named-type resolution and header-only projection |
+
+`ValidatedAttributes` and `ValidatedSections` keep descriptor indices private;
+they apply only to the same slice before any reordering. Whole-collection
+validation precedes publication. Existing independently valid facts remain
+available when another setting is malformed; public None/empty semantics are
+unchanged. The public ConfigDescriptor and runtime-facts types are unchanged.
+
+Whole decoder results were frozen for 461 existing native DEFLATE fixtures
+before moving runtime code. The parity test covers original inputs, damaged
+final collections and truncated compressed streams, including field order,
+unknown/empty distinctions and diagnostics. It supplements the existing native
+XML and targeted malformed-record assertions. Existing fixtures and expected
+SQL results are not regenerated.
