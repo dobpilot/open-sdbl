@@ -126,7 +126,7 @@ pub(crate) async fn apply_access_command(
     restrictions: &mut RestrictionStore,
     output: &mut impl Write,
 ) -> Result<(), CliError> {
-    let session_parameters = &parameters.session_parameters();
+    let session_parameters = &parameters.session_parameters_for_snapshot(snapshot);
     let text = match command {
         AccessCommand::Usage(usage) => return Err(CliError::Data(usage.to_owned())),
         AccessCommand::Users => {
@@ -256,7 +256,7 @@ pub(crate) async fn apply_access_command(
             text.push_str(&derive_restrictions(
                 store,
                 snapshot,
-                &parameters.session_parameters(),
+                &parameters.session_parameters_for_snapshot(snapshot),
                 restrictions,
             ));
             text

@@ -197,7 +197,7 @@ fn typed_snapshot(mode: SeparatedDataUse, tag: &str) -> MetadataSnapshot {
     .snapshot
 }
 #[test]
-fn conditional_string_empty_and_unsupported_empty_types() {
+fn conditional_string_date_and_unsupported_empty_types() {
     for mode in [
         SeparatedDataUse::Independent,
         SeparatedDataUse::IndependentAndShared,
@@ -208,14 +208,23 @@ fn conditional_string_empty_and_unsupported_empty_types() {
             let snapshot = typed_snapshot(mode, tag);
             let options = CompileOptions::new().session(&session);
             let source = "ВЫБРАТЬ Ссылка ИЗ Справочник.Товары";
-            for result in [
+            for (backend, result) in [
                 QueryCompiler::new(&snapshot, PostgresBackend).compile_with(source, &options),
                 QueryCompiler::new(&snapshot, MsSqlBackend::new(2000).unwrap())
                     .compile_with(source, &options),
-            ] {
+            ]
+            .into_iter()
+            .enumerate()
+            {
                 if tag == "S" {
                     let sql = result.unwrap().sql;
                     assert!(sql.contains(" = ''") || sql.contains(" = N''"), "{sql}");
+                } else if tag == "T" {
+                    let sql = result.unwrap().sql;
+                    assert!(sql.contains("0001-01-01"), "{sql}");
+                    if backend == 1 {
+                        assert!(sql.contains("DATEADD(year, 2000"), "{sql}");
+                    }
                 } else {
                     assert!(
                         result

@@ -24,11 +24,8 @@ use error::CliError;
 use open_sdbl_db::Credentials;
 use output::write_top_level_error;
 
-/// The hex decoder the library tests use, shared so that a fixture written
-/// as hex reads the same way on both sides.
 #[cfg(test)]
-#[path = "../../../tests/support/hex.rs"]
-mod hex_test_support;
+use separator_test_support as hex_test_support;
 
 /// The metadata snapshot the parameter tests resolve.
 #[cfg(test)]
@@ -68,3 +65,7 @@ async fn async_main(credentials: Credentials) -> ExitCode {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "../../../tests/support/mod.rs"]
+mod separator_test_support;

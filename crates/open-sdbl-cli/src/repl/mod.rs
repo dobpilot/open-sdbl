@@ -303,6 +303,34 @@ fn console_prompt(user: Option<&str>, first_line: bool) -> String {
     }
 }
 
+fn format_query_diagnostic(
+    error: &open_sdbl::query::QueryDiagnostic,
+    snapshot: &MetadataSnapshot,
+) -> String {
+    let text = error.to_string();
+    let name = error.missing_separation_condition().and_then(|guid| {
+        snapshot
+            .objects()
+            .iter()
+            .find(|object| &object.guid == guid)
+            .and_then(|object| object.name.as_deref())
+            .filter(|name| !name.is_empty())
+            .or_else(|| {
+                snapshot
+                    .descriptors()
+                    .iter()
+                    .find(|descriptor| {
+                        &descriptor.object_guid == guid && !descriptor.name.is_empty()
+                    })
+                    .map(|descriptor| descriptor.name.as_str())
+            })
+    });
+    match name {
+        Some(name) => escape_field(&format!("{text} (constant: {name})")),
+        None => escape_field(&text),
+    }
+}
+
 pub(super) async fn run(
     session: &mut DatabaseSession,
     mut snapshot: MetadataSnapshot,
@@ -419,7 +447,7 @@ pub(super) async fn run(
                             let report = derive_restrictions(
                                 &access,
                                 &snapshot,
-                                &session_parameters.session_parameters(),
+                                &session_parameters.session_parameters_for_snapshot(&snapshot),
                                 &mut restrictions,
                             );
                             output
@@ -520,7 +548,7 @@ pub(super) async fn run(
                     prepared.presentation_request(),
                 );
                 let values = parameters.values_for(&statement);
-                let session = session_parameters.session_parameters();
+                let session = session_parameters.session_parameters_for_snapshot(&snapshot);
                 let mut applied = restrictions.for_request(prepared.restriction_request());
                 match user_restrictions(
                     &access,
@@ -691,7 +719,7 @@ pub(super) async fn run(
                 }
             }
             Err(error) => {
-                let error = escape_field(&error.to_string());
+                let error = format_query_diagnostic(&error, &snapshot);
                 eprintln!(
                     "error: {error} (SQL generation: {})",
                     format_duration(generation_elapsed)

@@ -89,6 +89,25 @@ impl ParameterStore {
         session
     }
 
+    /// Console and gateway both default conditional separators to the shared area.
+    pub(crate) fn session_parameters_for_snapshot(
+        &self,
+        snapshot: &MetadataSnapshot,
+    ) -> SessionParameters {
+        let mut session = self.session_parameters();
+        for field in snapshot.separators() {
+            if let Some(constant) = field
+                .separation
+                .as_ref()
+                .and_then(|settings| settings.conditional_separation.as_ref())
+                && session.separation_condition(constant).is_none()
+            {
+                session.set_separation_condition(constant.clone(), false);
+            }
+        }
+        session
+    }
+
     /// Stored names, for completion after `&`.
     pub(crate) fn names(&self) -> Vec<String> {
         self.items.iter().map(|item| item.name.clone()).collect()

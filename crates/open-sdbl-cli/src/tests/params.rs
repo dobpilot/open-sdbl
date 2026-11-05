@@ -361,3 +361,50 @@ fn stores_session_parameters_for_every_query() {
         "No session parameters set.\n"
     );
 }
+
+#[test]
+fn console_defaults_follow_current_conditional_separator_snapshot() {
+    use crate::separator_test_support::{guid, separators_resolved_at, with_descriptors};
+    use open_sdbl::query::{CompileOptions, MsSqlBackend, PostgresBackend, QueryCompiler};
+    let condition = guid("cc906f05-5ea6-43cb-a084-c4ee51ca4bd5");
+    let root =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/fixtures/separators");
+    let base = separators_resolved_at(&root).snapshot;
+    let snapshot = with_descriptors(base.clone(), |descriptors| {
+        for descriptor in descriptors {
+            if let Some(settings) = &mut descriptor.separation {
+                settings.conditional_separation = Some(condition.clone());
+            }
+        }
+    });
+    let params = ParameterStore::new();
+    assert!(
+        params
+            .session_parameters()
+            .separation_condition(&condition)
+            .is_none()
+    );
+    let active = params.session_parameters_for_snapshot(&snapshot);
+    assert_eq!(active.separation_condition(&condition), Some(false));
+    let source = "ВЫБРАТЬ Ссылка ИЗ Справочник.Товары";
+    assert!(
+        QueryCompiler::new(&snapshot, PostgresBackend)
+            .compile(source)
+            .is_err()
+    );
+    let options = CompileOptions::new().session(&active);
+    for query in [
+        QueryCompiler::new(&snapshot, PostgresBackend).compile_with(source, &options),
+        QueryCompiler::new(&snapshot, MsSqlBackend::new(2000).unwrap())
+            .compile_with(source, &options),
+    ] {
+        assert!(query.unwrap().sql.contains(" = 0"));
+    }
+    // Rebuilding from refreshed metadata never retains the old condition.
+    assert_eq!(
+        params
+            .session_parameters_for_snapshot(&base)
+            .separation_condition(&condition),
+        None
+    );
+}

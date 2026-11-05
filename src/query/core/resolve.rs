@@ -642,12 +642,14 @@ fn resolve_statement_separators(
             } else if let Some(id) = condition.filter(|_| condition_value.is_none()) {
                 SeparatorState::MissingCondition(id.clone())
             } else if condition_value == Some(false) {
-                // Нативные String/Number контроли обоих режимов выбирают пустую
-                // область. Остальные типы условного разделения не измерены.
+                // Для String/Number измерена пустая область; Date поддерживает
+                // явно запрошенную пустую дату, остальные типы отклоняются.
                 match separator_empty_value(snapshot, field.number) {
-                    Some(value @ (ParameterValue::String(_) | ParameterValue::Number { .. })) => {
-                        SeparatorState::Value(value)
-                    }
+                    Some(
+                        value @ (ParameterValue::String(_)
+                        | ParameterValue::Number { .. }
+                        | ParameterValue::Date(_)),
+                    ) => SeparatorState::Value(value),
                     _ => SeparatorState::UnsupportedConditionEmpty,
                 }
             } else if let Some(parameter) = use_parameter.filter(|_| use_value.is_none()) {
