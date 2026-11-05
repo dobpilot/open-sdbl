@@ -16,6 +16,7 @@ mod output;
 mod params;
 mod progress;
 mod repl;
+mod serve;
 
 use auth::pgpass::take_credentials_from_environment;
 use error::CliError;

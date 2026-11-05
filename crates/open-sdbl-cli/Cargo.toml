@@ -1,6 +1,6 @@
 [package]
 name = "open-sdbl-cli"
-version = "0.9.44"
+version = "0.11.0"
 edition = "2024"
 rust-version = "1.85"
 description = "Command-line applications for open-sdbl"
@@ -16,9 +16,12 @@ doc = false
 [dependencies]
 open-sdbl = { path = "../.." }
 open-sdbl-db = { path = "../open-sdbl-db" }
+open-sdbl-pgwire = { path = "../open-sdbl-pgwire" }
+rustls = { version = "0.23.46", default-features = false, features = ["ring", "std", "tls12"] }
 rustyline = { version = "18.0.1", default-features = false }
 tokio = { version = "1.53.1", features = ["io-std", "io-util", "macros", "net", "rt-multi-thread", "signal", "sync", "time"] }
 unicode-width = "0.2.2"
+toml = "0.8"
 zeroize = "1.9.0"
 
 [target.'cfg(unix)'.dependencies]

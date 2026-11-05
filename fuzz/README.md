@@ -27,3 +27,12 @@ test — never an unbounded campaign:
 cargo check --manifest-path fuzz/Cargo.toml --all-targets
 cargo test --manifest-path fuzz/Cargo.toml
 ```
+
+Catalog SQL is covered by `pgwire_catalog_sql` (feature `fuzzing` on the
+gateway). Seed it with statements from the recorded psql corpus; it runs
+routing, parsing, description and evaluation on an in-memory catalog with
+a reduced work budget and performs no I/O:
+
+```console
+cargo fuzz run pgwire_catalog_sql
+```

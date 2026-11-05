@@ -25,8 +25,20 @@ enum LookupSlot<T> {
     Ambiguous,
 }
 
+/// Query-independent lookup data, finalized once and shared by snapshot clones.
+#[derive(Debug, Default)]
+struct QueryFieldIndex {
+    by_table_number: HashMap<(String, u32), usize>,
+    own_descriptors: HashMap<ObjectId, usize>,
+    attribute_descriptors: HashMap<AttributeId, Vec<usize>>,
+    extension_by_number: HashMap<u32, usize>,
+    separators: Vec<usize>,
+    separator_storage: HashMap<u32, Option<String>>,
+}
+
 #[derive(Debug, Clone, Default)]
 struct MetadataIndex {
+    query_fields: Arc<QueryFieldIndex>,
     objects_by_id: HashMap<ObjectId, usize>,
     objects_by_name: HashMap<(MetadataKind, String), LookupSlot<usize>>,
     objects_by_database_type: HashMap<u32, LookupSlot<ObjectId>>,
@@ -818,10 +830,62 @@ impl MetadataSnapshot {
 
     /// Returns the data-separator fields in deterministic source order.
     pub fn separators(&self) -> impl Iterator<Item = &MetadataField> {
-        self.facts
-            .fields
+        self.index
+            .query_fields
+            .separators
             .iter()
-            .filter(|field| field.data_separator)
+            .map(|position| &self.facts.fields[*position])
+    }
+
+    /// The first descriptor whose resource and object identities both equal
+    /// `object`, in source order. This lookup is indexed at finalization.
+    #[must_use]
+    pub fn owner_descriptor(&self, object: ObjectId) -> Option<&ConfigDescriptor> {
+        self.index
+            .query_fields
+            .own_descriptors
+            .get(&object)
+            .map(|position| &self.facts.descriptors[*position])
+    }
+
+    /// Every loaded descriptor of `attribute`, in source order, including
+    /// duplicates. Callers retain responsibility for checking resource ownership
+    /// and whether the declaration is supported; no evidence is discarded.
+    pub fn attribute_descriptors(
+        &self,
+        attribute: AttributeId,
+    ) -> impl Iterator<Item = &ConfigDescriptor> {
+        self.index
+            .query_fields
+            .attribute_descriptors
+            .get(&attribute)
+            .into_iter()
+            .flatten()
+            .map(|position| &self.facts.descriptors[*position])
+    }
+
+    pub(crate) fn query_field(&self, table: &str, number: u32) -> Option<&MetadataField> {
+        self.index
+            .query_fields
+            .by_table_number
+            .get(&(folded_name(table), number))
+            .map(|position| &self.facts.fields[*position])
+    }
+
+    pub(crate) fn query_extension_field(&self, number: u32) -> Option<&MetadataField> {
+        self.index
+            .query_fields
+            .extension_by_number
+            .get(&number)
+            .map(|position| &self.facts.fields[*position])
+    }
+
+    pub(crate) fn separator_storage_type(&self, number: u32) -> Option<&str> {
+        self.index
+            .query_fields
+            .separator_storage
+            .get(&number)
+            .and_then(Option::as_deref)
     }
 
     /// Returns resolved predefined values in deterministic source order.
@@ -1725,6 +1789,7 @@ fn finalize_runtime_facts(mut facts: RuntimeMetadataFacts) -> ResolvedMetadata {
         objects,
         fields,
         values,
+        descriptors,
         schema,
         live_tables,
         &live_table_by_name,
@@ -2084,6 +2149,7 @@ fn build_metadata_index(
     objects: &[MetadataObject],
     fields: &[MetadataField],
     values: &[MetadataValue],
+    descriptors: &[ConfigDescriptor],
     schema: &SchemaStorage,
     live_tables: &[LiveTable],
     live_table_by_name: &HashMap<String, usize>,
@@ -2110,7 +2176,36 @@ fn build_metadata_index(
             .entry(table.name.to_ascii_lowercase())
             .or_insert(position);
     }
-    for field in fields {
+    let mut query_fields = QueryFieldIndex::default();
+    for (position, descriptor) in descriptors.iter().enumerate() {
+        if descriptor.object_guid == descriptor.resource_guid {
+            query_fields
+                .own_descriptors
+                .entry(ObjectId::from(&descriptor.object_guid))
+                .or_insert(position);
+        }
+        query_fields
+            .attribute_descriptors
+            .entry(AttributeId::from(&descriptor.object_guid))
+            .or_default()
+            .push(position);
+    }
+    for (position, field) in fields.iter().enumerate() {
+        for owner in &field.owner_tables {
+            query_fields
+                .by_table_number
+                .entry((folded_name(owner), field.number))
+                .or_insert(position);
+        }
+        if field.data_separator {
+            query_fields.separators.push(position);
+        }
+        if field.extension_origin.is_some() {
+            query_fields
+                .extension_by_number
+                .entry(field.number)
+                .or_insert(position);
+        }
         if field.extension_origin.is_none() {
             continue;
         }
@@ -2129,6 +2224,24 @@ fn build_metadata_index(
                 .or_insert_with(|| target.to_owned());
         }
     }
+    let separator_numbers = query_fields
+        .separators
+        .iter()
+        .map(|position| fields[*position].number)
+        .collect::<HashSet<_>>();
+    for column in schema.tables.iter().flat_map(|table| &table.columns) {
+        let name = column.name.to_ascii_lowercase();
+        if let Some(number) = name.strip_prefix("fld").and_then(|n| n.parse::<u32>().ok())
+            && separator_numbers.contains(&number)
+            && name == format!("fld{number}")
+        {
+            query_fields
+                .separator_storage
+                .entry(number)
+                .or_insert_with(|| column.types.first().map(|kind| kind.tag.clone()));
+        }
+    }
+    index.query_fields = Arc::new(query_fields);
     let mut owners_by_table = HashMap::<String, ObjectId>::new();
     for (position, object) in objects.iter().enumerate() {
         let id = ObjectId::from(&object.guid);

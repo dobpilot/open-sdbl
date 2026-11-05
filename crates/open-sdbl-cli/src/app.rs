@@ -1,4 +1,4 @@
-//! The commands the CLI offers: `lex`, `metadata` and `console`.
+//! The commands the CLI offers: `lex`, `metadata`, `console` and `serve`.
 //!
 //! Choosing a command and carrying it out is one responsibility; the
 //! binary root only starts the runtime and reports the exit status.
@@ -42,6 +42,7 @@ pub(crate) async fn run(
         "lex" => run_lex(arguments, output),
         "metadata" => metadata(arguments, output, credentials).await,
         "console" | "repl" => console(arguments, output, credentials).await,
+        "serve" => crate::serve::serve(arguments, output, credentials).await,
         unknown => Err(CliError::Usage(format!(
             "unknown command {unknown:?}\n\n{HELP}"
         ))),

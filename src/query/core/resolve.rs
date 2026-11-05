@@ -1,6 +1,6 @@
 //! Metadata lookup and queryable-field projection.
 
-use std::cell::{Cell, OnceCell, RefCell};
+use std::cell::{Cell, RefCell};
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::sync::Arc;
 
@@ -489,15 +489,7 @@ pub(super) fn declared_reference_tables(
         return Vec::new();
     };
     snapshot
-        .fields()
-        .iter()
-        .find(|field| {
-            field.number == number
-                && field
-                    .owner_tables
-                    .iter()
-                    .any(|owner| names_equal(owner, physical_table))
-        })
+        .query_field(physical_table, number)
         .map(|field| field.declared_reference_tables.clone())
         .unwrap_or_default()
 }
@@ -509,23 +501,8 @@ pub(super) fn custom_field_name(
 ) -> Option<String> {
     let number = schema_name.strip_prefix("Fld")?.parse::<u32>().ok()?;
     snapshot
-        .fields()
-        .iter()
-        .find(|field| {
-            field.number == number
-                && field
-                    .owner_tables
-                    .iter()
-                    .any(|owner| names_equal(owner, physical_table))
-        })
-        .or_else(|| {
-            // Extension attributes are addressed by their globally unique
-            // field number rather than a base-declared owner table.
-            snapshot
-                .fields()
-                .iter()
-                .find(|field| field.number == number && field.extension_origin.is_some())
-        })?
+        .query_field(physical_table, number)
+        .or_else(|| snapshot.query_extension_field(number))?
         .name
         .clone()
 }
@@ -545,52 +522,17 @@ fn accounting_side(schema_name: &str) -> Option<(&str, &'static str, &'static st
     base.starts_with("Fld").then_some((base, russian, english))
 }
 
-pub(super) fn indexed_custom_field_name(
-    names: &CustomFieldNameIndex,
-    physical_table: &str,
-    schema_name: &str,
-) -> Option<String> {
-    indexed_custom_field(names, physical_table, schema_name)?.0
-}
-
-/// The name and the metadata identity of the custom field a `Fld<N>`
-/// column belongs to.
-fn indexed_custom_field(
-    names: &CustomFieldNameIndex,
-    physical_table: &str,
-    schema_name: &str,
-) -> Option<(Option<String>, AttributeId)> {
-    let number = schema_name.strip_prefix("Fld")?.parse::<u32>().ok()?;
-    names
-        .get(&(folded_name(physical_table), number))
-        .or_else(|| names.get(&(String::new(), number)))
-        .cloned()
-}
-
 /// The metadata identity of the custom field a `Fld<N>` column belongs
-/// to, found by scanning the snapshot.
-fn scanned_custom_field_id(
+/// to, using the snapshot's finalized lookup index.
+fn custom_field_id(
     snapshot: &MetadataSnapshot,
     physical_table: &str,
     schema_name: &str,
 ) -> Option<AttributeId> {
     let number = schema_name.strip_prefix("Fld")?.parse::<u32>().ok()?;
     snapshot
-        .fields()
-        .iter()
-        .find(|field| {
-            field.number == number
-                && field
-                    .owner_tables
-                    .iter()
-                    .any(|owner| names_equal(owner, physical_table))
-        })
-        .or_else(|| {
-            snapshot
-                .fields()
-                .iter()
-                .find(|field| field.number == number && field.extension_origin.is_some())
-        })
+        .query_field(physical_table, number)
+        .or_else(|| snapshot.query_extension_field(number))
         .map(|field| AttributeId::from(&field.guid))
 }
 
@@ -742,15 +684,7 @@ fn resolve_statement_separators(
 /// The empty value of a separator's storage kind, from the first
 /// SchemaStorage declaration of its column.
 fn separator_empty_value(snapshot: &MetadataSnapshot, number: u32) -> Option<ParameterValue> {
-    let logical = format!("Fld{number}");
-    let tag = snapshot
-        .schema()
-        .tables
-        .iter()
-        .flat_map(|table| table.columns.iter())
-        .find(|column| names_equal(&column.name, &logical))
-        .and_then(|column| column.types.first())
-        .map(|kind| kind.tag.as_str())?;
+    let tag = snapshot.separator_storage_type(number)?;
     match tag {
         "N" => Some(ParameterValue::Number {
             unscaled: 0,
@@ -772,7 +706,6 @@ fn separator_empty_value(snapshot: &MetadataSnapshot, number: u32) -> Option<Par
 /// the resolver without scanning every object to detect such duplicates.
 pub(super) struct CompilationCatalog<'snapshot> {
     snapshot: &'snapshot MetadataSnapshot,
-    custom_names: OnceCell<CustomFieldNameIndex>,
     fields: RefCell<HashMap<String, Arc<[QueryableField]>>>,
     work: Cell<usize>,
     /// Named parameter values of this compilation.
@@ -877,7 +810,6 @@ impl<'snapshot> CompilationCatalog<'snapshot> {
     ) -> Self {
         Self {
             snapshot,
-            custom_names: OnceCell::new(),
             fields: RefCell::new(HashMap::new()),
             work: Cell::new(0),
             parameters,
@@ -1170,15 +1102,11 @@ impl<'snapshot> CompilationCatalog<'snapshot> {
             self.snapshot.schema_table(physical_table),
         );
         self.charge(merged_live.columns.len().max(1), token)?;
-        let custom_names = self
-            .custom_names
-            .get_or_init(|| index_custom_field_names(self.snapshot));
         let fields: Arc<[QueryableField]> = project_queryable_fields(
             self.snapshot,
             physical_table,
             &merged_live,
             merged_schema.as_ref(),
-            &CustomFieldNames::Indexed(custom_names),
         )
         .into();
         self.fields.borrow_mut().insert(key, Arc::clone(&fields));
@@ -1197,17 +1125,8 @@ impl<'snapshot> CompilationCatalog<'snapshot> {
             return Ok(Arc::clone(fields));
         }
         self.charge(table.columns.len().max(1), token)?;
-        let custom_names = self
-            .custom_names
-            .get_or_init(|| index_custom_field_names(self.snapshot));
-        let fields: Arc<[QueryableField]> = project_queryable_fields(
-            self.snapshot,
-            physical_table,
-            table,
-            schema_table,
-            &CustomFieldNames::Indexed(custom_names),
-        )
-        .into();
+        let fields: Arc<[QueryableField]> =
+            project_queryable_fields(self.snapshot, physical_table, table, schema_table).into();
         self.fields.borrow_mut().insert(key, Arc::clone(&fields));
         Ok(fields)
     }
@@ -1473,6 +1392,23 @@ pub(super) fn find_metadata_object_at<'snapshot>(
         (None, name)
     };
 
+    // Catalog enumeration prepares one qualified statement per object.
+    // The immutable snapshot already indexes this exact lookup. Preserve
+    // the scan for missing/ambiguous entries and unqualified physical names,
+    // whose historical eligibility rules are broader than object_id's.
+    if let Some(kind) = kind
+        && let Ok(id) = snapshot.object_id(kind, object_name)
+        && let Some(object) = snapshot.object_by_id(id)
+        && object.kind == Some(kind)
+        && object
+            .name
+            .as_deref()
+            .is_some_and(|name| names_equal(name, object_name))
+        && object.physical_table.is_some()
+    {
+        return Ok(object);
+    }
+
     let matches: Vec<&MetadataObject> = snapshot
         .objects()
         .iter()
@@ -1619,7 +1555,6 @@ pub fn queryable_fields(
         physical_table,
         &merged_live,
         merged_schema.as_ref(),
-        &CustomFieldNames::Scan(snapshot),
     ))
 }
 
@@ -2228,7 +2163,12 @@ pub(super) fn normalize_table_part_standard_fields(
         let Some(standard) = standard else {
             continue;
         };
-        let old_name = std::mem::replace(&mut field.name, standard.to_owned());
+        let display_name = if standard == "ID" {
+            "Ссылка"
+        } else {
+            standard
+        };
+        let old_name = std::mem::replace(&mut field.name, display_name.to_owned());
         let old_schema = std::mem::replace(&mut field.schema_name, standard.to_owned());
         // The section's owner reference and line number are the standard
         // fields they were renamed to, whatever they are stored as.
@@ -2243,9 +2183,9 @@ pub(super) fn normalize_table_part_standard_fields(
         let compound = field.columns.len() > 1;
         for column in &mut field.columns {
             column.output_label = if compound {
-                compound_label(standard, standard, &column.physical_name)
+                compound_label(display_name, standard, &column.physical_name)
             } else {
-                standard.to_owned()
+                display_name.to_owned()
             };
         }
     }
@@ -2260,7 +2200,6 @@ pub(super) fn normalize_table_part_standard_fields(
 /// deliberately collapsed by [`HashMap::entry`].
 #[must_use]
 pub fn queryable_field_catalog(snapshot: &MetadataSnapshot) -> QueryableFieldCatalog {
-    let custom_names = index_custom_field_names(snapshot);
     let mut live_tables = HashMap::with_capacity(snapshot.live_tables().len());
     for table in snapshot.live_tables() {
         live_tables.entry(folded_name(&table.name)).or_insert(table);
@@ -2288,43 +2227,10 @@ pub fn queryable_field_catalog(snapshot: &MetadataSnapshot) -> QueryableFieldCat
         catalog
             .entry(ObjectId::from(&object.guid))
             .or_insert_with(|| {
-                project_queryable_fields(
-                    snapshot,
-                    physical_table,
-                    table,
-                    schema_table,
-                    &CustomFieldNames::Indexed(&custom_names),
-                )
+                project_queryable_fields(snapshot, physical_table, table, schema_table)
             });
     }
     catalog
-}
-
-pub(super) type CustomFieldNameIndex = HashMap<(String, u32), (Option<String>, AttributeId)>;
-
-enum CustomFieldNames<'snapshot> {
-    Scan(&'snapshot MetadataSnapshot),
-    Indexed(&'snapshot CustomFieldNameIndex),
-}
-
-fn index_custom_field_names(snapshot: &MetadataSnapshot) -> CustomFieldNameIndex {
-    let mut names = HashMap::new();
-    for field in snapshot.fields() {
-        for owner in &field.owner_tables {
-            names
-                .entry((folded_name(owner), field.number))
-                .or_insert_with(|| (field.name.clone(), AttributeId::from(&field.guid)));
-        }
-        // Extension attributes are addressed by their globally unique field
-        // number: the physical `…x1` column that carries them belongs to the
-        // extended object, not to a base-declared owner table.
-        if field.extension_origin.is_some() {
-            names
-                .entry((String::new(), field.number))
-                .or_insert_with(|| (field.name.clone(), AttributeId::from(&field.guid)));
-        }
-    }
-    names
 }
 
 fn project_queryable_fields(
@@ -2332,7 +2238,6 @@ fn project_queryable_fields(
     physical_table: &str,
     table: &LiveTable,
     schema_table: Option<&crate::metadata::SchemaTable>,
-    custom_names: &CustomFieldNames<'_>,
 ) -> Vec<QueryableField> {
     let mut schema_columns = BTreeMap::new();
     if let Some(table) = schema_table {
@@ -2384,14 +2289,7 @@ fn project_queryable_fields(
             // side: `Fld414Dt` is `ВалютаДт`, `Fld414Ct` is `ВалютаКт`.
             let side = accounting_side(&schema_name);
             let base_schema_name = side.map_or(schema_name.as_str(), |(base, _, _)| base);
-            let custom_name = match custom_names {
-                CustomFieldNames::Scan(snapshot) => {
-                    custom_field_name(snapshot, physical_table, base_schema_name)
-                }
-                CustomFieldNames::Indexed(names) => {
-                    indexed_custom_field_name(names, physical_table, base_schema_name)
-                }
-            };
+            let custom_name = custom_field_name(snapshot,physical_table,base_schema_name);
             let (custom_name, side_alias) = match (custom_name, side) {
                 (Some(base), Some((_, russian, english))) => (
                     Some(format!("{base}{russian}")),
@@ -2399,7 +2297,9 @@ fn project_queryable_fields(
                 ),
                 (custom_name, _) => (custom_name, None),
             };
-            let name = custom_name.unwrap_or_else(|| query_schema_name.clone());
+            let name = custom_name.unwrap_or_else(|| {
+                if query_schema_name == "ID" { "Ссылка".to_owned() } else { query_schema_name.clone() }
+            });
             let mut aliases = standard_field_aliases(&query_schema_name)
                 .iter()
                 .map(|alias| (*alias).to_owned())
@@ -2413,14 +2313,7 @@ fn project_queryable_fields(
             // The identity comes from the field that was projected, not
             // from a later lookup by name: a name two fields answer to
             // must not attach the wrong origin to a column.
-            let field = match custom_names {
-                CustomFieldNames::Scan(snapshot) => {
-                    scanned_custom_field_id(snapshot, physical_table, &schema_name)
-                }
-                CustomFieldNames::Indexed(names) => {
-                    indexed_custom_field(names, physical_table, &schema_name).map(|(_, id)| id)
-                }
-            }
+            let field = custom_field_id(snapshot,physical_table,&schema_name)
             .map(FieldId::Metadata)
             .or_else(|| StandardFieldId::from_name(&schema_name).map(FieldId::Standard));
             let compound = columns.len() > 1;

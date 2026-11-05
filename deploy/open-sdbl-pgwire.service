@@ -1,0 +1,19 @@
+[Unit]
+Description=Open SDBL PostgreSQL wire gateway
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User=open-sdbl
+Group=open-sdbl
+ExecStart=/usr/local/bin/open-sdbl serve --config /etc/open-sdbl/pgwire.toml
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+
+[Install]
+WantedBy=multi-user.target

@@ -36,6 +36,11 @@ mod tests;
 mod metadata_right_cache_tests;
 
 /// The users of a base, the rights of its roles, and the current user.
+///
+/// A clone shares nothing with the original: a server that read every
+/// role once can hand each client connection its own copy and choose
+/// that connection's user on it.
+#[derive(Clone)]
 pub struct AccessStore {
     catalog: RoleCatalog,
     users: Option<Vec<InfoBaseUser>>,
@@ -233,8 +238,8 @@ impl AccessStore {
 ///
 /// Без измеренного сопоставления стандартное поле отклоняется, а собственный
 /// реквизит требует точного GUID и явного разрешения `Read` реквизита в роли,
-/// разрешающей `Read` владельца. Неизвестные пути и поля табличных частей
-/// отклоняются. Это граница доказательства, а не полная совместимость прав 1С.
+/// разрешающей `Read` владельца. Неизвестные пути отклоняются.
+/// Это граница доказательства, а не полная совместимость прав 1С.
 ///
 /// Значение константы проверяется по `Read` самой константы: его GUID
 /// совпадает с GUID владельца, а отдельного права реквизита у него нет.
@@ -247,6 +252,8 @@ impl AccessStore {
 /// Измеренные поля независимого регистра сведений и ссылка/собственные
 /// реквизиты документа читаются через `Read` владельца при проверенных
 /// коллекциях и настройках. Неизмеренные стандартные поля не разрешаются.
+/// Поля подтверждённой табличной части проверяются по её собственному составу
+/// реквизитов и `Read` владельца с сохранением явных отказов части и поля.
 ///
 /// # Errors
 ///
@@ -281,6 +288,16 @@ pub fn check_user_field_access(
                 used.object
             ))
         })?;
+        let section = used
+            .table_part
+            .as_deref()
+            .map(|name| {
+                verified_section(snapshot, object, name).ok_or_else(|| DbError::Data(format!(
+                "field access: tabular-section {:?} of {} has no proven member-right mapping",
+                name, used.object
+            )))
+            })
+            .transpose()?;
         let field = match used.field {
             FieldId::Metadata(id) => {
                 let attribute = snapshot.attribute_by_id(id).map_err(|error| {
@@ -291,16 +308,50 @@ pub fn check_user_field_access(
                 let name = attribute.name.as_deref().ok_or_else(|| {
                     DbError::Data(format!("field access: attribute {id} has no metadata name"))
                 })?;
-                if snapshot.field_id(used.object, name).ok() != Some(used.field) {
+                let belongs = if let Some(section) = section {
+                    section
+                        .tabular_section_attributes
+                        .as_ref()
+                        .is_some_and(|fields| {
+                            fields.iter().any(|guid| guid.to_bytes() == id.as_bytes())
+                        })
+                        && {
+                            let mut declarations = snapshot.attribute_descriptors(id);
+                            let first = declarations.next();
+                            declarations.next().is_none()
+                                && first.is_some_and(|d| {
+                                    d.resource_guid == object.guid
+                                        && d.declared_types
+                                            .as_ref()
+                                            .is_some_and(|types| !types.is_empty())
+                                })
+                        }
+                } else {
+                    snapshot.field_id(used.object, name).ok() == Some(used.field)
+                };
+                if !belongs {
+                    let location = section.map_or_else(
+                        || format!("object {}", used.object),
+                        |section| {
+                            format!(
+                                "tabular-section {:?} of object {}",
+                                section.name, used.object
+                            )
+                        },
+                    );
                     return Err(DbError::Data(format!(
-                        "field access: attribute {id} does not belong to object {}",
-                        used.object
+                        "field access: attribute {id} does not belong to {location}"
                     )));
                 }
                 Some(id.as_bytes())
             }
             FieldId::Standard(standard) => {
-                if snapshot.field_id(used.object, standard.schema_name()).ok() != Some(used.field) {
+                let row_number =
+                    section.is_some() && standard == open_sdbl::metadata::StandardFieldId::LineNo;
+                if !row_number
+                    && snapshot.field_id(used.object, standard.schema_name()).ok()
+                        != Some(used.field)
+                {
                     return Err(DbError::Data(format!(
                         "field access: standard field {standard:?} does not belong to object {}",
                         used.object
@@ -309,31 +360,70 @@ pub fn check_user_field_access(
                 None
             }
         };
-        if used.table_part.is_some() {
-            return Err(DbError::Data(format!(
-                "field access: tabular-section field {:?} of {} has no proven member-right mapping",
-                used.field, used.object
-            )));
-        }
-        let native_programmatic_read = match object.kind {
-            Some(MetadataKind::Catalog) => {
-                verified_catalog_field(snapshot, &object.guid, used.field)
+        let native_programmatic_read = if let Some(section) = section {
+            use open_sdbl::metadata::StandardFieldId;
+            let owner_reference = FieldId::Standard(StandardFieldId::Id);
+            let owner_known = match object.kind {
+                Some(MetadataKind::Document) => {
+                    verified_document_field(snapshot, &object.guid, owner_reference)
+                }
+                Some(MetadataKind::Catalog) => {
+                    verified_catalog_field(snapshot, &object.guid, owner_reference)
+                }
+                _ => false,
+            };
+            owner_known
+                && match used.field {
+                    FieldId::Standard(StandardFieldId::Id | StandardFieldId::LineNo) => true,
+                    FieldId::Metadata(_) => section.tabular_section_attributes.is_some(),
+                    _ => false,
+                }
+        } else {
+            match object.kind {
+                Some(MetadataKind::Catalog) => {
+                    verified_catalog_field(snapshot, &object.guid, used.field)
+                }
+                Some(MetadataKind::AccumulationRegister) => {
+                    verified_accumulation_field(snapshot, &object.guid, used.field)
+                }
+                Some(MetadataKind::InformationRegister) => {
+                    verified_information_register_field(snapshot, &object.guid, used.field)
+                }
+                Some(MetadataKind::Document) => {
+                    verified_document_field(snapshot, &object.guid, used.field)
+                }
+                _ => false,
             }
-            Some(MetadataKind::AccumulationRegister) => {
-                verified_accumulation_field(snapshot, &object.guid, used.field)
-            }
-            Some(MetadataKind::InformationRegister) => {
-                verified_information_register_field(snapshot, &object.guid, used.field)
-            }
-            Some(MetadataKind::Document) => {
-                verified_document_field(snapshot, &object.guid, used.field)
-            }
-            _ => false,
         };
         let mut uncertain = false;
         let mut allowed = false;
         for role in &roles {
             if !role.grants(&object.guid, &Right::Read) {
+                continue;
+            }
+            if let Some(section) = section {
+                let section_read =
+                    section_child_read(role, &object.guid, &section.object_guid, None);
+                let field_read = match used.field {
+                    FieldId::Metadata(id) => section_child_read(
+                        role,
+                        &object.guid,
+                        &snapshot
+                            .attribute_by_id(id)
+                            .expect("field ownership was checked")
+                            .guid,
+                        Some(&section.object_guid),
+                    ),
+                    _ => Ok(true),
+                };
+                match (section_read, field_read) {
+                    (Ok(true), Ok(true)) if native_programmatic_read => {
+                        allowed = true;
+                        break;
+                    }
+                    (Err(()), _) | (_, Err(())) => uncertain = true,
+                    _ => {}
+                }
                 continue;
             }
             match field.as_ref() {
@@ -404,16 +494,95 @@ pub fn check_user_field_access(
     Ok(())
 }
 
+/// Prove the section identity before resolving fields within its own collection.
+fn verified_section<'a>(
+    snapshot: &'a MetadataSnapshot,
+    object: &open_sdbl::metadata::MetadataObject,
+    name: &str,
+) -> Option<&'a open_sdbl::metadata::ConfigDescriptor> {
+    let owner = snapshot.owner_descriptor(ObjectId::from(&object.guid))?;
+    let sections = match object.kind {
+        Some(MetadataKind::Document) => owner.document_tabular_sections.as_ref()?,
+        Some(MetadataKind::Catalog) => owner.catalog_tabular_sections.as_ref()?,
+        _ => return None,
+    };
+    let name = name.to_lowercase();
+    let mut matches = sections
+        .iter()
+        .flat_map(|id| snapshot.attribute_descriptors(open_sdbl::metadata::AttributeId::from(id)))
+        .filter(|descriptor| {
+            descriptor.resource_guid == object.guid && descriptor.name.to_lowercase() == name
+        });
+    let section = matches.next()?;
+    if matches.next().is_some() {
+        return None;
+    }
+    let mut mappings = snapshot
+        .db_names()
+        .entries()
+        .iter()
+        .filter(|entry| entry.guid == section.object_guid && entry.alias == "VT");
+    let mapping = mappings.next()?;
+    if mappings.any(|entry| entry.number != mapping.number) {
+        return None;
+    }
+    Some(section)
+}
+
+/// Read overrides on a section or one of its attributes. A missing child Read
+/// entry retains the verified programmatic owner mapping; UI rights do not
+/// substitute for it. Conflicting or unknown paths remain undecidable.
+fn section_child_read(
+    role: &RoleRights,
+    owner: &Guid,
+    child: &Guid,
+    section: Option<&Guid>,
+) -> Result<bool, ()> {
+    let mut found = None;
+    for entry in &role.objects {
+        // A section-rooted descendant entry concerns its attribute, not the
+        // section itself. Leaf fields, in contrast, have no supported children.
+        let direct = &entry.object == child && (entry.members.is_empty() || section.is_some());
+        let path = &entry.object == owner
+            && entry
+                .members
+                .last()
+                .is_some_and(|member| &member.id == child);
+        let section_path = section.is_some_and(|section| &entry.object == section)
+            && entry
+                .members
+                .last()
+                .is_some_and(|member| &member.id == child);
+        if !direct && !path && !section_path {
+            continue;
+        }
+        let supported = if direct {
+            entry.members.is_empty()
+        } else if section_path {
+            entry.members.len() == 1
+        } else {
+            entry.members.len() == 1
+                || (entry.members.len() == 2
+                    && section.is_some_and(|section| &entry.members[0].id == section))
+        };
+        if !supported || found.is_some() {
+            return Err(());
+        }
+        found = Some(entry);
+    }
+    match found.and_then(|entry| entry.right(&Right::Read)) {
+        Some(read) if !read.restrictions.is_empty() => Err(()),
+        Some(read) => Ok(read.allowed),
+        None => Ok(true),
+    }
+}
+
 // Нативные запросы пяти пользователей подтверждают программное чтение
 // реквизитов справочника через `Read` объекта: UI-права `View`/`Edit` и
 // флаг defaults его не заменяют. Неизвестные описатели сохраняют прежний отказ.
 fn verified_catalog_field(snapshot: &MetadataSnapshot, object: &Guid, field: FieldId) -> bool {
     use open_sdbl::metadata::StandardFieldId;
-    let Some(owner) = snapshot
-        .descriptors()
-        .iter()
-        .find(|d| &d.object_guid == object && &d.resource_guid == object)
-    else {
+    let Some(owner) = snapshot.owner_descriptor(ObjectId::from(object)) else {
         return false;
     };
     if owner.catalog_standard_attributes.is_none() {
@@ -431,9 +600,9 @@ fn verified_catalog_field(snapshot: &MetadataSnapshot, object: &Guid, field: Fie
         ) => true,
         FieldId::Metadata(id) => {
             own.iter().any(|guid| guid.to_bytes() == id.as_bytes())
-                && snapshot.descriptors().iter().any(|d| {
-                    d.object_guid.to_bytes() == id.as_bytes() && d.declared_types.is_some()
-                })
+                && snapshot
+                    .attribute_descriptors(id)
+                    .any(|d| d.declared_types.is_some())
         }
         _ => false,
     }
@@ -450,11 +619,7 @@ fn verified_information_register_field(
     use open_sdbl::metadata::{
         InformationRegisterPeriodicity, InformationRegisterWriteMode, StandardFieldId,
     };
-    let Some(owner) = snapshot
-        .descriptors()
-        .iter()
-        .find(|d| &d.object_guid == object && &d.resource_guid == object)
-    else {
+    let Some(owner) = snapshot.owner_descriptor(ObjectId::from(object)) else {
         return false;
     };
     let (
@@ -487,15 +652,12 @@ fn verified_information_register_field(
 }
 
 // В нативном документе измерены ссылка и собственный строковый реквизит.
-// Остальные стандартные поля и табличные части не получают разрешения
-// по аналогии; существующие явные права членов проверяются после отображения.
+// Остальные стандартные поля не получают разрешения по аналогии. Ссылка
+// строки подтверждённой части использует это же отображение владельца;
+// существующие явные права членов проверяются после отображения.
 fn verified_document_field(snapshot: &MetadataSnapshot, object: &Guid, field: FieldId) -> bool {
     use open_sdbl::metadata::StandardFieldId;
-    let Some(owner) = snapshot
-        .descriptors()
-        .iter()
-        .find(|d| &d.object_guid == object && &d.resource_guid == object)
-    else {
+    let Some(owner) = snapshot.owner_descriptor(ObjectId::from(object)) else {
         return false;
     };
     let Some(own) = owner.document_attributes.as_ref() else {
@@ -519,9 +681,8 @@ fn verified_declared_field(
     object: &Guid,
     id: open_sdbl::metadata::AttributeId,
 ) -> bool {
-    snapshot.descriptors().iter().any(|d| {
-        d.object_guid.to_bytes() == id.as_bytes()
-            && &d.resource_guid == object
+    snapshot.attribute_descriptors(id).any(|d| {
+        &d.resource_guid == object
             && d.declared_types
                 .as_ref()
                 .is_some_and(|types| !types.is_empty())
@@ -536,11 +697,7 @@ fn verified_accumulation_field(snapshot: &MetadataSnapshot, object: &Guid, field
     let FieldId::Metadata(id) = field else {
         return false;
     };
-    let Some(owner) = snapshot
-        .descriptors()
-        .iter()
-        .find(|d| &d.object_guid == object && &d.resource_guid == object)
-    else {
+    let Some(owner) = snapshot.owner_descriptor(ObjectId::from(object)) else {
         return false;
     };
     let (
@@ -559,9 +716,8 @@ fn verified_accumulation_field(snapshot: &MetadataSnapshot, object: &Guid, field
         .iter()
         .chain(resources)
         .any(|guid| guid.to_bytes() == id.as_bytes())
-        && snapshot.descriptors().iter().any(|d| {
-            d.object_guid.to_bytes() == id.as_bytes()
-                && &d.resource_guid == object
+        && snapshot.attribute_descriptors(id).any(|d| {
+            &d.resource_guid == object
                 && d.declared_types
                     .as_ref()
                     .is_some_and(|types| !types.is_empty())

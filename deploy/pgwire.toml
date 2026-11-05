@@ -1,0 +1,11 @@
+provider = "postgres"
+host = "localhost"
+database = "infobase"
+user = "reader"
+listen = "127.0.0.1:5433"
+# For local clients without TLS only:
+allow_insecure_loopback = true
+# For network access configure both:
+# tls_cert = "/etc/open-sdbl/server.crt"
+# tls_key = "/etc/open-sdbl/server.key"
+# session_params = ["Name='value'"]

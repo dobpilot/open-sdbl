@@ -46,5 +46,6 @@ pub use lexer::*;
 pub mod access;
 /// Reading and resolving metadata stored by the 1C platform.
 pub mod metadata;
+pub mod password;
 /// Bounded query parsing and database SQL generation through resolved metadata.
 pub mod query;

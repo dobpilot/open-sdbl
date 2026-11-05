@@ -9,7 +9,8 @@ use std::time::Duration;
 /// uses: ten seconds to connect, two minutes for one server call, five
 /// seconds for the PostgreSQL driver to wind down, 256 Config resources
 /// decoded per round trip, and a million resources and two gibibytes of
-/// compressed bytes per store a whole-configuration read collects.
+/// compressed bytes per store a whole-configuration read collects, and
+/// 100,000 rows a suspended result may hold back for a protocol client.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Limits {
     /// How long a connection attempt may take before it is abandoned.
@@ -39,6 +40,11 @@ pub struct Limits {
     /// not: those bound what is inflated at once. A store larger than
     /// this answers a typed error rather than exhausting the process.
     pub config_retained_byte_limit: usize,
+    /// How many rows a server speaking a client protocol may hold back
+    /// for one result that the client reads in parts — a suspended
+    /// portal, or rows the client has not read yet. A result that would
+    /// need more fails instead of growing without limit.
+    pub portal_buffer_rows: usize,
 }
 
 impl Default for Limits {
@@ -50,6 +56,7 @@ impl Default for Limits {
             config_decode_batch_size: 256,
             config_resource_limit: 1_000_000,
             config_retained_byte_limit: 2 * 1024 * 1024 * 1024,
+            portal_buffer_rows: 100_000,
         }
     }
 }

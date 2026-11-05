@@ -6,16 +6,20 @@
 //! The record lists, among other fields, the user identifier, the name,
 //! the full name and the block `{N, <guid>…}` of the roles.
 
+use std::fmt;
 use std::str::FromStr;
 
 use super::roles::RoleCatalog;
 use super::value::{Value, parse_serialized};
 use super::{Guid, MetadataError, MetadataErrorKind};
+use crate::password::{
+    PasswordVerification, SourceProfile, VerificationOptions, verify_stored_password,
+};
 
-/// The decoded `Data` of one user: the fields that identify the user and
-/// the roles; the password hashes the record carries are dropped.
+/// The decoded `Data` of one user: identity, roles and privately retained
+/// authentication evidence consumed by [`UserData::verify_password`].
 #[non_exhaustive]
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct UserData {
     /// The user identifier.
     pub id: Guid,
@@ -32,6 +36,74 @@ pub struct UserData {
     /// UUID выбранного интерфейсного языка измеренной записи.
     /// `Some` с nil означает отсутствие выбора; `None` — неизвестный формат.
     pub interface_language: Option<Guid>,
+    /// The user's public `StoredPasswordValue` (`СохраняемоеЗначениеПароля`)
+    /// read from the measured position of the record — the two legacy
+    /// digest fields `H1,H2` with the measured algorithm/salt suffix, or a
+    /// single extended record string — when
+    /// the record carries one. Private and absent from [`fmt::Debug`]: a
+    /// stored hash never appears in a public getter, `Debug`, an error or
+    /// a log. Only [`UserData::verify_password`] consumes it.
+    stored_password: Option<String>,
+}
+
+impl fmt::Debug for UserData {
+    /// Omits the stored password value entirely; it is a credential.
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("UserData")
+            .field("id", &self.id)
+            .field("name", &self.name)
+            .field("full_name", &self.full_name)
+            .field("roles", &self.roles)
+            .field("data_separation", &self.data_separation)
+            .field("interface_language", &self.interface_language)
+            .finish_non_exhaustive()
+    }
+}
+
+impl UserData {
+    /// Verifies a password for this user through the `access-rights`
+    /// stored-password contract.
+    ///
+    /// When the record carried a stored password at its measured position
+    /// (see [`UserData`]), the candidate is checked against it under the
+    /// confirmed [`SourceProfile::PublicStoredValue8327`] source, so a
+    /// correct password answers [`VerificationStatus::Match`] and a wrong
+    /// one [`VerificationStatus::NoMatch`]. When the record carried none,
+    /// the answer is [`VerificationStatus::Indeterminate`] /
+    /// [`VerificationReason::SourceProfileUnconfirmed`], so a caller that
+    /// authenticates only on [`VerificationStatus::Match`] fails closed.
+    ///
+    /// The `source` of `options` is overridden either way; the caller's
+    /// password state, secondary mode, limits and `record_id` are kept.
+    /// Input validation still runs first: an oversized candidate answers
+    /// [`VerificationReason::InputTooLarge`].
+    ///
+    /// [`VerificationStatus::Indeterminate`]: crate::password::VerificationStatus::Indeterminate
+    /// [`VerificationStatus::Match`]: crate::password::VerificationStatus::Match
+    /// [`VerificationStatus::NoMatch`]: crate::password::VerificationStatus::NoMatch
+    /// [`SourceProfile::PublicStoredValue8327`]: crate::password::SourceProfile::PublicStoredValue8327
+    /// [`VerificationReason::SourceProfileUnconfirmed`]: crate::password::VerificationReason::SourceProfileUnconfirmed
+    /// [`VerificationReason::InputTooLarge`]: crate::password::VerificationReason::InputTooLarge
+    #[must_use]
+    pub fn verify_password(
+        &self,
+        candidate: &str,
+        options: &VerificationOptions,
+    ) -> PasswordVerification {
+        match &self.stored_password {
+            Some(stored) => {
+                let options = options.clone().source(SourceProfile::PublicStoredValue8327);
+                verify_stored_password(candidate, stored, &options)
+            }
+            // A record with no stored value at the measured position is
+            // not a confirmed source, so the result stays indeterminate.
+            None => {
+                let options = options.clone().source(SourceProfile::Unconfirmed);
+                verify_stored_password(candidate, "", &options)
+            }
+        }
+    }
 }
 
 /// One user of the information base: the row of `v8users` with its
@@ -193,7 +265,136 @@ pub fn decode_user_data(blob: &[u8]) -> Result<UserData, MetadataError> {
         roles,
         data_separation: decode_data_separation(fields),
         interface_language: decode_interface_language(fields),
+        stored_password: decode_stored_password(fields),
     })
+}
+
+/// The user's public `StoredPasswordValue`, read from the position
+/// measured on 8.3.x `v8users` records: the two digest fields immediately
+/// after the roles block plus six scalars (the roles block is the first
+/// nested list; `H1` sits seven fields after it, `H2` eight).
+///
+/// `H1` is the SHA-1 (legacy) or extended digest of the password and `H2`
+/// the digest of its ASCII-uppercase form; together they are the
+/// `"H1,H2"` value the verifier reads. Extended native records retain these
+/// slots and put the algorithm and literal salt in the counted suffix.
+/// The earlier packed-string form remains supported. Both digest fields
+/// empty means the record has no password slot and yields `None`.
+fn decode_stored_password(fields: &[Value]) -> Option<String> {
+    let roles_index = fields.iter().position(|value| value.as_list().is_some())?;
+    let primary = fields.get(roles_index.checked_add(7)?)?.as_string()?;
+    let secondary = fields.get(roles_index.checked_add(8)?)?.as_string()?;
+    if primary.is_empty() && secondary.is_empty() {
+        return None;
+    }
+    if let Some(count) = fields.get(17).and_then(Value::as_u32)
+        && let Some(optional) = fields
+            .get(30usize.checked_add(count as usize)?)
+            .and_then(Value::as_u32)
+        && optional >= 2
+    {
+        // Extended shapes must be complete; never reinterpret their main or
+        // backup digest slots as legacy credentials if a suffix is malformed.
+        return decode_extended_password(fields, roles_index, primary, secondary);
+    }
+    if fields.len() >= 31 && !has_legacy_password_suffix(fields) {
+        // A damaged counter must not hide an extended suffix and make its
+        // main digest slots appear to be an unrelated legacy record.
+        return None;
+    }
+    if primary.contains(',') {
+        return Some(primary.to_owned());
+    }
+    Some(format!("{primary},{secondary}"))
+}
+
+// Validate the counted tail without coupling authentication to the interface
+// language or separator semantics. A corrupt count must not hide an extended
+// record, while unrelated language changes must preserve legacy credentials.
+fn has_legacy_password_suffix(fields: &[Value]) -> bool {
+    let Some(count) = fields.get(17).and_then(Value::as_u32) else {
+        return false;
+    };
+    let Some(optional_index) = 30usize.checked_add(count as usize) else {
+        return false;
+    };
+    let Some(optional @ 0..=1) = fields.get(optional_index).and_then(Value::as_u32) else {
+        return false;
+    };
+    let Some(start) = optional_index.checked_add(1) else {
+        return false;
+    };
+    if optional == 1 && fields.get(start).and_then(Value::as_string).is_none() {
+        return false;
+    }
+    let Some(suffix) = fields.get(start + optional as usize..) else {
+        return false;
+    };
+    match suffix {
+        [] => true,
+        [first, second, third, fourth, fifth, sixth] => {
+            [first, third, fourth, fifth]
+                .iter()
+                .all(|v| matches!(v, Value::Atom(s) if s == "0"))
+                && second.as_string().is_some()
+                && sixth.as_string().is_some()
+        }
+        _ => false,
+    }
+}
+
+/// Confirmed native shapes: optional blocks of two or five strings followed
+/// by [algorithm, literal salt, 0, 0, 0, string]. No algorithm is inferred
+/// from digest length, and the legacy backup digests are never consumed.
+fn decode_extended_password(
+    fields: &[Value],
+    roles_index: usize,
+    primary: &str,
+    secondary: &str,
+) -> Option<String> {
+    if roles_index != 5 {
+        return None;
+    }
+    for index in [4, 6] {
+        Guid::from_str(fields.get(index)?.as_scalar()?).ok()?;
+    }
+    let Value::Atom(count) = fields.get(17)? else {
+        return None;
+    };
+    let count = count.parse::<usize>().ok()?;
+    for binding in fields.get(18..18usize.checked_add(count)?)? {
+        let [name, value] = binding.as_list()? else {
+            return None;
+        };
+        name.as_string()?;
+        value.as_string()?;
+    }
+    let optional_index = 30usize.checked_add(count)?;
+    let Value::Atom(optional) = fields.get(optional_index)? else {
+        return None;
+    };
+    let optional = optional.parse::<usize>().ok()?;
+    if !matches!(optional, 2 | 5) {
+        return None;
+    }
+    let start = optional_index.checked_add(1)?;
+    let suffix_start = start.checked_add(optional)?;
+    for field in fields.get(start..suffix_start)? {
+        field.as_string()?;
+    }
+    let [Value::Atom(algorithm), salt, third, fourth, fifth, last] = fields.get(suffix_start..)?
+    else {
+        return None;
+    };
+    if [third, fourth, fifth]
+        .iter()
+        .any(|v| !matches!(v, Value::Atom(s) if s == "0"))
+    {
+        return None;
+    }
+    last.as_string()?;
+    let salt = salt.as_string()?;
+    Some(format!("{primary},{secondary},{algorithm},{salt}"))
 }
 
 // Позиция блока подтверждена нативным чтением собственных записей форм
@@ -269,3 +470,7 @@ mod language_tests;
 #[cfg(test)]
 #[path = "users_legacy_language_tests.rs"]
 mod legacy_language_tests;
+
+#[cfg(test)]
+#[path = "users_password_tests.rs"]
+mod password_tests;

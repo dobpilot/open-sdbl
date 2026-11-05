@@ -14,6 +14,7 @@ path = "src/lib.rs"
 [dependencies]
 libfuzzer-sys = "0.4"
 open-sdbl = { path = ".." }
+open-sdbl-pgwire = { path = "../crates/open-sdbl-pgwire", features = ["fuzzing"] }
 
 [[bin]]
 name = "inflate"
@@ -25,6 +26,20 @@ bench = false
 [[bin]]
 name = "compile_query"
 path = "fuzz_targets/compile_query.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "pgwire_frontend"
+path = "fuzz_targets/pgwire_frontend.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "pgwire_catalog_sql"
+path = "fuzz_targets/pgwire_catalog_sql.rs"
 test = false
 doc = false
 bench = false

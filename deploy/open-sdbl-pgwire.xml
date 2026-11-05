@@ -1,0 +1,15 @@
+<service>
+  <id>open-sdbl-pgwire</id>
+  <name>Open SDBL PostgreSQL wire gateway</name>
+  <description>PostgreSQL wire protocol gateway for open-sdbl</description>
+  <executable>%BASE%\open-sdbl.exe</executable>
+  <arguments>serve --config "%BASE%\pgwire.toml"</arguments>
+  <workingdirectory>%BASE%</workingdirectory>
+  <env name="PGPASSFILE" value="%BASE%\pgpass.conf" />
+  <logpath>%BASE%\logs</logpath>
+  <log mode="roll" />
+  <startmode>Automatic</startmode>
+  <onfailure action="restart" delay="10 sec" />
+  <resetfailure>1 hour</resetfailure>
+  <stoptimeout>30 sec</stoptimeout>
+</service>

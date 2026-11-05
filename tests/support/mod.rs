@@ -1,5 +1,6 @@
 #![allow(dead_code)]
 
+pub(crate) mod corpus;
 mod hex;
 
 use std::str::FromStr;
@@ -1025,6 +1026,12 @@ pub(crate) fn ambiguous_field_snapshot() -> open_sdbl::metadata::MetadataSnapsho
 /// `ЗначениеРазделителя` and `ИспользованиеРазделителя`.
 pub(crate) fn separators_resolved() -> open_sdbl::metadata::ResolvedMetadata {
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/separators");
+    separators_resolved_at(&root)
+}
+
+pub(crate) fn separators_resolved_at(
+    root: &std::path::Path,
+) -> open_sdbl::metadata::ResolvedMetadata {
     let db_names = parse_db_names(&std::fs::read(root.join("db_names.deflate")).unwrap()).unwrap();
     let mut descriptors = Vec::new();
     let mut entries = std::fs::read_dir(root.join("config"))
@@ -1164,4 +1171,85 @@ pub(crate) fn supply_active_separation_conditions(
             session.set_separation_condition(id.clone(), true);
         }
     }
+}
+
+/// A configuration-shaped snapshot with real custom-field declarations,
+/// ownership and live/schema columns for catalog/index regressions.
+pub(crate) fn populated_catalog_snapshot(
+    objects: u32,
+    attributes: u32,
+) -> open_sdbl::metadata::MetadataSnapshot {
+    use open_sdbl::metadata::{ConfigDeclaredType, DbNameEntry, DbNames, Synonym};
+    let mut entries = Vec::new();
+    let mut descriptors = Vec::new();
+    let mut tables = Vec::new();
+    let mut live = Vec::new();
+    for object in 1..=objects {
+        let owner = guid(&format!("10000000-0000-4000-8000-{object:012x}"));
+        let table = format!("Reference{object}");
+        entries.push(DbNameEntry {
+            guid: owner.clone(),
+            alias: "Reference".into(),
+            number: object,
+        });
+        let mut own = descriptor(&owner, &owner, &format!("Каталог{object}"));
+        own.catalog_standard_attributes = Some(open_sdbl::metadata::CatalogStandardAttributes {
+            code_type: open_sdbl::metadata::CatalogCodeType::String,
+            code_length: 0,
+            description_length: 0,
+        });
+        own.catalog_attributes = Some(Vec::new());
+        own.synonyms.push(Synonym {
+            language: "ru".into(),
+            text: format!("Каталог {object}"),
+        });
+        let mut columns = vec![schema_column("ID", "R", Some(&table))];
+        let mut observed = vec![LiveColumn {
+            name: "_idrref".into(),
+            data_type: "bytea".into(),
+        }];
+        for attribute in 1..=attributes {
+            let number = objects + (object - 1) * attributes + attribute;
+            let id = guid(&format!("20000000-0000-4000-8000-{number:012x}"));
+            entries.push(DbNameEntry {
+                guid: id.clone(),
+                alias: "Fld".into(),
+                number,
+            });
+            own.catalog_attributes.as_mut().unwrap().push(id.clone());
+            let mut field = descriptor(&owner, &id, &format!("Реквизит{attribute}"));
+            field.declared_types = Some(vec![ConfigDeclaredType {
+                tag: "S".into(),
+                reference: None,
+                qualifiers: Vec::new(),
+            }]);
+            field.synonyms.push(Synonym {
+                language: "ru".into(),
+                text: format!("Реквизит {attribute}"),
+            });
+            descriptors.push(field);
+            columns.push(schema_column(&format!("Fld{number}"), "S", None));
+            observed.push(LiveColumn {
+                name: format!("_fld{number}"),
+                data_type: "character varying(12)".into(),
+            });
+        }
+        descriptors.push(own);
+        tables.push(schema_table(&table, object, columns));
+        live.push(LiveTable {
+            name: format!("_reference{object}"),
+            columns: observed,
+            indexes: Vec::new(),
+        });
+    }
+    resolve_metadata(
+        DbNames::from_entries(entries),
+        descriptors,
+        SchemaStorage {
+            tables,
+            anomalies: Vec::new(),
+        },
+        live,
+    )
+    .snapshot
 }

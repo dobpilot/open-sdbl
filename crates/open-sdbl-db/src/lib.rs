@@ -57,6 +57,7 @@ pub use metadata_inputs::{ConfigurationMetadataInputs, resolve_configuration_res
 pub mod limits;
 pub mod net;
 pub mod pipeline;
+pub mod presentation;
 pub mod progress;
 pub mod restrict;
 mod rows;

@@ -110,3 +110,75 @@ fn warns_when_mssql_certificate_verification_is_disabled() {
     assert!(stderr.contains("warning: --trust-server-certificate disables MSSQL certificate"));
     assert!(stderr.contains("mutually exclusive"));
 }
+
+#[test]
+fn serve_refuses_a_network_listener_without_tls_before_connecting() {
+    let started = std::time::Instant::now();
+    let output = Command::new(env!("CARGO_BIN_EXE_open-sdbl"))
+        .args([
+            "serve",
+            "postgres",
+            // An address nobody answers on: the command must not try it.
+            "--host",
+            "192.0.2.1",
+            "--database",
+            "unf",
+            "--user",
+            "reader",
+            "--listen",
+            "0.0.0.0:5433",
+        ])
+        .env_remove("PGPASSWORD")
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(2));
+    let stderr = String::from_utf8(output.stderr).unwrap();
+    assert!(stderr.contains("without TLS"), "{stderr}");
+    assert!(started.elapsed() < std::time::Duration::from_secs(5));
+}
+
+#[test]
+fn serve_argument_errors_are_usage_errors() {
+    for arguments in [
+        &["serve"][..],
+        &["serve", "oracle"],
+        &["serve", "postgres", "--host", "db"],
+        &[
+            "serve",
+            "postgres",
+            "--host",
+            "db",
+            "--database",
+            "unf",
+            "--user",
+            "u",
+            "--tls-cert",
+            "c.pem",
+        ],
+        &[
+            "serve",
+            "postgres",
+            "--host",
+            "db",
+            "--database",
+            "unf",
+            "--user",
+            "u",
+            "--unknown",
+            "x",
+        ],
+    ] {
+        let output = Command::new(env!("CARGO_BIN_EXE_open-sdbl"))
+            .args(arguments)
+            .output()
+            .unwrap();
+        assert_eq!(output.status.code(), Some(2), "{arguments:?}");
+    }
+    let output = Command::new(env!("CARGO_BIN_EXE_open-sdbl"))
+        .args(["serve", "--help"])
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    let help = String::from_utf8(output.stdout).unwrap();
+    assert!(help.contains("--tls-cert") && help.contains("serve postgres|mssql"));
+}

@@ -262,6 +262,7 @@ impl<B: Backend> QueryCompiler<'_, B> {
             options.restriction_mode_in_effect(),
         )?;
         Ok(Prepared {
+            parameter_names: parameter_names(source),
             source: source.to_owned(),
             backend: self.backend,
             request: requests.presentations,
@@ -402,6 +403,7 @@ impl<'a> PrepareOptions<'a> {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Prepared<B: Backend> {
     source: String,
+    parameter_names: Vec<String>,
     backend: B,
     request: PresentationRequest,
     restrictions: RestrictionRequest,
@@ -412,6 +414,31 @@ pub struct Prepared<B: Backend> {
 }
 
 impl<B: Backend> Prepared<B> {
+    /// The distinct `&Имя` parameters the text references, in the order of
+    /// their first occurrence, spelled as there and compared
+    /// case-insensitively; without the leading `&`.
+    ///
+    /// Only the text is read: names inside string literals and comments
+    /// are not parameters, and session parameters an access restriction
+    /// expands into the query are not listed. The list is the same for
+    /// both backends.
+    ///
+    /// ```
+    /// # use open_sdbl::metadata::MetadataSnapshot;
+    /// # use open_sdbl::query::{PostgresBackend, QueryCompiler};
+    /// # fn example(snapshot: &MetadataSnapshot) {
+    /// let compiler = QueryCompiler::new(snapshot, PostgresBackend);
+    /// let prepared = compiler
+    ///     .prepare("ВЫБРАТЬ 1 ГДЕ &Б > 0 И &а > 0 И &б < 5")
+    ///     .unwrap();
+    /// assert_eq!(prepared.parameter_names(), ["Б", "а"]);
+    /// # }
+    /// ```
+    #[must_use]
+    pub fn parameter_names(&self) -> &[String] {
+        &self.parameter_names
+    }
+
     /// Returns the batch callback request. It is empty when the query uses no
     /// reference presentation.
     #[must_use]
@@ -577,6 +604,24 @@ impl<B: Backend> Prepared<B> {
             self.mode,
         )
     }
+}
+
+/// The distinct parameter names of a text that lexed successfully.
+fn parameter_names(source: &str) -> Vec<String> {
+    let mut names: Vec<String> = Vec::new();
+    for token in crate::Lexer::new(source).map_while(Result::ok) {
+        if token.kind != crate::TokenKind::Parameter {
+            continue;
+        }
+        let name = token.lexeme.trim_start_matches('&');
+        if !names
+            .iter()
+            .any(|known| crate::names::names_equal(known, name))
+        {
+            names.push(name.to_owned());
+        }
+    }
+    names
 }
 
 /// Compatibility alias for a prepared PostgreSQL query.

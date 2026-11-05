@@ -899,6 +899,332 @@ fn verified_catalog_still_denies_explicit_member_read_and_unsupported_standard_f
 #[path = "field_read_0923.rs"]
 mod field_read_0923;
 
+#[path = "../../../../tests/support/section_reference.rs"]
+mod section_reference;
+
+#[test]
+fn section_owner_reference_obeys_owner_and_section_read() {
+    use open_sdbl::query::{PostgresBackend, PrepareOptions, QueryCompiler};
+    let snapshot = section_reference::snapshot();
+    let compiler = QueryCompiler::new(&snapshot, PostgresBackend);
+    let prepared = compiler
+        .prepare_with_options(
+            section_reference::QUERY,
+            &PrepareOptions::new().restricted(),
+        )
+        .unwrap();
+    let request = prepared.field_usage();
+    assert!(!request.fields.is_empty());
+    assert!(
+        request
+            .fields
+            .iter()
+            .any(|f| f.table_part.as_deref() == Some("Запасы"))
+    );
+    let (_, role, mut rights, _, _) = field_fixture();
+    let owner: Guid = section_reference::OWNER.parse().unwrap();
+    let section: Guid = section_reference::SECTION.parse().unwrap();
+    rights.objects[0].object = owner.clone();
+    for defaults in [false, true] {
+        rights.set_for_attributes_by_default = defaults;
+        check_user_field_access(
+            &selected_store(&snapshot, &role, rights.clone()),
+            &snapshot,
+            request,
+        )
+        .unwrap();
+    }
+    let allowed = rights.clone();
+    rights.objects[0].rights[0].allowed = false;
+    assert!(
+        check_user_field_access(
+            &selected_store(&snapshot, &role, rights),
+            &snapshot,
+            request
+        )
+        .is_err()
+    );
+    let mut denied = allowed.clone();
+    denied.objects.push(denied_field_entry(&owner, &section));
+    let mut store = selected_store(&snapshot, &role, denied.clone());
+    assert!(check_user_field_access(&store, &snapshot, request).is_err());
+    let other: Guid = ROLE_GUIDS[1].parse().unwrap();
+    store
+        .current
+        .as_mut()
+        .unwrap()
+        .data
+        .roles
+        .push(other.clone());
+    store.insert_rights(other, allowed.clone());
+    check_user_field_access(&store, &snapshot, request).unwrap();
+    denied.objects.last_mut().unwrap().rights[0].right = Right::View;
+    check_user_field_access(
+        &selected_store(&snapshot, &role, denied),
+        &snapshot,
+        request,
+    )
+    .unwrap();
+
+    let store = selected_store(&snapshot, &role, allowed);
+    for standard in [
+        open_sdbl::metadata::StandardFieldId::Number,
+        open_sdbl::metadata::StandardFieldId::Date,
+    ] {
+        let mut unsupported = request.clone();
+        unsupported.fields[0].field = FieldId::Standard(standard);
+        assert!(check_user_field_access(&store, &snapshot, &unsupported).is_err());
+    }
+    let mut unknown = request.clone();
+    unknown.fields[0].table_part = Some("НесуществующаяЧасть".into());
+    assert!(check_user_field_access(&store, &snapshot, &unknown).is_err());
+    let mut incomplete = snapshot.descriptors().to_vec();
+    incomplete
+        .iter_mut()
+        .find(|d| d.object_guid == owner)
+        .unwrap()
+        .document_tabular_sections = None;
+    let incomplete = resolve_metadata(
+        snapshot.db_names().clone(),
+        incomplete,
+        snapshot.schema().clone(),
+        snapshot.live_tables().to_vec(),
+    )
+    .snapshot;
+    assert!(check_user_field_access(&store, &incomplete, request).is_err());
+    let mut ambiguous = snapshot.descriptors().to_vec();
+    ambiguous.push(
+        ambiguous
+            .iter()
+            .find(|d| d.object_guid == section)
+            .unwrap()
+            .clone(),
+    );
+    let ambiguous = resolve_metadata(
+        snapshot.db_names().clone(),
+        ambiguous,
+        snapshot.schema().clone(),
+        snapshot.live_tables().to_vec(),
+    )
+    .snapshot;
+    assert!(check_user_field_access(&store, &ambiguous, request).is_err());
+    let names = open_sdbl::metadata::DbNames::from_entries(
+        snapshot
+            .db_names()
+            .entries()
+            .iter()
+            .filter(|e| e.alias != "VT")
+            .cloned()
+            .collect(),
+    );
+    let unmapped = resolve_metadata(
+        names,
+        snapshot.descriptors().to_vec(),
+        snapshot.schema().clone(),
+        snapshot.live_tables().to_vec(),
+    )
+    .snapshot;
+    assert!(check_user_field_access(&store, &unmapped, request).is_err());
+}
+
+#[test]
+fn section_fields_use_scoped_membership_and_complete_child_rights() {
+    use open_sdbl::metadata::{AttributeId, StandardFieldId};
+    use open_sdbl::query::{PostgresBackend, PrepareOptions, QueryCompiler};
+    let snapshot = section_reference::snapshot();
+    let compiler = QueryCompiler::new(&snapshot, PostgresBackend);
+    let prepared = compiler
+        .prepare_with_options(
+            section_reference::ITEM_QUERY,
+            &PrepareOptions::new().restricted(),
+        )
+        .unwrap();
+    let request = prepared.field_usage();
+    let owner: Guid = section_reference::OWNER.parse().unwrap();
+    let section: Guid = section_reference::SECTION.parse().unwrap();
+    let item: Guid = section_reference::ITEM.parse().unwrap();
+    assert!(
+        request
+            .fields
+            .iter()
+            .any(|f| f.field == FieldId::Metadata(AttributeId::from(&item)))
+    );
+    let (_, role, mut rights, _, _) = field_fixture();
+    rights.objects[0].object = owner.clone();
+    for defaults in [false, true] {
+        rights.set_for_attributes_by_default = defaults;
+        let store = selected_store(&snapshot, &role, rights.clone());
+        check_user_field_access(&store, &snapshot, request).unwrap();
+        let all = compiler
+            .prepare_with_options(
+                "ВЫБРАТЬ * ИЗ Документ.ПриходнаяНакладная.Запасы",
+                &PrepareOptions::new().restricted(),
+            )
+            .unwrap();
+        assert!(
+            all.field_usage()
+                .fields
+                .iter()
+                .any(|f| f.field == FieldId::Standard(StandardFieldId::LineNo))
+        );
+        check_user_field_access(&store, &snapshot, all.field_usage()).unwrap();
+    }
+    let allowed = rights.clone();
+    let mut flat = denied_field_entry(&owner, &item);
+    let mut nested = flat.clone();
+    nested
+        .members
+        .insert(0, denied_field_entry(&owner, &section).members.remove(0));
+    let mut direct = flat.clone();
+    direct.object = item.clone();
+    direct.members.clear();
+    let mut section_root = nested.clone();
+    section_root.object = section.clone();
+    section_root.members.remove(0);
+    for entry in [flat.clone(), nested.clone(), direct.clone(), section_root] {
+        let mut denied = allowed.clone();
+        denied.objects.push(entry.clone());
+        let mut store = selected_store(&snapshot, &role, denied.clone());
+        for sql in [
+            section_reference::ITEM_QUERY,
+            "ВЫБРАТЬ Ссылка ИЗ Документ.ПриходнаяНакладная.Запасы ГДЕ Номенклатура ЕСТЬ НЕ NULL",
+            "ВЫБРАТЬ Ссылка ИЗ Документ.ПриходнаяНакладная.Запасы УПОРЯДОЧИТЬ ПО Номенклатура",
+        ] {
+            let used = compiler
+                .prepare_with_options(sql, &PrepareOptions::new().restricted())
+                .unwrap();
+            assert!(
+                check_user_field_access(&store, &snapshot, used.field_usage()).is_err(),
+                "{sql}"
+            );
+        }
+        let other: Guid = ROLE_GUIDS[1].parse().unwrap();
+        store
+            .current
+            .as_mut()
+            .unwrap()
+            .data
+            .roles
+            .push(other.clone());
+        store.insert_rights(other, allowed.clone());
+        check_user_field_access(&store, &snapshot, request).unwrap();
+        denied.objects.last_mut().unwrap().rights[0].right = Right::View;
+        check_user_field_access(
+            &selected_store(&snapshot, &role, denied),
+            &snapshot,
+            request,
+        )
+        .unwrap();
+    }
+    // Child Read cannot grant the field without Read of the owner in that role.
+    rights.objects[0].rights[0].allowed = false;
+    direct.rights[0].allowed = true;
+    rights.objects.push(direct);
+    assert!(
+        check_user_field_access(
+            &selected_store(&snapshot, &role, rights),
+            &snapshot,
+            request
+        )
+        .is_err()
+    );
+    let mut ambiguous_rights = allowed.clone();
+    flat.rights[0].allowed = true;
+    ambiguous_rights.objects.extend([flat, nested]);
+    assert!(
+        check_user_field_access(
+            &selected_store(&snapshot, &role, ambiguous_rights),
+            &snapshot,
+            request
+        )
+        .is_err()
+    );
+    let store = selected_store(&snapshot, &role, allowed);
+    let expenses = snapshot
+        .descriptors()
+        .iter()
+        .find(|d| d.name == "Расходы" && d.resource_guid == owner)
+        .unwrap();
+    let mut names = snapshot.db_names().entries().to_vec();
+    names.push(open_sdbl::metadata::DbNameEntry {
+        guid: expenses.object_guid.clone(),
+        alias: "VT".into(),
+        number: 5,
+    });
+    let neighboring = resolve_metadata(
+        open_sdbl::metadata::DbNames::from_entries(names),
+        snapshot.descriptors().to_vec(),
+        snapshot.schema().clone(),
+        snapshot.live_tables().to_vec(),
+    )
+    .snapshot;
+    let mut wrong_section = request.clone();
+    wrong_section
+        .fields
+        .iter_mut()
+        .find(|f| f.field == FieldId::Metadata(AttributeId::from(&item)))
+        .unwrap()
+        .table_part = Some("Расходы".into());
+    assert!(
+        check_user_field_access(&store, &neighboring, &wrong_section)
+            .unwrap_err()
+            .to_string()
+            .contains("does not belong")
+    );
+    for mode in 0..5 {
+        let mut descriptors = snapshot.descriptors().to_vec();
+        match mode {
+            0 => {
+                descriptors
+                    .iter_mut()
+                    .find(|d| d.object_guid == section)
+                    .unwrap()
+                    .tabular_section_attributes = None
+            }
+            1 => descriptors
+                .iter_mut()
+                .find(|d| d.object_guid == section)
+                .unwrap()
+                .tabular_section_attributes
+                .as_mut()
+                .unwrap()
+                .retain(|id| id != &item),
+            2 => {
+                descriptors
+                    .iter_mut()
+                    .find(|d| d.object_guid == item)
+                    .unwrap()
+                    .declared_types = None
+            }
+            3 => {
+                descriptors
+                    .iter_mut()
+                    .find(|d| d.object_guid == item)
+                    .unwrap()
+                    .resource_guid = section.clone()
+            }
+            _ => descriptors.push(
+                descriptors
+                    .iter()
+                    .find(|d| d.object_guid == item)
+                    .unwrap()
+                    .clone(),
+            ),
+        }
+        let changed = resolve_metadata(
+            snapshot.db_names().clone(),
+            descriptors,
+            snapshot.schema().clone(),
+            snapshot.live_tables().to_vec(),
+        )
+        .snapshot;
+        assert!(
+            check_user_field_access(&store, &changed, request).is_err(),
+            "mode {mode}"
+        );
+    }
+}
+
 #[cfg(test)]
 #[path = "user_language.rs"]
 mod user_language;

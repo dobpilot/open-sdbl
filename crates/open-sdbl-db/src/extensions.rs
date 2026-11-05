@@ -23,7 +23,7 @@ use crate::session::{DatabaseDialect, DatabaseSession};
 mod tests;
 
 /// The resources every extension of the base declares, read once.
-#[derive(Debug, Default)]
+#[derive(Debug, Clone, Default)]
 pub struct ExtensionIndex {
     resources: Vec<ExtensionResource>,
 }

@@ -1,11 +1,11 @@
 [workspace]
-members = ["crates/open-sdbl-cli", "crates/open-sdbl-db"]
+members = ["crates/open-sdbl-cli", "crates/open-sdbl-db", "crates/open-sdbl-pgwire"]
 default-members = ["crates/open-sdbl-cli"]
 resolver = "3"
 
 [package]
 name = "open-sdbl"
-version = "0.9.44"
+version = "0.11.0"
 edition = "2024"
 rust-version = "1.85"
 description = "Open tooling for the 1C query language (SDBL)"
