@@ -38,6 +38,7 @@ pub(crate) const DEFAULT_LISTEN: &str = "127.0.0.1:5433";
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct ServeOptions {
     pub(crate) listen: SocketAddr,
+    pub(crate) catalog_memory_limit_bytes: usize,
     pub(crate) tls_cert: Option<String>,
     pub(crate) tls_key: Option<String>,
     pub(crate) session_parameters: Vec<(String, String)>,
@@ -61,6 +62,7 @@ pub(crate) fn split_serve_options(
 ) -> Result<(ServeOptions, Vec<String>), CliError> {
     let mut options = ServeOptions {
         listen: DEFAULT_LISTEN.parse().expect("the default address parses"),
+        catalog_memory_limit_bytes: 64 * 1024 * 1024,
         tls_cert: None,
         tls_key: None,
         session_parameters: Vec::new(),
@@ -96,6 +98,19 @@ pub(crate) fn split_serve_options(
                 options.listen = text
                     .parse()
                     .map_err(|_| usage(format!("invalid listen address {text:?}")))?;
+            }
+            "--catalog-memory-limit-mib" => {
+                let text = value(option)?;
+                options.catalog_memory_limit_bytes = text
+                    .parse::<usize>()
+                    .ok()
+                    .filter(|n| *n > 0)
+                    .and_then(|n| n.checked_mul(1024 * 1024))
+                    .ok_or_else(|| {
+                        usage(format!(
+                            "invalid catalog memory limit {text:?}: expected a positive MiB value"
+                        ))
+                    })?;
             }
             "--tls-cert" => options.tls_cert = Some(value(option)?),
             "--tls-key" => options.tls_key = Some(value(option)?),
@@ -394,6 +409,7 @@ pub(crate) async fn serve(
     );
     let mut config = GatewayConfig::new(connection, credentials);
     config.limits = limits;
+    config.gateway_limits.catalog_allocation_bytes = options.catalog_memory_limit_bytes;
     config.tls = tls;
     config.session_parameters = session_parameters;
     config.allow_insecure_loopback = options.allow_insecure_loopback;

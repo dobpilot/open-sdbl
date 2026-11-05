@@ -443,13 +443,31 @@ pub(crate) fn describe(
 ) -> Result<(Vec<Column>, Vec<u32>), ErrorFields> {
     plan::describe(q, catalog, declared)
 }
+#[cfg(test)]
 pub(crate) fn evaluate(
     q: &Query,
     catalog: &Catalog,
     parameters: &[Value],
     parameter_types: &[u32],
 ) -> Result<Table, ErrorFields> {
-    eval::evaluate(q, catalog, parameters, parameter_types)
+    evaluate_with_allocation_limit(q, catalog, parameters, parameter_types, 64 * 1024 * 1024)
+}
+
+pub(crate) fn evaluate_with_allocation_limit(
+    q: &Query,
+    catalog: &Catalog,
+    parameters: &[Value],
+    parameter_types: &[u32],
+    allocation_bytes: usize,
+) -> Result<Table, ErrorFields> {
+    eval::evaluate_with_limit(
+        q,
+        catalog,
+        parameters,
+        parameter_types,
+        50_000_000,
+        allocation_bytes,
+    )
 }
 
 pub(crate) use func::format_type;
@@ -592,6 +610,6 @@ pub(crate) fn fuzz(text: &str) {
     let catalog = super::finish(vec![], "fuzz", "1c", 3);
     if let Some(Ok(q)) = route(text) {
         let _ = plan::describe(&q, &catalog, &[]);
-        let _ = eval::evaluate_bounded(&q, &catalog, &[], &[], 50_000);
+        let _ = eval::evaluate_with_limit(&q, &catalog, &[], &[], 50_000, 64 * 1024 * 1024);
     }
 }

@@ -927,3 +927,59 @@ async fn pushed_oid_filter_preserves_inner_and_outer_join_results() {
     assert!(absent.is_empty());
     harness.stop();
 }
+
+#[tokio::test]
+async fn configured_catalog_memory_budget_applies_to_both_protocols() {
+    let query = "SELECT c.oid FROM pg_class c";
+    let limited = Harness::new(Options {
+        limits: crate::GatewayLimits {
+            catalog_allocation_bytes: 1,
+            ..Options::default().limits
+        },
+        ..Options::default()
+    });
+    let client = connect(&limited).await;
+    let error = client.simple_query(query).await.unwrap_err();
+    assert_eq!(error.code().unwrap().code(), "54001");
+    let error = client.query(query, &[]).await.unwrap_err();
+    assert_eq!(error.code().unwrap().code(), "54001");
+    limited.stop();
+
+    let permitted = Harness::new(Options {
+        limits: crate::GatewayLimits {
+            catalog_allocation_bytes: 1024 * 1024,
+            ..Options::default().limits
+        },
+        ..Options::default()
+    });
+    let client = connect(&permitted).await;
+    assert!(!client.simple_query(query).await.unwrap().is_empty());
+    assert!(!client.query(query, &[]).await.unwrap().is_empty());
+    permitted.stop();
+}
+
+#[tokio::test]
+async fn raising_catalog_budget_allows_statement_over_default_limit() {
+    let query = format!(
+        "SELECT length(concat({})) FROM pg_namespace WHERE nspname='public'",
+        vec!["$1"; 80].join(",")
+    );
+    let input = "x".repeat(900_000);
+    let standard = Harness::new(Options::default());
+    let client = connect(&standard).await;
+    let error = client.query(&query, &[&input]).await.unwrap_err();
+    assert_eq!(error.code().unwrap().code(), "54001");
+    standard.stop();
+
+    let expanded = Harness::new(Options {
+        limits: crate::GatewayLimits {
+            catalog_allocation_bytes: 256 * 1024 * 1024,
+            ..Options::default().limits
+        },
+        ..Options::default()
+    });
+    let client = connect(&expanded).await;
+    let result: i32 = client.query_one(&query, &[&input]).await.unwrap().get(0);
+    assert_eq!(result, 72_000_000);
+    expanded.stop();
+}

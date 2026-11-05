@@ -3,6 +3,7 @@ host = "localhost"
 database = "infobase"
 user = "reader"
 listen = "127.0.0.1:5433"
+# catalog_memory_limit_mib = 256
 # For local clients without TLS only:
 allow_insecure_loopback = true
 # For network access configure both:

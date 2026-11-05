@@ -1098,8 +1098,15 @@ impl<E: Engine, S: AsyncRead + AsyncWrite + Unpin + Send + 'static> Client<E, S>
         }
         if let Some(query) = catalog::sql::route(text) {
             let result = query.and_then(|query| {
+                let allocation_bytes = self.shared.limits.catalog_allocation_bytes;
                 let model = self.catalog();
-                let table = catalog::sql::evaluate(&query, model, &[], &[])?;
+                let table = catalog::sql::evaluate_with_allocation_limit(
+                    &query,
+                    model,
+                    &[],
+                    &[],
+                    allocation_bytes,
+                )?;
                 catalog::encode(&table, &[])
             });
             match result {
@@ -2102,8 +2109,14 @@ impl<E: Engine, S: AsyncRead + AsyncWrite + Unpin + Send + 'static> Client<E, S>
                         )
                     })
                     .collect::<Result<Vec<_>, _>>()?;
-                let table =
-                    catalog::sql::evaluate(query, self.catalog(), &values, &parameter_types)?;
+                let allocation_bytes = self.shared.limits.catalog_allocation_bytes;
+                let table = catalog::sql::evaluate_with_allocation_limit(
+                    query,
+                    self.catalog(),
+                    &values,
+                    &parameter_types,
+                    allocation_bytes,
+                )?;
                 let (fields, rows) = catalog::encode(&table, &result_formats)?;
                 PortalBody::Catalog {
                     fields,

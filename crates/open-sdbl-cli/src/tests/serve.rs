@@ -182,3 +182,24 @@ fn authentication_debug_flags_parse_from_toml() {
     assert!(options.debug_authentication);
     assert!(options.debug_authentication_secrets);
 }
+
+#[test]
+fn catalog_memory_limit_accepts_positive_mib_and_rejects_invalid_values() {
+    let (default, _) = split_serve_options(strings(&["mssql"])).unwrap();
+    assert_eq!(default.catalog_memory_limit_bytes, 64 * 1024 * 1024);
+    let args =
+        crate::config::config_arguments("provider='mssql'\ncatalog_memory_limit_mib=256", true)
+            .unwrap();
+    let (options, _) = split_serve_options(args).unwrap();
+    assert_eq!(options.catalog_memory_limit_bytes, 256 * 1024 * 1024);
+    for value in ["0", "-1", "1.5", "18446744073709551615"] {
+        assert!(
+            split_serve_options(strings(&["mssql", "--catalog-memory-limit-mib", value])).is_err(),
+            "{value}"
+        );
+    }
+    assert!(
+        crate::config::config_arguments("provider='mssql'\ncatalog_memory_limit_mib='256'", true)
+            .is_err()
+    );
+}

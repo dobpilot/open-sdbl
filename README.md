@@ -298,6 +298,7 @@ psql "host=gateway port=5433 dbname=unf user='Петрова (бухгалтер
 Опция | Назначение
 --- | ---
 `--listen АДРЕС:ПОРТ` | адрес прослушивания, по умолчанию `127.0.0.1:5433`
+`--catalog-memory-limit-mib N` | суммарный бюджет выделений на один запрос каталога, МиБ (по умолчанию 64)
 `--tls-cert`, `--tls-key` | PEM-цепочка сертификатов и закрытый ключ; для сетевого доступа без TLS требуется явное разрешение
 `--session-param ИМЯ=ЛИТЕРАЛ` | параметр сеанса для всех клиентов (повторяемая; литерал как у `\set`), например значение разделителя; клиент изменить его не может
 `--allow-insecure-loopback` | разрешить пароль без TLS для клиентов с loopback-адреса
@@ -1759,10 +1760,13 @@ Core предоставляет `RuntimeMetadataFacts::finalize_query` и пот
 параметры подключения и пропускают настройки шлюза. В TOML доступны поля `provider`, `host`, `port`,
 `database`, `user`, `sslmode`, `insecure_plaintext`, `trust_ca_file`,
 `socks5_proxy`, `socks5_user`, `mssql_dialect`, `trust_server_certificate`,
-`listen`, `tls_cert`, `tls_key`, `session_params` (массив строк `NAME=LITERAL`),
+`listen`, `catalog_memory_limit_mib`, `tls_cert`, `tls_key`, `session_params` (массив строк `NAME=LITERAL`),
 `allow_insecure_loopback`, `allow_insecure_network`, `verbose_errors`,
 `debug_authentication` и `debug_authentication_secrets`. Другие аргументы вместе с
-`--config` не принимаются. Пароли в TOML не поддерживаются.
+`--config` не принимаются. Пароли в TOML не поддерживаются. Например,
+`catalog_memory_limit_mib = 256` повышает бюджет до 256 МиБ на каждый запрос
+каталога. Это бюджет учтённых выделений за выполнение запроса, а не предел
+памяти процесса; одновременные запросы могут потреблять больше.
 
 Установите бинарный файл в `/usr/local/bin/open-sdbl`, создайте системного
 пользователя и группу `open-sdbl` и скопируйте

@@ -96,6 +96,8 @@ pub struct GatewayLimits {
     pub idle_timeout: Option<Duration>,
     /// The largest frontend message accepted; a larger one is `08P01`.
     pub max_message_bytes: usize,
+    /// Cumulative catalog evaluation allocation budget per statement, in bytes.
+    pub catalog_allocation_bytes: usize,
     /// Every failed authentication is answered no sooner than this after
     /// the password arrived, so that timing does not tell an unknown user
     /// from a wrong password.
@@ -104,13 +106,14 @@ pub struct GatewayLimits {
 
 impl Default for GatewayLimits {
     /// 64 connections, 30 seconds to authenticate, no idle limit, 16 MiB
-    /// messages, and failures answered after half a second.
+    /// messages, a 64 MiB catalog allocation budget, and failures answered after half a second.
     fn default() -> Self {
         Self {
             max_connections: 64,
             startup_timeout: Duration::from_secs(30),
             idle_timeout: None,
             max_message_bytes: 16 * 1024 * 1024,
+            catalog_allocation_bytes: 64 * 1024 * 1024,
             authentication_failure_delay: Duration::from_millis(500),
         }
     }

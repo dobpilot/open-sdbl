@@ -33,10 +33,10 @@ pub(crate) fn config_arguments(text: &str, gateway: bool) -> Result<Vec<String>,
                     .ok_or_else(|| usage(format!("{key} must be a string")))?;
                 fields.extend([option, value.to_owned()]);
             }
-            "port" => {
+            "port" | "catalog_memory_limit_mib" => {
                 let value = value
                     .as_integer()
-                    .ok_or_else(|| usage("port must be an integer"))?;
+                    .ok_or_else(|| usage(format!("{key} must be an integer")))?;
                 fields.extend([option, value.to_string()]);
             }
             "insecure_plaintext"
@@ -72,7 +72,8 @@ pub(crate) fn config_arguments(text: &str, gateway: bool) -> Result<Vec<String>,
         if gateway
             || !matches!(
                 key.as_str(),
-                "listen"
+                "catalog_memory_limit_mib"
+                    | "listen"
                     | "tls_cert"
                     | "tls_key"
                     | "session_params"

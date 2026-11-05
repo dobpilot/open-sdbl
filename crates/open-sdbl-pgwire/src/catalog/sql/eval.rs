@@ -88,20 +88,13 @@ fn constrained_number(expr: &Expr, columns: &[Column], target: usize) -> Option<
     None
 }
 
-pub(super) fn evaluate(
-    q: &Query,
-    catalog: &Catalog,
-    params: &[Value],
-    parameter_types: &[u32],
-) -> Result<Table, ErrorFields> {
-    evaluate_bounded(q, catalog, params, parameter_types, 50_000_000)
-}
-pub(super) fn evaluate_bounded(
+pub(super) fn evaluate_with_limit(
     q: &Query,
     catalog: &Catalog,
     params: &[Value],
     parameter_types: &[u32],
     steps: usize,
+    allocation_bytes: usize,
 ) -> Result<Table, ErrorFields> {
     let (_, parameter_types) = plan::describe(q, catalog, parameter_types)?;
     let mut ctx = Context {
@@ -111,6 +104,7 @@ pub(super) fn evaluate_bounded(
         budget: Budget::new(),
     };
     ctx.budget.steps = steps;
+    ctx.budget.bytes = allocation_bytes;
     ctx.query(q, &[], &[], &BTreeMap::new())
 }
 struct Context<'a> {
