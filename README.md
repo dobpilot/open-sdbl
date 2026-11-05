@@ -298,13 +298,14 @@ psql "host=gateway port=5433 dbname=unf user='Петрова (бухгалтер
 Опция | Назначение
 --- | ---
 `--listen АДРЕС:ПОРТ` | адрес прослушивания, по умолчанию `127.0.0.1:5433`
-`--tls-cert`, `--tls-key` | PEM-цепочка сертификатов и закрытый ключ; без них шлюз слушает только loopback
+`--tls-cert`, `--tls-key` | PEM-цепочка сертификатов и закрытый ключ; для сетевого доступа без TLS требуется явное разрешение
 `--session-param ИМЯ=ЛИТЕРАЛ` | параметр сеанса для всех клиентов (повторяемая; литерал как у `\set`), например значение разделителя; клиент изменить его не может
 `--allow-insecure-loopback` | разрешить пароль без TLS для клиентов с loopback-адреса
+`--allow-insecure-network` | разрешить пароль без TLS от любого клиента; пароль передаётся открытым текстом
 `--verbose-errors` | передавать клиенту текст ошибки СУБД в поле detail
 
-Запуск с не-loopback адресом без сертификата отклоняется ещё до подключения к
-базе. Метаданные, пользователи и права всех ролей читаются один раз при
+Запуск с не-loopback адресом без сертификата отклоняется до подключения к базе,
+если явно не задан `--allow-insecure-network` (в TOML: `allow_insecure_network = true`). Метаданные, пользователи и права всех ролей читаются один раз при
 старте; `SIGHUP` (на Unix) перечитывает их, а уже выполняющиеся операторы
 дорабатывают со старым снимком. Ctrl-C или `SIGTERM` останавливает приём
 соединений; простаивающие клиенты получают `57P01`. Подключения и неудачные
@@ -1748,7 +1749,7 @@ Core предоставляет `RuntimeMetadataFacts::finalize_query` и пот
 `database`, `user`, `sslmode`, `insecure_plaintext`, `trust_ca_file`,
 `socks5_proxy`, `socks5_user`, `mssql_dialect`, `trust_server_certificate`,
 `listen`, `tls_cert`, `tls_key`, `session_params` (массив строк `NAME=LITERAL`),
-`allow_insecure_loopback` и `verbose_errors`. Другие аргументы вместе с
+`allow_insecure_loopback`, `allow_insecure_network` и `verbose_errors`. Другие аргументы вместе с
 `--config` не принимаются. Пароли в TOML не поддерживаются.
 
 Установите бинарный файл в `/usr/local/bin/open-sdbl`, создайте системного

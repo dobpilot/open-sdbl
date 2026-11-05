@@ -256,6 +256,26 @@ async fn plain_connection_from_the_network_never_asks_for_a_password() {
 }
 
 #[tokio::test]
+async fn explicitly_allowed_network_connection_requests_a_password() {
+    let harness = Harness::new(Options {
+        insecure_loopback: false,
+        insecure_network: true,
+        ..Options::default()
+    });
+    let mut raw = Raw {
+        stream: harness.connect_from("192.0.2.10:5000".parse().unwrap()),
+    };
+    raw.startup(0x0003_0000, &[("user", USER)]).await;
+    let (code, body) = raw.read().await.unwrap();
+    assert_eq!(code, b'R');
+    assert_eq!(body.as_slice(), &[0, 0, 0, 3]);
+    raw.password(PASSWORD).await;
+    let (code, body) = raw.read().await.unwrap();
+    assert_eq!(code, b'R');
+    assert_eq!(body.as_slice(), &[0, 0, 0, 0]);
+}
+
+#[tokio::test]
 async fn loopback_without_tls_needs_the_operator_flag() {
     let harness = Harness::new(Options {
         insecure_loopback: false,

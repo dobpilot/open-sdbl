@@ -329,6 +329,7 @@ async fn startup<E: Engine, S: AsyncRead + AsyncWrite + Unpin + Send + 'static>(
     let application_name = parameter("application_name").unwrap_or_default();
     let encrypted = matches!(transport, Transport::Tls(_));
     let secure = encrypted
+        || shared.allow_insecure_network
         || (shared.allow_insecure_loopback && peer.is_some_and(|peer| peer.ip().is_loopback()));
     if !secure {
         shared.events.event(GatewayEvent::Refused {

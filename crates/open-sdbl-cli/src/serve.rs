@@ -41,6 +41,7 @@ pub(crate) struct ServeOptions {
     pub(crate) tls_key: Option<String>,
     pub(crate) session_parameters: Vec<(String, String)>,
     pub(crate) allow_insecure_loopback: bool,
+    pub(crate) allow_insecure_network: bool,
     pub(crate) verbose_errors: bool,
 }
 
@@ -51,8 +52,7 @@ fn usage(message: impl std::fmt::Display) -> CliError {
 /// Takes the gateway options out of `arguments`; the rest are the
 /// connection options of `console`, in order.
 ///
-/// A plain listener on a non-loopback address is refused here, before any
-/// connection to the database is attempted.
+/// A plain network listener requires explicit opt-in before connecting to the database.
 pub(crate) fn split_serve_options(
     arguments: Vec<String>,
 ) -> Result<(ServeOptions, Vec<String>), CliError> {
@@ -62,6 +62,7 @@ pub(crate) fn split_serve_options(
         tls_key: None,
         session_parameters: Vec::new(),
         allow_insecure_loopback: false,
+        allow_insecure_network: false,
         verbose_errors: false,
     };
     let mut rest = Vec::new();
@@ -110,12 +111,14 @@ pub(crate) fn split_serve_options(
                     .session_parameters
                     .push((name.to_owned(), literal.trim().to_owned()));
             }
-            "--allow-insecure-loopback" | "--verbose-errors" => {
+            "--allow-insecure-loopback" | "--allow-insecure-network" | "--verbose-errors" => {
                 if inline.is_some() {
                     return Err(usage(format!("option {option:?} does not take a value")));
                 }
                 if option == "--verbose-errors" {
                     options.verbose_errors = true;
+                } else if option == "--allow-insecure-network" {
+                    options.allow_insecure_network = true;
                 } else {
                     options.allow_insecure_loopback = true;
                 }
@@ -127,9 +130,9 @@ pub(crate) fn split_serve_options(
         (Some(_), None) | (None, Some(_)) => {
             return Err(usage("--tls-cert and --tls-key go together"));
         }
-        (None, None) if !options.listen.ip().is_loopback() => {
+        (None, None) if !options.listen.ip().is_loopback() && !options.allow_insecure_network => {
             return Err(usage(format!(
-                "refusing to listen on {} without TLS: passwords would cross the network in clear text; pass --tls-cert and --tls-key, or listen on a loopback address",
+                "refusing to listen on {} without TLS: passwords would cross the network in clear text; pass --tls-cert and --tls-key, listen on a loopback address, or pass --allow-insecure-network",
                 options.listen
             )));
         }
@@ -170,6 +173,7 @@ fn config_arguments(text: &str) -> Result<Vec<String>, CliError> {
             "insecure_plaintext"
             | "trust_server_certificate"
             | "allow_insecure_loopback"
+            | "allow_insecure_network"
             | "verbose_errors" => {
                 if value
                     .as_bool()
@@ -381,11 +385,16 @@ pub(crate) async fn serve(
     let Some(connection) = parse_connection(&mut rest.into_iter(), "serve", output)? else {
         return Ok(());
     };
+    if options.allow_insecure_network {
+        eprintln!(
+            "warning: insecure network connections enabled; client passwords may be sent without TLS"
+        );
+    }
     let tls = match (&options.tls_cert, &options.tls_key) {
         (Some(cert), Some(key)) => Some(load_tls(cert, key)?),
         _ => None,
     };
-    if tls.is_none() && !options.allow_insecure_loopback {
+    if tls.is_none() && !options.allow_insecure_loopback && !options.allow_insecure_network {
         eprintln!(
             "warning: no TLS and no --allow-insecure-loopback: every client will be refused before it sends a password"
         );
@@ -421,11 +430,7 @@ pub(crate) async fn serve(
         .map_err(|error| CliError::Io("cannot read the listen address".to_owned(), error))?;
     eprintln!(
         "serve: listening on {address} ({})",
-        if tls.is_some() {
-            "TLS"
-        } else {
-            "loopback, no TLS"
-        }
+        if tls.is_some() { "TLS" } else { "no TLS" }
     );
     let handle = Arc::new(StateHandle::new(state));
     let refresh = refresh_on_hangup(
@@ -438,6 +443,7 @@ pub(crate) async fn serve(
     config.tls = tls;
     config.session_parameters = session_parameters;
     config.allow_insecure_loopback = options.allow_insecure_loopback;
+    config.allow_insecure_network = options.allow_insecure_network;
     config.verbose_errors = options.verbose_errors;
     let serving = open_sdbl_pgwire::serve(
         listener,

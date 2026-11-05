@@ -245,6 +245,7 @@ pub(crate) struct Options {
     pub(crate) stored: &'static str,
     pub(crate) tls: Option<Arc<rustls::ServerConfig>>,
     pub(crate) insecure_loopback: bool,
+    pub(crate) insecure_network: bool,
     pub(crate) limits: GatewayLimits,
     pub(crate) portal_buffer_rows: usize,
     pub(crate) delay: Option<Duration>,
@@ -264,6 +265,7 @@ impl Default for Options {
             stored: DEMO,
             tls: None,
             insecure_loopback: true,
+            insecure_network: false,
             limits: GatewayLimits {
                 authentication_failure_delay: Duration::from_millis(20),
                 ..GatewayLimits::default()
@@ -320,6 +322,7 @@ impl Harness {
             tls: options.tls.map(tokio_rustls::TlsAcceptor::from),
             session_parameters: options.operator,
             allow_insecure_loopback: options.insecure_loopback,
+            allow_insecure_network: options.insecure_network,
             verbose_errors: false,
             limits: options.limits,
             portal_buffer_rows: options.portal_buffer_rows,

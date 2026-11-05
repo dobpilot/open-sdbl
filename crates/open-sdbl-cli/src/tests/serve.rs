@@ -141,3 +141,25 @@ session_params = ["X=1"]
     let args = super::config_arguments("provider = 'postgres'\nlisten = '0.0.0.0:5433'").unwrap();
     assert!(split_serve_options(args).is_err());
 }
+
+#[test]
+fn config_allows_plain_network_only_with_explicit_opt_in() {
+    let args = super::config_arguments(
+        r#"
+provider = "mssql"
+host = "os-011009028.samokat.io"
+database = "erp_uf"
+user = "1C_BI"
+listen = "0.0.0.0:5433"
+allow_insecure_network = true
+"#,
+    )
+    .unwrap();
+    let (options, rest) = split_serve_options(args).unwrap();
+    assert!(options.allow_insecure_network);
+    assert!(
+        crate::args::parse_connection(&mut rest.into_iter(), "serve", &mut Vec::new())
+            .unwrap()
+            .is_some()
+    );
+}

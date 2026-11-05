@@ -132,6 +132,8 @@ pub struct GatewayConfig {
     pub session_parameters: SessionParameters,
     /// Whether a loopback client may send its password without TLS.
     pub allow_insecure_loopback: bool,
+    /// Whether clients on any network may send passwords without TLS.
+    pub allow_insecure_network: bool,
     /// Whether database error messages are sent to clients as details.
     pub verbose_errors: bool,
     /// The bounds on client connections.
@@ -150,6 +152,7 @@ impl GatewayConfig {
             tls: None,
             session_parameters: SessionParameters::new(),
             allow_insecure_loopback: false,
+            allow_insecure_network: false,
             verbose_errors: false,
             gateway_limits: GatewayLimits::default(),
         }
@@ -237,6 +240,7 @@ pub(crate) struct Shared<E: Engine> {
     pub(crate) tls: Option<tokio_rustls::TlsAcceptor>,
     pub(crate) session_parameters: SessionParameters,
     pub(crate) allow_insecure_loopback: bool,
+    pub(crate) allow_insecure_network: bool,
     pub(crate) verbose_errors: bool,
     pub(crate) limits: GatewayLimits,
     pub(crate) portal_buffer_rows: usize,
@@ -285,6 +289,7 @@ pub async fn serve(
         tls: config.tls.map(tokio_rustls::TlsAcceptor::from),
         session_parameters: config.session_parameters,
         allow_insecure_loopback: config.allow_insecure_loopback,
+        allow_insecure_network: config.allow_insecure_network,
         verbose_errors: config.verbose_errors,
         limits: config.gateway_limits,
         portal_buffer_rows: config.limits.portal_buffer_rows,
