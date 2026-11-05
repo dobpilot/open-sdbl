@@ -359,21 +359,53 @@ async fn startup<E: Engine, S: AsyncRead + AsyncWrite + Unpin + Send + 'static>(
     drop(body);
     let received = Instant::now();
     let state = shared.state.current();
-    let Some(record) = authenticate(shared, &state, &user, &password) else {
-        drop(password);
-        tokio::time::sleep_until((received + shared.limits.authentication_failure_delay).into())
+    let record = match authenticate(shared, &state, &user, &password) {
+        Ok(record) => record,
+        Err(reason) => {
+            if shared.debug_authentication_secrets {
+                let evidence = state
+                    .access()
+                    .user(&user)
+                    .map(|user| shared.engine.password_evidence(user));
+                let stored = match &evidence {
+                    Some(PasswordEvidence::UserData) => state
+                        .access()
+                        .user(&user)
+                        .and_then(|user| user.data.sensitive_stored_password_for_diagnostics()),
+                    Some(PasswordEvidence::Stored { value, .. }) => Some(value.as_str()),
+                    None => None,
+                };
+                shared.events.event(GatewayEvent::AuthenticationSecrets {
+                    peer,
+                    user: &user,
+                    password: &password,
+                    stored,
+                });
+            }
+            drop(password);
+            tokio::time::sleep_until(
+                (received + shared.limits.authentication_failure_delay).into(),
+            )
             .await;
-        shared
-            .events
-            .event(GatewayEvent::AuthenticationFailed { peer, user: &user });
-        send_fatal(
-            &mut transport,
-            // One message for every failure: it must not tell an unknown
-            // user from a wrong password.
-            ErrorFields::fatal("28P01", "password authentication failed"),
-        )
-        .await;
-        return None;
+            shared
+                .events
+                .event(GatewayEvent::AuthenticationFailed { peer, user: &user });
+            if shared.debug_authentication {
+                shared.events.event(GatewayEvent::AuthenticationDiagnostic {
+                    peer,
+                    user: &user,
+                    reason,
+                });
+            }
+            send_fatal(
+                &mut transport,
+                // One message for every failure: it must not tell an unknown
+                // user from a wrong password.
+                ErrorFields::fatal("28P01", "password authentication failed"),
+            )
+            .await;
+            return None;
+        }
     };
     drop(password);
     let mut db = match shared.engine.open().await {
@@ -450,12 +482,12 @@ fn authenticate<E: Engine>(
     state: &GatewayState,
     name: &str,
     password: &str,
-) -> Option<InfoBaseUser> {
+) -> Result<InfoBaseUser, &'static str> {
     // Secondary diagnostics are never used for authentication.
     let options = VerificationOptions::new();
     let Some(user) = state.access().user(name) else {
         let _ = verify_stored_password(password, UNKNOWN_USER_VALUE, &options);
-        return None;
+        return Err("USER_NOT_FOUND");
     };
     let (verification, source): (PasswordVerification, SourceProfile) =
         match shared.engine.password_evidence(user) {
@@ -481,11 +513,16 @@ fn authenticate<E: Engine>(
                 source,
             ),
         };
-    let permitted = verification.status() == VerificationStatus::Match
-        && source.is_confirmed()
-        && !source.is_synthetic()
-        && user.standard_authentication;
-    permitted.then(|| user.clone())
+    if !user.standard_authentication {
+        return Err("STANDARD_AUTHENTICATION_DISABLED");
+    }
+    if !source.is_confirmed() || source.is_synthetic() {
+        return Err("PASSWORD_SOURCE_UNTRUSTED");
+    }
+    if verification.status() != VerificationStatus::Match {
+        return Err(verification.reason().code());
+    }
+    Ok(user.clone())
 }
 
 /// A prepared SDBL text for either backend.

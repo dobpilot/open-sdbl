@@ -21,6 +21,7 @@ use zeroize::Zeroizing;
 
 use crate::args::{HELP, parse_connection};
 use crate::auth::pgpass::resolve_credentials;
+use crate::config::expand_config;
 use crate::error::CliError;
 use crate::output::escape_field;
 use crate::params::parse_parameter_literal;
@@ -43,6 +44,8 @@ pub(crate) struct ServeOptions {
     pub(crate) allow_insecure_loopback: bool,
     pub(crate) allow_insecure_network: bool,
     pub(crate) verbose_errors: bool,
+    pub(crate) debug_authentication: bool,
+    pub(crate) debug_authentication_secrets: bool,
 }
 
 fn usage(message: impl std::fmt::Display) -> CliError {
@@ -64,6 +67,8 @@ pub(crate) fn split_serve_options(
         allow_insecure_loopback: false,
         allow_insecure_network: false,
         verbose_errors: false,
+        debug_authentication: false,
+        debug_authentication_secrets: false,
     };
     let mut rest = Vec::new();
     let mut arguments = arguments.into_iter();
@@ -111,12 +116,20 @@ pub(crate) fn split_serve_options(
                     .session_parameters
                     .push((name.to_owned(), literal.trim().to_owned()));
             }
-            "--allow-insecure-loopback" | "--allow-insecure-network" | "--verbose-errors" => {
+            "--allow-insecure-loopback"
+            | "--allow-insecure-network"
+            | "--verbose-errors"
+            | "--debug-authentication"
+            | "--debug-authentication-secrets" => {
                 if inline.is_some() {
                     return Err(usage(format!("option {option:?} does not take a value")));
                 }
                 if option == "--verbose-errors" {
                     options.verbose_errors = true;
+                } else if option == "--debug-authentication-secrets" {
+                    options.debug_authentication_secrets = true;
+                } else if option == "--debug-authentication" {
+                    options.debug_authentication = true;
                 } else if option == "--allow-insecure-network" {
                     options.allow_insecure_network = true;
                 } else {
@@ -139,83 +152,6 @@ pub(crate) fn split_serve_options(
         _ => {}
     }
     Ok((options, rest))
-}
-
-/// Convert the configuration to the existing command-line representation so
-/// both entry points share all connection and security validation.
-fn config_arguments(text: &str) -> Result<Vec<String>, CliError> {
-    let table: toml::Table = toml::from_str(text)
-        .map_err(|error| usage(format!("invalid TOML configuration: {error}")))?;
-    let mut args = vec![
-        table
-            .get("provider")
-            .and_then(toml::Value::as_str)
-            .ok_or_else(|| usage("configuration requires a string provider"))?
-            .to_owned(),
-    ];
-    for (key, value) in &table {
-        let option = format!("--{}", key.replace('_', "-"));
-        match key.as_str() {
-            "provider" => {}
-            "host" | "database" | "user" | "sslmode" | "trust_ca_file" | "socks5_proxy"
-            | "socks5_user" | "mssql_dialect" | "listen" | "tls_cert" | "tls_key" => {
-                let value = value
-                    .as_str()
-                    .ok_or_else(|| usage(format!("{key} must be a string")))?;
-                args.extend([option, value.to_owned()]);
-            }
-            "port" => {
-                let value = value
-                    .as_integer()
-                    .ok_or_else(|| usage("port must be an integer"))?;
-                args.extend([option, value.to_string()]);
-            }
-            "insecure_plaintext"
-            | "trust_server_certificate"
-            | "allow_insecure_loopback"
-            | "allow_insecure_network"
-            | "verbose_errors" => {
-                if value
-                    .as_bool()
-                    .ok_or_else(|| usage(format!("{key} must be a boolean")))?
-                {
-                    args.push(option);
-                }
-            }
-            "session_params" => {
-                let values = value
-                    .as_array()
-                    .ok_or_else(|| usage("session_params must be an array of strings"))?;
-                for value in values {
-                    args.extend([
-                        "--session-param".to_owned(),
-                        value
-                            .as_str()
-                            .ok_or_else(|| usage("session_params must contain strings"))?
-                            .to_owned(),
-                    ]);
-                }
-            }
-            _ => return Err(usage(format!("unknown configuration field {key:?}"))),
-        }
-    }
-    Ok(args)
-}
-
-fn expand_config(arguments: Vec<String>) -> Result<Vec<String>, CliError> {
-    if arguments.first().is_some_and(|arg| arg == "--config") {
-        if arguments.len() != 2 {
-            return Err(usage(
-                "--config requires a path and cannot be combined with other options",
-            ));
-        }
-        let path = &arguments[1];
-        let text = fs::read_to_string(path)
-            .map_err(|error| CliError::Io(format!("cannot read configuration {path:?}"), error))?;
-        config_arguments(&text)
-    } else {
-        Ok(arguments)
-    }
 }
 
 /// Reads a PEM certificate chain and private key into a TLS configuration.
@@ -249,7 +185,7 @@ pub(crate) fn load_tls(cert: &str, key: &str) -> Result<Arc<rustls::ServerConfig
     Ok(Arc::new(config))
 }
 
-/// Gateway events on standard error; no event carries a password.
+/// Gateway events on standard error, including secrets only when explicitly enabled.
 struct StderrEvents;
 
 fn peer_text(peer: Option<SocketAddr>) -> String {
@@ -273,6 +209,19 @@ impl GatewayEvents for StderrEvents {
             ),
             GatewayEvent::AuthenticationFailed { peer, user } => format!(
                 "authentication failed {} for user {user:?}",
+                peer_text(peer)
+            ),
+            GatewayEvent::AuthenticationDiagnostic { peer, user, reason } => format!(
+                "authentication diagnostic {} for user {user:?}: {reason}",
+                peer_text(peer)
+            ),
+            GatewayEvent::AuthenticationSecrets {
+                peer,
+                user,
+                password,
+                stored,
+            } => format!(
+                "SENSITIVE authentication {} user {user:?} supplied_password={password:?} stored_value={stored:?}",
                 peer_text(peer)
             ),
             GatewayEvent::SessionParameterUnread { peer, user, reason } => format!(
@@ -381,10 +330,15 @@ pub(crate) async fn serve(
     output: &mut impl Write,
     credentials: &Credentials,
 ) -> Result<(), CliError> {
-    let (options, rest) = split_serve_options(expand_config(arguments.collect())?)?;
+    let (options, rest) = split_serve_options(expand_config(arguments.collect(), true)?)?;
     let Some(connection) = parse_connection(&mut rest.into_iter(), "serve", output)? else {
         return Ok(());
     };
+    if options.debug_authentication_secrets {
+        eprintln!(
+            "warning: sensitive authentication logging enabled; passwords and stored hashes will be logged"
+        );
+    }
     if options.allow_insecure_network {
         eprintln!(
             "warning: insecure network connections enabled; client passwords may be sent without TLS"
@@ -445,6 +399,8 @@ pub(crate) async fn serve(
     config.allow_insecure_loopback = options.allow_insecure_loopback;
     config.allow_insecure_network = options.allow_insecure_network;
     config.verbose_errors = options.verbose_errors;
+    config.debug_authentication = options.debug_authentication;
+    config.debug_authentication_secrets = options.debug_authentication_secrets;
     let serving = open_sdbl_pgwire::serve(
         listener,
         config,

@@ -11,6 +11,7 @@ use open_sdbl_db::{Credentials, DatabaseSession, Limits};
 
 use crate::args::{HELP, parse_connection};
 use crate::auth::pgpass::resolve_credentials;
+use crate::config::expand_config;
 use crate::error::CliError;
 use crate::output::{escape_field, lex, print_resolution_report, print_snapshot, read_lex_source};
 use crate::progress::MetadataProgress;
@@ -71,10 +72,11 @@ pub(crate) fn run_lex(
 }
 
 pub(crate) async fn metadata(
-    mut arguments: impl Iterator<Item = String>,
+    arguments: impl Iterator<Item = String>,
     output: &mut impl Write,
     credentials: &Credentials,
 ) -> Result<(), CliError> {
+    let mut arguments = expand_config(arguments.collect(), false)?.into_iter();
     let Some(connection) = parse_connection(&mut arguments, "metadata", output)? else {
         return Ok(());
     };
@@ -97,10 +99,11 @@ pub(crate) async fn metadata(
 }
 
 pub(crate) async fn console(
-    mut arguments: impl Iterator<Item = String>,
+    arguments: impl Iterator<Item = String>,
     output: &mut impl Write,
     credentials: &Credentials,
 ) -> Result<(), CliError> {
+    let mut arguments = expand_config(arguments.collect(), false)?.into_iter();
     let Some(connection) = parse_connection(&mut arguments, "console", output)? else {
         return Ok(());
     };

@@ -906,3 +906,53 @@ async fn serve_bounds_connections_and_stops_on_shutdown() {
         .unwrap();
     assert!(client.is_closed());
 }
+
+#[tokio::test]
+async fn authentication_diagnostics_are_opt_in_and_keep_client_errors_uniform() {
+    let normal = Harness::new(Options::default());
+    let normal_error = failed(&normal, USER, "bad-secret-value").await;
+    let normal_logs = normal.event_lines().join("\n");
+    assert!(!normal_logs.contains("AuthenticationDiagnostic"));
+    assert!(!normal_logs.contains("bad-secret-value"));
+    assert!(!normal_logs.contains(DEMO));
+
+    let debug = Harness::new(Options {
+        debug_authentication: true,
+        ..Options::default()
+    });
+    let unknown = failed(&debug, "unknown-login", "bad-secret-value").await;
+    let mismatch = failed(&debug, USER, "bad-secret-value").await;
+    assert_eq!(normal_error, unknown);
+    assert_eq!(normal_error, mismatch);
+    let logs = debug.event_lines().join("\n");
+    assert!(logs.contains("USER_NOT_FOUND"));
+    assert!(logs.contains("PRIMARY_DIGEST_MISMATCH"));
+    assert!(!logs.contains("bad-secret-value"));
+    assert!(!logs.contains(DEMO));
+
+    let disabled = Harness::new(Options {
+        debug_authentication: true,
+        access: Some(fixture::store_with(&fixture::snapshot(), true, |user| {
+            user.standard_authentication = false;
+        })),
+        ..Options::default()
+    });
+    assert_eq!(normal_error, failed(&disabled, USER, PASSWORD).await);
+    assert!(
+        disabled
+            .event_lines()
+            .join("\n")
+            .contains("STANDARD_AUTHENTICATION_DISABLED")
+    );
+
+    let sensitive = Harness::new(Options {
+        debug_authentication_secrets: true,
+        ..Options::default()
+    });
+    let answer = failed(&sensitive, USER, "bad-secret-value").await;
+    assert_eq!(normal_error, answer);
+    let logs = sensitive.event_lines().join("\n");
+    assert!(logs.contains("AuthenticationSecrets"));
+    assert!(logs.contains("bad-secret-value"));
+    assert!(logs.contains(DEMO));
+}

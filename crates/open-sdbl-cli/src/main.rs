@@ -11,6 +11,7 @@ mod access;
 mod app;
 mod args;
 mod auth;
+mod config;
 mod error;
 mod output;
 mod params;

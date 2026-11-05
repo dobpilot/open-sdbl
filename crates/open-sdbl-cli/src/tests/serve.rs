@@ -116,7 +116,7 @@ fn tls_files_are_validated() {
 
 #[test]
 fn config_uses_existing_validation() {
-    let args = super::config_arguments(
+    let args = crate::config::config_arguments(
         r#"
 provider = "postgres"
 host = "db"
@@ -126,6 +126,7 @@ port = 5432
 allow_insecure_loopback = true
 session_params = ["X=1"]
 "#,
+        true,
     )
     .unwrap();
     let (options, rest) = split_serve_options(args).unwrap();
@@ -136,15 +137,20 @@ session_params = ["X=1"]
             .unwrap()
             .is_some()
     );
-    assert!(super::config_arguments("provider = 'postgres'\npassword = 'secret'").is_err());
-    assert!(super::config_arguments("provider = 'postgres'\nport = '5432'").is_err());
-    let args = super::config_arguments("provider = 'postgres'\nlisten = '0.0.0.0:5433'").unwrap();
+    assert!(
+        crate::config::config_arguments("provider = 'postgres'\npassword = 'secret'", true)
+            .is_err()
+    );
+    assert!(crate::config::config_arguments("provider = 'postgres'\nport = '5432'", true).is_err());
+    let args =
+        crate::config::config_arguments("provider = 'postgres'\nlisten = '0.0.0.0:5433'", true)
+            .unwrap();
     assert!(split_serve_options(args).is_err());
 }
 
 #[test]
 fn config_allows_plain_network_only_with_explicit_opt_in() {
-    let args = super::config_arguments(
+    let args = crate::config::config_arguments(
         r#"
 provider = "mssql"
 host = "os-011009028.samokat.io"
@@ -153,6 +159,7 @@ user = "1C_BI"
 listen = "0.0.0.0:5433"
 allow_insecure_network = true
 "#,
+        true,
     )
     .unwrap();
     let (options, rest) = split_serve_options(args).unwrap();
@@ -162,4 +169,16 @@ allow_insecure_network = true
             .unwrap()
             .is_some()
     );
+}
+
+#[test]
+fn authentication_debug_flags_parse_from_toml() {
+    let args = crate::config::config_arguments(
+        "provider = 'mssql'\ndebug_authentication = true\ndebug_authentication_secrets = true",
+        true,
+    )
+    .unwrap();
+    let (options, _) = split_serve_options(args).unwrap();
+    assert!(options.debug_authentication);
+    assert!(options.debug_authentication_secrets);
 }

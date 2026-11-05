@@ -136,6 +136,10 @@ pub struct GatewayConfig {
     pub allow_insecure_network: bool,
     /// Whether database error messages are sent to clients as details.
     pub verbose_errors: bool,
+    /// Emit server-side authentication failure reasons.
+    pub debug_authentication: bool,
+    /// Log password material on failed logins; disabled by default.
+    pub debug_authentication_secrets: bool,
     /// The bounds on client connections.
     pub gateway_limits: GatewayLimits,
 }
@@ -154,6 +158,8 @@ impl GatewayConfig {
             allow_insecure_loopback: false,
             allow_insecure_network: false,
             verbose_errors: false,
+            debug_authentication: false,
+            debug_authentication_secrets: false,
             gateway_limits: GatewayLimits::default(),
         }
     }
@@ -192,6 +198,26 @@ pub enum GatewayEvent<'a> {
         peer: Option<SocketAddr>,
         /// The user name the client sent.
         user: &'a str,
+    },
+    /// Optional server-side diagnosis; never contains passwords or hashes.
+    AuthenticationDiagnostic {
+        /// The client address.
+        peer: Option<SocketAddr>,
+        /// The user name supplied by the client.
+        user: &'a str,
+        /// A non-secret reason code.
+        reason: &'static str,
+    },
+    /// Sensitive authentication material, emitted only by explicit opt-in.
+    AuthenticationSecrets {
+        /// The client address.
+        peer: Option<SocketAddr>,
+        /// The user name supplied by the client.
+        user: &'a str,
+        /// The password supplied by the client.
+        password: &'a str,
+        /// The stored credential value, if available.
+        stored: Option<&'a str>,
     },
     /// A session parameter of an authenticated user could not be read;
     /// restrictions that need it refuse their statements.
@@ -242,6 +268,8 @@ pub(crate) struct Shared<E: Engine> {
     pub(crate) allow_insecure_loopback: bool,
     pub(crate) allow_insecure_network: bool,
     pub(crate) verbose_errors: bool,
+    pub(crate) debug_authentication: bool,
+    pub(crate) debug_authentication_secrets: bool,
     pub(crate) limits: GatewayLimits,
     pub(crate) portal_buffer_rows: usize,
     pub(crate) registry: Arc<CancelRegistry>,
@@ -291,6 +319,8 @@ pub async fn serve(
         allow_insecure_loopback: config.allow_insecure_loopback,
         allow_insecure_network: config.allow_insecure_network,
         verbose_errors: config.verbose_errors,
+        debug_authentication: config.debug_authentication,
+        debug_authentication_secrets: config.debug_authentication_secrets,
         limits: config.gateway_limits,
         portal_buffer_rows: config.limits.portal_buffer_rows,
         registry: Arc::default(),

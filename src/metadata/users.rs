@@ -41,8 +41,7 @@ pub struct UserData {
     /// digest fields `H1,H2` with the measured algorithm/salt suffix, or a
     /// single extended record string — when
     /// the record carries one. Private and absent from [`fmt::Debug`]: a
-    /// stored hash never appears in a public getter, `Debug`, an error or
-    /// a log. Only [`UserData::verify_password`] consumes it.
+    /// stored hash is omitted from `Debug` and normal verification output.
     stored_password: Option<String>,
 }
 
@@ -62,6 +61,14 @@ impl fmt::Debug for UserData {
 }
 
 impl UserData {
+    /// Returns credential material for explicitly enabled sensitive diagnostics.
+    ///
+    /// The returned value is a password hash and must be treated as a secret.
+    #[must_use]
+    pub fn sensitive_stored_password_for_diagnostics(&self) -> Option<&str> {
+        self.stored_password.as_deref()
+    }
+
     /// Verifies a password for this user through the `access-rights`
     /// stored-password contract.
     ///

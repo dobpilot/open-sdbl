@@ -246,6 +246,8 @@ pub(crate) struct Options {
     pub(crate) tls: Option<Arc<rustls::ServerConfig>>,
     pub(crate) insecure_loopback: bool,
     pub(crate) insecure_network: bool,
+    pub(crate) debug_authentication: bool,
+    pub(crate) debug_authentication_secrets: bool,
     pub(crate) limits: GatewayLimits,
     pub(crate) portal_buffer_rows: usize,
     pub(crate) delay: Option<Duration>,
@@ -266,6 +268,8 @@ impl Default for Options {
             tls: None,
             insecure_loopback: true,
             insecure_network: false,
+            debug_authentication: false,
+            debug_authentication_secrets: false,
             limits: GatewayLimits {
                 authentication_failure_delay: Duration::from_millis(20),
                 ..GatewayLimits::default()
@@ -324,6 +328,8 @@ impl Harness {
             allow_insecure_loopback: options.insecure_loopback,
             allow_insecure_network: options.insecure_network,
             verbose_errors: false,
+            debug_authentication: options.debug_authentication,
+            debug_authentication_secrets: options.debug_authentication_secrets,
             limits: options.limits,
             portal_buffer_rows: options.portal_buffer_rows,
             registry: Arc::new(CancelRegistry::default()),

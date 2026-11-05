@@ -182,3 +182,48 @@ fn serve_argument_errors_are_usage_errors() {
     let help = String::from_utf8(output.stdout).unwrap();
     assert!(help.contains("--tls-cert") && help.contains("serve postgres|mssql"));
 }
+
+#[test]
+fn connection_commands_accept_gateway_config_and_validate_connection() {
+    let path = std::env::temp_dir().join(format!("open-sdbl-config-{}.toml", std::process::id()));
+    std::fs::write(
+        &path,
+        r#"
+provider = "mssql"
+host = "db"
+database = "erp"
+user = "reader"
+trust_server_certificate = true
+trust_ca_file = "ca.pem"
+listen = "0.0.0.0:5433"
+allow_insecure_network = true
+session_params = ["X=1"]
+"#,
+    )
+    .unwrap();
+    for command in ["console", "metadata", "repl"] {
+        let output = Command::new(env!("CARGO_BIN_EXE_open-sdbl"))
+            .arg(command)
+            .arg("--config")
+            .arg(&path)
+            .output()
+            .unwrap();
+        assert_eq!(output.status.code(), Some(2));
+        let stderr = String::from_utf8(output.stderr).unwrap();
+        assert!(stderr.contains("mutually exclusive"), "{command}: {stderr}");
+        let output = Command::new(env!("CARGO_BIN_EXE_open-sdbl"))
+            .arg(command)
+            .arg("--config")
+            .arg(&path)
+            .arg("--host")
+            .arg("other")
+            .output()
+            .unwrap();
+        assert!(
+            String::from_utf8(output.stderr)
+                .unwrap()
+                .contains("cannot be combined")
+        );
+    }
+    std::fs::remove_file(path).unwrap();
+}

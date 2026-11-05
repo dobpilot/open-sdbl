@@ -303,13 +303,20 @@ psql "host=gateway port=5433 dbname=unf user='Петрова (бухгалтер
 `--allow-insecure-loopback` | разрешить пароль без TLS для клиентов с loopback-адреса
 `--allow-insecure-network` | разрешить пароль без TLS от любого клиента; пароль передаётся открытым текстом
 `--verbose-errors` | передавать клиенту текст ошибки СУБД в поле detail
+`--debug-authentication` | журналировать причину ошибки входа на сервере
+`--debug-authentication-secrets` | журналировать введённый пароль и сохранённое значение при ошибке входа
 
 Запуск с не-loopback адресом без сертификата отклоняется до подключения к базе,
 если явно не задан `--allow-insecure-network` (в TOML: `allow_insecure_network = true`). Метаданные, пользователи и права всех ролей читаются один раз при
 старте; `SIGHUP` (на Unix) перечитывает их, а уже выполняющиеся операторы
 дорабатывают со старым снимком. Ctrl-C или `SIGTERM` останавливает приём
 соединений; простаивающие клиенты получают `57P01`. Подключения и неудачные
-входы пишутся в stderr с адресом и именем пользователя, но без пароля.
+входы пишутся в stderr с адресом и именем пользователя. Для поиска причины
+добавьте в TOML `debug_authentication = true`. Чтобы вывести также введённый
+пароль и сохранённое значение, отдельно задайте
+`debug_authentication_secrets = true`. Этот режим пишет секреты в журнал;
+ограничьте доступ к журналу и отключите его после диагностики. После изменения
+TOML перезапустите службу; журнал доступен через `journalctl -u open-sdbl-pgwire`.
 
 Как это работает:
 
@@ -319,8 +326,9 @@ psql "host=gateway port=5433 dbname=unf user='Петрова (бухгалтер
   `RestrictionMode::Restricted` с ролями, ограничениями и параметрами сеанса
   этого пользователя (как `\as` в консоли). Объект или поле, право на чтение
   которого не доказано, отклоняется с `42501` до генерации SQL.
-- **Пароль.** Принимается только открытым текстом и только внутри TLS (или с
-  loopback при `--allow-insecure-loopback`). Проверка — по публичному
+- **Пароль.** Передаётся открытым текстом внутри TLS; без TLS он принимается
+  только при явном разрешении `--allow-insecure-loopback` или
+  `--allow-insecure-network`. Проверка — по публичному
   `СохраняемоеЗначениеПароля` по эталону 8.3.27.2342: старый формат SHA-1
   `H1,H2` и четырёхполевые записи `H1,H2,ID,соль` с ID 1 (SHA-256), 2 (SHA-512)
   и 3 (PBKDF2-HMAC-SHA256, 16 000 итераций); соль — буквальный текст,
@@ -339,7 +347,7 @@ psql "host=gateway port=5433 dbname=unf user='Петрова (бухгалтер
   старые резервные дайджесты не используются. Вход SHA-256 проверен на
   текущем пользователе `unf`; для SHA-512 подтверждена структура записи и
   выполнены синтетические сквозные тесты. PBKDF2 проверен синтетическими
-  векторами. Пароль и сохранённые значения не выводятся в диагностику.
+  векторами. По умолчанию пароль и сохранённые значения в журнал не выводятся.
   Пользователи кешируются вместе с состоянием сервера: после их изменения
   нужен refresh (`SIGHUP`) или перезапуск; обновление кода требует перезапуска.
 - **Запросы.** Simple Query выполняет пакет SDBL целиком: для `ПОМЕСТИТЬ`
@@ -1745,11 +1753,15 @@ Core предоставляет `RuntimeMetadataFacts::finalize_query` и пот
 
 Скопируйте `deploy/pgwire.toml` в `/etc/open-sdbl/pgwire.toml` и настройте
 подключение. Вместо аргументов можно запустить `open-sdbl serve --config
-/etc/open-sdbl/pgwire.toml`. В TOML доступны поля `provider`, `host`, `port`,
+/etc/open-sdbl/pgwire.toml`. Этот файл также подходит для
+`open-sdbl console --config /etc/open-sdbl/pgwire.toml` и
+`open-sdbl metadata --config /etc/open-sdbl/pgwire.toml`: команды используют
+параметры подключения и пропускают настройки шлюза. В TOML доступны поля `provider`, `host`, `port`,
 `database`, `user`, `sslmode`, `insecure_plaintext`, `trust_ca_file`,
 `socks5_proxy`, `socks5_user`, `mssql_dialect`, `trust_server_certificate`,
 `listen`, `tls_cert`, `tls_key`, `session_params` (массив строк `NAME=LITERAL`),
-`allow_insecure_loopback`, `allow_insecure_network` и `verbose_errors`. Другие аргументы вместе с
+`allow_insecure_loopback`, `allow_insecure_network`, `verbose_errors`,
+`debug_authentication` и `debug_authentication_secrets`. Другие аргументы вместе с
 `--config` не принимаются. Пароли в TOML не поддерживаются.
 
 Установите бинарный файл в `/usr/local/bin/open-sdbl`, создайте системного
