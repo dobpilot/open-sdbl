@@ -1223,7 +1223,9 @@ impl<E: Engine, S: AsyncRead + AsyncWrite + Unpin + Send + 'static> Client<E, S>
                         },
                         None => prepared.field_usage().clone(),
                     };
-                    if check_user_field_access(&self.access, snapshot, &usage).is_err() {
+                    if !self.shared.unrestricted_access
+                        && check_user_field_access(&self.access, snapshot, &usage).is_err()
+                    {
                         continue;
                     }
                     let comment = column.origin.as_ref().and_then(|origin| {
@@ -1270,8 +1272,10 @@ impl<E: Engine, S: AsyncRead + AsyncWrite + Unpin + Send + 'static> Client<E, S>
         let prepared = AnyPrepared::prepare(state.dialect(), snapshot, text, manager)
             .map_err(|diagnostic| diagnostic_error(text, &diagnostic))?;
         let decisions = self.decisions(state, prepared.restriction_request(), true)?;
-        check_user_field_access(&self.access, snapshot, prepared.field_usage())
-            .map_err(|error| access_denied(format!("permission denied: {error}")))?;
+        if !self.shared.unrestricted_access {
+            check_user_field_access(&self.access, snapshot, prepared.field_usage())
+                .map_err(|error| access_denied(format!("permission denied: {error}")))?;
+        }
         let plans = prepared
             .presentation_request()
             .targets
@@ -1296,6 +1300,19 @@ impl<E: Engine, S: AsyncRead + AsyncWrite + Unpin + Send + 'static> Client<E, S>
         request: &RestrictionRequest,
         refuse_denied: bool,
     ) -> Result<Vec<AccessDecision>, ErrorFields> {
+        if self.shared.unrestricted_access {
+            if self.access.current_user().is_none() {
+                return Err(access_denied(
+                    "permission denied: authenticated user is no longer available",
+                ));
+            }
+            return Ok(request
+                .targets
+                .iter()
+                .cloned()
+                .map(AccessDecision::unrestricted)
+                .collect());
+        }
         let missing = request
             .targets
             .iter()

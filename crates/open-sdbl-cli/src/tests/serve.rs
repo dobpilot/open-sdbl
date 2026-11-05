@@ -203,3 +203,17 @@ fn catalog_memory_limit_accepts_positive_mib_and_rejects_invalid_values() {
             .is_err()
     );
 }
+
+#[test]
+fn unrestricted_access_is_an_explicit_toml_opt_in() {
+    let (defaults, _) = split_serve_options(strings(&["mssql"])).unwrap();
+    assert!(!defaults.unrestricted_access);
+    let args = crate::config::config_arguments("provider='mssql'\nunrestricted_access=true", true)
+        .unwrap();
+    let (options, _) = split_serve_options(args).unwrap();
+    assert!(options.unrestricted_access);
+    assert!(
+        crate::config::config_arguments("provider='mssql'\nunrestricted_access='true'", true)
+            .is_err()
+    );
+}

@@ -956,3 +956,46 @@ async fn authentication_diagnostics_are_opt_in_and_keep_client_errors_uniform() 
     assert!(logs.contains("bad-secret-value"));
     assert!(logs.contains(DEMO));
 }
+
+#[tokio::test]
+async fn unrestricted_access_still_authenticates_and_allows_denied_targets_and_fields() {
+    let harness = Harness::new(Options {
+        read: false,
+        unrestricted_access: true,
+        ..Options::default()
+    });
+    assert_eq!(
+        failed(&harness, USER, "wrong-password").await[&b'C'],
+        "28P01"
+    );
+    assert!(harness.statements().is_empty());
+    let mut raw = logged_in(&harness).await;
+    let frames = raw.query(SELECT).await;
+    assert_eq!(tags(&frames), ["SELECT 3"]);
+    // This standard field is denied in the default access mode.
+    let frames = raw
+        .query("ВЫБРАТЬ Регистратор ИЗ РегистрНакопления.ЗамерОстатков")
+        .await;
+    assert!(!codes(&frames).contains('E'), "{:?}", frames);
+    assert!(!harness.statements().is_empty());
+    harness.stop();
+}
+
+#[tokio::test]
+async fn unrestricted_access_does_not_apply_role_row_restrictions() {
+    let snapshot = fixture::snapshot();
+    let harness = Harness::new(Options {
+        access: Some(fixture::restricted_store(
+            &snapshot,
+            "ГДЕ Категория = \"Разрешено\"",
+        )),
+        unrestricted_access: true,
+        ..Options::default()
+    });
+    let mut raw = logged_in(&harness).await;
+    let frames = raw.query(SELECT).await;
+    assert_eq!(tags(&frames), ["SELECT 3"]);
+    let sql = harness.statements().join("\n");
+    assert!(!sql.contains("Разрешено"), "{sql}");
+    harness.stop();
+}

@@ -246,6 +246,7 @@ pub(crate) struct Options {
     pub(crate) tls: Option<Arc<rustls::ServerConfig>>,
     pub(crate) insecure_loopback: bool,
     pub(crate) insecure_network: bool,
+    pub(crate) unrestricted_access: bool,
     pub(crate) debug_authentication: bool,
     pub(crate) debug_authentication_secrets: bool,
     pub(crate) limits: GatewayLimits,
@@ -268,6 +269,7 @@ impl Default for Options {
             tls: None,
             insecure_loopback: true,
             insecure_network: false,
+            unrestricted_access: false,
             debug_authentication: false,
             debug_authentication_secrets: false,
             limits: GatewayLimits {
@@ -328,6 +330,7 @@ impl Harness {
             allow_insecure_loopback: options.insecure_loopback,
             allow_insecure_network: options.insecure_network,
             verbose_errors: false,
+            unrestricted_access: options.unrestricted_access,
             debug_authentication: options.debug_authentication,
             debug_authentication_secrets: options.debug_authentication_secrets,
             limits: options.limits,

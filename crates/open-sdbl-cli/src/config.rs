@@ -44,6 +44,7 @@ pub(crate) fn config_arguments(text: &str, gateway: bool) -> Result<Vec<String>,
             | "allow_insecure_loopback"
             | "allow_insecure_network"
             | "verbose_errors"
+            | "unrestricted_access"
             | "debug_authentication"
             | "debug_authentication_secrets" => {
                 if value
@@ -80,6 +81,7 @@ pub(crate) fn config_arguments(text: &str, gateway: bool) -> Result<Vec<String>,
                     | "allow_insecure_loopback"
                     | "allow_insecure_network"
                     | "verbose_errors"
+                    | "unrestricted_access"
                     | "debug_authentication"
                     | "debug_authentication_secrets"
             )

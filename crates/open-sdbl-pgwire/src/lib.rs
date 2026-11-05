@@ -139,6 +139,8 @@ pub struct GatewayConfig {
     pub allow_insecure_network: bool,
     /// Whether database error messages are sent to clients as details.
     pub verbose_errors: bool,
+    /// Permit authenticated users to read all supported metadata without role checks.
+    pub unrestricted_access: bool,
     /// Emit server-side authentication failure reasons.
     pub debug_authentication: bool,
     /// Log password material on failed logins; disabled by default.
@@ -161,6 +163,7 @@ impl GatewayConfig {
             allow_insecure_loopback: false,
             allow_insecure_network: false,
             verbose_errors: false,
+            unrestricted_access: false,
             debug_authentication: false,
             debug_authentication_secrets: false,
             gateway_limits: GatewayLimits::default(),
@@ -271,6 +274,7 @@ pub(crate) struct Shared<E: Engine> {
     pub(crate) allow_insecure_loopback: bool,
     pub(crate) allow_insecure_network: bool,
     pub(crate) verbose_errors: bool,
+    pub(crate) unrestricted_access: bool,
     pub(crate) debug_authentication: bool,
     pub(crate) debug_authentication_secrets: bool,
     pub(crate) limits: GatewayLimits,
@@ -322,6 +326,7 @@ pub async fn serve(
         allow_insecure_loopback: config.allow_insecure_loopback,
         allow_insecure_network: config.allow_insecure_network,
         verbose_errors: config.verbose_errors,
+        unrestricted_access: config.unrestricted_access,
         debug_authentication: config.debug_authentication,
         debug_authentication_secrets: config.debug_authentication_secrets,
         limits: config.gateway_limits,

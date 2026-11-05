@@ -983,3 +983,37 @@ async fn raising_catalog_budget_allows_statement_over_default_limit() {
     assert_eq!(result, 72_000_000);
     expanded.stop();
 }
+
+#[tokio::test]
+async fn unrestricted_access_exposes_denied_objects_and_columns() {
+    let snapshot = fixture::snapshot();
+    let mut access = AccessStore::new(&snapshot);
+    access.set_users(fixture::store(&snapshot, false).users().unwrap().to_vec());
+    // No role rights are loaded, as in the unrestricted acquisition path.
+    let harness = Harness::new(Options {
+        snapshot: Some(snapshot),
+        access: Some(access),
+        unrestricted_access: true,
+        ..Options::default()
+    });
+    let client = connect(&harness).await;
+    let rows = client
+        .query(
+            "SELECT oid FROM pg_class WHERE relname='ЗамерОстатков'",
+            &[],
+        )
+        .await
+        .unwrap();
+    assert_eq!(rows.len(), 1);
+    let rows = client.query("SELECT column_name FROM information_schema.columns WHERE table_schema='РегистрНакопления' AND table_name='ЗамерОстатков'", &[]).await.unwrap();
+    assert!(
+        rows.iter()
+            .any(|row| row.get::<_, String>(0) == "Категория")
+    );
+    assert!(
+        rows.iter()
+            .any(|row| row.get::<_, String>(0) == "Количество")
+    );
+    assert!(harness.statements().is_empty());
+    harness.stop();
+}

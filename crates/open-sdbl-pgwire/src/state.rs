@@ -48,8 +48,32 @@ impl GatewayState {
         limits: Limits,
         progress: &mut dyn MetadataProgress,
     ) -> Result<Self, DbError> {
+        Self::acquire_with_access_mode(connection, credentials, limits, progress, false).await
+    }
+
+    /// Reads metadata and users without loading role rights for unrestricted access.
+    ///
+    /// # Errors
+    ///
+    /// Returns what the database or the decoders reported.
+    pub async fn acquire_unrestricted(
+        connection: &DatabaseConnection,
+        credentials: &Credentials,
+        limits: Limits,
+        progress: &mut dyn MetadataProgress,
+    ) -> Result<Self, DbError> {
+        Self::acquire_with_access_mode(connection, credentials, limits, progress, true).await
+    }
+
+    async fn acquire_with_access_mode(
+        connection: &DatabaseConnection,
+        credentials: &Credentials,
+        limits: Limits,
+        progress: &mut dyn MetadataProgress,
+        unrestricted: bool,
+    ) -> Result<Self, DbError> {
         let mut session = DatabaseSession::connect(connection, credentials, limits).await?;
-        let result = Self::read(&mut session, progress).await;
+        let result = Self::read(&mut session, progress, unrestricted).await;
         let closed = session.close().await;
         let state = result?;
         closed?;
@@ -59,19 +83,24 @@ impl GatewayState {
     async fn read(
         session: &mut DatabaseSession,
         progress: &mut dyn MetadataProgress,
+        unrestricted: bool,
     ) -> Result<Self, DbError> {
         let (snapshot, _report) = session.metadata(progress).await?;
         let mut access = AccessStore::new(&snapshot);
         ensure_users(&mut access, session).await?;
-        let mut roles: Vec<Guid> = Vec::new();
-        for user in access.users().unwrap_or_default() {
-            for role in &user.data.roles {
-                if !roles.contains(role) {
-                    roles.push(role.clone());
+        let unreadable = if unrestricted {
+            Vec::new()
+        } else {
+            let mut roles: Vec<Guid> = Vec::new();
+            for user in access.users().unwrap_or_default() {
+                for role in &user.data.roles {
+                    if !roles.contains(role) {
+                        roles.push(role.clone());
+                    }
                 }
             }
-        }
-        let unreadable = ensure_rights(&mut access, session, &roles).await?;
+            ensure_rights(&mut access, session, &roles).await?
+        };
         let catalog_candidates = crate::catalog::candidates(&snapshot).into();
         Ok(Self {
             catalog_revision: next_catalog_revision(),

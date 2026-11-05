@@ -45,6 +45,7 @@ pub(crate) struct ServeOptions {
     pub(crate) allow_insecure_loopback: bool,
     pub(crate) allow_insecure_network: bool,
     pub(crate) verbose_errors: bool,
+    pub(crate) unrestricted_access: bool,
     pub(crate) debug_authentication: bool,
     pub(crate) debug_authentication_secrets: bool,
 }
@@ -69,6 +70,7 @@ pub(crate) fn split_serve_options(
         allow_insecure_loopback: false,
         allow_insecure_network: false,
         verbose_errors: false,
+        unrestricted_access: false,
         debug_authentication: false,
         debug_authentication_secrets: false,
     };
@@ -135,12 +137,15 @@ pub(crate) fn split_serve_options(
             | "--allow-insecure-network"
             | "--verbose-errors"
             | "--debug-authentication"
-            | "--debug-authentication-secrets" => {
+            | "--debug-authentication-secrets"
+            | "--unrestricted-access" => {
                 if inline.is_some() {
                     return Err(usage(format!("option {option:?} does not take a value")));
                 }
                 if option == "--verbose-errors" {
                     options.verbose_errors = true;
+                } else if option == "--unrestricted-access" {
+                    options.unrestricted_access = true;
                 } else if option == "--debug-authentication-secrets" {
                     options.debug_authentication_secrets = true;
                 } else if option == "--debug-authentication" {
@@ -296,6 +301,31 @@ async fn shutdown_signal() {
     let _ = tokio::signal::ctrl_c().await;
 }
 
+async fn acquire_state(
+    connection: &DatabaseConnection,
+    credentials: &Credentials,
+    limits: Limits,
+    unrestricted: bool,
+) -> Result<GatewayState, open_sdbl_db::DbError> {
+    if unrestricted {
+        GatewayState::acquire_unrestricted(
+            connection,
+            credentials,
+            limits,
+            &mut MetadataProgress::new(),
+        )
+        .await
+    } else {
+        GatewayState::acquire(
+            connection,
+            credentials,
+            limits,
+            &mut MetadataProgress::new(),
+        )
+        .await
+    }
+}
+
 /// Re-reads metadata, users and rights on every `SIGHUP`; never completes.
 ///
 /// Reading metadata is not `Send`, so this runs beside the gateway in the
@@ -305,6 +335,7 @@ async fn refresh_on_hangup(
     handle: Arc<StateHandle>,
     connection: DatabaseConnection,
     credentials: Credentials,
+    unrestricted_access: bool,
 ) {
     use tokio::signal::unix::{SignalKind, signal};
     let Ok(mut hangup) = signal(SignalKind::hangup()) else {
@@ -312,12 +343,19 @@ async fn refresh_on_hangup(
         return std::future::pending().await;
     };
     while hangup.recv().await.is_some() {
-        eprintln!("serve: SIGHUP received; reading metadata, users and rights again");
-        match GatewayState::acquire(
+        eprintln!(
+            "serve: SIGHUP received; reloading metadata and users{}",
+            if unrestricted_access {
+                ""
+            } else {
+                " and rights"
+            }
+        );
+        match acquire_state(
             &connection,
             &credentials,
             Limits::default(),
-            &mut MetadataProgress::new(),
+            unrestricted_access,
         )
         .await
         {
@@ -336,7 +374,7 @@ async fn refresh_on_hangup(
 }
 
 #[cfg(not(unix))]
-async fn refresh_on_hangup(_: Arc<StateHandle>, _: DatabaseConnection, _: Credentials) {
+async fn refresh_on_hangup(_: Arc<StateHandle>, _: DatabaseConnection, _: Credentials, _: bool) {
     std::future::pending().await
 }
 
@@ -349,6 +387,11 @@ pub(crate) async fn serve(
     let Some(connection) = parse_connection(&mut rest.into_iter(), "serve", output)? else {
         return Ok(());
     };
+    if options.unrestricted_access {
+        eprintln!(
+            "warning: unrestricted access enabled; authenticated users can read all supported tables without role restrictions"
+        );
+    }
     if options.debug_authentication_secrets {
         eprintln!(
             "warning: sensitive authentication logging enabled; passwords and stored hashes will be logged"
@@ -370,11 +413,11 @@ pub(crate) async fn serve(
     }
     let credentials = resolve_credentials(&connection, credentials)?;
     let limits = Limits::default();
-    let state = GatewayState::acquire(
+    let state = acquire_state(
         &connection,
         &credentials,
         limits,
-        &mut MetadataProgress::new(),
+        options.unrestricted_access,
     )
     .await?;
     let mut session_parameters = SessionParameters::new();
@@ -383,11 +426,18 @@ pub(crate) async fn serve(
             .map_err(|error| usage(format!("invalid --session-param {name}: {error}")))?;
         session_parameters.set(QueryParameter::new(name, value));
     }
-    eprintln!(
-        "serve: {} users read; {} roles carry no rights resource",
-        state.user_count(),
-        state.unreadable_role_count()
-    );
+    if options.unrestricted_access {
+        eprintln!(
+            "serve: {} users read; role rights are not loaded",
+            state.user_count()
+        );
+    } else {
+        eprintln!(
+            "serve: {} users read; {} roles carry no rights resource",
+            state.user_count(),
+            state.unreadable_role_count()
+        );
+    }
     eprintln!(
         "serve: passwords are checked against the stored value read from each v8users record; a user without a readable stored password cannot log in (28P01)"
     );
@@ -406,6 +456,7 @@ pub(crate) async fn serve(
         Arc::clone(&handle),
         copy_connection(&connection),
         copy_credentials(&credentials),
+        options.unrestricted_access,
     );
     let mut config = GatewayConfig::new(connection, credentials);
     config.limits = limits;
@@ -415,6 +466,7 @@ pub(crate) async fn serve(
     config.allow_insecure_loopback = options.allow_insecure_loopback;
     config.allow_insecure_network = options.allow_insecure_network;
     config.verbose_errors = options.verbose_errors;
+    config.unrestricted_access = options.unrestricted_access;
     config.debug_authentication = options.debug_authentication;
     config.debug_authentication_secrets = options.debug_authentication_secrets;
     let serving = open_sdbl_pgwire::serve(
