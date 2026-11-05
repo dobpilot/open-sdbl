@@ -859,3 +859,71 @@ async fn an_owner_read_grant_does_not_expose_a_denied_section() {
     assert!(harness.statements().is_empty());
     harness.stop();
 }
+
+#[tokio::test]
+async fn dbeaver_columns_for_one_table_fit_catalog_budget() {
+    let harness = populated_harness(5000, 20);
+    let client = connect(&harness).await;
+    let oid: u32 = client.query_one(
+        "SELECT c.oid FROM pg_class c INNER JOIN pg_namespace n ON c.relnamespace=n.oid WHERE n.nspname='Справочник' ORDER BY c.oid LIMIT 1", &[]
+    ).await.unwrap().get(0);
+    let query = format!(
+        r#"SELECT c.relname,a.*,pg_catalog.pg_get_expr(ad.adbin, ad.adrelid, true) as def_value,dsc.description,dep.objid
+FROM pg_catalog.pg_attribute a
+INNER JOIN pg_catalog.pg_class c ON (a.attrelid=c.oid)
+LEFT OUTER JOIN pg_catalog.pg_attrdef ad ON (a.attrelid=ad.adrelid AND a.attnum = ad.adnum)
+LEFT OUTER JOIN pg_catalog.pg_description dsc ON (c.oid=dsc.objoid AND a.attnum = dsc.objsubid)
+LEFT OUTER JOIN pg_depend dep on dep.refobjid = a.attrelid AND dep.deptype = 'i' and dep.refobjsubid = a.attnum and dep.classid = dep.refclassid
+WHERE NOT a.attisdropped AND c.relkind not in ('i','I','c') AND c.oid={oid}
+ORDER BY a.attnum"#
+    );
+    let rows = client.simple_query(&query).await.unwrap();
+    assert_eq!(
+        rows.iter()
+            .filter(|row| matches!(row, tokio_postgres::SimpleQueryMessage::Row(_)))
+            .count(),
+        21
+    );
+    harness.stop();
+}
+
+#[tokio::test]
+async fn pushed_oid_filter_preserves_inner_and_outer_join_results() {
+    let harness = populated_harness(4, 3);
+    let client = connect(&harness).await;
+    let oid: u32 = client.query_one("SELECT c.oid FROM pg_class c JOIN pg_namespace n ON c.relnamespace=n.oid WHERE n.nspname='Справочник' ORDER BY c.oid LIMIT 1", &[]).await.unwrap().get(0);
+    let prefix = "SELECT a.attnum, a.attname, d.description FROM pg_attribute a JOIN pg_class c ON a.attrelid=c.oid LEFT JOIN pg_description d ON c.oid=d.objoid AND a.attnum=d.objsubid";
+    let equal = client
+        .query(
+            &format!("{prefix} WHERE c.oid={oid} ORDER BY a.attnum"),
+            &[],
+        )
+        .await
+        .unwrap();
+    let in_list = client
+        .query(
+            &format!("{prefix} WHERE c.oid IN ({oid}) ORDER BY a.attnum"),
+            &[],
+        )
+        .await
+        .unwrap();
+    let project = |rows: &[tokio_postgres::Row]| {
+        rows.iter()
+            .map(|row| {
+                (
+                    row.get::<_, i16>(0),
+                    row.get::<_, String>(1),
+                    row.get::<_, Option<String>>(2),
+                )
+            })
+            .collect::<Vec<_>>()
+    };
+    assert!(!equal.is_empty());
+    assert_eq!(project(&equal), project(&in_list));
+    let absent = client
+        .query(&format!("{prefix} WHERE c.oid=0 ORDER BY a.attnum"), &[])
+        .await
+        .unwrap();
+    assert!(absent.is_empty());
+    harness.stop();
+}

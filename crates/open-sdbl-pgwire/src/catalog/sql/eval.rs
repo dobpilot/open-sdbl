@@ -63,6 +63,31 @@ fn join_key(expr: &Expr, columns: &[Column], width: usize) -> Option<(usize, Vec
     }
 }
 
+// Find a necessary numeric equality on one specific resolved column.
+fn constrained_number(expr: &Expr, columns: &[Column], target: usize) -> Option<i64> {
+    let ExprKind::Binary(op, a, b) = &expr.kind else {
+        return None;
+    };
+    if op == "and" {
+        return constrained_number(a, columns, target)
+            .or_else(|| constrained_number(b, columns, target));
+    }
+    if op != "=" {
+        return None;
+    }
+    for (column, value) in [(a.as_ref(), b.as_ref()), (b.as_ref(), a.as_ref())] {
+        if let (ExprKind::Column(name), ExprKind::Number(number)) = (&column.kind, &value.kind) {
+            let Ok(resolved) = plan::resolve(name, columns, column.position) else {
+                continue;
+            };
+            if std::ptr::eq(resolved, &columns[target]) {
+                return number.parse::<i64>().ok();
+            }
+        }
+    }
+    None
+}
+
 pub(super) fn evaluate(
     q: &Query,
     catalog: &Catalog,
@@ -173,7 +198,7 @@ impl Context<'_> {
                     }
                     _ => {}
                 });
-                for join in &s.from {
+                for (join_index, join) in s.from.iter().enumerate() {
                     let cs = scope(&input.columns, outer_cols);
                     let schema = plan::source(
                         &join.source,
@@ -196,6 +221,43 @@ impl Context<'_> {
                         })
                         .map(|(i, _)| i)
                         .collect::<Vec<_>>();
+                    // Push an OID constant through the first inner equijoin. This
+                    // avoids retaining an entire wide first relation before the
+                    // WHERE predicate on the second relation becomes available.
+                    let first_restriction = if outer_cols.is_empty()
+                        && join_index == 0
+                        && s.from.len() >= 2
+                        && !s.from[1].left
+                        && !s.from[1].natural
+                        && s.from[1].using.is_empty()
+                        && matches!(join.source.kind, SourceKind::Relation(_))
+                        && matches!(s.from[1].source.kind, SourceKind::Relation(_))
+                    {
+                        let mut combined = schema.clone();
+                        let right = plan::source(
+                            &s.from[1].source,
+                            self.catalog,
+                            &schema,
+                            &ctes,
+                            &mut self.parameter_types,
+                        )?;
+                        let width = combined.len();
+                        combined.extend(right);
+                        s.from[1]
+                            .on
+                            .as_ref()
+                            .and_then(|on| join_key(on, &combined, width))
+                            .and_then(|(left, right)| {
+                                if right.len() != 1 || combined[left].oid != 26 {
+                                    return None;
+                                }
+                                let value =
+                                    constrained_number(s.filter.as_ref()?, &combined, right[0])?;
+                                Some((left, value))
+                            })
+                    } else {
+                        None
+                    };
                     let schema = projection.iter().map(|i| schema[*i].clone()).collect();
                     let (joined_columns, using_pairs) = plan::join_columns(
                         input.columns.clone(),
@@ -210,13 +272,26 @@ impl Context<'_> {
                     let independent = match &join.source.kind {
                         SourceKind::Relation(n) => {
                             let table = plan::relation(n, self.catalog, &ctes)?;
+                            let mut projected = Vec::new();
+                            for row in &table.rows {
+                                if let Some((column, value)) = first_restriction {
+                                    self.budget.step()?;
+                                    let retain = match row.get(column) {
+                                        Some(Value::Int(n) | Value::Reg(n, _)) => *n == value,
+                                        Some(Value::Null) => false,
+                                        // Preserve unusual values for the regular evaluator.
+                                        _ => true,
+                                    };
+                                    if !retain {
+                                        continue;
+                                    }
+                                }
+                                projected
+                                    .push(projection.iter().map(|i| row[*i].clone()).collect());
+                            }
                             Some(Table {
                                 columns: vec![],
-                                rows: table
-                                    .rows
-                                    .iter()
-                                    .map(|r| projection.iter().map(|i| r[*i].clone()).collect())
-                                    .collect(),
+                                rows: projected,
                             })
                         }
                         SourceKind::Query(q) => Some(self.query(q, outer_cols, outer, &ctes)?),
