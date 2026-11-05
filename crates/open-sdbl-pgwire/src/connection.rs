@@ -674,7 +674,12 @@ struct ResultPlan {
 }
 
 impl ResultPlan {
-    fn new(columns: &[CompiledColumn], hidden: &[usize], formats: &[i16]) -> Self {
+    fn new(
+        columns: &[CompiledColumn],
+        hidden: &[usize],
+        deferred: &[usize],
+        formats: &[i16],
+    ) -> Self {
         let visible = (0..columns.len())
             .filter(|index| !hidden.contains(index))
             .collect::<Vec<_>>();
@@ -684,7 +689,13 @@ impl ResultPlan {
         for (position, index) in visible.iter().enumerate() {
             let format = format_of(formats, position);
             let column = &columns[*index];
-            let (field, wire) = describe_column(&column.label, &column.kind, format);
+            let presentation_type = open_sdbl::query::ColumnKind::String { length: None };
+            let kind = if deferred.contains(index) {
+                &presentation_type
+            } else {
+                &column.kind
+            };
+            let (field, wire) = describe_column(&column.label, kind, format);
             fields.push(field);
             wires.push(wire);
             binary.push(format == 1);
@@ -701,7 +712,12 @@ impl ResultPlan {
     fn of_query(query: &CompiledQuery, formats: &[i16]) -> Self {
         let mut hidden = query.service_columns.clone();
         hidden.extend(query.forbidden_row_column);
-        Self::new(&query.columns, &hidden, formats)
+        Self::new(
+            &query.columns,
+            &hidden,
+            &query.deferred_presentations,
+            formats,
+        )
     }
 
     fn encode(&self, cells: &[Cell]) -> Vec<u8> {
@@ -1150,7 +1166,7 @@ impl<E: Engine, S: AsyncRead + AsyncWrite + Unpin + Send + 'static> Client<E, S>
                 self.out
                     .command_complete(&format!("SELECT {}", execution.sent));
                 for nested in &query.nested {
-                    let plan = ResultPlan::new(&nested.columns, &[], &[]);
+                    let plan = ResultPlan::new(&nested.columns, &[], &[], &[]);
                     self.out.row_description(&plan.fields);
                     let execution = self.stream(&nested.sql, &plan, 0).await?;
                     self.out
