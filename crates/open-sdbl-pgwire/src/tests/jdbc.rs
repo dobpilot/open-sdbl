@@ -68,3 +68,66 @@ async fn pgjdbc_connection_and_keep_alive() {
     );
     harness.stop();
 }
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[ignore = "requires Java 11+, OPEN_SDBL_PGJDBC_JAR and a loopback listener"]
+async fn pgjdbc_deferred_reference_presentation_is_unicode_text() {
+    let jar = std::env::var_os("OPEN_SDBL_PGJDBC_JAR").expect("OPEN_SDBL_PGJDBC_JAR is required");
+    for dialect in [
+        DatabaseDialect::Postgres,
+        DatabaseDialect::MsSql {
+            backend: open_sdbl::query::MsSqlBackend::default(),
+        },
+    ] {
+        let harness = deferred_presentation_harness(dialect);
+        let server = super::psql::Server::start(&harness).await;
+        for mode in ["simple", "extended"] {
+            let jar = jar.clone();
+            let url = format!("jdbc:postgresql://127.0.0.1:{}/unf", server.port());
+            let output = tokio::task::spawn_blocking(move || {
+                let mut child = Command::new(
+                    std::env::var_os("OPEN_SDBL_JAVA").unwrap_or_else(|| "java".into()),
+                )
+                .arg("-Dfile.encoding=UTF-8")
+                .args(["--class-path".as_ref(), jar.as_os_str()])
+                .arg(concat!(
+                    env!("CARGO_MANIFEST_DIR"),
+                    "/tests/fixtures/jdbc/DeferredPresentationProbe.java"
+                ))
+                .args([url.as_str(), mode])
+                .env("OPEN_SDBL_JDBC_USER", USER)
+                .env("OPEN_SDBL_JDBC_PASSWORD", PASSWORD)
+                .stdin(Stdio::null())
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped())
+                .spawn()
+                .expect("Java is installed");
+                let deadline = Instant::now() + Duration::from_secs(30);
+                while child.try_wait().unwrap().is_none() {
+                    if Instant::now() >= deadline {
+                        child.kill().unwrap();
+                        let _ = child.wait();
+                        panic!("JDBC deferred presentation probe exceeded 30 seconds");
+                    }
+                    std::thread::sleep(Duration::from_millis(10));
+                }
+                child.wait_with_output().unwrap()
+            })
+            .await
+            .unwrap();
+            assert!(
+                output.status.success(),
+                "{dialect:?}, {mode}: {}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+            assert!(String::from_utf8_lossy(&output.stdout).contains(&format!("PASS {mode}:")));
+        }
+        let statements = harness.statements();
+        assert!(
+            statements
+                .iter()
+                .any(|sql| sql.contains("__presentation_target"))
+        );
+        harness.stop();
+    }
+}

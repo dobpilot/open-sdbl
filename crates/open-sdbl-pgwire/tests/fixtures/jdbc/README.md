@@ -76,3 +76,18 @@ from the repeated query; no performance bound is claimed by this smoke test.
   17.5–17.8 seconds per connection; repeated listings were at most 105 ms.
   The default 10-second test socket limit is insufficient for that native
   cold model build. This verifies schema-list SQL, not the complete IDE UI.
+
+## Deferred presentation regression
+
+`DeferredPresentationProbe.java` checks `ПредставлениеСсылки` of a runtime-typed
+reference through the actual PostgreSQL JDBC driver. It asserts `text`/`VARCHAR`
+metadata, `String` and UTF-8 bytes for a Cyrillic document presentation, with
+both simple and extended query modes (including repeated prepared executions).
+The Rust harness exercises both MSSQL and PostgreSQL SQL generation with a fake
+engine; this does not replace a live database or DBeaver GUI test.
+
+```sh
+OPEN_SDBL_PGJDBC_JAR=/path/to/postgresql.jar \
+  cargo test -p open-sdbl-pgwire pgjdbc_deferred_reference_presentation_is_unicode_text --offline \
+  -- --ignored --nocapture
+```

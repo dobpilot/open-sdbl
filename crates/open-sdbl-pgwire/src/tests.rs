@@ -377,3 +377,46 @@ impl Harness {
         self.events.lines.lock().unwrap().clone()
     }
 }
+
+/// Shared fixture for real clients exercising a dynamic reference presentation.
+pub(crate) const DEFERRED_PRESENTATION_VALUE: &str =
+    "Экземпляр бюджета 000000001 от 2023-12-14 14:57:01";
+pub(crate) const DEFERRED_PRESENTATION_QUERY: &str = "ВЫБРАТЬ ПЕРВЫЕ 10 ПредставлениеСсылки(Д.ДоговорКонтрагента) ИЗ Документ.бит_ДополнительныеУсловияПоДоговору КАК Д";
+
+pub(crate) fn deferred_presentation_harness(dialect: DatabaseDialect) -> Harness {
+    use open_sdbl::metadata::{DbNames, resolve_metadata};
+    let source = support::universal_dereferenced_presentation_snapshot();
+    let document = section_reference::snapshot();
+    let mut entries = source.db_names().entries().to_vec();
+    entries.extend_from_slice(document.db_names().entries());
+    let mut descriptors = source.descriptors().to_vec();
+    descriptors.extend_from_slice(document.descriptors());
+    let mut schema = source.schema().clone();
+    schema.tables.extend(document.schema().tables.clone());
+    let mut live = source.live_tables().to_vec();
+    live.extend_from_slice(document.live_tables());
+    let snapshot =
+        resolve_metadata(DbNames::from_entries(entries), descriptors, schema, live).snapshot;
+    let mut access = AccessStore::new(&snapshot);
+    let base = fixture::snapshot();
+    access.set_users(fixture::store(&base, true).users().unwrap().to_vec());
+    Harness::new(Options {
+        snapshot: Some(snapshot),
+        access: Some(access),
+        dialect,
+        unrestricted_access: true,
+        responder: Arc::new(|sql, _width| {
+            if sql.contains("__presentation_target") {
+                Ok(vec![vec![
+                    Cell::Bytes(vec![1; 16]),
+                    Cell::Text(DEFERRED_PRESENTATION_VALUE.into()),
+                ]])
+            } else {
+                let mut payload = 1_u32.to_be_bytes().to_vec();
+                payload.extend([1; 16]);
+                Ok(vec![vec![Cell::Bytes(payload)]])
+            }
+        }),
+        ..Options::default()
+    })
+}

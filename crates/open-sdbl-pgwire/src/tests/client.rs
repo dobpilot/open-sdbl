@@ -661,49 +661,14 @@ async fn tls_is_negotiated_when_the_client_requires_it() {
 
 #[tokio::test]
 async fn deferred_reference_presentation_is_utf8_text_for_mssql_and_postgres() {
-    use open_sdbl::metadata::{DbNames, resolve_metadata};
-    let register = support::universal_dereferenced_presentation_snapshot();
-    let document = section_reference::snapshot();
-    let mut entries = register.db_names().entries().to_vec();
-    entries.extend_from_slice(document.db_names().entries());
-    let mut descriptors = register.descriptors().to_vec();
-    descriptors.extend_from_slice(document.descriptors());
-    let mut schema = register.schema().clone();
-    schema.tables.extend(document.schema().tables.clone());
-    let mut live = register.live_tables().to_vec();
-    live.extend_from_slice(document.live_tables());
-    let snapshot =
-        resolve_metadata(DbNames::from_entries(entries), descriptors, schema, live).snapshot;
-    let mut access = AccessStore::new(&snapshot);
-    let base = fixture::snapshot();
-    access.set_users(fixture::store(&base, true).users().unwrap().to_vec());
-    let expected = "Экземпляр бюджета 000000001 от 2023-12-14 14:57:01";
-    let query = "ВЫБРАТЬ ПЕРВЫЕ 10 ПредставлениеСсылки(Д.ДоговорКонтрагента) ИЗ Документ.бит_ДополнительныеУсловияПоДоговору КАК Д";
+    use super::{DEFERRED_PRESENTATION_QUERY as query, DEFERRED_PRESENTATION_VALUE as expected};
     for dialect in [
         DatabaseDialect::Postgres,
         DatabaseDialect::MsSql {
             backend: open_sdbl::query::MsSqlBackend::default(),
         },
     ] {
-        let harness = Harness::new(Options {
-            snapshot: Some(snapshot.clone()),
-            access: Some(access.clone()),
-            dialect,
-            unrestricted_access: true,
-            responder: Arc::new(move |sql, _width| {
-                if sql.contains("__presentation_target") {
-                    Ok(vec![vec![
-                        Cell::Bytes(vec![1; 16]),
-                        Cell::Text(expected.into()),
-                    ]])
-                } else {
-                    let mut payload = 1_u32.to_be_bytes().to_vec();
-                    payload.extend([1; 16]);
-                    Ok(vec![vec![Cell::Bytes(payload)]])
-                }
-            }),
-            ..Options::default()
-        });
+        let harness = deferred_presentation_harness(dialect);
         let mut raw = super::protocol::logged_in(&harness).await;
         let frames = raw.query(query).await;
         assert_eq!(super::protocol::columns(&frames)[0].1, 25);
