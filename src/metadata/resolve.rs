@@ -1642,10 +1642,14 @@ fn resolve_fields(
                 .map(|table| (*reference_type, table))
         })
         .collect();
-    let mut fields = Vec::new();
-    for entry in db_names.entries().iter().filter(|entry| {
-        entry.alias == "Fld" && (!runtime_only || db_names.is_data_separator(entry.number))
-    }) {
+    let entries = db_names
+        .entries()
+        .iter()
+        .filter(|entry| {
+            entry.alias == "Fld" && (!runtime_only || db_names.is_data_separator(entry.number))
+        })
+        .collect::<Vec<_>>();
+    let resolved = parallel_ordered(&entries, |entry| {
         let logical_name = format!("Fld{}", entry.number);
         let physical_name = format!("_{logical_name}");
         let owner_tables = schema_field_owners
@@ -1674,13 +1678,13 @@ fn resolve_fields(
                     })
             })
             .flatten();
-        if data_separator && separation.is_none() {
-            separator_findings.push(ResolutionFinding::SeparatorSettingsMissing {
+        let finding = (data_separator && separation.is_none()).then(|| {
+            ResolutionFinding::SeparatorSettingsMissing {
                 guid: entry.guid.clone(),
                 column: physical_name.clone(),
-            });
-        }
-        fields.push(MetadataField {
+            }
+        });
+        let field = MetadataField {
             guid: entry.guid.clone(),
             name: descriptor_by_guid
                 .get(&entry.guid)
@@ -1739,10 +1743,43 @@ fn resolve_fields(
                     if complete { tables } else { Vec::new() }
                 })
                 .unwrap_or_default(),
-        });
+        };
+        (field, finding)
+    });
+    let mut fields = Vec::with_capacity(resolved.len());
+    for (field, finding) in resolved {
+        fields.push(field);
+        separator_findings.extend(finding);
     }
 
     (fields, separator_findings)
+}
+
+fn parallel_ordered<T, O>(items: &[T], work: impl Fn(&T) -> O + Sync) -> Vec<O>
+where
+    T: Sync,
+    O: Send,
+{
+    const CHUNK_SIZE: usize = 256;
+    let workers = std::thread::available_parallelism()
+        .map_or(1, usize::from)
+        .min(items.len().div_ceil(CHUNK_SIZE));
+    if workers <= 1 {
+        return items.iter().map(work).collect();
+    }
+    let chunk_size = items.len().div_ceil(workers);
+    std::thread::scope(|scope| {
+        let mut handles = Vec::with_capacity(workers);
+        for chunk in items.chunks(chunk_size) {
+            let work = &work;
+            handles.push(scope.spawn(move || chunk.iter().map(work).collect::<Vec<_>>()));
+        }
+        let mut output = Vec::with_capacity(items.len());
+        for handle in handles {
+            output.extend(handle.join().expect("metadata field worker panicked"));
+        }
+        output
+    })
 }
 
 fn finalize_runtime_facts(mut facts: RuntimeMetadataFacts) -> ResolvedMetadata {
@@ -1753,16 +1790,6 @@ fn finalize_runtime_facts(mut facts: RuntimeMetadataFacts) -> ResolvedMetadata {
         &facts.live_tables,
         &live_table_by_name,
         &facts.db_names,
-    );
-    let mut report = build_resolution_report(
-        &facts.db_names,
-        &facts.descriptors,
-        &facts.schema,
-        &facts.live_tables,
-        &indexes,
-        &facts.query_context.extension_field_conflicts,
-        &facts.query_context.extension_restructure_anomalies,
-        &physical_tables,
     );
     let (fields, separator_findings) = resolve_fields(
         &facts.db_names,
@@ -1785,43 +1812,75 @@ fn finalize_runtime_facts(mut facts: RuntimeMetadataFacts) -> ResolvedMetadata {
         values,
         ..
     } = &facts;
-    let mut index = build_metadata_index(
-        objects,
-        fields,
-        values,
-        descriptors,
-        schema,
-        live_tables,
-        &live_table_by_name,
-    );
-
-    // Повторяющиеся описатели не доказывают однозначный тип реквизита.
-    let mut uuid_attributes = HashMap::new();
-    for descriptor in descriptors.iter() {
-        let known_uuid = descriptor.declared_types.as_deref().is_some_and(|types| {
-            matches!(types, [ty] if ty.tag == "#" && ty.qualifiers.is_empty()
-                && ty.reference.as_ref().is_some_and(|id| id.as_str() == "fc01b5df-97fe-449b-83d4-218a090e681e"))
-        });
-        uuid_attributes
-            .entry(AttributeId::from(&descriptor.object_guid))
-            .and_modify(|known| *known = false)
-            .or_insert(known_uuid);
-    }
-    index.uuid_attributes = uuid_attributes
-        .into_iter()
-        .filter_map(|(id, known)| known.then_some(id))
-        .collect();
-
-    let fingerprint = snapshot_fingerprint(
-        db_names,
-        descriptors,
-        schema,
-        live_tables,
-        objects,
-        fields,
-        values,
-        &indexes,
-    );
+    let report = || {
+        build_resolution_report(
+            db_names,
+            descriptors,
+            schema,
+            live_tables,
+            &indexes,
+            &facts.query_context.extension_field_conflicts,
+            &facts.query_context.extension_restructure_anomalies,
+            &physical_tables,
+        )
+    };
+    let index = || {
+        let mut index = build_metadata_index(
+            objects,
+            fields,
+            values,
+            descriptors,
+            schema,
+            live_tables,
+            &live_table_by_name,
+        );
+        let mut uuid_attributes = HashMap::new();
+        for descriptor in descriptors.iter() {
+            let known_uuid = descriptor.declared_types.as_deref().is_some_and(|types| {
+                matches!(types, [ty] if ty.tag == "#" && ty.qualifiers.is_empty()
+                    && ty.reference.as_ref().is_some_and(|id| id.as_str() == "fc01b5df-97fe-449b-83d4-218a090e681e"))
+            });
+            uuid_attributes
+                .entry(AttributeId::from(&descriptor.object_guid))
+                .and_modify(|known| *known = false)
+                .or_insert(known_uuid);
+        }
+        index.uuid_attributes = uuid_attributes
+            .into_iter()
+            .filter_map(|(id, known)| known.then_some(id))
+            .collect();
+        index
+    };
+    let fingerprint = || {
+        snapshot_fingerprint(
+            db_names,
+            descriptors,
+            schema,
+            live_tables,
+            objects,
+            fields,
+            values,
+            &indexes,
+        )
+    };
+    let (mut report, index, fingerprint) = if fields.len() >= 256 {
+        std::thread::scope(|scope| {
+            let report_worker = scope.spawn(report);
+            let index_worker = scope.spawn(index);
+            let fingerprint_worker = scope.spawn(fingerprint);
+            (
+                report_worker
+                    .join()
+                    .expect("resolution report worker panicked"),
+                index_worker.join().expect("metadata index worker panicked"),
+                fingerprint_worker
+                    .join()
+                    .expect("fingerprint worker panicked"),
+            )
+        })
+    } else {
+        (report(), index(), fingerprint())
+    };
     report.findings.extend(separator_findings);
     ResolvedMetadata {
         snapshot: MetadataSnapshot {
@@ -2492,7 +2551,7 @@ fn logical_keys_equal(left: &[String], right: &[String]) -> bool {
 mod tests {
     use super::{
         AllowedLength, LiveColumn, LiveTable, index_live_fields, index_schema_field_owners,
-        logical_keys_equal,
+        logical_keys_equal, parallel_ordered,
     };
     use crate::metadata::{SchemaColumn, SchemaStorage, SchemaTable, recase_postgres_identifier};
 
@@ -2568,6 +2627,27 @@ mod tests {
         assert!(fields.contains("Fld12"));
         assert!(fields.contains("Fld123"));
         assert!(!fields.contains("Fld7"));
+    }
+
+    #[test]
+    fn parallel_chunks_retain_input_order_despite_completion_order() {
+        let input = (0..2048_usize).collect::<Vec<_>>();
+        let output = parallel_ordered(&input, |value| {
+            if *value < 256 {
+                std::thread::sleep(std::time::Duration::from_millis(20));
+            }
+            *value * 2
+        });
+        assert_eq!(
+            output,
+            input.iter().map(|value| value * 2).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn small_field_inputs_use_the_same_ordered_projection() {
+        let input = [1, 2, 3];
+        assert_eq!(parallel_ordered(&input, |value| value + 10), [11, 12, 13]);
     }
 
     fn schema_table(name: &str, columns: &[&str]) -> SchemaTable {
