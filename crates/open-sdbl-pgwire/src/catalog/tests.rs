@@ -64,6 +64,41 @@ fn model() -> Catalog {
         3,
     )
 }
+
+#[test]
+fn personalization_shares_inventory_and_isolates_session_tables() {
+    let complete = model();
+    let mut first = complete.personalized("first");
+    let second = complete.personalized("second");
+    for table in [
+        "pg_catalog.pg_class",
+        "pg_catalog.pg_attribute",
+        "pg_catalog.pg_description",
+        "information_schema.columns",
+    ] {
+        assert!(first.tables[table].ptr_eq(&second.tables[table]));
+        assert!(first.tables[table].ptr_eq(&complete.tables[table]));
+    }
+    assert!(!first.tables["pg_catalog.pg_roles"].ptr_eq(&complete.tables["pg_catalog.pg_roles"]));
+    assert_eq!(first.user, "first");
+    assert_eq!(second.user, "second");
+    assert_eq!(complete.user, "tester");
+    assert_eq!(
+        first.tables["pg_catalog.pg_roles"].rows[0][1].text(),
+        "first"
+    );
+    assert_eq!(
+        second.tables["pg_catalog.pg_roles"].rows[0][1].text(),
+        "second"
+    );
+    first.settings(&[("application_name".into(), "first-client".into())]);
+    assert!(
+        !first.tables["pg_catalog.pg_settings"].ptr_eq(&second.tables["pg_catalog.pg_settings"])
+    );
+    assert!(complete.tables["pg_catalog.pg_settings"].rows.is_empty());
+    assert!(second.tables["pg_catalog.pg_settings"].rows.is_empty());
+}
+
 fn run(text: &str) -> Result<sql::Table, crate::codec::ErrorFields> {
     let q = sql::route(text).unwrap_or_else(|| panic!("catalog route: {text}"))?;
     sql::evaluate(&q, &model(), &[], &[])

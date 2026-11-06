@@ -1,8 +1,13 @@
 //! Candidate identities are assigned before access filtering.
 use super::*;
 use crate::codec::FieldDescription;
+use crate::values::describe_column;
 use open_sdbl::metadata::{MetadataKind, MetadataSnapshot, Synonym};
-use open_sdbl::query::object_query_name;
+use open_sdbl::query::{
+    AccessDecision, Backend, CompileOptions, FieldUsageRequest, PostgresBackend, PrepareOptions,
+    QueryCompiler, RestrictionRequest, SessionParameters, TempTablesManager, object_query_name,
+};
+use open_sdbl_db::DatabaseDialect;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 #[derive(Clone)]
@@ -15,6 +20,17 @@ pub(crate) struct Candidate {
     pub(crate) view: bool,
     pub(crate) comment: Option<String>,
     pub(crate) columns: Vec<(i64, FieldDescription, Option<String>)>,
+}
+
+pub(crate) struct CandidateAccess {
+    pub(crate) request: RestrictionRequest,
+    pub(crate) retain_empty: bool,
+    pub(crate) columns: Vec<FieldUsageRequest>,
+}
+
+struct BuiltCandidate {
+    candidate: Candidate,
+    access: CandidateAccess,
 }
 pub(crate) fn synonym(s: &[Synonym]) -> Option<String> {
     s.iter()
@@ -110,16 +126,171 @@ pub(crate) fn candidates(snapshot: &MetadataSnapshot) -> Vec<Candidate> {
         })
         .collect()
 }
+
+pub(crate) fn build(
+    snapshot: &MetadataSnapshot,
+    dialect: DatabaseDialect,
+    database: &str,
+    revision: u32,
+) -> Catalog {
+    let candidates = candidates(snapshot);
+    let workers = std::thread::available_parallelism()
+        .map_or(1, usize::from)
+        .min(candidates.len());
+    let built = if workers <= 1 {
+        compile_chunk(candidates.as_slice(), snapshot, dialect)
+    } else {
+        let chunk_size = candidates.len().div_ceil(workers);
+        std::thread::scope(|scope| {
+            let mut handles = Vec::with_capacity(workers);
+            for chunk in candidates.chunks(chunk_size) {
+                handles.push(scope.spawn(move || compile_chunk(chunk, snapshot, dialect)));
+            }
+            let mut built = Vec::with_capacity(candidates.len());
+            for handle in handles {
+                built.extend(handle.join().expect("catalog worker panicked"));
+            }
+            built
+        })
+    };
+    let mut failures = 0;
+    let mut candidates = Vec::with_capacity(built.len());
+    let mut access = BTreeMap::new();
+    for (built, failed) in built {
+        failures += failed;
+        if let Some(built) = built {
+            access.insert(built.candidate.oid, built.access);
+            candidates.push(built.candidate);
+        }
+    }
+    let mut catalog = finish(candidates, "", database, revision);
+    catalog._build_failures = failures;
+    catalog.access = Arc::new(access);
+    catalog
+}
+
+fn compile_chunk(
+    candidates: &[Candidate],
+    snapshot: &MetadataSnapshot,
+    dialect: DatabaseDialect,
+) -> Vec<(Option<BuiltCandidate>, usize)> {
+    candidates
+        .iter()
+        .cloned()
+        .map(|candidate| match dialect {
+            DatabaseDialect::Postgres => compile_candidate(snapshot, PostgresBackend, candidate),
+            DatabaseDialect::MsSql { backend } => compile_candidate(snapshot, backend, candidate),
+        })
+        .collect()
+}
+
+fn compile_candidate<B: Backend>(
+    snapshot: &MetadataSnapshot,
+    backend: B,
+    mut candidate: Candidate,
+) -> (Option<BuiltCandidate>, usize) {
+    let mut manager = TempTablesManager::new();
+    let options = PrepareOptions::new()
+        .temporary_tables(&manager)
+        .restricted();
+    let prepared = match QueryCompiler::new(snapshot, backend)
+        .prepare_with_options(&candidate.query, &options)
+    {
+        Ok(prepared) => prepared,
+        Err(_) => return (None, 1),
+    };
+    let request = prepared.restriction_request().clone();
+    let retain_empty = request
+        .targets
+        .iter()
+        .all(|target| target.table_part.is_none());
+    let decisions = request
+        .targets
+        .iter()
+        .cloned()
+        .map(AccessDecision::unrestricted)
+        .collect::<Vec<_>>();
+    let mut parameters = SessionParameters::new();
+    for field in snapshot.separators() {
+        if let Some(constant) = field
+            .separation
+            .as_ref()
+            .and_then(|separation| separation.conditional_separation.clone())
+        {
+            parameters.set_separation_condition(constant, false);
+        }
+    }
+    let options = CompileOptions::new()
+        .session(&parameters)
+        .decisions(&decisions);
+    let query = match prepared.compile_batch(snapshot, &options, &mut manager) {
+        Ok(Some(query)) => query,
+        _ if retain_empty => {
+            return (
+                Some(BuiltCandidate {
+                    candidate,
+                    access: CandidateAccess {
+                        request,
+                        retain_empty,
+                        columns: Vec::new(),
+                    },
+                }),
+                1,
+            );
+        }
+        _ => return (None, 1),
+    };
+    let mut access = CandidateAccess {
+        request,
+        retain_empty,
+        columns: Vec::new(),
+    };
+    for (index, column) in query.columns.iter().enumerate() {
+        if query.service_columns.contains(&index) || query.forbidden_row_column == Some(index) {
+            continue;
+        }
+        let usage = match &column.origin {
+            Some(origin) => FieldUsageRequest {
+                fields: vec![open_sdbl::query::FieldUse {
+                    object: origin.object,
+                    table_part: origin.table_part.clone(),
+                    field: origin.field,
+                    usage: open_sdbl::query::FieldUsage::Projection,
+                }],
+            },
+            None => prepared.field_usage().clone(),
+        };
+        let comment = column.origin.as_ref().and_then(|origin| {
+            if let open_sdbl::metadata::FieldId::Metadata(id) = origin.field {
+                snapshot
+                    .attribute_by_id(id)
+                    .ok()
+                    .and_then(|field| synonym(&field.synonyms))
+            } else {
+                None
+            }
+        });
+        let (field, _) = describe_column(&column.label, &column.kind, 0);
+        candidate.columns.push((index as i64 + 1, field, comment));
+        access.columns.push(usage);
+    }
+    (Some(BuiltCandidate { candidate, access }), 0)
+}
+
 pub(crate) fn finish(
     candidates: Vec<Candidate>,
     user: &str,
     database: &str,
     revision: u32,
 ) -> Catalog {
+    let candidates = Arc::<[Candidate]>::from(candidates);
     let mut catalog = Catalog {
         revision,
         _build_failures: 0,
-        tables: relations::empty(),
+        tables: relations::empty()
+            .into_iter()
+            .map(|(name, table)| (name, SharedTable::new(table)))
+            .collect(),
         user: user.into(),
         database: database.into(),
         schemas: vec![
@@ -128,13 +299,15 @@ pub(crate) fn finish(
             "public".into(),
         ],
         views: BTreeMap::new(),
+        candidates: Arc::clone(&candidates),
+        access: Arc::new(BTreeMap::new()),
     };
     let mut schemas: BTreeMap<String, i64> = BTreeMap::from([
         ("pg_catalog".into(), 11),
         ("information_schema".into(), 13248),
         ("public".into(), 2200),
     ]);
-    for c in &candidates {
+    for c in candidates.iter() {
         schemas.insert(c.schema.clone(), c.schema_oid);
     }
     catalog.schemas = schemas.keys().cloned().collect();
@@ -187,7 +360,7 @@ pub(crate) fn finish(
     for &(name, oid) in builtin {
         class_rows.push(class_row(oid, name, 11, false, 0));
     }
-    for c in candidates {
+    for c in candidates.iter().cloned() {
         let mut class = class_row(c.oid, &c.name, c.schema_oid, c.view, c.oid + 1);
         class[22] = (c.columns.len() as i64).into();
         class_rows.push(class);

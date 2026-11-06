@@ -312,7 +312,6 @@ impl Harness {
             ),
         );
         let shared = Arc::new(Shared {
-            database_name: "unf".into(),
             startup_time: 1_700_000_000,
             engine: FakeEngine {
                 journal: Arc::clone(&journal),

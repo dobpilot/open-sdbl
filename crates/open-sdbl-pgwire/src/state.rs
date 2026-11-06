@@ -10,14 +10,14 @@ use open_sdbl_db::{
     Limits, MetadataProgress, ensure_rights, ensure_users,
 };
 
-/// The metadata, users and rights a gateway compiles against.
+/// The metadata, users, rights and complete virtual catalog a gateway serves.
 ///
-/// It is read once, before the gateway accepts connections, and read again
-/// on an explicit refresh; a connection keeps the state it started a
-/// statement with until that statement ends.
+/// They are acquired once before the gateway accepts connections and again on
+/// an explicit refresh. Relation catalogs are compiled concurrently during
+/// acquisition. A connection keeps the state it started a statement with until
+/// that statement ends.
 pub struct GatewayState {
-    catalog_revision: u32,
-    catalog_candidates: Arc<[crate::catalog::Candidate]>,
+    catalog: Arc<crate::catalog::Catalog>,
     snapshot: MetadataSnapshot,
     access: AccessStore,
     dialect: DatabaseDialect,
@@ -72,8 +72,12 @@ impl GatewayState {
         progress: &mut dyn MetadataProgress,
         unrestricted: bool,
     ) -> Result<Self, DbError> {
+        let database = match connection {
+            DatabaseConnection::Postgres(connection) => connection.options.database.clone(),
+            DatabaseConnection::MsSql(connection) => connection.options.database.clone(),
+        };
         let mut session = DatabaseSession::connect(connection, credentials, limits).await?;
-        let result = Self::read(&mut session, progress, unrestricted).await;
+        let result = Self::read(&mut session, progress, unrestricted, &database).await;
         let closed = session.close().await;
         let state = result?;
         closed?;
@@ -84,6 +88,7 @@ impl GatewayState {
         session: &mut DatabaseSession,
         progress: &mut dyn MetadataProgress,
         unrestricted: bool,
+        database: &str,
     ) -> Result<Self, DbError> {
         let (snapshot, _report) = session.metadata(progress).await?;
         let mut access = AccessStore::new(&snapshot);
@@ -101,13 +106,14 @@ impl GatewayState {
             }
             ensure_rights(&mut access, session, &roles).await?
         };
-        let catalog_candidates = crate::catalog::candidates(&snapshot).into();
+        let dialect = session.dialect();
+        let revision = next_catalog_revision();
+        let catalog = crate::catalog::build(&snapshot, dialect, database, revision);
         Ok(Self {
-            catalog_revision: next_catalog_revision(),
-            catalog_candidates,
+            catalog: Arc::new(catalog),
             snapshot,
             access,
-            dialect: session.dialect(),
+            dialect,
             unreadable_roles: unreadable.len(),
         })
     }
@@ -119,10 +125,10 @@ impl GatewayState {
         access: AccessStore,
         dialect: DatabaseDialect,
     ) -> Self {
-        let catalog_candidates = crate::catalog::candidates(&snapshot).into();
+        let revision = next_catalog_revision();
+        let catalog = crate::catalog::build(&snapshot, dialect, "unf", revision);
         Self {
-            catalog_revision: next_catalog_revision(),
-            catalog_candidates,
+            catalog: Arc::new(catalog),
             snapshot,
             access,
             dialect,
@@ -130,13 +136,13 @@ impl GatewayState {
         }
     }
 
-    /// The snapshot's relation inventory, prepared before accepting clients.
-    pub(crate) fn catalog_candidates(&self) -> &[crate::catalog::Candidate] {
-        &self.catalog_candidates
+    pub(crate) fn catalog(&self) -> &crate::catalog::Catalog {
+        &self.catalog
     }
 
-    pub(crate) const fn catalog_revision(&self) -> u32 {
-        self.catalog_revision
+    #[cfg(test)]
+    pub(crate) fn catalog_revision(&self) -> u32 {
+        self.catalog.revision
     }
 
     /// The metadata snapshot.

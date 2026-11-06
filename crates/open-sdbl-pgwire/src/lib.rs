@@ -265,7 +265,6 @@ impl GatewayEvents for NoEvents {
 
 /// What all connections of one gateway share.
 pub(crate) struct Shared<E: Engine> {
-    pub(crate) database_name: String,
     pub(crate) startup_time: i64,
     pub(crate) engine: E,
     pub(crate) state: Arc<StateHandle>,
@@ -299,10 +298,6 @@ pub async fn serve(
     events: Arc<dyn GatewayEvents>,
     shutdown: impl Future<Output = ()>,
 ) -> io::Result<()> {
-    let database_name = match &config.connection {
-        DatabaseConnection::Postgres(c) => c.options.database.clone(),
-        DatabaseConnection::MsSql(c) => c.options.database.clone(),
-    };
     let elapsed = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default();
@@ -313,7 +308,6 @@ pub async fn serve(
     )
     .unwrap_or(i64::MAX);
     let shared = Arc::new(Shared {
-        database_name,
         startup_time,
         engine: DbEngine {
             connection: config.connection,

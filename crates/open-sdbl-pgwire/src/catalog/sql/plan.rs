@@ -136,12 +136,16 @@ pub(super) fn relation<'a>(
     } else {
         name.join(".")
     };
-    catalog.tables.get(&key).ok_or_else(|| {
-        ErrorFields::error(
-            "42P01",
-            format!("catalog relation {} does not exist", name.join(".")),
-        )
-    })
+    catalog
+        .tables
+        .get(&key)
+        .map(|table| &**table)
+        .ok_or_else(|| {
+            ErrorFields::error(
+                "42P01",
+                format!("catalog relation {} does not exist", name.join(".")),
+            )
+        })
 }
 pub(super) fn source(
     s: &Source,

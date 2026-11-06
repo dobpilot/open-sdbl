@@ -457,7 +457,6 @@ async fn startup<E: Engine, S: AsyncRead + AsyncWrite + Unpin + Send + 'static>(
         out: BackendWriter::new(),
         peer,
         user_name,
-        database_name: shared.database_name.clone(),
         encrypted,
         catalog: None,
         db: Some(db),
@@ -853,7 +852,6 @@ struct Client<E: Engine, S> {
     out: BackendWriter,
     peer: Option<SocketAddr>,
     user_name: String,
-    database_name: String,
     encrypted: bool,
     catalog: Option<Catalog>,
     db: Option<E::Session>,
@@ -1182,93 +1180,35 @@ impl<E: Engine, S: AsyncRead + AsyncWrite + Unpin + Send + 'static> Client<E, S>
         Ok(())
     }
 
-    /// Builds the visible model without opening or reading a database session.
+    /// Returns the prebuilt catalog, filtered by this user's rights when required.
     fn catalog(&mut self) -> &mut Catalog {
         if self.catalog.is_none() {
             let state = Arc::clone(&self.state);
-            let snapshot = state.snapshot();
-            let mut visible = Vec::new();
-            let mut build_failures = 0;
-            for mut candidate in state.catalog_candidates().iter().cloned() {
-                let mut manager = TempTablesManager::new();
-                let Ok(prepared) =
-                    AnyPrepared::prepare(state.dialect(), snapshot, &candidate.query, &manager)
-                else {
-                    build_failures += 1;
-                    continue;
-                };
-                let Ok(decisions) = self.decisions(&state, prepared.restriction_request(), true)
-                else {
-                    continue;
-                };
-                // A section also needs a proven child Read mapping; object
-                // Read alone concerns its owner. Preserve the existing boundary
-                // for empty sections while listing readable owner relations.
-                let retain_empty = prepared
-                    .restriction_request()
-                    .targets
-                    .iter()
-                    .all(|target| target.table_part.is_none());
-                let options = CompileOptions::new()
-                    .session(&self.parameters)
-                    .decisions(&decisions);
-                let Ok(Some(query)) = prepared.compile_batch(snapshot, &options, &mut manager)
-                else {
-                    build_failures += 1;
-                    // Object Read was proven above. Missing execution context
-                    // must not erase a readable relation from metadata.
-                    if retain_empty {
-                        visible.push(candidate);
-                    }
-                    continue;
-                };
-                for (index, column) in query.columns.iter().enumerate() {
-                    if query.service_columns.contains(&index)
-                        || query.forbidden_row_column == Some(index)
-                    {
+            let complete = state.catalog();
+            let model = if self.shared.unrestricted_access {
+                complete.personalized(&self.user_name)
+            } else {
+                let mut visibility = catalog::Visibility::default();
+                for candidate in complete.candidates.iter() {
+                    let Some(access) = complete.access.get(&candidate.oid) else {
                         continue;
-                    }
-                    let usage = match &column.origin {
-                        Some(origin) => FieldUsageRequest {
-                            fields: vec![open_sdbl::query::FieldUse {
-                                object: origin.object,
-                                table_part: origin.table_part.clone(),
-                                field: origin.field,
-                                usage: open_sdbl::query::FieldUsage::Projection,
-                            }],
-                        },
-                        None => prepared.field_usage().clone(),
                     };
-                    if !self.shared.unrestricted_access
-                        && check_user_field_access(&self.access, snapshot, &usage).is_err()
-                    {
+                    if self.decisions(&state, &access.request, true).is_err() {
                         continue;
                     }
-                    let comment = column.origin.as_ref().and_then(|origin| {
-                        if let open_sdbl::metadata::FieldId::Metadata(id) = origin.field {
-                            snapshot
-                                .attribute_by_id(id)
-                                .ok()
-                                .and_then(|f| catalog::synonym(&f.synonyms))
-                        } else {
-                            None
+                    let mut columns = BTreeSet::new();
+                    for ((number, _, _), usage) in candidate.columns.iter().zip(&access.columns) {
+                        if check_user_field_access(&self.access, state.snapshot(), usage).is_ok() {
+                            columns.insert(*number);
                         }
-                    });
-                    let (field, _) = describe_column(&column.label, &column.kind, 0);
-                    candidate.columns.push((index as i64 + 1, field, comment));
+                    }
+                    if access.retain_empty || !columns.is_empty() {
+                        visibility.relations.insert(candidate.oid, columns);
+                        visibility.schemas.insert(candidate.schema.clone());
+                    }
                 }
-                // Column authorization is independent of owner visibility.
-                if retain_empty || !candidate.columns.is_empty() {
-                    visible.push(candidate);
-                }
-            }
-            let mut model = catalog::finish(
-                visible,
-                &self.user_name,
-                &self.database_name,
-                state.catalog_revision(),
-            );
-            model._build_failures = build_failures;
+                complete.filtered(&visibility, &self.user_name)
+            };
             self.catalog = Some(model);
         }
         let catalog = self.catalog.as_mut().expect("the catalog was built");

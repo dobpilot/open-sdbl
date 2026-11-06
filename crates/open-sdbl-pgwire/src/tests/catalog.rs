@@ -502,6 +502,14 @@ async fn budget_error_keeps_connection_usable() {
 use super::support as populated_support;
 
 fn populated_harness(objects: u32, attributes: u32) -> Harness {
+    populated_harness_with_access(objects, attributes, false)
+}
+
+fn populated_harness_with_access(
+    objects: u32,
+    attributes: u32,
+    unrestricted_access: bool,
+) -> Harness {
     use open_sdbl::metadata::Guid;
     let snapshot = populated_support::populated_catalog_snapshot(objects, attributes);
     assert_eq!(snapshot.fields().len(), (objects * attributes) as usize);
@@ -518,6 +526,7 @@ fn populated_harness(objects: u32, attributes: u32) -> Harness {
     Harness::new(Options {
         snapshot: Some(snapshot),
         access: Some(access),
+        unrestricted_access,
         ..Options::default()
     })
 }
@@ -582,8 +591,26 @@ async fn populated_datagrip_full_schema_introspection() {
 async fn populated_catalog(
     objects: u32,
     attributes: u32,
-) -> (std::time::Duration, std::time::Duration) {
-    let harness = populated_harness(objects, attributes);
+) -> (
+    std::time::Duration,
+    std::time::Duration,
+    std::time::Duration,
+) {
+    populated_catalog_with_access(objects, attributes, false).await
+}
+
+async fn populated_catalog_with_access(
+    objects: u32,
+    attributes: u32,
+    unrestricted: bool,
+) -> (
+    std::time::Duration,
+    std::time::Duration,
+    std::time::Duration,
+) {
+    let started = std::time::Instant::now();
+    let harness = populated_harness_with_access(objects, attributes, unrestricted);
+    let initialization = started.elapsed();
     let text = "SELECT c.relname FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='Справочник' AND c.relkind='r' ORDER BY 1";
     let client = connect(&harness).await;
     let started = std::time::Instant::now();
@@ -625,18 +652,31 @@ async fn populated_catalog(
     );
     assert!(harness.statements().is_empty());
     harness.stop();
-    (cold, warm)
+    (initialization, cold, warm)
 }
 #[tokio::test]
 async fn populated_catalog_reads_loaded_snapshot_only() {
     let _ = populated_catalog(64, 16).await;
 }
 #[tokio::test]
-#[ignore = "release-mode catalog benchmark with populated attributes and complete rights checks"]
+#[ignore = "release-mode prebuilt catalog benchmark with populated attributes and rights filtering"]
 async fn populated_catalog_first_and_repeated_request() {
-    let (cold, warm) = populated_catalog(1000, 20).await;
-    eprintln!("1000 relations / 20000 custom attributes: first {cold:?}, repeat {warm:?}");
-    assert!(cold < std::time::Duration::from_secs(if cfg!(debug_assertions) { 30 } else { 5 }));
+    let (initialization, cold, warm) = populated_catalog(1000, 20).await;
+    eprintln!(
+        "1000 relations / 20000 custom attributes: initialization {initialization:?}, first {cold:?}, repeat {warm:?}"
+    );
+    assert!(cold < std::time::Duration::from_secs(1));
+    assert!(warm < std::time::Duration::from_secs(1));
+}
+
+#[tokio::test]
+#[ignore = "release-mode shared catalog benchmark without rights filtering"]
+async fn populated_unrestricted_catalog_first_and_repeated_request() {
+    let (initialization, cold, warm) = populated_catalog_with_access(1000, 20, true).await;
+    eprintln!(
+        "unrestricted: 1000 relations / 20000 custom attributes: initialization {initialization:?}, first {cold:?}, repeat {warm:?}"
+    );
+    assert!(cold < std::time::Duration::from_secs(1));
     assert!(warm < std::time::Duration::from_secs(1));
 }
 
