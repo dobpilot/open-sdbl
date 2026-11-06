@@ -1185,7 +1185,7 @@ impl<E: Engine, S: AsyncRead + AsyncWrite + Unpin + Send + 'static> Client<E, S>
         if self.catalog.is_none() {
             let state = Arc::clone(&self.state);
             let complete = state.catalog();
-            let model = if self.shared.unrestricted_access {
+            let mut model = if self.shared.unrestricted_access {
                 complete.personalized(&self.user_name)
             } else {
                 let mut visibility = catalog::Visibility::default();
@@ -1209,6 +1209,7 @@ impl<E: Engine, S: AsyncRead + AsyncWrite + Unpin + Send + 'static> Client<E, S>
                 }
                 complete.filtered(&visibility, &self.user_name)
             };
+            model.set_database(&self.shared.database_name);
             self.catalog = Some(model);
         }
         let catalog = self.catalog.as_mut().expect("the catalog was built");

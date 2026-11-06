@@ -1764,6 +1764,18 @@ where
     let workers = std::thread::available_parallelism()
         .map_or(1, usize::from)
         .min(items.len().div_ceil(CHUNK_SIZE));
+    parallel_ordered_with_workers(items, workers, work)
+}
+
+fn parallel_ordered_with_workers<T, O>(
+    items: &[T],
+    workers: usize,
+    work: impl Fn(&T) -> O + Sync,
+) -> Vec<O>
+where
+    T: Sync,
+    O: Send,
+{
     if workers <= 1 {
         return items.iter().map(work).collect();
     }
@@ -1863,19 +1875,31 @@ fn finalize_runtime_facts(mut facts: RuntimeMetadataFacts) -> ResolvedMetadata {
             &indexes,
         )
     };
-    let (mut report, index, fingerprint) = if fields.len() >= 256 {
+    let workers = std::thread::available_parallelism().map_or(1, usize::from);
+    let (mut report, index, fingerprint) = if fields.len() >= 256 && workers >= 3 {
         std::thread::scope(|scope| {
             let report_worker = scope.spawn(report);
             let index_worker = scope.spawn(index);
-            let fingerprint_worker = scope.spawn(fingerprint);
+            let fingerprint = fingerprint();
             (
                 report_worker
                     .join()
                     .expect("resolution report worker panicked"),
                 index_worker.join().expect("metadata index worker panicked"),
-                fingerprint_worker
+                fingerprint,
+            )
+        })
+    } else if fields.len() >= 256 && workers == 2 {
+        std::thread::scope(|scope| {
+            let report_worker = scope.spawn(report);
+            let index = index();
+            let fingerprint = fingerprint();
+            (
+                report_worker
                     .join()
-                    .expect("fingerprint worker panicked"),
+                    .expect("resolution report worker panicked"),
+                index,
+                fingerprint,
             )
         })
     } else {
@@ -2551,7 +2575,7 @@ fn logical_keys_equal(left: &[String], right: &[String]) -> bool {
 mod tests {
     use super::{
         AllowedLength, LiveColumn, LiveTable, index_live_fields, index_schema_field_owners,
-        logical_keys_equal, parallel_ordered,
+        logical_keys_equal, parallel_ordered, parallel_ordered_with_workers,
     };
     use crate::metadata::{SchemaColumn, SchemaStorage, SchemaTable, recase_postgres_identifier};
 
@@ -2632,9 +2656,13 @@ mod tests {
     #[test]
     fn parallel_chunks_retain_input_order_despite_completion_order() {
         let input = (0..2048_usize).collect::<Vec<_>>();
-        let output = parallel_ordered(&input, |value| {
-            if *value < 256 {
-                std::thread::sleep(std::time::Duration::from_millis(20));
+        let (sender, receiver) = std::sync::mpsc::channel();
+        let receiver = std::sync::Mutex::new(receiver);
+        let output = parallel_ordered_with_workers(&input, 2, |value| {
+            if *value == 0 {
+                receiver.lock().unwrap().recv().unwrap();
+            } else if *value == 2047 {
+                sender.send(()).unwrap();
             }
             *value * 2
         });

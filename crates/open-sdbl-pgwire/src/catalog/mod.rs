@@ -101,6 +101,26 @@ impl Catalog {
         catalog
     }
 
+    pub(crate) fn set_database(&mut self, database: &str) {
+        if self.database == database {
+            return;
+        }
+        self.database = database.into();
+        for (table, columns) in [
+            ("pg_catalog.pg_database", &[1_usize][..]),
+            ("information_schema.schemata", &[0][..]),
+            ("information_schema.tables", &[0][..]),
+            ("information_schema.views", &[0][..]),
+            ("information_schema.columns", &[0, 14][..]),
+        ] {
+            for row in &mut self.table_mut(table).rows {
+                for &column in columns {
+                    row[column] = database.into();
+                }
+            }
+        }
+    }
+
     pub(crate) fn filtered(&self, visibility: &Visibility, user: &str) -> Self {
         let mut catalog = self.personalized(user);
         let mut relation_ids = BTreeMap::<String, BTreeMap<String, i64>>::new();

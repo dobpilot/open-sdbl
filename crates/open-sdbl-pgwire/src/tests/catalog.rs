@@ -874,6 +874,93 @@ async fn relation_visibility_does_not_require_row_compilation_context() {
 }
 
 #[tokio::test]
+async fn independent_separator_does_not_remove_catalog_columns() {
+    let snapshot = super::support::separators_resolved_at(
+        &std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/fixtures/separators"),
+    )
+    .snapshot;
+    let mut parameters = SessionParameters::new();
+    parameters.set(QueryParameter::new(
+        "ИспользованиеРазделителя",
+        ParameterValue::Boolean(true),
+    ));
+    parameters.set(QueryParameter::new(
+        "ЗначениеРазделителя",
+        ParameterValue::Number {
+            unscaled: 7,
+            scale: 0,
+        },
+    ));
+    let expected =
+        open_sdbl::query::QueryCompiler::new(&snapshot, open_sdbl::query::PostgresBackend)
+            .compile_with(
+                "ВЫБРАТЬ * ИЗ Справочник.Товары",
+                &open_sdbl::query::CompileOptions::new().session(&parameters),
+            )
+            .unwrap()
+            .columns
+            .len();
+    assert!(expected > 0);
+    let base = fixture::snapshot();
+    let known = fixture::store(&base, true);
+    let mut access = AccessStore::new(&snapshot);
+    access.set_users(known.users().unwrap().to_vec());
+    let harness = Harness::new(Options {
+        snapshot: Some(snapshot),
+        access: Some(access),
+        operator: parameters,
+        unrestricted_access: true,
+        ..Options::default()
+    });
+    let client = connect(&harness).await;
+    let count: i64 = client.query_one("SELECT count(*) FROM information_schema.columns WHERE table_schema='Справочник' AND table_name='Товары'", &[]).await.unwrap().get(0);
+    assert_eq!(count as usize, expected);
+    harness.stop();
+}
+
+#[tokio::test]
+async fn embedded_state_uses_configured_database_name() {
+    let harness = Harness::new(Options {
+        database_name: "erp_uf",
+        unrestricted_access: true,
+        ..Options::default()
+    });
+    let client = connect(&harness).await;
+    let database: String = client
+        .query_one("SELECT current_database()", &[])
+        .await
+        .unwrap()
+        .get(0);
+    assert_eq!(database, "erp_uf");
+    for table in [
+        "information_schema.schemata",
+        "information_schema.tables",
+        "information_schema.views",
+        "information_schema.columns",
+    ] {
+        let sql = format!("SELECT count(*) FROM {table} WHERE table_catalog <> 'erp_uf'");
+        let column = if table.ends_with("schemata") {
+            "catalog_name"
+        } else {
+            "table_catalog"
+        };
+        let sql = sql.replace("table_catalog", column);
+        let count: i64 = client.query_one(&sql, &[]).await.unwrap().get(0);
+        assert_eq!(count, 0, "{table}");
+    }
+    let count: i64 = client
+        .query_one(
+            "SELECT count(*) FROM pg_catalog.pg_database WHERE datname = 'erp_uf'",
+            &[],
+        )
+        .await
+        .unwrap()
+        .get(0);
+    assert_eq!(count, 1);
+    harness.stop();
+}
+
+#[tokio::test]
 async fn an_owner_read_grant_does_not_expose_a_denied_section() {
     let snapshot = super::section_reference::snapshot();
     let base = fixture::snapshot();

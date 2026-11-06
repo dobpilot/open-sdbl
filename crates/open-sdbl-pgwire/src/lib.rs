@@ -266,6 +266,7 @@ impl GatewayEvents for NoEvents {
 /// What all connections of one gateway share.
 pub(crate) struct Shared<E: Engine> {
     pub(crate) startup_time: i64,
+    pub(crate) database_name: String,
     pub(crate) engine: E,
     pub(crate) state: Arc<StateHandle>,
     pub(crate) tls: Option<tokio_rustls::TlsAcceptor>,
@@ -307,8 +308,13 @@ pub async fn serve(
             .saturating_add(u64::from(elapsed.subsec_nanos() >= 500_000_000)),
     )
     .unwrap_or(i64::MAX);
+    let database_name = match &config.connection {
+        DatabaseConnection::Postgres(connection) => connection.options.database.clone(),
+        DatabaseConnection::MsSql(connection) => connection.options.database.clone(),
+    };
     let shared = Arc::new(Shared {
         startup_time,
+        database_name,
         engine: DbEngine {
             connection: config.connection,
             credentials: config.credentials,

@@ -253,6 +253,7 @@ pub(crate) struct Options {
     pub(crate) portal_buffer_rows: usize,
     pub(crate) delay: Option<Duration>,
     pub(crate) operator: SessionParameters,
+    pub(crate) database_name: &'static str,
     pub(crate) access: Option<AccessStore>,
     pub(crate) dialect: DatabaseDialect,
 }
@@ -279,6 +280,7 @@ impl Default for Options {
             portal_buffer_rows: 1000,
             delay: None,
             operator: SessionParameters::new(),
+            database_name: "unf",
             access: None,
             dialect: DatabaseDialect::Postgres,
         }
@@ -313,6 +315,7 @@ impl Harness {
         );
         let shared = Arc::new(Shared {
             startup_time: 1_700_000_000,
+            database_name: options.database_name.into(),
             engine: FakeEngine {
                 journal: Arc::clone(&journal),
                 responder: options.responder,

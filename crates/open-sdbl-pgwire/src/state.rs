@@ -77,19 +77,30 @@ impl GatewayState {
             DatabaseConnection::MsSql(connection) => connection.options.database.clone(),
         };
         let mut session = DatabaseSession::connect(connection, credentials, limits).await?;
-        let result = Self::read(&mut session, progress, unrestricted, &database).await;
+        let result = Self::read(&mut session, progress, unrestricted).await;
         let closed = session.close().await;
-        let state = result?;
+        let (snapshot, access, dialect, unreadable_roles) = result?;
         closed?;
-        Ok(state)
+        tokio::task::spawn_blocking(move || {
+            let revision = next_catalog_revision();
+            let catalog = crate::catalog::build(&snapshot, dialect, &database, revision);
+            Self {
+                catalog: Arc::new(catalog),
+                snapshot,
+                access,
+                dialect,
+                unreadable_roles,
+            }
+        })
+        .await
+        .map_err(|error| DbError::Data(format!("catalog construction failed: {error}")))
     }
 
     async fn read(
         session: &mut DatabaseSession,
         progress: &mut dyn MetadataProgress,
         unrestricted: bool,
-        database: &str,
-    ) -> Result<Self, DbError> {
+    ) -> Result<(MetadataSnapshot, AccessStore, DatabaseDialect, usize), DbError> {
         let (snapshot, _report) = session.metadata(progress).await?;
         let mut access = AccessStore::new(&snapshot);
         ensure_users(&mut access, session).await?;
@@ -106,16 +117,7 @@ impl GatewayState {
             }
             ensure_rights(&mut access, session, &roles).await?
         };
-        let dialect = session.dialect();
-        let revision = next_catalog_revision();
-        let catalog = crate::catalog::build(&snapshot, dialect, database, revision);
-        Ok(Self {
-            catalog: Arc::new(catalog),
-            snapshot,
-            access,
-            dialect,
-            unreadable_roles: unreadable.len(),
-        })
+        Ok((snapshot, access, session.dialect(), unreadable.len()))
     }
 
     /// A state built from parts the caller already holds.

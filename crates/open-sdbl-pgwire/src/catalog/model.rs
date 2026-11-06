@@ -4,8 +4,9 @@ use crate::codec::FieldDescription;
 use crate::values::describe_column;
 use open_sdbl::metadata::{MetadataKind, MetadataSnapshot, Synonym};
 use open_sdbl::query::{
-    AccessDecision, Backend, CompileOptions, FieldUsageRequest, PostgresBackend, PrepareOptions,
-    QueryCompiler, RestrictionRequest, SessionParameters, TempTablesManager, object_query_name,
+    AccessDecision, Backend, CompileOptions, FieldUsageRequest, ParameterValue, PostgresBackend,
+    PrepareOptions, QueryCompiler, QueryParameter, RestrictionRequest, SessionParameters,
+    TempTablesManager, object_query_name,
 };
 use open_sdbl_db::DatabaseDialect;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
@@ -212,13 +213,23 @@ fn compile_candidate<B: Backend>(
         .collect::<Vec<_>>();
     let mut parameters = SessionParameters::new();
     for field in snapshot.separators() {
-        if let Some(constant) = field
-            .separation
-            .as_ref()
-            .and_then(|separation| separation.conditional_separation.clone())
-        {
-            parameters.set_separation_condition(constant, false);
+        let Some(settings) = &field.separation else {
+            continue;
+        };
+        if let Some(constant) = &settings.conditional_separation {
+            parameters.set_separation_condition(constant.clone(), true);
         }
+        if let Some(name) = &settings.use_parameter {
+            parameters.set(QueryParameter::new(name, ParameterValue::Boolean(true)));
+        }
+        // This compilation only discovers columns; its SQL is never executed.
+        // NULL is type-neutral, including for reference-valued separators.
+        let name = settings
+            .value_parameter
+            .as_deref()
+            .or(field.name.as_deref())
+            .unwrap_or(&field.physical_name);
+        parameters.set(QueryParameter::new(name, ParameterValue::Null));
     }
     let options = CompileOptions::new()
         .session(&parameters)
