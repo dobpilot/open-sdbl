@@ -1809,6 +1809,88 @@ SOCKS5 используются соответственно `MSSQL_PASSWORD` и
 `systemctl reload` не настроен; для перечитывания метаданных отправьте SIGHUP
 процессу службы, а после изменения TOML перезапустите её.
 
+### Несколько экземпляров шлюза через systemd
+
+Шаблон `deploy/open-sdbl-pgwire@.service` запускает отдельный процесс для
+каждого имени после `@`. Например, `open-sdbl-pgwire@sales.service` читает
+`/etc/open-sdbl/instances/sales.toml` и необязательный файл окружения
+`/etc/open-sdbl/instances/sales.env`. Используйте простые имена, например
+`sales` и `warehouse`. Для других имён учитывайте экранирование systemd:
+`systemd-escape 'имя'` выдаёт идентификатор, который используется и в имени
+unit, и в именах файлов вместо `%i`.
+
+Установите бинарный файл в `/usr/local/bin/open-sdbl`, создайте системного
+пользователя и группу `open-sdbl`, затем скопируйте шаблон в
+`/etc/systemd/system/open-sdbl-pgwire@.service` и создайте каталог
+`/etc/open-sdbl/instances`. Создайте в нём два файла, например:
+
+```toml
+# /etc/open-sdbl/instances/sales.toml
+provider = "postgres"
+host = "db.example.org"
+database = "sales"
+user = "reader"
+listen = "127.0.0.1:5433"
+allow_insecure_loopback = true
+```
+
+```toml
+# /etc/open-sdbl/instances/warehouse.toml
+provider = "postgres"
+host = "db.example.org"
+database = "warehouse"
+user = "reader"
+listen = "127.0.0.1:5434"
+allow_insecure_loopback = true
+```
+
+Адреса подключения к СУБД и имена баз замените на свои. Порты шлюзов должны
+быть свободны и не пересекаться по адресу прослушивания: при конфликте второй
+экземпляр не сможет запуститься, а systemd будет повторять запуск согласно
+`Restart=on-failure`. Для сетевого прослушивания настройте TLS и доступ
+пользователя службы к сертификату и ключу; действуют обычные правила
+безопасности шлюза.
+
+Пароли в TOML не записываются. Для PostgreSQL создайте отдельные файлы pgpass
+для каждого экземпляра в формате `host:port:database:user:password`, доступные
+пользователю `open-sdbl` с режимом 0600. Например, в файле
+`/etc/open-sdbl/instances/sales.env` укажите:
+
+```ini
+PGPASSFILE=/etc/open-sdbl/instances/sales.pgpass
+```
+
+Аналогично создайте `warehouse.env` с путём к `warehouse.pgpass`. Для MSSQL
+и SOCKS5 используйте соответственно `MSSQL_PASSWORD` и `SOCKS5_PASSWORD` в
+файле окружения нужного экземпляра. Это синтаксис systemd `EnvironmentFile`,
+а не сценарий оболочки. Ограничьте доступ к файлам окружения, паролей и ключей;
+учётной записи службы необходим доступ к TOML, pgpass и TLS-файлам. Переменные
+окружения не являются защищённым хранилищем секретов и могут быть доступны
+другим процессам или через интерфейсы системы. Все экземпляры по умолчанию
+работают под одним пользователем и могут читать доступные ему файлы друг друга;
+для изоляции на уровне ОС нужны отдельные пользователи и переопределения unit.
+
+После установки шаблона выполните:
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable --now open-sdbl-pgwire@sales.service
+sudo systemctl enable --now open-sdbl-pgwire@warehouse.service
+systemctl status open-sdbl-pgwire@sales.service
+journalctl -u open-sdbl-pgwire@sales.service
+sudo systemctl restart open-sdbl-pgwire@sales.service
+sudo systemctl stop open-sdbl-pgwire@warehouse.service
+```
+
+Каждая команда действует на указанный экземпляр; остановка или ошибка одного
+не останавливает другой. После изменения TOML, файла окружения или учётных
+данных перезапустите соответствующий экземпляр. Команда
+`systemctl kill --kill-whom=main --signal=HUP open-sdbl-pgwire@sales.service`
+обновляет метаданные, но не перечитывает TOML или окружение. PID процесса можно
+посмотреть через `systemctl show open-sdbl-pgwire@sales.service -p MainPID`;
+systemd отслеживает его без PID-файла. Одиночный unit
+`open-sdbl-pgwire.service` и его конфигурация продолжают работать как прежде.
+
 ### Запуск шлюза как службы Windows
 
 Для взаимодействия с диспетчером служб используется [WinSW 2.12.0](https://github.com/winsw/winsw/releases/tag/v2.12.0).
