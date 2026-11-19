@@ -138,6 +138,26 @@ fn serve_refuses_a_network_listener_without_tls_before_connecting() {
 }
 
 #[test]
+fn serve_rejects_the_old_unrestricted_access_flag() {
+    let output = Command::new(env!("CARGO_BIN_EXE_open-sdbl"))
+        .args([
+            "serve",
+            "postgres",
+            "--host",
+            "db",
+            "--database",
+            "test",
+            "--user",
+            "reader",
+            "--unrestricted-access",
+        ])
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(2));
+    assert!(String::from_utf8_lossy(&output.stderr).contains("--unrestricted-access"));
+}
+
+#[test]
 fn serve_argument_errors_are_usage_errors() {
     for arguments in [
         &["serve"][..],

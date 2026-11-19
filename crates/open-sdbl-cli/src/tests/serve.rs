@@ -205,15 +205,28 @@ fn catalog_memory_limit_accepts_positive_mib_and_rejects_invalid_values() {
 }
 
 #[test]
-fn unrestricted_access_is_an_explicit_toml_opt_in() {
+fn disable_rls_check_is_an_explicit_opt_in() {
     let (defaults, _) = split_serve_options(strings(&["mssql"])).unwrap();
     assert!(!defaults.unrestricted_access);
-    let args = crate::config::config_arguments("provider='mssql'\nunrestricted_access=true", true)
-        .unwrap();
+    let (options, rest) = split_serve_options(strings(&["mssql", "--disable-rls-check"])).unwrap();
+    assert!(options.unrestricted_access);
+    assert_eq!(rest, strings(&["mssql"]));
+    let args =
+        crate::config::config_arguments("provider='mssql'\ndisable_rls_check=true", true).unwrap();
     let (options, _) = split_serve_options(args).unwrap();
     assert!(options.unrestricted_access);
+    let args =
+        crate::config::config_arguments("provider='mssql'\ndisable_rls_check=false", true).unwrap();
+    assert!(!split_serve_options(args).unwrap().0.unrestricted_access);
     assert!(
-        crate::config::config_arguments("provider='mssql'\nunrestricted_access='true'", true)
+        crate::config::config_arguments("provider='mssql'\ndisable_rls_check='true'", true)
             .is_err()
     );
+    assert!(split_serve_options(strings(&["mssql", "--disable-rls-check=true"])).is_err());
+    for gateway in [false, true] {
+        assert!(
+            crate::config::config_arguments("provider='mssql'\nunrestricted_access=true", gateway)
+                .is_err()
+        );
+    }
 }

@@ -44,7 +44,7 @@ pub(crate) fn config_arguments(text: &str, gateway: bool) -> Result<Vec<String>,
             | "allow_insecure_loopback"
             | "allow_insecure_network"
             | "verbose_errors"
-            | "unrestricted_access"
+            | "disable_rls_check"
             | "debug_authentication"
             | "debug_authentication_secrets" => {
                 if value
@@ -81,7 +81,7 @@ pub(crate) fn config_arguments(text: &str, gateway: bool) -> Result<Vec<String>,
                     | "allow_insecure_loopback"
                     | "allow_insecure_network"
                     | "verbose_errors"
-                    | "unrestricted_access"
+                    | "disable_rls_check"
                     | "debug_authentication"
                     | "debug_authentication_secrets"
             )
@@ -126,11 +126,13 @@ user = "reader"
 trust_server_certificate = true
 listen = "0.0.0.0:5433"
 allow_insecure_network = true
+disable_rls_check = true
 session_params = ["X=1"]
 "#;
         for command in ["console", "metadata"] {
             let args = config_arguments(text, false).unwrap();
             assert!(!args.iter().any(|arg| arg == "--listen"));
+            assert!(!args.iter().any(|arg| arg == "--disable-rls-check"));
             assert!(
                 parse_connection(&mut args.into_iter(), command, &mut Vec::new())
                     .unwrap()
@@ -138,6 +140,7 @@ session_params = ["X=1"]
             );
         }
         assert!(config_arguments("provider = 'mssql'\nunknown = true", false).is_err());
+        assert!(config_arguments("provider = 'mssql'\ndisable_rls_check = 'yes'", false).is_err());
         assert!(
             config_arguments("provider = 'mssql'\nallow_insecure_network = 'yes'", false).is_err()
         );

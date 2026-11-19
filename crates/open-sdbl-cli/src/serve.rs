@@ -138,13 +138,13 @@ pub(crate) fn split_serve_options(
             | "--verbose-errors"
             | "--debug-authentication"
             | "--debug-authentication-secrets"
-            | "--unrestricted-access" => {
+            | "--disable-rls-check" => {
                 if inline.is_some() {
                     return Err(usage(format!("option {option:?} does not take a value")));
                 }
                 if option == "--verbose-errors" {
                     options.verbose_errors = true;
-                } else if option == "--unrestricted-access" {
+                } else if option == "--disable-rls-check" {
                     options.unrestricted_access = true;
                 } else if option == "--debug-authentication-secrets" {
                     options.debug_authentication_secrets = true;
