@@ -33,6 +33,10 @@ It SHALL only be logged when sensitive authentication diagnostics are explicitly
 - **WHEN** a client connects without TLS from a non-loopback address and insecure network connections are not allowed
 - **THEN** the gateway refuses with `28000` and never asks for a password
 
+#### Scenario: Explicitly allowed insecure network connection
+- **WHEN** insecure network connections are explicitly allowed and a network client connects without TLS
+- **THEN** the gateway asks for the password
+
 #### Scenario: Allowed insecure loopback
 - **WHEN** the operator allowed insecure loopback and `psql` connects to
   `127.0.0.1` without TLS

@@ -1,9 +1,11 @@
-## Purpose
-The virtual PostgreSQL system catalog of the pgwire gateway: it lets psql,
-DBeaver, JDBC, psycopg and ODBC clients browse the objects of a 1C base the
-authenticated user may read, answered from metadata without database I/O.
+# pgwire-catalog Specification
 
-## ADDED Requirements
+## Purpose
+The gateway provides a virtual PostgreSQL system catalog from loaded 1C
+metadata. PostgreSQL clients can inspect the objects an authenticated user
+may read through the catalog's supported SQL subset.
+
+## Requirements
 
 ### Requirement: Keep readable relations independent of column authorization
 An owner relation or virtual view with proven object Read SHALL remain
@@ -336,16 +338,16 @@ bound rather than exhaust the process.
   string, and the connection remains usable
 
 ### Requirement: Serve the recorded client introspection corpus
-Every introspection query of the recorded corpus — psql 13 to 18 for
-`\dn`, `\dt`, `\dv`, `\d`, `\d+`, `\dT`; pgjdbc 42.x `DatabaseMetaData`
-`getSchemas`, `getTables`, `getColumns`, `getPrimaryKeys`,
-`getTypeInfo`; DBeaver's navigator; psycopg 3 type lookup; psqlODBC
-catalog functions — SHALL evaluate without error.
+The gateway SHALL replay the committed catalog corpus, which contains
+recorded psql 13 and 18, pgjdbc and DataGrip queries. Statements used by
+the recorded `\dn`, `\dt`, `\dv`, `\d`, `\d+` and `\dT` flows SHALL
+return catalog data in the forms consumed by those clients.
 
-#### Scenario: DBeaver navigator
-- **WHEN** DBeaver connects and expands the `Справочник` schema
-- **THEN** it shows the readable catalogs, and opening one shows its
-  columns with their types and comments
+#### Scenario: psql catalog navigation
+- **WHEN** psql lists the relations of the `Справочник` schema and
+  describes a readable catalog
+- **THEN** it sees readable relations and their visible columns, types
+  and comments
 
 #### Scenario: pgjdbc getColumns
 - **WHEN** a JDBC client calls `getColumns(null, "Справочник",
@@ -354,20 +356,84 @@ catalog functions — SHALL evaluate without error.
   `COLUMN_SIZE` and `REMARKS` from the catalog
 
 ### Requirement: Reuse the metadata snapshot loaded at startup
-Catalog introspection SHALL use the loaded in-memory metadata snapshot.
-Field lookup indexes SHALL be built once during snapshot finalization and
-reused across relation compilations and connections. A refresh SHALL use
-the new snapshot's indexes. Catalog requests SHALL perform no metadata or
-database reads and SHALL retain the complete user-rights checks.
+Catalog introspection SHALL use the loaded in-memory metadata snapshot. Field lookup indexes SHALL be built once during snapshot finalization and reused across relation compilations and connections. The complete relation catalog SHALL be compiled once per gateway state and shared by connections. A refresh SHALL use the new snapshot's indexes and prebuilt catalog. Catalog requests SHALL perform no metadata or database reads and SHALL retain the complete user-rights checks in restricted mode.
 
 #### Scenario: Many objects with custom attributes
-- **WHEN** a user first runs `\dt` against a snapshot with thousands of
-  objects and tens of thousands of custom attributes
-- **THEN** preparing each relation reuses the finalized field lookup index
-  rather than rebuilding a configuration-wide attribute map
+- **WHEN** a user first runs `\dt` against a state with thousands of objects and tens of thousands of custom attributes
+- **THEN** the request reuses the catalog compiled during state acquisition rather than compiling relations on the connection task
 - **AND** the database receives no statement for the catalog request
 
 #### Scenario: Refreshed attribute names
 - **WHEN** metadata refresh replaces the snapshot with renamed attributes
-- **THEN** subsequent introspection uses the new snapshot's attribute names
-  and the old snapshot remains valid for operations already using it
+- **THEN** subsequent introspection uses the replacement state's prebuilt catalog and the old snapshot remains valid for operations already using it
+
+### Requirement: Evaluate DBeaver column introspection within budgets
+The catalog SHALL evaluate DBeaver's attribute query for one relation in a populated catalog without exhausting existing allocation limits. Optimizations SHALL preserve filtering, outer-join, ordering, and column projection semantics.
+
+#### Scenario: Column listing in a populated configuration
+- **WHEN** DBeaver selects `a.*` from `pg_attribute` joined to `pg_class` and filters by one relation OID
+- **THEN** the gateway returns that relation's visible columns within the existing budgets
+
+### Requirement: Configure catalog allocation budget
+The gateway SHALL allow the operator to set a positive catalog query allocation budget in MiB using TOML or CLI. It SHALL default to 64 MiB, apply the configured budget independently to every catalog query in both simple and extended protocol, and reject invalid or overflowing values before connecting. Other resource limits SHALL remain unchanged.
+
+#### Scenario: Increase the allocation budget
+- **WHEN** a catalog query exceeds 64 MiB but fits within a configured larger budget
+- **THEN** it succeeds without an allocation budget error
+
+#### Scenario: Default budget remains bounded
+- **WHEN** no budget is configured and a query exceeds 64 MiB
+- **THEN** it fails with SQLSTATE `54001`
+
+#### Scenario: Invalid budget
+- **WHEN** the configured value is zero, negative, non-integral or overflows the byte representation
+- **THEN** startup fails before the database is contacted
+
+### Requirement: Unrestricted catalog access by operator choice
+When explicitly configured for unrestricted access, the gateway SHALL expose all supported metadata relations and fields after successful authentication without checking role rights. The default SHALL continue to enforce rights.
+
+#### Scenario: Unrestricted catalog
+- **WHEN** an authenticated user has no role read rights and unrestricted access is enabled
+- **THEN** supported relations and fields are visible in the virtual catalog
+
+### Requirement: Prebuild the complete catalog concurrently
+Acquiring a gateway state SHALL build the complete supported virtual catalog before that state is served to clients. Independent relation compilations SHALL run concurrently on bounded scoped worker threads and SHALL preserve deterministic candidate order and stable OIDs. The complete build SHALL retain object/section restriction requests and per-column field-usage requests for later authorization. Catalog SQL requests SHALL NOT parse or compile the metadata relations to construct their model.
+
+#### Scenario: First and subsequent connections share the built model
+- **WHEN** several connections issue their first catalog query against one gateway state
+- **THEN** each query uses the catalog built during state acquisition and none rebuilds or recompiles the relation inventory
+
+#### Scenario: Refresh prebuilds the replacement model
+- **WHEN** metadata refresh acquires a replacement state
+- **THEN** the complete replacement catalog is built before the state is published and operations retaining the old state keep its catalog
+
+### Requirement: Share immutable catalog storage between connections
+Connections using one gateway state SHALL share the storage of unchanged catalog tables. Session personalization SHALL copy only the affected session-specific tables and SHALL NOT clone the complete relation and attribute inventories. Settings changes on one connection SHALL NOT modify another connection's catalog.
+
+#### Scenario: Unrestricted connections do not copy the inventory
+- **WHEN** two unrestricted connections personalize the catalog and issue catalog queries
+- **THEN** they share unchanged table storage and observe their own user and settings
+
+### Requirement: Filter the prebuilt catalog by user rights
+A relation SHALL be listed only when the user's decision for reading it is not denied, and a column only when the complete field-rights check of the user proves it readable; a relation that cannot be decided SHALL be omitted. Hidden objects and fields SHALL be absent from every catalog relation and function result. Restricted connections SHALL apply these checks to the saved access requests of the prebuilt complete catalog without recompiling relations.
+
+#### Scenario: Denied catalog is invisible
+- **WHEN** no role of the user may read `Справочник.Контрагенты`
+- **THEN** neither `\dt`, `pg_class`, `information_schema.tables` nor a lookup by its name returns it
+
+#### Scenario: Restricted catalog is visible
+- **WHEN** the user's roles restrict reading of `Справочник.Контрагенты` with a row-level condition
+- **THEN** the table is listed; its rows stay filtered when queried
+
+#### Scenario: Unreadable attribute is hidden
+- **WHEN** the field check does not prove an attribute readable
+- **THEN** the attribute is absent from `\d`, from `information_schema.columns`, from `pg_attribute` and from column descriptions
+
+### Requirement: Describe enumeration columns as text
+The virtual catalog SHALL describe columns with one statically known
+enumeration target using the same PostgreSQL text type that the gateway emits
+for direct query results.
+
+#### Scenario: Discover an enumeration field
+- **WHEN** a client inspects an enumeration-typed field through the virtual catalog
+- **THEN** its reported PostgreSQL type is text

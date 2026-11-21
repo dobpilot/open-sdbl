@@ -1569,7 +1569,15 @@ The SDK SHALL expose optional measured Balance or Turnovers kind and complete or
 - **THEN** all already acquired kind and collection settings remain unchanged
 
 ### Requirement: Acquire data processor object metadata
-The SDK SHALL expose optional complete ordered own attribute and tabular-section GUID collections and generated object type identity for measured data processor descriptions. Nested descriptors SHALL retain qualified types and section membership. Unknown, malformed, duplicate or incomplete collections SHALL remain None; verified empty collections SHALL be Some(empty). Other kinds SHALL not receive these fields.
+The SDK SHALL expose optional complete ordered own attribute and tabular-section GUID collections and generated object type identity for measured data processor descriptions, including the retained BUH legacy class 16/12 with identity 1/7. Nested descriptors SHALL retain qualified types and section membership. Unknown, malformed, duplicate or incomplete collections SHALL remain None; verified empty collections SHALL be Some(empty). Other kinds SHALL not receive these fields.
+
+#### Scenario: Native ordered legacy members
+- **WHEN** the retained native BUH data processor resource is acquired
+- **THEN** all four own attributes, its section and eleven section fields preserve native XML identity, order and types, with the measured object type identity
+
+#### Scenario: Malformed legacy membership
+- **WHEN** an owner identity is unsupported or a collection is malformed, truncated or duplicated
+- **THEN** unsupported metadata remains unknown without publishing a prefix list
 
 #### Scenario: Native ordered object members
 - **WHEN** a native data processor declares distinguishable ordered fields and sections
@@ -1671,3 +1679,486 @@ The SDK SHALL expose optional complete ordered own ExchangePlan attribute GUID m
 #### Scenario: Verify absence
 - **WHEN** a supported native owner has a correctly counted empty own attribute collection
 - **THEN** own attribute membership is Some(empty)
+
+### Requirement: Preserve the selected user interface language identity
+The decoded UserData SHALL expose the selected interface-language GUID from the measured 38-field user record. A selected GUID, a known nil GUID and an unsupported or incomplete layout SHALL remain distinguishable. InfoBaseUser returned through asynchronous and blocking acquisition SHALL preserve this value without additional SQL. No language SHALL be inferred from names, configuration defaults or operating-system locale.
+
+#### Scenario: Native selected and default language
+- **WHEN** the measured Russian, English and default-user records are decoded
+- **THEN** their selected GUIDs match the native metadata and the default record carries a known nil GUID
+
+#### Scenario: Unknown language structure
+- **WHEN** the language has a wrong type or GUID, or the record layout is unsupported or incomplete
+- **THEN** the language is unknown and previously decodable identity, names, roles and separator data are not discarded merely because the language is unknown
+
+#### Scenario: Existing acquisition and confidentiality
+- **WHEN** an ordinary user row is acquired
+- **THEN** its decoded language is retained without mutating input bytes or exposing password hashes through the new API, Debug, errors or logs
+
+### Requirement: Complete measured BUH characteristic attributes
+The SDK SHALL recognize homogeneous measured 2/6 wrappers with supported 27/23 bodies in characteristic own-attribute collections, preserving all native identities, names, order and qualified types. Existing modern 3/8 support SHALL remain available. Unknown, mixed, malformed, duplicate or incomplete membership SHALL remain unknown rather than partial.
+
+#### Scenario: Native BUH chart
+- **WHEN** the retained ДополнительныеРеквизитыИСведения native resource is decoded
+- **THEN** all 28 own attributes match paired XML including ВидСвойства and its enumeration reference type
+
+#### Scenario: Unsupported or incomplete membership
+- **WHEN** any count, wrapper, identity or recognized child type is invalid or missing
+- **THEN** the entire own-attribute collection remains unknown
+
+#### Scenario: Existing modern collection
+- **WHEN** a complete homogeneous 3/8 collection is decoded
+- **THEN** its ordered complete membership remains available
+
+### Requirement: Fall back to measured current40 version2 document sections
+When the existing section lookup is unknown and own attributes are complete, the decoder SHALL recognize the measured current40 version2 owner/section/field profile and preserve complete ordered section membership and qualified field declarations. It SHALL validate the complete newly supported set before publication.
+
+#### Scenario: Whole native equipment-installation document
+- **WHEN** the retained native document has its ten own attributes and two version2 sections with ten fields
+- **THEN** all memberships, UUIDs, names, order and twenty qualified type rows match native XML
+
+#### Scenario: Malformed fallback or missing complete owns
+- **WHEN** owner/late-part/late-field shape, synonym, String comment, flags, tail, count, declaration, descriptor uniqueness or identity collisions are invalid, or complete own metadata is unavailable
+- **THEN** no NEW section/type prefix is published through this fallback
+- **AND** previously known own metadata and old settings retain their behavior
+
+#### Scenario: Previously known sections
+- **WHEN** the prior lookup already returns known sections, including owner version2 with section version3
+- **THEN** the new fallback is not used and the existing projection remains unchanged
+
+#### Scenario: Existing unrelated profiles
+- **WHEN** existing legacy37/38, modern3 or catalog metadata is acquired
+- **THEN** its previous behavior remains unchanged, including existing partial modern3 behavior
+
+### Requirement: Retain measured current56 catalog own type declarations
+The decoder SHALL retain complete qualified own declarations for the measured class56/61 header2 catalog profile while preserving existing complete membership and unrelated metadata.
+
+#### Scenario: Native extension-version catalog
+- **GIVEN** the whole native CF/XML with two known own IDs, standard fields and empty sections
+- **WHEN** the resource is decoded
+- **THEN** both ordered own IDs retain exact String and DateTime declarations and other known metadata remains unchanged
+
+#### Scenario: Malformed measured profile
+- **GIVEN** a malformed late row, header, type, tail, count, descriptor, collision or unknown shape
+- **WHEN** declaration projection is attempted
+- **THEN** it publishes no new declaration prefix and preserves independently acquired metadata
+
+#### Scenario: Permission isolation
+- **GIVEN** declaration projection succeeds
+- **WHEN** the result is used by a consumer
+- **THEN** role grants, access-check policy and privilege remain unchanged
+
+### Requirement: Acquire measured legacy data processor attributes
+The SDK SHALL retain complete ordered own attribute identities and qualified declared types from the measured legacy data processor profile. Unsupported or malformed identities, duplicate or incomplete membership and unreadable declarations SHALL remain unknown. Generated type-family references SHALL retain their original declared identity and SHALL NOT be relabelled as a concrete metadata object. Other owner kinds and tabular-section fields SHALL retain their existing profile boundaries.
+
+#### Scenario: Native legacy attributes
+- **WHEN** the independently validated legacy data processor declares two qualified string fields and one ExchangePlanRef type-set field
+- **THEN** the owner exposes all three real attribute GUIDs in native XML order and the nested descriptors retain the original declarations
+
+#### Scenario: Invalid or unsupported legacy attribute profile
+- **WHEN** its identity, wrapper, declaration, owner or membership is malformed or unsupported
+- **THEN** no complete legacy attribute collection is reported
+
+#### Scenario: Other metadata profiles
+- **WHEN** a Report, section field or modern data processor is acquired
+- **THEN** its existing decoding boundaries and membership remain unchanged
+
+### Requirement: Preserve measured legacy functional-option settings
+The SDK SHALL preserve the measured location identity and privileged retrieval mode of functional options in the recognized legacy identity profile. It SHALL validate the complete native structure and unique owner before publishing either field, SHALL preserve existing supported forms, and SHALL leave unknown forms unknown.
+
+#### Scenario: Whole native legacy option
+- **GIVEN** the unchanged BUH CF/XML option pair
+- **WHEN** public metadata parsing decodes it
+- **THEN** the owner identity, location GUID and privileged mode match XML
+- **AND** global location resolution retains its existing responsibility
+
+#### Scenario: Existing native Boolean controls
+- **GIVEN** the retained independently measured false and true modern options
+- **WHEN** they are decoded
+- **THEN** both exact modes and their complete metadata remain unchanged
+
+#### Scenario: Invalid old profile
+- **GIVEN** a malformed header, owner mismatch, duplicate owner descriptor, invalid Content count/reference or unknown mode
+- **WHEN** projection is attempted
+- **THEN** no new partial or guessed settings are published
+
+### Requirement: Acquire measured legacy news characteristic metadata
+The SDK SHALL preserve the complete ordered own attribute collection and qualified declarations of the retained legacy news characteristic profile, together with its measured characteristic settings and existing reference identity. Unsupported, malformed, duplicate and incomplete descriptions SHALL remain unknown without publishing partial membership. Modern characteristic profiles SHALL retain their existing behavior. No runtime object semantics are inferred from this metadata profile.
+
+#### Scenario: Native news characteristic metadata
+- **WHEN** the retained native BUH news characteristic resource is decoded
+- **THEN** all five own attributes, their types and qualifiers, code length 20, description length 50 and characteristic value declarations match the paired XML
+
+#### Scenario: Malformed local profile
+- **WHEN** its owner, collection, wrapper, identity or declaration is unsupported, truncated, duplicated or missing
+- **THEN** the SDK does not publish partial attribute membership or prefix declarations
+
+#### Scenario: Existing characteristic profiles
+- **WHEN** a supported modern characteristic or the previously measured BUH characteristic is decoded
+- **THEN** its ordered membership and declarations remain unchanged
+
+### Requirement: Acquire measured legacy real-estate VAT document metadata
+The decoder SHALL preserve complete ordered own attributes and section/field membership with qualified declarations for the measured legacy real-estate VAT recovery document. It SHALL validate each newly supported complete collection before publication, preserving known own metadata when sections fail. Unsupported metadata SHALL remain unknown without partial prefixes.
+
+#### Scenario: Whole native document
+- **WHEN** the retained native CF/XML document is acquired
+- **THEN** its10 own UUIDs,2 section UUIDs,24 ordered fields and48 qualified type rows match XML
+- **AND** Characteristic TypeSet references retain their exact generated TypeIds
+
+#### Scenario: Malformed own collection
+- **WHEN** owner or late own shape, flags, String identity/comment, count, type or descriptor is invalid, duplicated or incomplete
+- **THEN** no own or dependent section prefix is published
+
+#### Scenario: Malformed section collection
+- **WHEN** a late part or field has an invalid shape, flags, header/comment, count, type, descriptor or duplicate/colliding identity
+- **THEN** no section/field prefix is published
+- **AND** already complete own metadata remains unchanged
+
+#### Scenario: Existing profiles
+- **WHEN** previously supported document38/40 or catalog profiles are acquired
+- **THEN** their previous metadata projection remains unchanged
+
+### Requirement: Preserve measured legacy report-deliveries own attributes
+The decoder SHALL preserve the complete ordered own-attribute membership and qualified declarations of the measured legacy BUH report-deliveries catalog when the whole owner and collection are recognized. Invalid collections SHALL NOT publish partial membership or declaration prefixes.
+
+#### Scenario: Complete native catalog
+- **WHEN** the retained native CF/XML catalog contains its 16 measured own attributes
+- **THEN** their UUIDs, names, order, types, references and qualifiers match XML, including the date-only start-of-period attribute
+
+#### Scenario: Invalid legacy collection
+- **WHEN** owner (including malformed synonym structure or non-string text), count, last-row wrapper/header/type, descriptor uniqueness or identity uniqueness is invalid, or an attribute aliases its owner
+- **THEN** own membership stays unknown and no declaration prefix is published
+
+#### Scenario: Modern catalog
+- **WHEN** an existing supported modern catalog is decoded
+- **THEN** its metadata projection remains unchanged
+
+### Requirement: Acquire measured legacy report-event catalog sections atomically
+The SDK SHALL preserve complete ordered section and field membership and qualified field declarations for the measured legacy report-event catalog profile. It SHALL validate the entire section set before publishing any newly supported membership or declaration. Invalid or incomplete sections SHALL remain unknown without a partial prefix, while preserving existing own-attribute metadata.
+
+#### Scenario: Complete native catalog sections
+- **WHEN** the retained native report-event catalog contains its ПричиныОтказа section and four fields
+- **THEN** section and field UUIDs, names, order, types and qualifiers match native XML
+- **AND** the seven already acquired own attributes retain their declarations
+
+#### Scenario: Invalid late section or field
+- **WHEN** a late section or field has an unknown shape, invalid count/header/declaration, missing or duplicate descriptor, duplicate identity or collision with owner or own attributes
+- **THEN** no section prefix or field declarations are published
+- **AND** existing own attributes remain unchanged
+
+#### Scenario: Existing document and modern catalog profiles
+- **WHEN** previously supported document sections or modern catalogs are acquired
+- **THEN** their existing projection remains unchanged
+
+### Requirement: Acquire measured legacy sales book document attributes
+The SDK SHALL expose complete ordered own attribute membership and qualified declarations for the retained legacy sales book document profile. Unknown, malformed, unsupported, duplicate or incomplete collections SHALL remain unknown without partially publishing a prefix. Existing modern document decoding SHALL remain unchanged. Unmeasured legacy numbering, register and tabular-section metadata SHALL NOT be inferred from modern field positions.
+
+#### Scenario: Native ordered sales book attributes
+- **WHEN** the retained native legacy sales book document is acquired
+- **THEN** all seven own attributes match paired XML identities, names, order and qualified declarations, including the Boolean manual-correction attribute
+
+#### Scenario: Malformed legacy owner or member
+- **WHEN** its owner, wrapper, identity, count, descriptor uniqueness or declaration is malformed or incomplete
+- **THEN** complete membership and prefix declarations are not published
+
+#### Scenario: Existing modern documents
+- **WHEN** an existing supported modern document is decoded
+- **THEN** its membership, declarations and other metadata remain unchanged
+
+### Requirement: Acquire measured legacy sales book tabular sections atomically
+The SDK SHALL retain complete ordered membership for the measured legacy sales book document sections and their own fields, with qualified declarations. It SHALL verify the whole newly supported section set before publishing any section membership or field declaration. Unknown, malformed, unsupported, duplicate or incomplete section metadata SHALL remain unknown without a prefix. Already acquired document own attributes and existing modern document behavior SHALL remain unchanged.
+
+#### Scenario: Native complete section metadata
+- **WHEN** the retained native legacy sales book document is acquired
+- **THEN** all six section identities and all 68 ordered fields match paired XML, including all 201 qualified type entries and their original reference identities
+
+#### Scenario: Malformed last section or field
+- **WHEN** any section or field count, wrapper, identity, descriptor or declaration is malformed, missing, duplicated or unsupported
+- **THEN** the SDK publishes no section prefix or partial field declarations, while retaining the already acquired seven document own attributes
+
+#### Scenario: Existing document metadata
+- **WHEN** existing modern documents or already supported legacy own attributes are acquired
+- **THEN** their previous membership, declarations and unrelated metadata remain unchanged
+
+#### Scenario: Cross-collection identity collision
+- **WHEN** a section or its field aliases the document owner or an existing own attribute identity
+- **THEN** section metadata remains unknown and the existing own attributes retain their exact declarations
+
+### Requirement: Preserve the measured legacy Boolean constant declaration
+The SDK SHALL preserve the complete Boolean declaration of a constant in the measured legacy class14/12 profile when its native identity uniquely matches the resource descriptor. It SHALL preserve unrelated metadata and conditional references. Unknown or malformed profiles and declarations SHALL remain unknown.
+
+#### Scenario: Whole native Boolean constant
+- **GIVEN** the unchanged native BUH constant CF/XML pair and its two common attributes
+- **WHEN** decoded through the public metadata parser
+- **THEN** the constant has exactly one Boolean declaration without reference or qualifiers and both conditional links retain its UUID
+
+#### Scenario: Invalid identity or declaration
+- **GIVEN** a malformed shape, unknown Pattern, nil or mismatched owner identity, or missing or duplicate matching descriptor
+- **WHEN** metadata is projected
+- **THEN** no new declaration is published and unrelated metadata is preserved
+
+### Requirement: Preserve measured textual comments on legacy document own attributes
+The decoder SHALL preserve complete own membership and qualified declarations for the measured legacy38 document profile when own identity1/7 comments are Strings, including nonempty Strings. Other identity admission rules SHALL remain unchanged.
+
+#### Scenario: Whole native controlled transactions document
+- **GIVEN** the native CF/XML pair with nine own attributes and two nonempty own comment Strings
+- **WHEN** the resource is decoded
+- **THEN** all nine own attributes and the existing one section with 18 fields retain native ordered identity and all 32 qualified type rows
+
+#### Scenario: Malformed own comment
+- **GIVEN** an otherwise measured legacy38 own list containing a non-String comment
+- **WHEN** the resource is decoded
+- **THEN** complete own membership and new declarations remain unknown without a partial prefix
+
+#### Scenario: Other identity callers remain strict
+- **GIVEN** a nonempty comment in an owner, section or other existing strict identity profile
+- **WHEN** that profile is decoded
+- **THEN** its prior admission behavior remains unchanged
+
+### Requirement: Preserve measured legacy54 catalog own declarations
+The decoder SHALL preserve complete ordered own membership and qualified declarations for the measured class54/59 catalog profile without extending other profile admission or inferring unknown settings.
+
+#### Scenario: Native data-load sessions catalog
+- **GIVEN** the whole native CF/XML profile with two DateTime own attributes and an empty section collection
+- **WHEN** the resource is decoded
+- **THEN** both ordered UUIDs and declarations match native XML and section membership is known empty
+
+#### Scenario: Malformed own list
+- **GIVEN** a malformed late row, identity, type, count, tail, descriptor or duplicate in the measured own list
+- **WHEN** the resource is decoded
+- **THEN** complete own membership and declarations remain unknown without a published prefix
+
+#### Scenario: Unmeasured nonempty section layout
+- **GIVEN** a nonempty section collection in a class54 resource
+- **WHEN** only the measured empty-section profile is available
+- **THEN** section membership remains unknown rather than fabricated empty
+
+### Requirement: Decode stored value content as UTF-8 text
+The library SHALL expose a pure bounded decoder for the serialized text of inline or already fetched stored-value content. It SHALL share framing and decompression with the existing tree decoder, SHALL return UTF-8 without its optional serialization BOM, and SHALL NOT reconstruct that text from a parsed tree. Uncompressed content SHALL be borrowable; compressed content MAY own the inflated text. The text decoder SHALL NOT promise complete serialized grammar or value-kind validation.
+
+#### Scenario: Existing supported stored content
+- **WHEN** valid content is decoded through the tree and text APIs
+- **THEN** parsing the returned text yields the same tree, without changing the existing valid tree result
+
+#### Scenario: Uncompressed content
+- **WHEN** valid uncompressed content is supplied
+- **THEN** its text is borrowed from the input after the optional BOM
+
+#### Scenario: External stored-value reference
+- **WHEN** STORHDR reference bytes are supplied instead of content
+- **THEN** text and tree decoders refuse them without fetching any database data
+
+### Requirement: Bound decoded stored-value payload
+Both stored-value decoders SHALL reject decoded payloads exceeding the caller's byte limit on compressed and uncompressed paths. The limit SHALL include an optional decoded serialization BOM and exclude the ten-byte envelope. The input slice SHALL remain caller-owned, without a separate implied input-size limit. Truncated framing, invalid raw-DEFLATE and invalid UTF-8 SHALL return an error.
+
+#### Scenario: Plain content exceeds limit
+- **WHEN** uncompressed decoded payload is larger than the supplied limit
+- **THEN** both decoding paths refuse it
+
+#### Scenario: Compressed content exceeds limit
+- **WHEN** inflation would exceed the supplied decoded-byte limit
+- **THEN** both decoders refuse it without unbounded inflation
+
+#### Scenario: Invalid content
+- **WHEN** content framing, compressed bytes or UTF-8 are malformed
+- **THEN** decoding returns an error instead of guessed text
+
+### Requirement: Preserve measured textual legacy catalog owner comments
+The decoder SHALL recognize the measured legacy reporting-directions catalog when its otherwise recognized owner header contains an empty or nonempty String comment. It SHALL preserve complete ordered own attributes and qualified declarations and the known empty native section collection. Non-string comments SHALL leave that owner profile unrecognized.
+
+#### Scenario: Native textual owner comment
+- **WHEN** the retained native reporting-directions catalog contains its nonempty textual owner comment
+- **THEN** all four own UUIDs, names, order, types, references and qualifiers match paired XML
+- **AND** the empty native section collection is preserved as known empty
+
+#### Scenario: Empty String owner comment
+- **WHEN** the same recognized owner has an empty String comment
+- **THEN** its previously supported metadata projection remains unchanged
+
+#### Scenario: Non-string owner comment
+- **WHEN** the comment is an Atom, Null or List
+- **THEN** owner memberships and declarations are not published through this profile
+
+#### Scenario: Other header guards
+- **WHEN** a child header, owner flag or other existing profile guard is invalid
+- **THEN** its previous failure behavior remains unchanged
+
+### Requirement: Decode one bounded V8 container entry
+The dependency-free SDK SHALL expose pure decoding of one named V8 container entry. It SHALL return the exact assembled entry bytes or known absence. Malformed headers, invalid UTF-16 names, truncated or cyclic block chains and documents exceeding the caller-provided per-document bound SHALL return metadata errors. The bound SHALL apply independently to directory, description and payload documents; it SHALL NOT promise an aggregate memory ceiling.
+
+#### Scenario: Native scalar setting
+- **WHEN** the own native scalar settings container is read at $Stream$
+- **THEN** the exact measured internal scalar stream is returned
+
+#### Scenario: Native multipart value storage
+- **WHEN** the own native storage container is read at its root and auxiliary entry names
+- **THEN** both exact measured streams are independently available
+
+#### Scenario: Missing or invalid entry
+- **WHEN** the entry is absent in a valid container
+- **THEN** the result is known absence
+- **WHEN** an assembled document is malformed or exceeds its bound
+- **THEN** decoding fails rather than returning absence or partial bytes
+
+### Requirement: Decode measured common-setting text
+The SDK SHALL distinguish ordinary internal value text from the decoded contents of a multipart ValueStorage setting. It SHALL resolve the measured ValueStorage auxiliary reference only inside its container and reuse the existing bounded stored-value codec. Missing or malformed required streams and unsupported ValueStorage reference forms SHALL fail explicitly. The SDK SHALL NOT construct BSL runtime values.
+
+#### Scenario: Scalar setting
+- **WHEN** the native own scalar setting is decoded
+- **THEN** the result is ordinary internal text representing number 17
+
+#### Scenario: Multipart storage setting
+- **WHEN** the native own ValueStorage setting is decoded
+- **THEN** the result is identified as ValueStorage contents and retains the measured internal map text
+- **AND** an absent auxiliary document is an error rather than an empty value
+
+### Requirement: Preserve default extension decoding limits
+The extension restructure decoder without an explicit limit SHALL enforce the
+same decoded-byte ceiling as the default raw-DEFLATE decoder. The bounded API
+SHALL enforce the caller's limit before parsing decoded data.
+
+#### Scenario: Default decompression ceiling
+- **WHEN** a compressed restructure exceeds the default decoded-byte ceiling
+- **THEN** decoding returns an error without materializing the excess output
+
+#### Scenario: Explicit small ceiling
+- **WHEN** compressed or plaintext restructure data exceeds a caller's explicit limit
+- **THEN** decoding fails even if the serialization would otherwise be valid
+
+### Requirement: Preserve measured empty legacy processor attribute declarations
+The SDK SHALL preserve an explicit empty Pattern declaration in the measured legacy data processor profile as a known empty declared-type collection. This metadata SHALL NOT be interpreted as runtime Any semantics. A complete attribute collection containing such declarations SHALL preserve every native identity and its order. Unsupported, malformed, duplicate or incomplete descriptions SHALL remain unknown without exposing partial membership.
+
+#### Scenario: Native conversion processor declarations
+- **WHEN** the retained BUH conversion processor is decoded
+- **THEN** all 43 own attributes retain native XML identity and order, four explicit empty declarations remain known empty and the other declarations preserve their types and qualifiers
+
+#### Scenario: Malformed declaration remains unknown
+- **WHEN** any declaration, attribute identity or membership in this profile is malformed, unsupported, duplicate or incomplete
+- **THEN** the SDK does not publish a complete attribute list or a partially committed prefix
+
+#### Scenario: Native textual attribute comments
+- **WHEN** an attribute in the retained profile carries a nonempty textual comment
+- **THEN** its comment and complete membership are retained, while a non-string comment remains unsupported
+
+### Requirement: Acquire functional-option fields with populated Content
+The SDK SHALL acquire measured location and privileged retrieval fields for functional options with validated populated Content. It SHALL reject truncated, unsupported, invalid-count, invalid-reference and invalid-flag forms without publishing guessed fields.
+
+#### Scenario: Native populated options
+- **WHEN** native XML and Config declare two Content references and privileged mode false or true
+- **THEN** the descriptor retains the validated location and exact flag independently of Content emptiness
+
+#### Scenario: Malformed Content or flag
+- **WHEN** a counted Content reference or retrieval flag is invalid
+- **THEN** acquisition leaves option fields unknown
+
+### Requirement: Complete measured legacy business-process attributes
+For the measured original BUH BusinessProcess descriptor with homogeneous 2/5 attribute wrappers and supported 27/23 bodies, decoding SHALL expose the complete ordered attribute membership confirmed by native XML. Existing complete-type, uniqueness and count checks SHALL remain required. Unknown or mixed wrapper forms SHALL return unknown membership rather than a partial list. Independent owner and section metadata SHALL remain independently available.
+
+#### Scenario: Original native owner
+- **WHEN** the retained original BusinessProcess Задание descriptor is decoded
+- **THEN** all 27 UUID/name/type entries match the native XML order, including Автор
+
+#### Scenario: Unrecognized member
+- **WHEN** any row has an unknown marker/length, mixed wrapper shape, duplicate identity or missing recognized type
+- **THEN** the entire attribute collection is unknown and no shortened list is exposed
+
+### Requirement: Complete measured BUH document attributes
+The SDK SHALL retain complete ordered own-attribute membership, identities, names and qualified declarations for measured class40/53 documents with version2/8 identities. Unknown, malformed, missing, duplicate or unsupported declarations SHALL keep the collection unknown, never partial. Existing modern forms SHALL remain supported.
+
+#### Scenario: Native credit document
+- **WHEN** the retained native credit-document resource is decoded
+- **THEN** all 23 own attributes agree with paired native XML
+
+#### Scenario: Invalid member
+- **WHEN** a member identity, wrapper or type is invalid, missing or duplicated
+- **THEN** no partial membership is returned
+
+#### Scenario: Modern forms
+- **WHEN** modern identities use measured 5/5 or 6/7 wrappers
+- **THEN** complete ordered membership and types remain available
+
+### Requirement: Acquire report object metadata
+The SDK SHALL expose optional complete ordered own report attribute and tabular section GUID collections and the acquired generated report Object type GUID. Unknown, malformed, duplicate or incomplete collections SHALL remain None; verified absence SHALL be Some(empty). Nested descriptors SHALL retain types, qualifiers and complete section membership.
+
+#### Scenario: Acquire native report composition
+- **WHEN** native report resources declare own attributes and a tabular section
+- **THEN** ordered collections and nested column types agree with native Designer XML and the generated Object identity is distinct from Manager
+
+#### Scenario: Preserve uncertainty
+- **WHEN** a report header or member acquisition is unsupported or incomplete
+- **THEN** the affected collection remains None without a shortened complete list
+
+#### Scenario: Verify absence
+- **WHEN** measured native report collections are empty
+- **THEN** the SDK returns Some(empty)
+
+### Requirement: Look up loaded descriptors by metadata identity
+A finalized metadata snapshot SHALL provide read-only indexed lookup of
+an object's own descriptor and an attribute's descriptors. Own-descriptor
+lookup SHALL retain the first matching source record; attribute lookup
+SHALL preserve all matching records in source order. The indexes SHALL
+belong to the loaded snapshot and SHALL perform no I/O.
+
+#### Scenario: Repeated field-rights checks
+- **WHEN** field-rights checks inspect many attributes from one snapshot
+- **THEN** each lookup visits only the matching descriptor records instead
+  of scanning every descriptor in the configuration
+
+#### Scenario: Duplicate descriptor evidence
+- **WHEN** more than one descriptor carries the same attribute identity
+- **THEN** indexed iteration returns all those descriptors in source order
+  so existing ownership and declared-type checks retain their evidence
+
+### Requirement: Resolve independent metadata fields concurrently
+Complete snapshot finalization SHALL resolve independent DBNames field entries concurrently on bounded scoped worker threads when the input is large enough to benefit. Worker count SHALL NOT exceed available parallelism, and small inputs SHALL retain a synchronous path. The existing outer Tokio blocking boundary SHALL remain in force.
+
+#### Scenario: UNF-sized field inventory
+- **WHEN** a snapshot with thousands of fields is finalized on a multi-CPU host
+- **THEN** independent entries are resolved in ordered chunks on multiple workers without running CPU-heavy work on Tokio runtime workers
+- **AND** resolution report, metadata-index and fingerprint jobs then run concurrently without changing the fingerprint byte sequence
+
+### Requirement: Preserve deterministic output of parallel field resolution
+Parallel field resolution SHALL produce the same fields, separator findings, resolution report and snapshot fingerprint as sequential resolution. Fields SHALL retain ascending DBNames entry order, descriptors SHALL retain their existing source order and worker completion order SHALL NOT affect output.
+
+#### Scenario: Slow and fast workers complete out of order
+- **WHEN** independent field chunks finish in an order different from DBNames entry order
+- **THEN** the parent joins results in input order and the snapshot is byte-for-byte equivalent to sequential field resolution
+
+#### Scenario: Small acquisition
+- **WHEN** a selected or otherwise small snapshot resolves fewer entries than the parallel chunk threshold
+- **THEN** it uses the synchronous path without spawning scoped workers
+
+### Requirement: Resolve metadata on targets without thread support
+Metadata finalization SHALL use no more workers than available parallelism and SHALL run synchronously when worker threads are unavailable.
+
+#### Scenario: Single-threaded WebAssembly
+- **WHEN** at least 256 fields are resolved on a target without worker threads
+- **THEN** metadata resolution completes synchronously with deterministic results
+
+### Requirement: Extract textual module source
+The dependency-free SDK SHALL extract textual BSL from the `text` entry of a
+1C module container. The caller's limit SHALL bound container documents and
+the returned UTF-8 source. Unsupported, malformed, non-text or image-only
+containers SHALL fail explicitly; empty textual modules SHALL remain valid.
+
+#### Scenario: Native module source
+- **WHEN** a native module container contains a UTF-8 `text` entry
+- **THEN** the SDK returns its exact source without its encoding BOM
+
+#### Scenario: Protected module
+- **WHEN** a module container has no `text` entry
+- **THEN** the SDK reports an error instead of returning an image or empty source
+
+#### Scenario: Bounded module
+- **WHEN** the container entry or returned UTF-8 text exceeds the limit
+- **THEN** the SDK returns an error without publishing partial source
+
+### Requirement: Extract measured managed-form source
+The SDK SHALL extract the textual module from measured managed-form profiles
+49 and 50 when their decoded Config resource has the verified outer structure.
+Unknown, invalid or oversized profiles SHALL fail rather than publish guessed
+source. Extracted text SHALL preserve the platform-exported source.
+
+#### Scenario: Managed form module
+- **WHEN** either measured profile is decoded
+- **THEN** its module is identical to Designer's export of the same form

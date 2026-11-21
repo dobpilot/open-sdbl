@@ -33,6 +33,8 @@ A relation SHALL be listed only when the user's decision for reading it is not d
 - **WHEN** the field check does not prove an attribute readable
 - **THEN** the attribute is absent from `\d`, from `information_schema.columns`, from `pg_attribute` and from column descriptions
 
+## MODIFIED Requirements
+
 ### Requirement: Reuse the metadata snapshot loaded at startup
 Catalog introspection SHALL use the loaded in-memory metadata snapshot. Field lookup indexes SHALL be built once during snapshot finalization and reused across relation compilations and connections. The complete relation catalog SHALL be compiled once per gateway state and shared by connections. A refresh SHALL use the new snapshot's indexes and prebuilt catalog. Catalog requests SHALL perform no metadata or database reads and SHALL retain the complete user-rights checks in restricted mode.
 

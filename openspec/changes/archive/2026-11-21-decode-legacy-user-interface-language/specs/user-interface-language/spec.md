@@ -1,5 +1,10 @@
 # Legacy user interface language
 
+## Purpose
+
+Decode the selected interface language from supported information base
+configuration formats.
+
 ## ADDED Requirements
 
 ### Requirement: Decode measured complete legacy language records

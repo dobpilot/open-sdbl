@@ -4,8 +4,9 @@
 The `open-sdbl-pgwire` package SHALL accept client connections on a
 caller-provided listener, speak PostgreSQL frontend/backend protocol 3.0
 to them, and treat every query text as SDBL except the fixed whitelist of
-client chatter and metadata inspection functions. It SHALL serve 1C bases stored
-in PostgreSQL and in Microsoft SQL Server through the same client protocol.
+client chatter, metadata inspection functions, and SQL routed to the virtual
+system catalog. It SHALL serve 1C bases stored in PostgreSQL and in Microsoft
+SQL Server through the same client protocol.
 
 #### Scenario: psql runs an SDBL query on a PostgreSQL base
 - **WHEN** `psql` connects to the gateway serving a PostgreSQL 1C base and
@@ -18,12 +19,17 @@ in PostgreSQL and in Microsoft SQL Server through the same client protocol.
 - **THEN** the client receives the same column description and rows in the
   PostgreSQL protocol
 
+#### Scenario: Catalog SQL is answered by the virtual catalog
+- **WHEN** a client sends `SELECT nspname FROM pg_catalog.pg_namespace`
+- **THEN** it receives the schemas of the virtual catalog
+
 ### Requirement: Compile every query with the authenticated user's rights
-Every SDBL statement SHALL be prepared in `RestrictionMode::Restricted` with the
-user's derived restrictions and SHALL pass the complete field-rights check
-of the user before any SQL is generated. A target or field that cannot be
-proven readable SHALL refuse the statement with SQLSTATE `42501`. Metadata
-inspection functions use the separate authenticated-inspection policy below.
+By default, every SDBL statement SHALL be prepared in
+`RestrictionMode::Restricted` with the user's restrictions. The gateway
+SHALL reject unproven target or field reads with `42501` before generating
+SQL. The explicit `disable_rls_check` override SHALL bypass role, object,
+field and row checks after authentication. The authenticated-inspection
+policy below SHALL apply to metadata inspection.
 
 #### Scenario: Restricted catalog
 - **WHEN** a user whose role restricts reading of `Справочник.Контрагенты`
@@ -35,6 +41,15 @@ inspection functions use the separate authenticated-inspection policy below.
 - **WHEN** the user projects an attribute no role of theirs may read
 - **THEN** the client receives `42501` naming the field and the database
   receives no query
+
+#### Scenario: Explicit unrestricted access
+- **WHEN** the override is enabled and an authenticated user reads an
+  otherwise denied object or field
+- **THEN** the gateway permits the read
+
+#### Scenario: Invalid password in unrestricted mode
+- **WHEN** the override is enabled and a client supplies an invalid password
+- **THEN** the gateway refuses authentication with `28P01`
 
 ## ADDED Requirements
 

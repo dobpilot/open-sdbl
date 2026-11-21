@@ -458,11 +458,12 @@ For a recognized native accumulation register owner with verified Balance regist
 ### Requirement: Verify only confirmed supported stored-password values
 The dependency-free, I/O-free core SHALL verify public `StoredPasswordValue`
 using the supplied Python v0.2 algorithm: legacy SHA-1 and IDs 1–3.
-`UserData::verify_password` SHALL use only an already-confirmed mapping
-from a user's data to that public property; otherwise it SHALL return
-`INDETERMINATE` / `SOURCE_PROFILE_UNCONFIRMED`. This change SHALL NOT
-reverse engineer records, measure probe bases, discover password-field
-positions, or infer provenance from hash-shaped text.
+`UserData::verify_password` SHALL verify against the stored password read
+from the confirmed measured positions of the `v8users.Data` record (H1/H2
+and the supported algorithm/salt suffix); when the record carries no stored
+value at that position it SHALL return `INDETERMINATE` /
+`SOURCE_PROFILE_UNCONFIRMED`. The stored value SHALL NOT appear in any
+public getter, `Debug` output, error, or log.
 
 #### Scenario: Public property is supplied
 - **WHEN** a caller supplies a public `StoredPasswordValue` with the
@@ -471,15 +472,32 @@ positions, or infer provenance from hash-shaped text.
   without reading or modifying a database
 
 #### Scenario: Unconfirmed blob-derived value
-- **WHEN** the source profile is `raw-blob`, any other unrecognized value,
-  or the `UserData` adapter has no confirmed source mapping
+- **WHEN** the source profile is `raw-blob` or any other unrecognized
+  value
 - **THEN** verification returns `INDETERMINATE` /
   `SOURCE_PROFILE_UNCONFIRMED` even if the text resembles valid `H1,H2`
 
 #### Scenario: Synthetic evidence stays synthetic
 - **WHEN** a fixture uses either accepted synthetic source profile
-- **THEN** it can verify the algorithm but does not claim a known
-  `v8users.Data` password-field position or successful live authentication
+- **THEN** it can verify the algorithm but does not claim successful live
+  authentication
+
+#### Scenario: Record carries a stored password
+- **WHEN** a `UserData` decoded from a record with a legacy `H1,H2` value
+  verifies the password whose SHA-1 is `H1`
+- **THEN** the result is `MATCH`, and a wrong password is `NO_MATCH`
+
+#### Scenario: Record without a stored value
+- **WHEN** a `UserData` record carries no digest fields at the measured
+  position
+- **THEN** `verify_password` returns `INDETERMINATE` /
+  `SOURCE_PROFILE_UNCONFIRMED` for every candidate
+
+#### Scenario: Stored value stays private
+- **WHEN** a `UserData` holding a stored password is formatted for
+  diagnostics
+- **THEN** neither the hash nor the word "password" appears in its `Debug`
+  output
 
 ### Requirement: Use explicit verification profiles and defaults
 Accepted sources SHALL be `public-stored-value-8.3.27`,
@@ -793,8 +811,7 @@ Results SHALL carry status, reason, profile, optional non-secret
 `record_id`, `primary_match`, `uppercase_match`, `secondary_consistency`,
 and `verified` (true only for `MATCH`, false only for `NO_MATCH`, otherwise
 unset). All eight statuses and reason codes in the design SHALL remain
-distinct. Results, public getters, `Debug`, errors, and logs SHALL NOT
-expose passwords or stored hashes. Verification SHALL perform no I/O or
+distinct. Verification results, `Debug` and errors SHALL NOT expose passwords or stored hashes. An explicitly named sensitive diagnostic getter MAY expose a stored value to the gateway for operator-enabled sensitive diagnostics. Verification SHALL perform no I/O or
 modify user/password records.
 
 #### Scenario: Failure is distinct from a password mismatch
@@ -818,3 +835,245 @@ modify user/password records.
 - **WHEN** a caller supplies non-secret `record_id` `synthetic-user-1`
 - **THEN** the result retains that identifier without deriving an
   identifier from the password or hashes
+
+### Requirement: Authorize measured information-register programmatic fields
+For a recognized independent information-register owner with complete dimensions and resources, known write mode and periodicity, the SDK SHALL map verified declared dimension/resource fields to object Read. It SHALL map Period only for the measured Day periodicity. UI View/Edit and attribute-default flags SHALL NOT replace owner Read. Foreign fields, unknown declarations, incomplete owners and unmeasured standard fields SHALL fail closed. Existing complete-role, explicit member Read, role-union, selected-principal and RLS boundaries SHALL remain effective.
+
+#### Scenario: Owner Read without attribute defaults
+- **WHEN** a selected user's loaded role grants register Read with either value of attribute defaults
+- **THEN** verified dimension/resource reads and a Day-periodic register's Period pass
+
+#### Scenario: Defaults do not grant owner Read
+- **WHEN** no selected role grants register Read, even with attribute defaults enabled
+- **THEN** all these field reads fail
+
+#### Scenario: Unknown register field shape
+- **WHEN** the field belongs elsewhere, collections or declarations are incomplete, or Period is requested outside the measured Day periodicity
+- **THEN** the field check refuses rather than authorizing by owner Read alone
+
+### Requirement: Authorize measured document programmatic fields
+For a recognized document owner with complete own attribute membership and recognized document settings, the SDK SHALL map its reference and own attributes with verified nonempty declared types to object Read independently of UI View/Edit and attribute defaults. It SHALL retain explicit member Read overrides and complete-role/role-union behavior. Unknown standard fields, foreign attributes, unsupported tabular sections and unverified composition SHALL fail closed. Ordinary query and RLS enforcement SHALL NOT be bypassed.
+
+#### Scenario: Document reference and own field are readable
+- **WHEN** the selected role grants document Read with defaults disabled or enabled
+- **THEN** its verified reference and own declared field pass programmatic field checks
+
+#### Scenario: Document owner Read is absent
+- **WHEN** the selected user's roles do not grant document Read
+- **THEN** defaults and UI rights do not authorize reference or own-field reads
+
+#### Scenario: Unsupported document membership
+- **WHEN** the requested attribute is foreign, the owner is incomplete or the path is a tabular section
+- **THEN** the field check refuses explicitly before SQL
+
+### Requirement: Recognize a complete extension role with no rights subobject
+When an extension index declares a role descriptor but no rights resource for that role, the database fallback SHALL recognize an empty complete rights set only from the complete measured native Role descriptor form explicitly declaring no rights subobject, with the role's matching own identifier. The empty set SHALL contain no object rights, no restriction templates and no default grants. Unknown forms and unavailable descriptors SHALL remain unreadable. A declared rights resource SHALL continue to use the existing decoder; unavailable or malformed content SHALL NOT be replaced with empty rights.
+
+#### Scenario: Measured role without a rights subobject
+- **WHEN** the extension carries the preserved native descriptor of `ДемоПроф_ОбщиеПрава` and its index declares no `<guid>.0`
+- **THEN** its loaded rights are complete and empty without granting an additional permission
+
+#### Scenario: Descriptor promises rights or has an unknown form
+- **WHEN** the rights resource is absent but the descriptor declares a rights subobject, is incomplete, belongs to another identity or uses an unmeasured form
+- **THEN** the role's rights remain unreadable
+
+#### Scenario: Declared rights resource is missing or corrupt
+- **WHEN** the index declares `<guid>.0` but its content is unavailable or malformed
+- **THEN** the fallback retains its existing failure or unread result and does not substitute empty rights
+
+### Requirement: Decode measured user data-separation bindings
+The SDK SHALL expose an optional complete ordered list of string data-separation bindings for the measured native user-record layout. Known empty and unknown SHALL remain distinct. Unsupported layouts, unsupported binding values, duplicate names or inconsistent binding counts SHALL yield unknown bindings without discarding otherwise valid user identity and roles. Password fields SHALL NOT be exposed.
+
+#### Scenario: Known empty bindings
+- **WHEN** a measured-layout user record has zero bindings
+- **THEN** bindings are known and empty
+
+#### Scenario: Known string binding
+- **WHEN** a measured-layout record contains a named string separator value
+- **THEN** the complete binding name and value are retained
+
+#### Scenario: Unsupported or incomplete bindings
+- **WHEN** the record layout, a binding value or its count cannot be validated
+- **THEN** bindings are unknown rather than empty or partial
+
+#### Scenario: Historical native-readable layouts
+- **WHEN** a record has the verified base length 31, 32 or 37 with consistent optional-field count and suffix kinds
+- **THEN** the SDK retains the complete bindings using the same binding position as the measured current layout
+- **AND** an inconsistent optional-field count or suffix remains unknown
+
+### Requirement: Resolve metadata right structure before grant evaluation
+The SDK SHALL resolve known bilingual case-insensitive right names and acquired catalog owner identities independently of role grants or privileged mode. Supported owner Read/View and Code/Description Read/View targets SHALL distinguish Applicable and NotApplicable. Valid standard Read SHALL be NotApplicable. Empty or unknown standard paths, unknown owners, unsupported kinds/rights and missing acquired standard settings SHALL return explicit errors and SHALL NOT become granted or inapplicable.
+
+#### Scenario: Valid standard Read
+- **WHEN** a catalog Code or Description with acquired positive configured length is resolved for Read
+- **THEN** resolution succeeds with NotApplicable without reading role grants
+
+#### Scenario: Privileged caller validates structure
+- **WHEN** a caller intends to bypass grants but supplies an unknown right or empty or unknown path
+- **THEN** resolution fails before any bypass decision
+
+#### Scenario: Unsupported metadata
+- **WHEN** the owner kind or required standard declaration is unsupported or absent
+- **THEN** resolution fails explicitly rather than guessing applicability
+
+### Requirement: Evaluate cached metadata rights per complete role
+For an applicable resolved target, AccessStore SHALL evaluate already acquired rights only and require complete readable rights for every requested role. Owner Read/View SHALL use the existing RoleRights object grant rule. For AccessRight, standard View SHALL gate the owner within each role, then apply the exact member pair and explicit right or the attribute default, and combine whole-role results with OR. A separate verification evaluator SHALL preserve the measured independent-child distinction: with independent child rights enabled and attribute defaults disabled, an explicit child View grant MAY pass VerifyAccessRights despite a refused owner View. Unmeasured independent/default combinations without a proven member result SHALL fail explicitly. The SDK SHALL NOT combine owner and child permissions across roles. It SHALL NOT reinterpret this metadata API as SQL/RLS field authorization.
+
+#### Scenario: Split parent and child grants
+- **WHEN** one role grants owner View but refuses Code View and another grants Code View but refuses owner View
+- **THEN** Code View is refused
+
+#### Scenario: Complete second role
+- **WHEN** another role grants both owner View and Code View
+- **THEN** Code View is granted
+
+#### Scenario: Explicit refusal overrides defaults
+- **WHEN** a role grants owner View and attribute defaults but explicitly refuses Description View
+- **THEN** that role refuses Description View while a missing Code entry follows the attribute default
+
+#### Scenario: Missing role data
+- **WHEN** any requested role is missing or unreadable even if another role grants
+- **THEN** evaluation fails explicitly
+
+#### Scenario: Inapplicable target is not a denial
+- **WHEN** role evaluation is requested for NotApplicable
+- **THEN** evaluation fails explicitly and returns no boolean
+
+#### Scenario: Independent child differs between operators
+- **WHEN** a role refuses owner View, explicitly grants Code View, enables independent child rights and disables attribute defaults
+- **THEN** metadata_right refuses Code View but metadata_right_for_verification grants it
+
+### Requirement: Preserve direct restriction parameter origin
+Bound query compilation SHALL identify an absent direct parameter token inside an access restriction as a missing session parameter, preserving its exact name through the existing diagnostic. Ordinary query parameters SHALL retain their existing classification. Query parameter values SHALL NOT satisfy restriction parameters.
+
+#### Scenario: Direct restriction parameter absent
+- **WHEN** a bound access predicate reads an absent direct session parameter
+- **THEN** compilation returns the existing structured missing-session-parameter diagnostic with its name
+
+#### Scenario: Session value supplied
+- **WHEN** the host retries compilation with that session parameter value
+- **THEN** the predicate compiles using that value
+
+#### Scenario: Ordinary query parameter absent
+- **WHEN** an ordinary query reads an absent parameter
+- **THEN** the diagnostic remains an ordinary missing query parameter
+
+#### Scenario: Query value has the same name
+- **WHEN** only a query parameter has the restriction parameter name
+- **THEN** it does not satisfy the restriction and the missing session parameter is still reported
+
+### Requirement: Resolve acquired Document rights targets
+The SDK SHALL resolve acquired Document owner Read/View and Number/Date standard Read/View independently of grants and privileged mode. It SHALL expose an additive owner-bound ordinary-own-attribute resolver requiring complete acquired membership and a uniquely acquired child descriptor. Valid child Read SHALL be NotApplicable; owner Read/View and child View SHALL be Applicable. Standard aliases SHALL be bilingual and case-insensitive. Unknown owners/rights/paths, nonmember attributes, incomplete or ambiguous descriptions, unsupported shapes and unknown or zero-length Number settings SHALL produce explicit structural errors rather than guessed grants or applicability. Other metadata kinds and rights SHALL retain their existing behavior.
+
+#### Scenario: Valid ordinary attribute Read
+- **WHEN** a Document attribute belongs to its complete acquired own-attribute list and has a unique acquired descriptor
+- **THEN** resolving Read succeeds with NotApplicable independently of role grants
+
+#### Scenario: Validate before privilege policy
+- **WHEN** a caller supplies a foreign or nonmember attribute UUID, unknown path or incomplete descriptor while planning a privileged bypass
+- **THEN** structural resolution fails before bypass is possible
+
+#### Scenario: Standard aliases
+- **WHEN** an acquired Document with positive Number length is checked through Number/Номер or Date/Дата in a different case
+- **THEN** the corresponding standard target is identical
+
+### Requirement: Evaluate retained Document child role profiles
+The existing cached role evaluator SHALL use exact compiled standard member pairs and ordinary-attribute rights object UUIDs, never fabricated owner-member paths. AccessRight child View SHALL require owner View within the same role before explicit child or attribute-default evaluation. Document VerifyAccessRights SHALL preserve retained independent-child profiles: with refused owner View it SHALL accept explicit child grants with defaults disabled and absent-child grants with defaults enabled when independent child rights are enabled. Explicit refusal SHALL override defaults in supported profiles; independent/default-enabled targets without parent View but with an explicit child record SHALL remain explicitly unsupported until measured. Whole-role results SHALL be combined only after evaluation, and every requested role SHALL have complete readable rights. Existing Catalog unsupported independent/default combinations and SQL/RLS authorization SHALL remain unchanged.
+
+#### Scenario: Explicit refusal overrides enabled defaults
+- **WHEN** owner View and attribute defaults are enabled but Number View is explicitly refused
+- **THEN** that role refuses Number View
+
+#### Scenario: Independent default verification
+- **WHEN** Document owner View is refused, child rights are independent, defaults are enabled and the child has no explicit entry
+- **THEN** AccessRight refuses and VerifyAccessRights accepts child View
+
+#### Scenario: Ordinary attribute own identity
+- **WHEN** an ordinary Document attribute is evaluated
+- **THEN** its explicit right is obtained from its own acquired UUID rights object with an empty member path
+
+#### Scenario: Missing role remains an error
+- **WHEN** one requested role is missing despite another granting the target
+- **THEN** cached evaluation fails explicitly
+
+### Requirement: Authorize a tabular section's owner reference
+For a verified document or catalog tabular section, the field checker SHALL
+map its standard reference to the existing owner-reference Read check.
+The section SHALL belong to the owner's complete Config section collection
+and have an unambiguous descriptor and DBNames VT entry. Loaded-role and
+role-union checks, explicit section Read refusals, and query RLS SHALL
+remain effective.
+
+#### Scenario: Read the invoice reference from its rows
+- **WHEN** a user with document Read selects `УникальныйИдентификатор(Ссылка)`
+  and `ПредставлениеСсылки(Ссылка)` from `Документ.ПриходнаяНакладная.Запасы`
+- **THEN** the verified owner reference passes field authorization and
+  the query executes through normal compilation and RLS
+
+#### Scenario: Owner or section Read is refused
+- **WHEN** no loaded role grants the owner reference and permits the section
+- **THEN** the query fails with permission denied before database execution
+
+#### Scenario: Unknown section or unsupported field
+- **WHEN** the section is unresolved, foreign or ambiguous, or the field
+  is not a verified owner reference
+- **THEN** the checker does not authorize it through the owner-reference rule
+
+### Requirement: Resolve custom fields within their tabular section
+For a verified document or catalog section, custom field ownership SHALL
+use the section's complete Config attribute collection and the loaded field
+GUID and declaration, rather than the owner's flat field-name lookup.
+Foreign fields, incomplete collections and ambiguous declarations SHALL
+fail closed. Names repeated in other sections SHALL not change ownership.
+
+#### Scenario: Read an invoice item
+- **WHEN** a query reads `Номенклатура` from `Документ.ПриходнаяНакладная.Запасы`
+- **THEN** its GUID is verified against `Запасы` and the query reaches the
+  ordinary per-user rights and RLS checks
+
+#### Scenario: A field from a neighboring section is forged
+- **WHEN** a field GUID is absent from the selected section's known collection
+- **THEN** the request is refused even when that field belongs to the same document
+
+### Requirement: Authorize verified tabular section fields
+Verified custom fields and the standard row number SHALL use owner Read
+with complete role loading and role union. Explicit section and custom-field Read
+refusals SHALL be honored for direct GUID entries and exact member paths.
+Ambiguous paths and unsupported child restrictions SHALL fail closed.
+UI rights and attribute defaults SHALL not replace owner Read. Existing
+query RLS enforcement SHALL remain in effect.
+
+#### Scenario: Read known section fields
+- **WHEN** a loaded role grants owner Read and does not refuse the section
+  or its verified fields
+- **THEN** reference, row number and known custom fields pass field checks
+
+#### Scenario: A section attribute is refused
+- **WHEN** the selected roles do not jointly provide a complete owner,
+  section and field Read grant
+- **THEN** projection, filtering and sorting on that attribute fail before SQL
+
+### Requirement: Decode the measured extended v8users password suffix
+For the measured extended record shapes, the decoder SHALL combine H1/H2
+with the explicit algorithm ID and literal salt in the six-field suffix
+after the counted optional string block. It SHALL validate the complete
+shape and counters, keep the value private and never infer an algorithm
+from digest length or fall back to legacy backup fields. Incomplete or
+unknown extended shapes SHALL not authenticate.
+
+#### Scenario: Native SHA-256 record
+- **WHEN** the user record has the measured five-string optional block,
+  suffix algorithm 1 and a salt string
+- **THEN** verification uses SHA-256 over the candidate plus that literal
+  salt, including when the salt text looks like Base64
+
+#### Scenario: Native SHA-512 record shape
+- **WHEN** the record has the measured two-string optional block and
+  suffix algorithm 2
+- **THEN** H1/H2, ID 2 and its literal salt are passed to the existing
+  SHA-512 verifier without using legacy backup digests
+
+#### Scenario: Malformed extended record
+- **WHEN** optional counts, field types, suffix length or fixed flags are
+  inconsistent, or the algorithm is unsupported
+- **THEN** login fails with the ordinary authentication refusal

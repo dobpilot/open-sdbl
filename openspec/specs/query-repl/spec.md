@@ -3933,3 +3933,35 @@ unchanged. Upstream rejection of distrusted certificate paths SHALL apply.
 #### Scenario: Distrusted certificate path
 - **WHEN** a server certificate path is rejected by the patched verifier or relies solely on a removed bundled trust anchor
 - **THEN** PostgreSQL TLS connection establishment fails rather than bypassing validation
+
+### Requirement: Default console to the shared data area
+The console SHALL bind conditional separation constants to false by default, matching the gateway shared-area policy. It SHALL use the current metadata after refresh, preserve other session parameters. For false conditional separators it SHALL select the typed empty number, string or date value supported by the compiler.
+
+#### Scenario: Query a conditional separator
+- **WHEN** a console query reads a conditionally separated table without an explicitly bound condition
+- **THEN** the console compiles the query for the shared data area
+
+#### Scenario: Metadata refresh
+- **WHEN** metadata is refreshed and conditional separator constants change
+- **THEN** subsequent compilations use the refreshed constants
+
+### Requirement: Name separation constants in console diagnostics
+When a console diagnostic identifies a separation condition constant by GUID and the current snapshot has a name for it, the console SHALL display both the name and GUID. It SHALL preserve the original diagnostic when the name is unknown.
+
+#### Scenario: Known condition constant
+- **WHEN** a diagnostic identifies a condition whose metadata name is known
+- **THEN** the console displays that name alongside its GUID
+
+### Requirement: Use enumeration metadata for default presentations
+The default presentation policy SHALL map an enumeration's declared values to
+their Russian nonblank synonyms, falling back to their metadata names. It SHALL
+use the values belonging to that enumeration only and preserve reference
+authorization for queries and deferred lookups.
+
+#### Scenario: Synonym and fallback
+- **WHEN** enumeration values have a Russian synonym or no nonblank synonym
+- **THEN** their presentations use the synonym or the declared name respectively
+
+#### Scenario: Gateway and console
+- **WHEN** the gateway or console presents an enumeration reference
+- **THEN** both use the same metadata-derived default presentation policy

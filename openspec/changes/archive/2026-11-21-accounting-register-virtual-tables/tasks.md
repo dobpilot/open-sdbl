@@ -90,3 +90,10 @@
   probe base; the UNF corpus rerecorded after every stage.
 - [ ] 4.2 README and `docs/query-language-support.md` rows 190–195; the
   five CI checks and strict OpenSpec validation per commit.
+
+## Archive status
+
+The main `query-repl` specification already describes the implemented
+accounting tables in the newer accounting requirements. This historical
+delta was archived without syncing its older requirements. Unchecked tasks
+record work that was outstanding at archival.

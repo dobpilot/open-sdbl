@@ -1631,7 +1631,7 @@ keep its signature and read unfiltered, and SHALL say so.
 - **THEN** it compiles the statement it compiled before, unfiltered
 
 ### Requirement: Compile using current global separation conditions
-The compiler SHALL accept host-provided boolean conditions keyed by constant GUID, separately from named session parameters. An applicable separator lacking its condition SHALL report the condition GUID structurally without claiming a missing session parameter. False conditions SHALL select the measured empty String or Number area without requiring use/value parameters. Unsupported conditional empty types and unsupported settings of a named separator SHALL fail explicitly instead of assuming an absent condition. True conditions and separators without conditions SHALL retain existing mode semantics and rights/RLS.
+The compiler SHALL accept host-provided boolean conditions keyed by constant GUID, separately from named session parameters. An applicable separator lacking its condition SHALL report the condition GUID structurally without claiming a missing session parameter. False conditions SHALL select the empty String, Number or Date area without requiring use/value parameters. Unsupported conditional empty types and unsupported settings of a named separator SHALL fail explicitly instead of assuming an absent condition. True conditions and separators without conditions SHALL retain existing mode semantics and rights/RLS.
 
 #### Scenario: Missing applicable condition
 - **WHEN** a bound compilation reads a table with a conditional separator and no supplied condition
@@ -1652,6 +1652,10 @@ The compiler SHALL accept host-provided boolean conditions keyed by constant GUI
 #### Scenario: Unsupported named settings
 - **WHEN** an applicable named separator has an unrecognized settings shape
 - **THEN** bound compilation refuses the read instead of treating its condition as nil
+
+#### Scenario: False date condition
+- **WHEN** a conditional Date separator has a false condition
+- **THEN** the predicate selects the empty date 0001-01-01 with the backend year offset applied
 
 ### Requirement: Compile measured PostgreSQL scalar string equality
 PostgreSQL scalar string equality SHALL preserve case and ignore trailing ASCII spaces. Comparing a string with a Number, Boolean or DateTime SHALL not convert the incompatible operand to a string or fail with a provider cast error. Field authorization and row restrictions SHALL remain enforced.
@@ -1698,3 +1702,284 @@ both backends.
 - **WHEN** a batch references `&Дата` in its first statement and `&Склад`
   in its second
 - **THEN** the names are `Дата`, `Склад`
+
+### Requirement: Typed balance temporal parameters
+The compiler SHALL accept a date or point-in-time boundary as the period argument of an accumulation Balance table. A point SHALL preserve its date, optional metadata object identity and physical RRRef separately. Boundary inclusion SHALL be explicit; constructing a boundary without a kind SHALL select Including. Raw dates and raw points SHALL remain exclusive cuts. Other positions SHALL explicitly diagnose unsupported temporal values rather than dropping a reference or inclusion.
+
+#### Scenario: Multiple recorders at one second
+- **WHEN** three recorders of two acquired document kinds share a date with movements 1, 10 and 100 in measured order
+- **THEN** their exclusive point balances SHALL be 0, 1 and 11, and inclusive balances SHALL be 1, 11 and 111
+
+#### Scenario: Empty references in a balance period
+- **WHEN** a boundary point has no reference or a typed empty reference
+- **THEN** Including SHALL include all movements at its second and Excluding SHALL exclude all of them
+- **AND** the public model SHALL preserve the distinction between absent and typed-empty references
+
+#### Scenario: Metadata and policy are not bypassed
+- **WHEN** a temporal Balance parameter is compiled
+- **THEN** acquired storage type numbers, existing date storage offsets, access decisions, restrictions and separation SHALL remain in force
+- **AND** missing or unsupported reference metadata SHALL cause an explicit diagnostic
+
+#### Scenario: Unsupported scalar position
+- **WHEN** a temporal boundary is supplied as an ordinary scalar projection or an unimplemented virtual-table argument
+- **THEN** compilation SHALL return an explicit diagnostic
+
+### Requirement: Point-in-time logical result recipe
+A projected standard PointInTime field SHALL identify its date and typed-reference cells through the existing logical result projection API, retaining the existing physical labels and column types. Consumers SHALL NOT need to infer the grouping from label spelling.
+
+#### Scenario: Document point result
+- **WHEN** a document PointInTime field is selected under an alias
+- **THEN** one logical result position SHALL identify both physical members and the reference metadata type
+
+### Requirement: Compile a scoped common-settings load
+The SDK SHALL compile a read-only PostgreSQL common-settings load for exact user, object and settings keys and explicit complete string or numeric separator states. It SHALL derive physical separator/flag pairs from acquired live columns and DBNames GUID mappings. Missing, duplicate, extra, unsupported or ambiguous scope SHALL fail before execution. An explicitly inactive separator SHALL match false and its typed empty stored value; active separators SHALL match true and their exact typed values. All literals and identifiers SHALL use the existing dialect renderer. The read SHALL return at most two payload rows so the host can reject ambiguity. Other backends SHALL fail explicitly until supported.
+
+#### Scenario: Complete active scope
+- **WHEN** every observed separator has one explicit active string state
+- **THEN** SQL constrains all key, value and use columns and returns at most two payloads
+
+#### Scenario: Inactive scope
+- **WHEN** a separator is explicitly inactive
+- **THEN** SQL matches its false use flag and measured empty stored value
+
+#### Scenario: Unknown scope
+- **WHEN** a separator state or its physical GUID mapping is missing or ambiguous
+- **THEN** compilation fails rather than omitting a predicate
+
+#### Scenario: Literal and backend handling
+- **WHEN** a key contains quotes
+- **THEN** it is rendered through the existing PostgreSQL literal renderer
+- **WHEN** the backend is unsupported
+- **THEN** compilation fails explicitly
+
+#### Scenario: Active empty separator value
+- **WHEN** a resolved active state contains an empty string
+- **THEN** SQL retains a true use flag and the empty value predicate
+- **AND** it remains distinct from an inactive state with a false use flag
+
+### Requirement: Canonical globally disabled settings scope
+A resolved false global condition SHALL compile to use=true and the typed empty value, independently of any supplied use/value parameters. The scope API SHALL distinguish that state from an inactive separator, which uses false. Unsupported value types SHALL fail before execution.
+
+#### Scenario: Numeric condition is false
+- **WHEN** a numeric separator has a resolved false global condition
+- **THEN** SQL uses a true flag and numeric zero
+
+#### Scenario: String condition is false
+- **WHEN** a string separator has a resolved false global condition
+- **THEN** SQL uses a true flag and empty string
+
+#### Scenario: Active numeric value
+- **WHEN** the resolved active state contains a number
+- **THEN** its SQL literal uses the existing exact decimal renderer
+- **AND** a string value supplied for the numeric column is rejected
+
+### Requirement: Compile typed UUID parameters and scalar attributes
+On PostgreSQL the compiler SHALL accept a typed UUID parameter and preserve its UUID result kind. An acquired scalar attribute SHALL be classified as UUID only when its single unambiguous declaration is the measured UUID type and its physical representation is one binary column. Missing, ambiguous and compound declarations SHALL NOT cause arbitrary binary values to be reclassified. Raw binary parameters SHALL retain their existing behavior.
+
+#### Scenario: Native equality and result type
+- **WHEN** a UUID parameter equals the UUID stored in a declared scalar UUID attribute
+- **THEN** the query matches that row and exposes a UUID result, while a different UUID does not match
+
+#### Scenario: Derived UUID values
+- **WHEN** a UUID parameter or attribute is projected through a subquery or UNION ALL
+- **THEN** its canonical UUID identity and output kind are preserved without applying the storage conversion twice
+
+#### Scenario: Binary and unknown declaration
+- **WHEN** a binary field lacks an unambiguous scalar UUID declaration
+- **THEN** the field and raw byte parameters retain their binary kind
+
+#### Scenario: Unmeasured provider
+- **WHEN** SQL Server compilation reads a newly recognized UUID attribute or binds a typed UUID parameter
+- **THEN** it reports an explicit unsupported-feature diagnostic before execution without changing existing UUID(reference) support
+
+### Requirement: Compile measured ordinary balance row authorization
+An explicitly enabled Restricted compilation SHALL provide a single-statement execution contract for the measured ordinary PostgreSQL accumulation Balance SELECT forms. It SHALL distinguish forbidden selected balances from an empty permitted result without application SQL parsing. It SHALL preserve selected-principal decisions, separation and current parameter bindings. Unsupported ordinary forms SHALL fail explicitly.
+
+#### Scenario: Permitted balance
+- **WHEN** the measured ordinary Balance read selects a balance admitted by its dimension restriction
+- **THEN** executing the compiled statement returns its permitted data with no forbidden marker
+
+#### Scenario: Forbidden balance
+- **WHEN** the same read selects a balance outside the restriction
+- **THEN** the compiled statement returns a structured forbidden marker even if there are no permitted data rows
+- **AND** the host must fail before exposing any result
+
+#### Scenario: ALLOWED
+- **WHEN** the statement carries ALLOWED
+- **THEN** existing filtering remains and excluded balances produce no data
+
+#### Scenario: Explicit manager dimension filter
+- **WHEN** the Balance source has the measured equality filter selecting category a or b
+- **THEN** the same filter constrains both data and forbidden detection
+
+#### Scenario: Unsupported shape
+- **WHEN** the enabled ordinary restricted read uses an unverified join, aggregate, batch, backend or predicate form
+- **THEN** compilation fails explicitly without returning executable SQL
+
+### Requirement: Inspect authorization before logical materialization
+The compiler SHALL identify the appended forbidden-row service column structurally. Consumers SHALL inspect every row before logical materialization or publication, refuse any true marker, and refuse missing or malformed markers. Both authorization detection and permitted data SHALL execute in a single database statement.
+
+#### Scenario: One snapshot
+- **WHEN** a host executes the returned statement in its existing READ ONLY READ COMMITTED transaction
+- **THEN** data and authorization detection observe the same statement snapshot
+
+#### Scenario: Witness payload
+- **WHEN** a returned row carries the forbidden marker
+- **THEN** the host raises an access error without decoding its NULL payload as logical values
+
+### Requirement: Describe logical selected occurrences
+Compiled queries SHALL expose an optional complete ordered description of logical selected values for supported projection shapes. Every descriptor SHALL retain the full original logical name and identify final zero-based physical column indices. Repeated selections SHALL retain independent occurrences, without grouping by origin or emitted label. Physical SQL and existing output metadata SHALL remain unchanged.
+
+#### Scenario: Scalar selection
+- **WHEN** a supported scalar value is selected
+- **THEN** its descriptor identifies exactly its physical output column
+
+#### Scenario: Composite Boolean or String
+- **WHEN** one Boolean-or-String value is selected
+- **THEN** one descriptor identifies its discriminator and the Boolean and String payload columns with explicit type tags
+
+#### Scenario: Repeated and long aliases
+- **WHEN** one field is selected twice with distinct aliases exceeding physical label limits
+- **THEN** two ordered descriptors preserve both full aliases and their independent physical indices
+
+### Requirement: Preserve projection through expression and union generation
+Available descriptions SHALL retain logical occurrence identity captured before expression members are flattened and SHALL describe the final normalized output of already supported CASE, UNION and derived-source projections. No descriptor SHALL be inferred by parsing emitted SQL, grouping origins, or reconstructing aliases from truncated labels.
+
+#### Scenario: Composite CASE
+- **WHEN** a supported CASE has Boolean and String alternatives
+- **THEN** its emitted members describe one logical occurrence
+
+#### Scenario: UNION normalization
+- **WHEN** supported UNION branches require spreading or widening their values
+- **THEN** descriptors use first-branch logical names and final normalized output indices and roles
+
+### Requirement: Refuse incomplete logical recipes
+A query whose complete exact mapping is unavailable SHALL expose no logical recipe rather than a partial or guessed description. Unknown or ambiguous tag-to-payload mappings and unimplemented derived, nested, totals or deferred transformations SHALL remain unavailable without changing accepted SQL or existing physical APIs. Service columns SHALL NOT become logical selected values. Cell decoding and runtime values SHALL remain outside the core library.
+
+#### Scenario: Ambiguous discriminator tags
+- **WHEN** different emitted payload members share a tag that cannot distinguish their active member
+- **THEN** no logical recipe is exposed
+
+#### Scenario: Unimplemented transformed result
+- **WHEN** a nested, totals or deferred result cannot yet retain an exact complete recipe
+- **THEN** the recipe is unavailable while existing result metadata remains unchanged
+
+### Requirement: Apply scalar equality independently of source and operand shape
+The measured PostgreSQL scalar string equality semantics SHALL apply with and
+without FROM and with binary expressions as operands. String equality SHALL
+ignore trailing ASCII spaces and preserve case; incompatible Number, Boolean
+or DateTime operands SHALL produce false with SQL NULL propagation. Existing
+contextual CASE selection, non-equality operators and MSSQL behavior SHALL
+remain unchanged. Both operands SHALL still undergo authorization and validation.
+
+#### Scenario: Source-free scalar comparison
+- **WHEN** a SELECT without FROM compares strings or a string with an incompatible scalar
+- **THEN** it uses the same measured equality semantics as a sourced SELECT
+
+#### Scenario: Arithmetic or concatenation operand
+- **WHEN** either side of equality is a supported arithmetic or concatenation expression
+- **THEN** equality is selected using the complete direct operands and their kinds
+
+### Requirement: Refuse source-free recipes after Undefined information loss
+A source-free query SHALL expose no logical projection when a selected typed
+scalar expression loses a possible Undefined alternative in SQL. Standalone
+Undefined and supported ordinary scalar or SQL NULL projections SHALL retain
+their exact recipes. This repair SHALL NOT change their physical SQL.
+
+#### Scenario: Mixed Undefined CASE
+- **WHEN** a source-free CASE combines Undefined and a string through SQL NULL
+- **THEN** no complete logical recipe is advertised
+
+#### Scenario: Exactly represented scalar
+- **WHEN** source-free selections contain ordinary scalars, SQL NULL or standalone Undefined
+- **THEN** their complete logical projection remains available
+
+### Requirement: Request explicitly bound enabled Shared values structurally
+For IndependentAndShared with explicitly configured use and value parameters, bound compilation SHALL report the existing structural missing-session-parameter diagnostic naming the value parameter when the supplied use is Boolean true and that value is absent from compilation options. Supplying the value SHALL compile its existing typed predicate. This diagnostic protocol SHALL NOT assert that the real host Session value is uninitialized.
+
+#### Scenario: Enabled bound value absent from compiler options
+- **WHEN** a read table has Shared with both bindings, true condition or no condition, use=true, and its value absent from compilation options
+- **THEN** compilation names that value as a missing session parameter and does not produce an empty-area SQL result
+
+#### Scenario: Host supplies an existing value
+- **WHEN** the host retries with its existing String or Number value
+- **THEN** compilation uses that value in the separator predicate
+
+### Requirement: Preserve unbound Shared defaults and inactive controls
+Shared without a use binding SHALL retain its typed empty-value default. Shared with a use binding but no value binding SHALL retain the common-attribute-name fallback and its existing empty default. A false global condition SHALL select its measured empty area without requesting use/value. Shared use=false SHALL disable its predicate without requesting its value. Preparation and unrelated tables SHALL NOT request separator values. Independent handling SHALL remain unchanged.
+
+#### Scenario: Unbound defaults
+- **WHEN** Shared has no use binding, or use=true has no explicit value binding and its fallback name is absent
+- **THEN** compilation retains the typed empty default
+
+#### Scenario: Inactive controls
+- **WHEN** the global condition is false or Shared use=false
+- **THEN** no value diagnostic is requested and the existing empty-area or disabled-predicate behavior is preserved
+
+### Requirement: Compile an independently scoped system-settings load
+The SDK SHALL compile a read-only PostgreSQL SystemSettings load for exact user, object and settings keys and complete explicit string or numeric separator states. It SHALL validate the acquired SystemSettings table, required columns and scalar types and derive all separator mappings from DBNames. Missing, duplicate, extra, unsupported or ambiguous scope SHALL fail before execution. Inactive states SHALL use false and a typed empty value; globally disabled conditions SHALL use true and a typed empty value. Reads SHALL return at most two payloads. Unsupported backends SHALL fail explicitly. CommonSettings compilation SHALL remain unchanged. Authorization and user selection SHALL remain the caller's responsibility.
+
+#### Scenario: Independent system storage
+- **WHEN** system and common tables contain identical keys with different payloads
+- **THEN** system load targets only the acquired system table and its complete scope
+
+#### Scenario: Missing or unsupported schema
+- **WHEN** a required system table, column, scalar type or scope mapping is missing or unsupported
+- **THEN** compilation fails without borrowing CommonSettings schema
+
+#### Scenario: Numeric inactive and disabled condition
+- **WHEN** a numeric separator is inactive or globally disabled
+- **THEN** the corresponding SQL uses false/zero or true/zero respectively
+- **AND** the namespaces remain distinct
+
+#### Scenario: Quoted keys and unsupported backend
+- **WHEN** a key contains quotes
+- **THEN** the existing literal renderer escapes it
+- **WHEN** the backend is not supported
+- **THEN** compilation fails explicitly
+
+### Requirement: Name the standard reference in Russian projections
+Queryable metadata and wildcard projections SHALL name the standard object
+and tabular-section owner reference `Ссылка`, retaining `ID` as a query
+alias and canonical storage identity. Custom fields named ID and explicit
+result aliases SHALL retain their names. Standard-field rights identities
+and physical SQL references SHALL remain unchanged.
+
+#### Scenario: Wildcard reference
+- **WHEN** a query or catalog enumerates fields of an object or section
+- **THEN** the standard reference is named Ссылка and retains StandardFieldId::Id
+
+#### Scenario: Explicit result alias
+- **WHEN** a user selects Ссылка AS ID
+- **THEN** the resulting column is named ID
+
+### Requirement: Compile enumeration value presentations
+The compiler SHALL accept a structured enumeration presentation mapping of
+reference identities to text for an enumeration target. It SHALL generate
+PostgreSQL and MSSQL expressions that compare physical 1C reference bytes,
+quote presentation text safely and return text. Mapping entries SHALL be
+bounded, unique and validated for their enumeration owner.
+
+#### Scenario: Present a typed enumeration reference
+- **WHEN** `ПРЕДСТАВЛЕНИЕ` or `ПРЕДСТАВЛЕНИЕССЫЛКИ` presents an enumeration
+  reference with a valid plan
+- **THEN** generated SQL returns the text mapped to the reference identity
+
+#### Scenario: Deferred lookup
+- **WHEN** a deferred reference resolves to an enumeration
+- **THEN** its presentation lookup uses the same mapping and preserves the
+  lookup's existing authorization and data separation checks
+
+#### Scenario: Source-free enumeration constant
+- **WHEN** a source-free SELECT presents `ЗНАЧЕНИЕ` of an enumeration
+- **THEN** compilation returns a deferred reference payload whose lookup
+  applies the enumeration presentation and its access decision
+
+#### Scenario: Unknown identity or empty reference
+- **WHEN** a reference is empty, null or absent from the enumeration mapping
+- **THEN** its presentation is empty text
+
+#### Scenario: Invalid mapping
+- **WHEN** a mapping contains duplicate, foreign or excessive identities or
+  targets an object that is not an enumeration
+- **THEN** compilation reports a presentation-plan diagnostic

@@ -8,7 +8,12 @@ The CLI SHALL provide `open-sdbl serve postgres` and `open-sdbl serve mssql` tak
 - **THEN** the gateway has acquired the complete prebuilt catalog before it reports that it listens and accepts libpq clients
 
 ### Requirement: Operate the running gateway
-The CLI SHALL log connections and failed logins to standard error with the peer address and user name but never the password, SHALL re-acquire metadata and rights and concurrently prebuild the replacement catalog on `SIGHUP` on Unix while connections keep their current snapshot until their statement ends, and SHALL shut down gracefully on interrupt.
+The CLI SHALL log connections and failed logins to standard error with the
+peer address and user name. Passwords and stored values SHALL only be logged
+when sensitive authentication diagnostics are explicitly enabled. On Unix,
+`SIGHUP` SHALL re-acquire metadata and rights and prebuild the replacement
+catalog concurrently. Connections SHALL keep their current snapshot until
+their statement ends. The CLI SHALL shut down gracefully on interrupt.
 
 #### Scenario: Failed login logged
 - **WHEN** a client fails authentication
