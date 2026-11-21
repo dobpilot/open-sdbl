@@ -594,14 +594,10 @@ fn extension_runtime_record_complete(info: &[u8], profile_end: usize) -> bool {
         };
         end
     };
-    if tail.checked_add(3) != Some(info.len())
-        || !matches!(info.get(tail), Some(0x81 | 0x82))
-        || !matches!(info.get(tail + 1), Some(0x81 | 0x82))
-        || info.get(tail + 2) != Some(&0x20)
-    {
-        return false;
-    }
-    true
+    tail.checked_add(3) == Some(info.len())
+        && matches!(info.get(tail), Some(0x81 | 0x82))
+        && matches!(info.get(tail + 1), Some(0x81 | 0x82))
+        && info.get(tail + 2) == Some(&0x20)
 }
 
 /// Читает версию только в позиции полностью проверенной записи.

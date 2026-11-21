@@ -29,6 +29,8 @@ pub struct GatewayState {
 // Reserve PostgreSQL's special xid values 0..=2, including on wraparound.
 fn next_catalog_revision() -> u32 {
     static NEXT: AtomicU32 = AtomicU32::new(3);
+    // `try_update` is unavailable on the project's older supported toolchains.
+    #[allow(deprecated)]
     NEXT.fetch_update(Ordering::Relaxed, Ordering::Relaxed, |value| {
         Some(value.checked_add(1).unwrap_or(3))
     })
