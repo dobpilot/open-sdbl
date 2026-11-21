@@ -27,8 +27,16 @@ fn escapes_controls_and_truncates_at_character_boundaries() {
 #[test]
 fn preserves_only_trusted_usage_layout() {
     let mut usage = Vec::new();
-    write_top_level_error(&mut usage, &CliError::Usage("error\n\nhelp".to_owned())).unwrap();
-    assert_eq!(usage, b"error\n\nhelp\n");
+    write_top_level_error(
+        &mut usage,
+        &CliError::Usage("error\n\nhelp".to_owned())
+            .with_scope(crate::help::Scope::new("lex", None)),
+    )
+    .unwrap();
+    assert_eq!(
+        usage,
+        b"ERROR  error\\n\\nhelp\nUsage  open-sdbl lex [FILE|-]\nHelp   open-sdbl lex --help\n"
+    );
 
     let mut structured = Vec::new();
     write_top_level_error(&mut structured, &CliError::PostgresPlaintextOptInRequired).unwrap();
@@ -37,5 +45,5 @@ fn preserves_only_trusted_usage_layout() {
 
     let mut external = Vec::new();
     write_top_level_error(&mut external, &CliError::Data("bad\n\x1b[2J".to_owned())).unwrap();
-    assert_eq!(external, b"bad\\n\\u{1b}[2J\n");
+    assert_eq!(external, b"ERROR  bad\\n\\u{1b}[2J\n");
 }

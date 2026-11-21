@@ -87,7 +87,7 @@ fn closed_stdout_pipe_is_quiet_success() {
 }
 
 #[test]
-fn warns_when_mssql_certificate_verification_is_disabled() {
+fn rejects_conflicting_mssql_trust_settings_before_warning() {
     let output = Command::new(env!("CARGO_BIN_EXE_open-sdbl"))
         .args([
             "metadata",
@@ -107,7 +107,7 @@ fn warns_when_mssql_certificate_verification_is_disabled() {
 
     assert!(!output.status.success());
     let stderr = String::from_utf8(output.stderr).unwrap();
-    assert!(stderr.contains("warning: --trust-server-certificate disables MSSQL certificate"));
+    assert!(!stderr.contains("WARN"));
     assert!(stderr.contains("mutually exclusive"));
 }
 
@@ -200,7 +200,7 @@ fn serve_argument_errors_are_usage_errors() {
         .unwrap();
     assert!(output.status.success());
     let help = String::from_utf8(output.stdout).unwrap();
-    assert!(help.contains("--tls-cert") && help.contains("serve postgres|mssql"));
+    assert!(help.contains("--tls-cert") && help.contains("serve <postgres|mssql>"));
 }
 
 #[test]

@@ -4,6 +4,7 @@
 mod cells;
 mod metadata;
 mod session;
+pub(crate) mod transport;
 
 pub use cells::{decode_mssql_cell, mssql_row};
 pub use session::MsSqlSession;

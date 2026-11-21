@@ -1,7 +1,7 @@
 //! Tests of the `args` module.
 
 use super::{
-    DatabaseConnection, INSECURE_MSSQL_CERTIFICATE_WARNING, PostgresSslMode, parse_connection,
+    BackingDatabase, DatabaseConnection, MsSqlTransportSecurity, PostgresSslMode, parse_connection,
     select_postgres_sslmode,
 };
 use crate::error::CliError;
@@ -17,14 +17,14 @@ fn parses_inline_values_and_rejects_option_like_values() {
     ]
     .into_iter()
     .map(str::to_owned);
-    let parsed = parse_connection(&mut inline, "console", &mut Vec::new()).unwrap();
-    assert!(matches!(parsed, Some(DatabaseConnection::Postgres(_))));
+    let parsed = parse_connection(&mut inline, "console").unwrap();
+    assert!(matches!(parsed.connection, DatabaseConnection::Postgres(_)));
 
     let mut invalid = ["postgres", "--host", "--database=test"]
         .into_iter()
         .map(str::to_owned);
     assert!(
-        parse_connection(&mut invalid, "console", &mut Vec::new())
+        parse_connection(&mut invalid, "console")
             .unwrap_err()
             .to_string()
             .contains("option-like")
@@ -50,9 +50,9 @@ fn carries_socks5_proxy_credentials_into_connection_options() {
     ]
     .into_iter()
     .map(str::to_owned);
-    let connection = parse_connection(&mut arguments, "console", &mut Vec::new())
+    let connection = parse_connection(&mut arguments, "console")
         .unwrap()
-        .unwrap();
+        .connection;
     let DatabaseConnection::MsSql(connection) = connection else {
         panic!("expected MSSQL connection");
     };
@@ -97,16 +97,16 @@ fn refuses_postgres_plaintext_without_explicit_opt_in() {
         "disable",
     ];
     let mut refused = base.into_iter().map(str::to_owned);
-    let error = parse_connection(&mut refused, "console", &mut Vec::new()).unwrap_err();
+    let error = parse_connection(&mut refused, "console").unwrap_err();
     assert!(matches!(error, CliError::PostgresPlaintextOptInRequired));
 
     let mut accepted = base
         .into_iter()
         .chain(["--insecure-plaintext"])
         .map(str::to_owned);
-    let connection = parse_connection(&mut accepted, "console", &mut Vec::new())
+    let connection = parse_connection(&mut accepted, "console")
         .unwrap()
-        .unwrap();
+        .connection;
     let DatabaseConnection::Postgres(connection) = connection else {
         panic!("expected PostgreSQL connection");
     };
@@ -118,9 +118,7 @@ fn accepts_inline_option_values_and_rejects_option_like_values() {
     let mut inline = ["postgres", "--host=db", "--database=test", "--user=reader"]
         .into_iter()
         .map(str::to_owned);
-    let connection = parse_connection(&mut inline, "console", &mut Vec::new())
-        .unwrap()
-        .unwrap();
+    let connection = parse_connection(&mut inline, "console").unwrap().connection;
     let DatabaseConnection::Postgres(connection) = connection else {
         panic!("expected PostgreSQL connection");
     };
@@ -129,7 +127,7 @@ fn accepts_inline_option_values_and_rejects_option_like_values() {
     let mut option_like = ["postgres", "--host", "--database=test", "--user=reader"]
         .into_iter()
         .map(str::to_owned);
-    let error = parse_connection(&mut option_like, "console", &mut Vec::new()).unwrap_err();
+    let error = parse_connection(&mut option_like, "console").unwrap_err();
     assert!(error.to_string().contains("option-like"));
 }
 
@@ -147,17 +145,21 @@ fn parses_mssql_provider_defaults_and_explicit_tls_exception() {
     ]
     .into_iter()
     .map(str::to_owned);
-    let connection = parse_connection(&mut arguments, "metadata", &mut Vec::new())
-        .unwrap()
-        .unwrap();
-    let DatabaseConnection::MsSql(connection) = connection else {
+    let parsed = parse_connection(&mut arguments, "metadata").unwrap();
+    assert_eq!(parsed.mssql_transport, MsSqlTransportSecurity::Tls);
+    assert!(
+        parsed
+            .transport_warning()
+            .unwrap()
+            .contains("certificate and hostname are unverified")
+    );
+    let DatabaseConnection::MsSql(connection) = parsed.connection else {
         panic!("expected MSSQL connection");
     };
     assert_eq!(connection.options.host, "192.168.122.222");
     assert_eq!(connection.options.port, 1433);
     assert_eq!(connection.options.database, "demo");
     assert!(connection.trust_server_certificate);
-    assert!(INSECURE_MSSQL_CERTIFICATE_WARNING.contains("disables MSSQL certificate"));
 }
 
 #[test]
@@ -175,9 +177,9 @@ fn parses_private_ca_files_for_both_database_providers() {
     ]
     .into_iter()
     .map(str::to_owned);
-    let connection = parse_connection(&mut arguments, "metadata", &mut Vec::new())
+    let connection = parse_connection(&mut arguments, "metadata")
         .unwrap()
-        .unwrap();
+        .connection;
     let DatabaseConnection::MsSql(connection) = connection else {
         panic!("expected MSSQL connection");
     };
@@ -196,9 +198,9 @@ fn parses_private_ca_files_for_both_database_providers() {
     ]
     .into_iter()
     .map(str::to_owned);
-    let connection = parse_connection(&mut arguments, "metadata", &mut Vec::new())
+    let connection = parse_connection(&mut arguments, "metadata")
         .unwrap()
-        .unwrap();
+        .connection;
     let DatabaseConnection::Postgres(connection) = connection else {
         panic!("expected PostgreSQL connection");
     };
@@ -219,7 +221,7 @@ fn parses_private_ca_files_for_both_database_providers() {
     ]
     .into_iter()
     .map(str::to_owned);
-    let error = parse_connection(&mut arguments, "metadata", &mut Vec::new()).unwrap_err();
+    let error = parse_connection(&mut arguments, "metadata").unwrap_err();
     assert!(error.to_string().contains("requires PostgreSQL --sslmode"));
 }
 
@@ -237,7 +239,7 @@ fn rejects_mssql_only_tls_flag_for_postgres() {
     ]
     .into_iter()
     .map(str::to_owned);
-    let error = parse_connection(&mut arguments, "console", &mut Vec::new()).unwrap_err();
+    let error = parse_connection(&mut arguments, "console").unwrap_err();
     assert!(error.to_string().contains("unknown console option"));
 }
 
@@ -257,7 +259,68 @@ fn rejects_password_bearing_command_line_flags() {
         ]
         .into_iter()
         .map(str::to_owned);
-        let error = parse_connection(&mut arguments, "console", &mut Vec::new()).unwrap_err();
+        let error = parse_connection(&mut arguments, "console").unwrap_err();
         assert!(error.to_string().contains("unknown console option"));
     }
+}
+
+#[test]
+fn canonical_transport_modes_agree_on_plaintext_and_reject_mixed_policy() {
+    fn parse(provider: &str, tls_arguments: &[&str]) -> Result<BackingDatabase, CliError> {
+        let mut args = [
+            provider,
+            "--host",
+            "db",
+            "--database",
+            "base",
+            "--user",
+            "reader",
+        ]
+        .into_iter()
+        .chain(tls_arguments.iter().copied())
+        .map(str::to_owned);
+        parse_connection(&mut args, "serve")
+    }
+
+    for provider in ["postgres", "mssql"] {
+        let plaintext = parse(provider, &["--tls-mode", "disable", "--tls-mode=disable"]).unwrap();
+        assert!(plaintext.transport_warning().unwrap().contains("no TLS"));
+        match plaintext.connection {
+            DatabaseConnection::Postgres(connection) => {
+                assert_eq!(connection.sslmode, PostgresSslMode::Disable)
+            }
+            DatabaseConnection::MsSql(_) => {
+                assert_eq!(plaintext.mssql_transport, MsSqlTransportSecurity::Plaintext)
+            }
+        }
+        assert!(
+            parse(
+                provider,
+                &["--tls-mode", "disable", "--tls-mode", "require"]
+            )
+            .is_err()
+        );
+        assert!(
+            parse(
+                provider,
+                &["--tls-mode", "require", "--trust-ca-file", "ca.pem"]
+            )
+            .is_err()
+        );
+    }
+    assert!(
+        parse(
+            "postgres",
+            &["--tls-mode", "verify-full", "--sslmode", "verify-full"]
+        )
+        .is_err()
+    );
+    assert!(
+        parse(
+            "mssql",
+            &["--tls-mode", "require", "--trust-server-certificate"]
+        )
+        .is_err()
+    );
+    assert!(parse("mssql", &["--tls-mode", "verify-ca"]).is_err());
 }

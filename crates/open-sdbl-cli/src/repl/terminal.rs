@@ -1,7 +1,7 @@
 //! The terminal itself: reading a bounded line, the pinned footer, the
 //! UTF-8 guard and size detection.
 
-use std::io::{self, IsTerminal, Write};
+use std::io::{self, Write};
 #[cfg(target_os = "linux")]
 use std::mem::MaybeUninit;
 
@@ -117,7 +117,7 @@ pub(super) struct PinnedFooter {
 impl PinnedFooter {
     pub(super) fn enable(interactive: bool) -> Result<Self, CliError> {
         let mut footer = Self {
-            enabled: interactive && io::stdout().is_terminal(),
+            enabled: interactive,
             active: false,
             rows: 0,
             columns: 0,
@@ -135,7 +135,7 @@ impl PinnedFooter {
         let Some((rows, columns)) = terminal_size() else {
             return Ok(());
         };
-        if rows < 3 || columns < 4 {
+        if rows < 3 || usize::from(columns) <= COMMAND_HINT.len() {
             self.restore()?;
             return Ok(());
         }
@@ -181,15 +181,7 @@ impl Drop for PinnedFooter {
 
 #[cfg(target_os = "linux")]
 pub(super) fn terminal_size() -> Option<(u16, u16)> {
-    let mut size = MaybeUninit::<libc::winsize>::uninit();
-    // SAFETY: `size` is writable storage for `winsize`, and stdout was
-    // verified to be an interactive terminal before this function is used.
-    if unsafe { libc::ioctl(libc::STDOUT_FILENO, libc::TIOCGWINSZ, size.as_mut_ptr()) } != 0 {
-        return None;
-    }
-    // SAFETY: a successful TIOCGWINSZ call initialized the complete value.
-    let size = unsafe { size.assume_init() };
-    (size.ws_row > 0 && size.ws_col > 0).then_some((size.ws_row, size.ws_col))
+    crate::terminal::size(libc::STDOUT_FILENO)
 }
 
 #[cfg(target_os = "linux")]
@@ -220,7 +212,7 @@ impl PinnedFooter {
 }
 
 #[cfg(target_os = "linux")]
-pub(super) struct TerminalUtf8Guard {
+pub(crate) struct TerminalUtf8Guard {
     original: Option<libc::termios>,
 }
 
@@ -276,7 +268,7 @@ impl Drop for TerminalUtf8Guard {
 }
 
 #[cfg(not(target_os = "linux"))]
-pub(super) struct TerminalUtf8Guard;
+pub(crate) struct TerminalUtf8Guard;
 
 #[cfg(not(target_os = "linux"))]
 impl TerminalUtf8Guard {
@@ -284,3 +276,51 @@ impl TerminalUtf8Guard {
         Ok(Self)
     }
 }
+
+#[cfg(unix)]
+pub(crate) struct StartupInput(libc::termios);
+
+#[cfg(unix)]
+impl StartupInput {
+    pub(super) fn enable() -> io::Result<Self> {
+        let mut original = std::mem::MaybeUninit::<libc::termios>::uninit();
+        // SAFETY: tcgetattr initializes the termios for the interactive input.
+        if unsafe { libc::tcgetattr(libc::STDIN_FILENO, original.as_mut_ptr()) } != 0 {
+            return Err(io::Error::last_os_error());
+        }
+        // SAFETY: the preceding successful call initialized original.
+        let original = unsafe { original.assume_init() };
+        let mut startup = original;
+        startup.c_lflag &= !(libc::ICANON | libc::ECHO | libc::IEXTEN);
+        // VINTR cancels initialization. Keep the queued output so a signal
+        // partway through a frame cannot strand the cursor above its last
+        // row and make cleanup erase a permanent warning.
+        startup.c_lflag |= libc::ISIG | libc::NOFLSH;
+        startup.c_iflag &= !(libc::IXON | libc::ICRNL | libc::INLCR);
+        startup.c_cc[libc::VMIN] = 1;
+        startup.c_cc[libc::VTIME] = 0;
+        // SAFETY: termios came from this descriptor. TCSANOW preserves queued input.
+        if unsafe { libc::tcsetattr(libc::STDIN_FILENO, libc::TCSANOW, &startup) } != 0 {
+            return Err(io::Error::last_os_error());
+        }
+        let guard = Self(original);
+        let mut stdout = io::stdout().lock();
+        stdout.write_all(b"\x1b[?2004h")?;
+        stdout.flush()?;
+        Ok(guard)
+    }
+}
+
+#[cfg(unix)]
+impl Drop for StartupInput {
+    fn drop(&mut self) {
+        // SAFETY: restore the original termios without discarding pending input.
+        unsafe { libc::tcsetattr(libc::STDIN_FILENO, libc::TCSANOW, &self.0) };
+        let mut stdout = io::stdout().lock();
+        let _ = stdout.write_all(b"\x1b[?2004l");
+        let _ = stdout.flush();
+    }
+}
+
+#[cfg(not(unix))]
+pub(crate) struct StartupInput;

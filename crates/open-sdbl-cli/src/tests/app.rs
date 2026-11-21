@@ -1,7 +1,6 @@
 //! Tests of the command controller.
 
 use super::run_lex;
-use crate::args::HELP;
 use crate::output::{MAX_PRINTED_ROWS, lex};
 
 /// The width of one cell is bounded by `output`, which owns that rule
@@ -22,5 +21,9 @@ fn bounds_lex_rows() {
 fn lex_help_does_not_read_standard_input() {
     let mut output = Vec::new();
     run_lex(std::iter::once("--help".to_owned()), &mut output).unwrap();
-    assert_eq!(String::from_utf8(output).unwrap(), HELP);
+    assert!(
+        String::from_utf8(output)
+            .unwrap()
+            .contains("open-sdbl lex [FILE|-]")
+    );
 }

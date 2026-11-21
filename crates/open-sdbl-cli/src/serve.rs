@@ -5,13 +5,13 @@
 //! The protocol lives in `open-sdbl-pgwire`.
 
 use std::fs;
-use std::io::Write;
 use std::net::SocketAddr;
 use std::sync::Arc;
 
 use open_sdbl::query::{QueryParameter, SessionParameters};
 use open_sdbl_db::{
-    Credentials, DatabaseConnection, EnvironmentSecret, Limits, MsSqlConnection, PostgresConnection,
+    Credentials, DatabaseConnection, EnvironmentSecret, Limits, MsSqlConnection,
+    MsSqlTransportSecurity, PostgresConnection,
 };
 use open_sdbl_pgwire::{GatewayConfig, GatewayEvent, GatewayEvents, GatewayState, StateHandle};
 use rustls::pki_types::pem::PemObject;
@@ -19,13 +19,12 @@ use rustls::pki_types::{CertificateDer, PrivateKeyDer};
 use tokio::net::TcpListener;
 use zeroize::Zeroizing;
 
-use crate::args::{HELP, parse_connection};
+use crate::args::parse_connection;
 use crate::auth::pgpass::resolve_credentials;
 use crate::config::expand_config;
 use crate::error::CliError;
-use crate::output::escape_field;
 use crate::params::parse_parameter_literal;
-use crate::progress::MetadataProgress;
+use crate::progress::{MetadataProgress, log, observe};
 
 #[cfg(test)]
 #[path = "tests/serve.rs"]
@@ -51,7 +50,7 @@ pub(crate) struct ServeOptions {
 }
 
 fn usage(message: impl std::fmt::Display) -> CliError {
-    CliError::Usage(format!("{message}\n\n{HELP}"))
+    CliError::Usage(message.to_string())
 }
 
 /// Takes the gateway options out of `arguments`; the rest are the
@@ -118,16 +117,12 @@ pub(crate) fn split_serve_options(
             "--tls-key" => options.tls_key = Some(value(option)?),
             "--session-param" => {
                 let text = value(option)?;
-                let (name, literal) = text.split_once('=').ok_or_else(|| {
-                    usage(format!(
-                        "--session-param expects NAME=LITERAL, got {text:?}"
-                    ))
-                })?;
+                let (name, literal) = text
+                    .split_once('=')
+                    .ok_or_else(|| usage("--session-param expects NAME=LITERAL"))?;
                 let name = name.trim().trim_start_matches('&');
                 if name.is_empty() || literal.trim().is_empty() {
-                    return Err(usage(format!(
-                        "--session-param expects NAME=LITERAL, got {text:?}"
-                    )));
+                    return Err(usage("--session-param expects NAME=LITERAL"));
                 }
                 options
                     .session_parameters
@@ -214,7 +209,22 @@ fn peer_text(peer: Option<SocketAddr>) -> String {
 
 impl GatewayEvents for StderrEvents {
     fn event(&self, event: GatewayEvent<'_>) {
+        let level = match event {
+            GatewayEvent::ConnectionError { .. } => "ERROR",
+            GatewayEvent::Refused { .. }
+            | GatewayEvent::AuthenticationFailed { .. }
+            | GatewayEvent::AuthenticationSecrets { .. }
+            | GatewayEvent::PlaintextAuthenticated { .. }
+            | GatewayEvent::SessionParameterUnread { .. } => "WARN",
+            _ => "INFO",
+        };
         let line = match event {
+            GatewayEvent::PlaintextAuthenticated { peer, user } => {
+                format!(
+                    "no TLS for incoming client {} as user {user:?}",
+                    peer_text(peer)
+                )
+            }
             GatewayEvent::Connected { .. } | GatewayEvent::Disconnected { .. } => return,
             GatewayEvent::Refused { peer, reason } => {
                 format!("refused {}: {reason}", peer_text(peer))
@@ -253,7 +263,7 @@ impl GatewayEvents for StderrEvents {
             }
             _ => return,
         };
-        eprintln!("serve: {}", escape_field(&line));
+        log(level, line);
     }
 }
 
@@ -306,24 +316,20 @@ async fn acquire_state(
     credentials: &Credentials,
     limits: Limits,
     unrestricted: bool,
+    mssql_transport: MsSqlTransportSecurity,
 ) -> Result<GatewayState, open_sdbl_db::DbError> {
-    if unrestricted {
-        GatewayState::acquire_unrestricted(
-            connection,
-            credentials,
-            limits,
-            &mut MetadataProgress::new(),
-        )
-        .await
-    } else {
-        GatewayState::acquire(
-            connection,
-            credentials,
-            limits,
-            &mut MetadataProgress::new(),
-        )
-        .await
-    }
+    let mut progress = MetadataProgress::start(true, false);
+    let result = observe(GatewayState::acquire_with_transport(
+        connection,
+        credentials,
+        limits,
+        &mut progress,
+        unrestricted,
+        mssql_transport,
+    ))
+    .await;
+    progress.outcome(&result);
+    result
 }
 
 /// Re-reads metadata, users and rights on every `SIGHUP`; never completes.
@@ -336,37 +342,35 @@ async fn refresh_on_hangup(
     connection: DatabaseConnection,
     credentials: Credentials,
     unrestricted_access: bool,
+    mssql_transport: MsSqlTransportSecurity,
 ) {
     use tokio::signal::unix::{SignalKind, signal};
     let Ok(mut hangup) = signal(SignalKind::hangup()) else {
-        eprintln!("warning: cannot listen for SIGHUP; metadata refresh is unavailable");
+        log(
+            "WARN",
+            "cannot listen for SIGHUP; metadata refresh is unavailable",
+        );
         return std::future::pending().await;
     };
     while hangup.recv().await.is_some() {
-        eprintln!(
-            "serve: SIGHUP received; reloading metadata and users{}",
-            if unrestricted_access {
-                ""
-            } else {
-                " and rights"
-            }
-        );
+        log("INFO", "SIGHUP received; reloading gateway metadata");
         match acquire_state(
             &connection,
             &credentials,
             Limits::default(),
             unrestricted_access,
+            mssql_transport,
         )
         .await
         {
             Ok(state) => {
                 let users = state.user_count();
                 handle.replace(state);
-                eprintln!("serve: metadata refreshed ({users} users)");
+                log("INFO", format_args!("metadata refreshed ({users} users)"));
             }
-            Err(error) => eprintln!(
-                "serve: refresh failed, the previous metadata stays: {}",
-                escape_field(&error.to_string())
+            Err(error) => log(
+                "ERROR",
+                format_args!("refresh failed; serving the previous metadata: {error}"),
             ),
         }
     }
@@ -374,32 +378,48 @@ async fn refresh_on_hangup(
 }
 
 #[cfg(not(unix))]
-async fn refresh_on_hangup(_: Arc<StateHandle>, _: DatabaseConnection, _: Credentials, _: bool) {
+async fn refresh_on_hangup(
+    _: Arc<StateHandle>,
+    _: DatabaseConnection,
+    _: Credentials,
+    _: bool,
+    _: MsSqlTransportSecurity,
+) {
     std::future::pending().await
 }
 
 pub(crate) async fn serve(
     arguments: impl Iterator<Item = String>,
-    output: &mut impl Write,
     credentials: &Credentials,
 ) -> Result<(), CliError> {
     let (options, rest) = split_serve_options(expand_config(arguments.collect(), true)?)?;
-    let Some(connection) = parse_connection(&mut rest.into_iter(), "serve", output)? else {
-        return Ok(());
-    };
+    let backing = parse_connection(&mut rest.into_iter(), "serve")?;
+    if let Some(warning) = backing.transport_warning() {
+        log("WARN", warning);
+    }
+    let mssql_transport = backing.mssql_transport;
+    let connection = backing.connection;
     if options.unrestricted_access {
-        eprintln!(
-            "warning: unrestricted access enabled; authenticated users can read all supported tables without role restrictions"
+        log(
+            "WARN",
+            "unrestricted access enabled; authenticated users can read all supported tables without role restrictions",
         );
     }
     if options.debug_authentication_secrets {
-        eprintln!(
-            "warning: sensitive authentication logging enabled; passwords and stored hashes will be logged"
+        log(
+            "WARN",
+            "sensitive authentication logging enabled; passwords and stored hashes will be logged",
         );
     }
     if options.allow_insecure_network {
-        eprintln!(
-            "warning: insecure network connections enabled; client passwords may be sent without TLS"
+        log(
+            "WARN",
+            "no TLS required from incoming clients; passwords may be sent in plaintext",
+        );
+    } else if options.allow_insecure_loopback {
+        log(
+            "WARN",
+            "no TLS required from loopback clients; passwords may be sent in plaintext",
         );
     }
     let tls = match (&options.tls_cert, &options.tls_key) {
@@ -407,57 +427,68 @@ pub(crate) async fn serve(
         _ => None,
     };
     if tls.is_none() && !options.allow_insecure_loopback && !options.allow_insecure_network {
-        eprintln!(
-            "warning: no TLS and no --allow-insecure-loopback: every client will be refused before it sends a password"
+        log(
+            "WARN",
+            "no TLS and no --allow-insecure-loopback; every client will be refused before sending a password",
         );
     }
     let credentials = resolve_credentials(&connection, credentials)?;
     let limits = Limits::default();
-    let state = acquire_state(
-        &connection,
-        &credentials,
-        limits,
-        options.unrestricted_access,
-    )
-    .await?;
+    let shutdown = shutdown_signal();
+    tokio::pin!(shutdown);
+    let state = tokio::select! {
+        biased;
+        () = &mut shutdown => {
+            log("INFO", "Serve stopped");
+            return Ok(());
+        }
+        result = acquire_state(&connection, &credentials, limits, options.unrestricted_access, mssql_transport) => result?,
+    };
     let mut session_parameters = SessionParameters::new();
     for (name, literal) in &options.session_parameters {
         let value = parse_parameter_literal(literal, state.snapshot())
-            .map_err(|error| usage(format!("invalid --session-param {name}: {error}")))?;
+            .map_err(|_| usage(format!("invalid SDBL literal for --session-param {name:?}")))?;
         session_parameters.set(QueryParameter::new(name, value));
     }
+    let users = state.user_count();
     if options.unrestricted_access {
-        eprintln!(
-            "serve: {} users read; role rights are not loaded",
-            state.user_count()
+        log(
+            "INFO",
+            format_args!("{users} users read; role rights are not loaded"),
         );
     } else {
-        eprintln!(
-            "serve: {} users read; {} roles carry no rights resource",
-            state.user_count(),
-            state.unreadable_role_count()
+        log(
+            "INFO",
+            format_args!(
+                "{users} users read; {} roles carry no rights resource",
+                state.unreadable_role_count()
+            ),
         );
     }
-    eprintln!(
-        "serve: passwords are checked against the stored value read from each v8users record; a user without a readable stored password cannot log in (28P01)"
-    );
     let listener = TcpListener::bind(options.listen)
         .await
         .map_err(|error| CliError::Io(format!("cannot listen on {}", options.listen), error))?;
     let address = listener
         .local_addr()
         .map_err(|error| CliError::Io("cannot read the listen address".to_owned(), error))?;
-    eprintln!(
-        "serve: listening on {address} ({})",
-        if tls.is_some() { "TLS" } else { "no TLS" }
+    let listener_mode = if tls.is_some() { "TLS" } else { "no TLS" };
+    log(
+        "INFO",
+        format_args!("serve: listening on {address} ({listener_mode})"),
     );
     let handle = Arc::new(StateHandle::new(state));
-    let refresh = refresh_on_hangup(
-        Arc::clone(&handle),
-        copy_connection(&connection),
-        copy_credentials(&credentials),
-        options.unrestricted_access,
-    );
+    let refresh_connection = copy_connection(&connection);
+    let refresh_credentials = copy_credentials(&credentials);
+    let refresh_handle = Arc::clone(&handle);
+    let refresh = move || {
+        refresh_on_hangup(
+            refresh_handle,
+            refresh_connection,
+            refresh_credentials,
+            options.unrestricted_access,
+            mssql_transport,
+        )
+    };
     let mut config = GatewayConfig::new(connection, credentials);
     config.limits = limits;
     config.gateway_limits.catalog_allocation_bytes = options.catalog_memory_limit_bytes;
@@ -469,18 +500,36 @@ pub(crate) async fn serve(
     config.unrestricted_access = options.unrestricted_access;
     config.debug_authentication = options.debug_authentication;
     config.debug_authentication_secrets = options.debug_authentication_secrets;
-    let serving = open_sdbl_pgwire::serve(
+    let (stop, stopped) = tokio::sync::oneshot::channel();
+    let serving = open_sdbl_pgwire::serve_with_transport(
         listener,
         config,
         handle,
         Arc::new(StderrEvents),
-        shutdown_signal(),
+        async {
+            let _ = stopped.await;
+        },
+        mssql_transport,
     );
-    let result = tokio::select! {
-        result = serving => result,
-        () = refresh => Ok(()),
+    tokio::pin!(serving);
+    let outcome = {
+        let refresh = refresh();
+        tokio::pin!(refresh);
+        tokio::select! {
+            biased;
+            () = &mut shutdown => None,
+            result = &mut serving => Some(result),
+            () = &mut refresh => None,
+        }
+    };
+    let result = match outcome {
+        Some(result) => result,
+        None => {
+            let _ = stop.send(());
+            serving.await
+        }
     };
     result.map_err(|error| CliError::Io("the gateway stopped".to_owned(), error))?;
-    eprintln!("serve: stopped");
+    log("INFO", "Serve stopped");
     Ok(())
 }

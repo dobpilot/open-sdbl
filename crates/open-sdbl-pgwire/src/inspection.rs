@@ -259,8 +259,17 @@ async fn read_one(session: &mut DatabaseSession, name: &str) -> Result<ConfigRes
         .ok_or_else(|| invalid("configuration resource is missing"))
 }
 
+fn report_skipped(progress: &mut dyn open_sdbl_db::MetadataProgress, file: &str, error: &DbError) {
+    if let DbError::Metadata(error) = error {
+        progress.skipped_config(file, error.kind());
+    }
+}
+
 impl Index {
-    pub(crate) async fn acquire(session: &mut DatabaseSession) -> Result<Self, DbError> {
+    pub(crate) async fn acquire(
+        session: &mut DatabaseSession,
+        progress: &mut dyn open_sdbl_db::MetadataProgress,
+    ) -> Result<Self, DbError> {
         let names = Names::new(session.configuration_resource_names().await?);
         let versions = if let Some(file) = names.0.get("versions") {
             Some(read_one(session, file).await?)
@@ -268,9 +277,10 @@ impl Index {
             None
         };
         let root = read_one(session, "root").await?;
-        let id = descriptor(&root)?;
+        let id = descriptor(&root).inspect_err(|error| report_skipped(progress, "root", error))?;
         let descriptor = read_one(session, names.resource(&id, "").unwrap_or(id.as_str())).await?;
-        let configuration = decoded(&descriptor)?;
+        let configuration = decoded(&descriptor)
+            .inspect_err(|error| report_skipped(progress, &descriptor.file_name, error))?;
         let objects = root_objects(&configuration)
             .ok_or_else(|| invalid("invalid configuration object catalog"))?;
 
@@ -290,9 +300,12 @@ impl Index {
                 .map(|r| (r.file_name.as_str(), r))
                 .collect::<HashMap<_, _>>();
             for (class, id, file) in present {
-                index.incomplete |= index
-                    .add_owner(class, id, resources[file], &names, &mut children)
-                    .is_err();
+                if let Err(error) =
+                    index.add_owner(class, id, resources[file], &names, &mut children)
+                {
+                    index.incomplete = true;
+                    report_skipped(progress, file, &error);
+                }
             }
         }
         for batch in children.chunks(64) {
@@ -313,9 +326,10 @@ impl Index {
                 .map(|r| (r.file_name.as_str(), r))
                 .collect::<HashMap<_, _>>();
             for (owner, kind, id, file) in present {
-                index.incomplete |= index
-                    .add_child(owner, *kind, id, resources[file], &names)
-                    .is_err();
+                if let Err(error) = index.add_child(owner, *kind, id, resources[file], &names) {
+                    index.incomplete = true;
+                    report_skipped(progress, file, &error);
+                }
             }
         }
         if let Some(versions) = versions

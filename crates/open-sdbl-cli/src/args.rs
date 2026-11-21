@@ -1,44 +1,54 @@
 use std::env;
-use std::io::Write;
 
 use open_sdbl::query::MsSqlDialectLevel;
 use open_sdbl_db::{
-    ConnectionOptions, DatabaseConnection, MsSqlConnection, PostgresConnection, PostgresSslMode,
-    parse_socks5_proxy,
+    ConnectionOptions, DatabaseConnection, MsSqlConnection, MsSqlTransportSecurity,
+    PostgresConnection, PostgresSslMode, parse_socks5_proxy,
 };
 
 use crate::error::CliError;
 
-pub(crate) const HELP: &str = "open-sdbl — tooling for the 1C query language\n\n\
-Usage:\n  open-sdbl lex [FILE|-]\n  open-sdbl metadata postgres --host HOST --database DB --user USER [OPTIONS]\n  open-sdbl console postgres --host HOST --database DB --user USER [OPTIONS]\n  open-sdbl metadata mssql --host HOST --database DB --user USER [OPTIONS]\n  open-sdbl console mssql --host HOST --database DB --user USER [OPTIONS]\n  open-sdbl serve postgres|mssql --host HOST --database DB --user USER [OPTIONS] [SERVE OPTIONS]\n  open-sdbl serve --config PATH\n  open-sdbl console --config PATH\n  open-sdbl metadata --config PATH\n  open-sdbl --help\n\n\
-Commands:\n  lex       Print lexical tokens; reads standard input when FILE is '-' or omitted\n  metadata  Read and resolve 1C information-base metadata\n  console   Run 1C queries and inspect resolved metadata interactively\n  serve     Accept SDBL from libpq clients (psql, JDBC, DBeaver) over the PostgreSQL protocol\n\n\
-PostgreSQL options:\n  --port PORT                 PostgreSQL port (default: 5432)\n  --sslmode MODE              disable, require, verify-ca, or verify-full (default)\n  --trust-ca-file PATH        Trust only certificates signed by this private CA\n  --insecure-plaintext        Required explicit opt-in for --sslmode disable\n  --socks5-proxy HOST:PORT    Route through a SOCKS5 proxy\n  --socks5-user USER          Authenticate to SOCKS5 using SOCKS5_PASSWORD\n\n\
-MSSQL options:\n  --port PORT                 SQL Server port (default: 1433)\n  --socks5-proxy HOST:PORT    Route through a SOCKS5 proxy\n  --socks5-user USER          Authenticate to SOCKS5 using SOCKS5_PASSWORD\n  --trust-server-certificate  Accept any TLS certificate (unsafe; development only)\n  --trust-ca-file PATH        Trust a specific PEM, CRT, or DER certificate\n  --mssql-dialect LEVEL       2008 or 2012; default is detected from the server version\n\n\
-Serve options:\n  --listen ADDR:PORT          Listen address (default: 127.0.0.1:5433)\n  --catalog-memory-limit-mib N  Per-query catalog allocation budget in MiB (default: 64)\n  --tls-cert PATH             PEM certificate chain; required with --tls-key for a non-loopback address\n  --tls-key PATH              PEM private key\n  --session-param NAME=LIT    Bind a session parameter for every client (repeatable; SDBL literal)\n  --allow-insecure-loopback   Accept passwords without TLS from loopback clients\n  --allow-insecure-network    Accept passwords without TLS from any client\n  --verbose-errors            Send database error messages to clients as details\n  --disable-rls-check         Bypass role, object, field and row restrictions after authentication\n  --debug-authentication      Log server-side authentication failure reasons\n  --debug-authentication-secrets  Log supplied passwords and stored hashes on failure\n  Clients log in as information-base users; SIGHUP re-reads metadata and rights\n\n\
-Authentication:\n  PostgreSQL: PGPASSWORD, PGPASSFILE, or $HOME/.pgpass\n  MSSQL: MSSQL_PASSWORD\n  SOCKS5: SOCKS5_PASSWORD (when --socks5-user is present)\n  Password environment variables are consumed and removed; password flags are unsupported\n\n\
-Read-only behavior:\n  PostgreSQL queries run in verified READ ONLY, READ COMMITTED transactions\n  MSSQL reads run inside a transaction that is rolled back; a read-only login is recommended\n";
+pub(crate) const INSECURE_MSSQL_CERTIFICATE_WARNING: &str = "MSSQL TLS encrypts traffic; the certificate and hostname are unverified. Prefer --trust-ca-file.";
 
-pub(crate) const INSECURE_MSSQL_CERTIFICATE_WARNING: &str = "warning: --trust-server-certificate disables MSSQL certificate and hostname verification; prefer --trust-ca-file";
+#[derive(Debug)]
+pub(crate) struct BackingDatabase {
+    pub(crate) connection: DatabaseConnection,
+    pub(crate) mssql_transport: MsSqlTransportSecurity,
+}
+
+impl BackingDatabase {
+    pub(crate) fn transport_warning(&self) -> Option<&'static str> {
+        match &self.connection {
+            DatabaseConnection::Postgres(connection) => match connection.sslmode {
+                PostgresSslMode::Disable => Some("no TLS for the backing PostgreSQL connection"),
+                PostgresSslMode::Require => Some(
+                    "PostgreSQL TLS encrypts traffic; the certificate and hostname are unverified",
+                ),
+                _ => None,
+            },
+            DatabaseConnection::MsSql(_)
+                if self.mssql_transport == MsSqlTransportSecurity::Plaintext =>
+            {
+                Some("no TLS for the backing MSSQL connection")
+            }
+            DatabaseConnection::MsSql(connection) if connection.trust_server_certificate => {
+                Some(INSECURE_MSSQL_CERTIFICATE_WARNING)
+            }
+            DatabaseConnection::MsSql(_) => None,
+        }
+    }
+}
 
 pub(crate) fn parse_connection(
     arguments: &mut impl Iterator<Item = String>,
     command: &str,
-    output: &mut impl Write,
-) -> Result<Option<DatabaseConnection>, CliError> {
+) -> Result<BackingDatabase, CliError> {
     let Some(provider) = arguments.next() else {
-        return Err(CliError::Usage(format!(
-            "missing {command} provider\n\n{HELP}"
-        )));
+        return Err(CliError::Usage(format!("missing {command} provider")));
     };
-    if matches!(provider.as_str(), "-h" | "--help") {
-        output
-            .write_all(HELP.as_bytes())
-            .map_err(CliError::standard_output)?;
-        return Ok(None);
-    }
     if !matches!(provider.as_str(), "postgres" | "mssql") {
         return Err(CliError::Usage(format!(
-            "unsupported {command} provider {provider:?}\n\n{HELP}"
+            "unsupported {command} provider {provider:?}"
         )));
     }
 
@@ -53,6 +63,7 @@ pub(crate) fn parse_connection(
     let mut trust_ca_file = None;
     let mut mssql_dialect = None;
     let mut postgres_sslmode = None;
+    let mut tls_mode = None;
     let mut insecure_plaintext = false;
     let mut socks5_user = None;
     while let Some(argument) = arguments.next() {
@@ -61,20 +72,13 @@ pub(crate) fn parse_connection(
             .map_or((argument.as_str(), None), |(option, value)| {
                 (option, Some(value.to_owned()))
             });
-        if matches!(option, "-h" | "--help") {
-            output
-                .write_all(HELP.as_bytes())
-                .map_err(CliError::standard_output)?;
-            return Ok(None);
-        }
         if option == "--trust-server-certificate" {
             reject_inline_flag_value(option, inline_value.as_deref())?;
             if provider != "mssql" {
                 return Err(CliError::Usage(format!(
-                    "unknown {command} option {option:?}\n\n{HELP}"
+                    "unknown {command} option {option:?}"
                 )));
             }
-            eprintln!("{INSECURE_MSSQL_CERTIFICATE_WARNING}");
             trust_server_certificate = true;
             continue;
         }
@@ -82,11 +86,28 @@ pub(crate) fn parse_connection(
             reject_inline_flag_value(option, inline_value.as_deref())?;
             if provider != "postgres" {
                 return Err(CliError::Usage(format!(
-                    "unknown {command} option {option:?}\n\n{HELP}"
+                    "unknown {command} option {option:?}"
                 )));
             }
             insecure_plaintext = true;
             continue;
+        }
+        if !matches!(
+            option,
+            "--host"
+                | "--database"
+                | "--user"
+                | "--port"
+                | "--socks5-proxy"
+                | "--socks5-user"
+                | "--trust-ca-file"
+                | "--tls-mode"
+        ) && !(option == "--sslmode" && provider == "postgres")
+            && !(option == "--mssql-dialect" && provider == "mssql")
+        {
+            return Err(CliError::Usage(format!(
+                "unknown {command} option {option:?}"
+            )));
         }
         let value = option_value(arguments, option, inline_value)?;
         match option {
@@ -94,63 +115,95 @@ pub(crate) fn parse_connection(
             "--database" => options.database = value,
             "--user" => options.user = value,
             "--port" => {
-                options.port = value.parse().map_err(|_| {
-                    CliError::Usage(format!("invalid {provider} port {value:?}\n\n{HELP}"))
-                })?;
+                options.port = value
+                    .parse()
+                    .map_err(|_| CliError::Usage(format!("invalid {provider} port {value:?}")))?;
             }
             "--socks5-proxy" => {
                 options.socks5_proxy = Some(parse_socks5_proxy(&value).map_err(|reason| {
-                    CliError::Usage(format!(
-                        "invalid SOCKS5 proxy {value:?}: {reason}\n\n{HELP}"
-                    ))
+                    CliError::Usage(format!("invalid SOCKS5 proxy: {reason}"))
                 })?);
             }
             "--socks5-user" => socks5_user = Some(value),
+            "--tls-mode" => {
+                let mode = parse_postgres_sslmode(&value).map_err(|reason| {
+                    CliError::Usage(format!("invalid --tls-mode {value:?}: {reason}"))
+                })?;
+                if tls_mode.is_some_and(|previous| previous != mode) {
+                    return Err(CliError::Usage("conflicting --tls-mode values".into()));
+                }
+                tls_mode = Some(mode);
+            }
             "--sslmode" if provider == "postgres" => {
                 postgres_sslmode = Some(parse_postgres_sslmode(&value).map_err(|reason| {
-                    CliError::Usage(format!(
-                        "invalid PostgreSQL sslmode {value:?}: {reason}\n\n{HELP}"
-                    ))
+                    CliError::Usage(format!("invalid PostgreSQL sslmode {value:?}: {reason}"))
                 })?);
             }
             "--trust-ca-file" => trust_ca_file = Some(value),
             "--mssql-dialect" if provider == "mssql" => {
                 mssql_dialect = Some(MsSqlDialectLevel::parse(&value).ok_or_else(|| {
                     CliError::Usage(format!(
-                        "invalid MSSQL dialect level {value:?}: expected 2008 or 2012\n\n{HELP}"
+                        "invalid MSSQL dialect level {value:?}: expected 2008 or 2012"
                     ))
                 })?);
             }
             _ => {
                 return Err(CliError::Usage(format!(
-                    "unknown {command} option {option:?}\n\n{HELP}"
+                    "unknown {command} option {option:?}"
                 )));
             }
         }
     }
-    if options.host.is_empty() || options.database.is_empty() || options.user.is_empty() {
+    let missing: Vec<_> = [
+        ("--host", &options.host),
+        ("--database", &options.database),
+        ("--user", &options.user),
+    ]
+    .into_iter()
+    .filter_map(|(name, value)| value.is_empty().then_some(name))
+    .collect();
+    if !missing.is_empty() {
         return Err(CliError::Usage(format!(
-            "--host, --database, and --user are required\n\n{HELP}"
+            "missing required options {}",
+            missing.join(", ")
         )));
     }
     if socks5_user.is_some() && options.socks5_proxy.is_none() {
-        return Err(CliError::Usage(format!(
-            "--socks5-user requires --socks5-proxy\n\n{HELP}"
-        )));
+        return Err(CliError::Usage(
+            "--socks5-user requires --socks5-proxy".to_owned(),
+        ));
     }
     if let Some(proxy) = options.socks5_proxy.as_mut() {
         proxy.username = socks5_user;
     }
 
-    Ok(Some(if provider == "postgres" {
-        let sslmode = resolve_postgres_sslmode(postgres_sslmode)?;
-        if sslmode == PostgresSslMode::Disable && !insecure_plaintext {
+    if tls_mode.is_some()
+        && (postgres_sslmode.is_some() || insecure_plaintext || trust_server_certificate)
+    {
+        return Err(CliError::Usage(
+            "--tls-mode cannot be combined with legacy TLS flags".into(),
+        ));
+    }
+    if trust_ca_file.is_some()
+        && matches!(
+            tls_mode,
+            Some(PostgresSslMode::Disable | PostgresSslMode::Require)
+        )
+    {
+        return Err(CliError::Usage(
+            "--trust-ca-file requires a verifying --tls-mode".into(),
+        ));
+    }
+    let mut mssql_transport = MsSqlTransportSecurity::Tls;
+    let connection = if provider == "postgres" {
+        let sslmode = resolve_postgres_sslmode(tls_mode.or(postgres_sslmode))?;
+        if sslmode == PostgresSslMode::Disable && !insecure_plaintext && tls_mode.is_none() {
             return Err(CliError::PostgresPlaintextOptInRequired);
         }
         if sslmode != PostgresSslMode::Disable && insecure_plaintext {
-            return Err(CliError::Usage(format!(
-                "--insecure-plaintext is valid only with --sslmode disable\n\n{HELP}"
-            )));
+            return Err(CliError::Usage(
+                "--insecure-plaintext is valid only with --sslmode disable".to_owned(),
+            ));
         }
         if trust_ca_file.is_some()
             && !matches!(
@@ -158,9 +211,9 @@ pub(crate) fn parse_connection(
                 PostgresSslMode::VerifyCa | PostgresSslMode::VerifyFull
             )
         {
-            return Err(CliError::Usage(format!(
-                "--trust-ca-file requires PostgreSQL --sslmode verify-ca or verify-full\n\n{HELP}"
-            )));
+            return Err(CliError::Usage(
+                "--trust-ca-file requires PostgreSQL --sslmode verify-ca or verify-full".to_owned(),
+            ));
         }
         DatabaseConnection::Postgres(PostgresConnection {
             options,
@@ -168,10 +221,20 @@ pub(crate) fn parse_connection(
             trust_ca_file,
         })
     } else {
+        match tls_mode {
+            Some(PostgresSslMode::Disable) => mssql_transport = MsSqlTransportSecurity::Plaintext,
+            Some(PostgresSslMode::Require) => trust_server_certificate = true,
+            Some(PostgresSslMode::VerifyCa) => {
+                return Err(CliError::Usage(
+                    "MSSQL does not support --tls-mode verify-ca".into(),
+                ));
+            }
+            _ => {}
+        }
         if trust_server_certificate && trust_ca_file.is_some() {
-            return Err(CliError::Usage(format!(
-                "--trust-server-certificate and --trust-ca-file are mutually exclusive\n\n{HELP}"
-            )));
+            return Err(CliError::Usage(
+                "--trust-server-certificate and --trust-ca-file are mutually exclusive".to_owned(),
+            ));
         }
         DatabaseConnection::MsSql(MsSqlConnection {
             options,
@@ -179,13 +242,17 @@ pub(crate) fn parse_connection(
             trust_ca_file,
             dialect_level: mssql_dialect,
         })
-    }))
+    };
+    Ok(BackingDatabase {
+        connection,
+        mssql_transport,
+    })
 }
 
 fn reject_inline_flag_value(option: &str, inline: Option<&str>) -> Result<(), CliError> {
     if inline.is_some() {
         Err(CliError::Usage(format!(
-            "option {option:?} does not take a value\n\n{HELP}"
+            "option {option:?} does not take a value"
         )))
     } else {
         Ok(())
@@ -199,10 +266,10 @@ fn option_value(
 ) -> Result<String, CliError> {
     let value = inline
         .or_else(|| arguments.next())
-        .ok_or_else(|| CliError::Usage(format!("missing value for {option:?}\n\n{HELP}")))?;
+        .ok_or_else(|| CliError::Usage(format!("missing value for {option:?}")))?;
     if value.is_empty() || value.starts_with('-') {
         return Err(CliError::Usage(format!(
-            "invalid option-like or empty value {value:?} for {option:?}\n\n{HELP}"
+            "invalid option-like or empty value {value:?} for {option:?}"
         )));
     }
     Ok(value)
@@ -226,16 +293,14 @@ fn resolve_postgres_sslmode(
             Ok(value) => Some(value),
             Err(env::VarError::NotPresent) => None,
             Err(env::VarError::NotUnicode(_)) => {
-                return Err(CliError::Usage(format!(
-                    "PGSSLMODE is not valid UTF-8\n\n{HELP}"
-                )));
+                return Err(CliError::Usage("PGSSLMODE is not valid UTF-8".to_owned()));
             }
         }
     } else {
         None
     };
     select_postgres_sslmode(explicit, environment.as_deref())
-        .map_err(|reason| CliError::Usage(format!("invalid PGSSLMODE: {reason}\n\n{HELP}")))
+        .map_err(|reason| CliError::Usage(format!("invalid PGSSLMODE: {reason}")))
 }
 
 pub(crate) fn select_postgres_sslmode(

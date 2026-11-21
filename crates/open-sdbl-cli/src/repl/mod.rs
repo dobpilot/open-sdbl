@@ -4,7 +4,7 @@
 //! carries the loop that ties them together.
 
 use std::collections::HashMap;
-use std::io::{self, IsTerminal, Write};
+use std::io::Write;
 use std::time::{Duration, Instant};
 
 use open_sdbl::metadata::MetadataSnapshot;
@@ -32,6 +32,7 @@ mod meta;
 mod prepare;
 mod presentation;
 mod render;
+pub(crate) mod startup;
 mod terminal;
 
 use completion::*;
@@ -274,7 +275,7 @@ pub(super) fn add_history(editor: &mut Option<ConsoleEditor>, entry: &str) {
     }
 }
 
-fn terminal_error(context: &str, error: ReadlineError) -> CliError {
+fn terminal_error(context: &str, error: impl std::fmt::Display) -> CliError {
     CliError::Terminal(format!("{context}: {error}"))
 }
 
@@ -331,21 +332,61 @@ fn format_query_diagnostic(
     }
 }
 
-pub(super) async fn run(
-    session: &mut DatabaseSession,
-    mut snapshot: MetadataSnapshot,
-    output: &mut impl Write,
-) -> Result<(), CliError> {
-    let interactive = io::stdin().is_terminal();
-    let _terminal_guard = TerminalUtf8Guard::enable(interactive)?;
-    let mut editor = if interactive {
+pub(crate) struct Prepared {
+    snapshot: MetadataSnapshot,
+    editor: Option<ConsoleEditor>,
+    access: AccessStore,
+}
+
+impl Prepared {
+    pub(crate) async fn new(
+        snapshot: MetadataSnapshot,
+        interactive: bool,
+    ) -> Result<Self, CliError> {
+        if !interactive {
+            return Ok(Self {
+                access: AccessStore::new(&snapshot),
+                snapshot,
+                editor: None,
+            });
+        }
         let mut editor = ConsoleEditor::new()
             .map_err(|error| terminal_error("cannot initialize console line editor", error))?;
-        editor.set_helper(Some(ConsoleHelper::from_snapshot(&snapshot)));
-        Some(editor)
-    } else {
-        None
-    };
+        // Completion can index a large snapshot. Cancellation must release the
+        // terminal even while that CPU-only work is still running.
+        let (send, receive) = tokio::sync::oneshot::channel();
+        std::thread::Builder::new()
+            .name("console-completion".into())
+            .spawn(move || {
+                let helper = ConsoleHelper::from_snapshot(&snapshot);
+                let access = AccessStore::new(&snapshot);
+                let _ = send.send((snapshot, helper, access));
+            })
+            .map_err(|err| CliError::Io("cannot start console completion indexing".into(), err))?;
+        let (snapshot, helper, access) = receive
+            .await
+            .map_err(|err| terminal_error("cannot prepare console completion", err))?;
+        editor.set_helper(Some(helper));
+        Ok(Self {
+            snapshot,
+            editor: Some(editor),
+            access,
+        })
+    }
+}
+
+pub(super) async fn run(
+    session: &mut DatabaseSession,
+    prepared: Prepared,
+    mut startup_input: Option<StartupInput>,
+    output: &mut impl Write,
+) -> Result<(), CliError> {
+    let Prepared {
+        mut snapshot,
+        mut editor,
+        mut access,
+    } = prepared;
+    let interactive = editor.is_some();
     let mut input = BufReader::new(tokio::io::stdin());
     let mut line = Vec::new();
     let mut statement = String::new();
@@ -353,17 +394,23 @@ pub(super) async fn run(
     let mut parameters = ParameterStore::new();
     let mut session_parameters = ParameterStore::new();
     let mut restrictions = RestrictionStore::new();
-    let mut access = AccessStore::new(&snapshot);
     let mut temporary_tables = TempTablesManager::new();
 
     if interactive {
-        writeln!(output, "open-sdbl 1C query console. Type \\help for help.")
-            .map_err(CliError::standard_output)?;
         if let Some(description) = session.server_description() {
             writeln!(output, "{description}").map_err(CliError::standard_output)?;
         }
+        writeln!(
+            output,
+            "{}\n  \\help for commands\n",
+            crate::terminal::Surface::stdout()
+                .palette
+                .mint("open-sdbl", false)
+        )
+        .map_err(CliError::standard_output)?;
     }
-    let mut footer = PinnedFooter::enable(interactive)?;
+    let mut first_edit = interactive;
+    let mut footer = PinnedFooter::enable(false)?;
     loop {
         output.flush().map_err(CliError::standard_output)?;
         footer.redraw()?;
@@ -374,7 +421,15 @@ pub(super) async fn run(
                 access.current_user().map(|user| user.name.as_str()),
                 statement.is_empty(),
             );
-            match tokio::task::block_in_place(|| editor.readline(&prompt)) {
+            let editing = tokio::task::block_in_place(|| editor.readline(&prompt));
+            if first_edit {
+                drop(startup_input.take());
+                first_edit = false;
+                if editing.is_ok() {
+                    footer = PinnedFooter::enable(crate::terminal::Surface::stdout().tty)?;
+                }
+            }
+            match editing {
                 Ok(value) => {
                     line.extend_from_slice(value.as_bytes());
                     line.push(b'\n');

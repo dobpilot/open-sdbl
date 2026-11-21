@@ -8,7 +8,8 @@ use open_sdbl::password::{PasswordState, SourceProfile};
 use open_sdbl::query::{ParameterValue, QueryParameter, SessionParameters, find_metadata_object};
 use open_sdbl_db::{
     Cell, ConfigResource, Credentials, DatabaseConnection, DatabaseSession, DbError, Limits,
-    QueryCancellation, QueryRows, RowFlow, read_current_user, read_template_parameters,
+    MsSqlTransportSecurity, QueryCancellation, QueryRows, RowFlow, read_current_user,
+    read_template_parameters,
 };
 use zeroize::Zeroizing;
 
@@ -100,13 +101,19 @@ pub(crate) struct DbEngine {
     pub(crate) connection: DatabaseConnection,
     pub(crate) credentials: Credentials,
     pub(crate) limits: Limits,
+    pub(crate) mssql_transport: MsSqlTransportSecurity,
 }
 
 impl Engine for DbEngine {
     type Session = DatabaseSession;
 
     fn open(&self) -> impl Future<Output = Result<Self::Session, DbError>> + Send {
-        DatabaseSession::connect(&self.connection, &self.credentials, self.limits)
+        DatabaseSession::connect_with_transport(
+            &self.connection,
+            &self.credentials,
+            self.limits,
+            self.mssql_transport,
+        )
     }
 
     async fn metadata_resource(&self, name: &str, limit: usize) -> Result<ConfigResource, DbError> {
@@ -115,8 +122,13 @@ impl Engine for DbEngine {
             config_retained_byte_limit: self.limits.config_retained_byte_limit.min(limit),
             ..self.limits
         };
-        let mut session =
-            DatabaseSession::connect(&self.connection, &self.credentials, limits).await?;
+        let mut session = DatabaseSession::connect_with_transport(
+            &self.connection,
+            &self.credentials,
+            limits,
+            self.mssql_transport,
+        )
+        .await?;
         let result = session.configuration_resources(&[name]).await;
         let closed = session.close().await;
         let mut resources = result?;

@@ -7,7 +7,7 @@ use std::sync::{Arc, RwLock};
 use open_sdbl::metadata::{Guid, MetadataSnapshot};
 use open_sdbl_db::{
     AccessStore, Credentials, DatabaseConnection, DatabaseDialect, DatabaseSession, DbError,
-    Limits, MetadataProgress, ensure_rights, ensure_users,
+    Limits, MetadataProgress, MsSqlTransportSecurity, ensure_rights, ensure_users,
 };
 
 /// The metadata, users, rights and complete virtual catalog a gateway serves.
@@ -49,7 +49,15 @@ impl GatewayState {
         limits: Limits,
         progress: &mut dyn MetadataProgress,
     ) -> Result<Self, DbError> {
-        Self::acquire_with_access_mode(connection, credentials, limits, progress, false).await
+        Self::acquire_with_transport(
+            connection,
+            credentials,
+            limits,
+            progress,
+            false,
+            MsSqlTransportSecurity::Tls,
+        )
+        .await
     }
 
     /// Reads metadata and users without loading role rights for unrestricted access.
@@ -63,21 +71,37 @@ impl GatewayState {
         limits: Limits,
         progress: &mut dyn MetadataProgress,
     ) -> Result<Self, DbError> {
-        Self::acquire_with_access_mode(connection, credentials, limits, progress, true).await
+        Self::acquire_with_transport(
+            connection,
+            credentials,
+            limits,
+            progress,
+            true,
+            MsSqlTransportSecurity::Tls,
+        )
+        .await
     }
 
-    async fn acquire_with_access_mode(
+    /// Acquires gateway state with an explicit SQL Server transport policy.
+    pub async fn acquire_with_transport(
         connection: &DatabaseConnection,
         credentials: &Credentials,
         limits: Limits,
         progress: &mut dyn MetadataProgress,
         unrestricted: bool,
+        mssql_transport: MsSqlTransportSecurity,
     ) -> Result<Self, DbError> {
         let database = match connection {
             DatabaseConnection::Postgres(connection) => connection.options.database.clone(),
             DatabaseConnection::MsSql(connection) => connection.options.database.clone(),
         };
-        let mut session = DatabaseSession::connect(connection, credentials, limits).await?;
+        let mut session = DatabaseSession::connect_with_transport(
+            connection,
+            credentials,
+            limits,
+            mssql_transport,
+        )
+        .await?;
         let result = Self::read(&mut session, progress, unrestricted).await;
         let closed = session.close().await;
         let (snapshot, access, dialect, unreadable_roles) = result?;
@@ -87,10 +111,16 @@ impl GatewayState {
             config_retained_byte_limit: limits.config_retained_byte_limit.min(32 * 1024 * 1024),
             ..limits
         };
+        progress.phase("inspection");
         let inspection = tokio::time::timeout(limits.query_timeout, async {
-            let mut session =
-                DatabaseSession::connect(connection, credentials, index_limits).await?;
-            let index = crate::inspection::Index::acquire(&mut session).await;
+            let mut session = DatabaseSession::connect_with_transport(
+                connection,
+                credentials,
+                index_limits,
+                mssql_transport,
+            )
+            .await?;
+            let index = crate::inspection::Index::acquire(&mut session, progress).await;
             let closed = session.close().await;
             let index = index?;
             closed?;
@@ -99,6 +129,7 @@ impl GatewayState {
         .await
         .ok()
         .and_then(Result::ok);
+        progress.phase("gateway catalog");
         tokio::task::spawn_blocking(move || {
             let revision = next_catalog_revision();
             let catalog = crate::catalog::build(&snapshot, dialect, &database, revision);
@@ -121,6 +152,7 @@ impl GatewayState {
         unrestricted: bool,
     ) -> Result<(MetadataSnapshot, AccessStore, DatabaseDialect, usize), DbError> {
         let (snapshot, _report) = session.metadata(progress).await?;
+        progress.phase("users");
         let mut access = AccessStore::new(&snapshot);
         ensure_users(&mut access, session).await?;
         let unreadable = if unrestricted {

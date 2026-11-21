@@ -12,7 +12,7 @@ use open_sdbl::query::MsSqlBackend;
 use tokio::time::timeout;
 
 use crate::cells::{Cell, QueryRows, RowFlow};
-use crate::connection::DatabaseConnection;
+use crate::connection::{DatabaseConnection, MsSqlTransportSecurity};
 use crate::credentials::Credentials;
 use crate::db::mssql::MsSqlSession;
 use crate::db::postgres::PostgresSession;
@@ -37,6 +37,7 @@ pub async fn bounded_database_call<T>(
             operation: label.to_owned(),
             duration,
         })?
+        .map_err(|error| error.with_postgres_operation(label))
 }
 
 /// Runs one database call under the query limit of `limits`.
@@ -83,6 +84,17 @@ impl DatabaseSession {
         credentials: &Credentials,
         limits: Limits,
     ) -> Result<Self, DbError> {
+        Self::connect_with_transport(connection, credentials, limits, MsSqlTransportSecurity::Tls)
+            .await
+    }
+
+    /// Opens the configured database, with an explicit SQL Server transport policy.
+    pub async fn connect_with_transport(
+        connection: &DatabaseConnection,
+        credentials: &Credentials,
+        limits: Limits,
+        mssql_transport: MsSqlTransportSecurity,
+    ) -> Result<Self, DbError> {
         match connection {
             DatabaseConnection::Postgres(connection) => {
                 PostgresSession::connect(connection, credentials, limits)
@@ -90,12 +102,15 @@ impl DatabaseSession {
                     .map(Box::new)
                     .map(Self::Postgres)
             }
-            DatabaseConnection::MsSql(connection) => {
-                MsSqlSession::connect(connection, credentials, limits)
-                    .await
-                    .map(Box::new)
-                    .map(Self::MsSql)
-            }
+            DatabaseConnection::MsSql(connection) => MsSqlSession::connect_with_transport(
+                connection,
+                credentials,
+                limits,
+                mssql_transport,
+            )
+            .await
+            .map(Box::new)
+            .map(Self::MsSql),
         }
     }
 

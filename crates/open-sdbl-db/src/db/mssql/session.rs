@@ -6,14 +6,15 @@ use open_sdbl::metadata::{
     MetadataSnapshot, MsSqlMetadataQueries, ResolutionReport, StorageLayout,
 };
 use open_sdbl::query::{MsSqlBackend, MsSqlDialectLevel};
-use tiberius::{AuthMethod, Client as MsSqlClient, Config as MsSqlConfig};
+use tiberius::{AuthMethod, Client as MsSqlClient, Config as MsSqlConfig, EncryptionLevel};
 use tokio::net::TcpStream;
 use tokio::time::timeout;
 use tokio_util::compat::{Compat, TokioAsyncWriteCompatExt};
 use zeroize::Zeroizing;
 
+use super::transport::Transport;
 use crate::cells::{Cell, QueryRows, RowFlow};
-use crate::connection::MsSqlConnection;
+use crate::connection::{MsSqlConnection, MsSqlTransportSecurity};
 use crate::credentials::Credentials;
 use crate::error::DbError;
 use crate::limits::Limits;
@@ -31,7 +32,7 @@ use crate::session::query_timeout;
 /// The statement that reads the transaction depth of an MSSQL session.
 const MSSQL_TRANSACTION_COUNT: &str = "SELECT CONVERT(int, @@TRANCOUNT)";
 
-type MsSqlTransport = Compat<TcpStream>;
+pub(super) type MsSqlTransport = Compat<Transport>;
 use super::cells::{mssql_row, should_disconnect_after_mssql_error};
 use super::metadata::{
     MsSqlMetadataSource, apply_mssql_cleanup, exactly_one_mssql_row, mssql_rows,
@@ -48,6 +49,7 @@ pub(super) struct MsSqlSecrets {
 pub struct MsSqlSession {
     pub(super) client: Option<MsSqlClient<MsSqlTransport>>,
     pub(super) connection: MsSqlConnection,
+    pub(super) transport_security: MsSqlTransportSecurity,
     pub(super) database: String,
     pub(super) backend: MsSqlBackend,
     /// `SERVERPROPERTY('ProductVersion')` of the connected server.
@@ -68,6 +70,16 @@ impl MsSqlSession {
         credentials: &Credentials,
         limits: Limits,
     ) -> Result<Self, DbError> {
+        Self::connect_with_transport(connection, credentials, limits, MsSqlTransportSecurity::Tls)
+            .await
+    }
+
+    pub(crate) async fn connect_with_transport(
+        connection: &MsSqlConnection,
+        credentials: &Credentials,
+        limits: Limits,
+        transport_security: MsSqlTransportSecurity,
+    ) -> Result<Self, DbError> {
         let secrets = MsSqlSecrets {
             password: credentials.mssql.required("MSSQL_PASSWORD")?,
             socks5_password: socks5_password(
@@ -75,7 +87,7 @@ impl MsSqlSession {
                 &credentials.socks5,
             )?,
         };
-        Self::connect_with_secrets(connection, secrets, limits).await
+        Self::connect_with_secrets(connection, secrets, limits, transport_security).await
     }
 
     fn ensure_transaction_usable(&mut self) -> Result<(), DbError> {
@@ -192,6 +204,7 @@ impl MsSqlSession {
         connection: &MsSqlConnection,
         secrets: MsSqlSecrets,
         limits: Limits,
+        transport_security: MsSqlTransportSecurity,
     ) -> Result<Self, DbError> {
         let options = &connection.options;
         let mut configuration = MsSqlConfig::new();
@@ -204,7 +217,10 @@ impl MsSqlSession {
         ));
         configuration.application_name("open-sdbl");
         configuration.readonly(true);
-        if connection.trust_server_certificate {
+        let plaintext = transport_security == MsSqlTransportSecurity::Plaintext;
+        if plaintext {
+            configuration.encryption(EncryptionLevel::NotSupported);
+        } else if connection.trust_server_certificate {
             configuration.trust_cert();
         } else if let Some(path) = &connection.trust_ca_file {
             configuration.trust_cert_ca(path);
@@ -240,7 +256,10 @@ impl MsSqlSession {
         })?;
         let client = timeout(
             limits.connection_timeout,
-            MsSqlClient::connect(configuration, stream.compat_write()),
+            MsSqlClient::connect(
+                configuration,
+                Transport::new(stream, plaintext).compat_write(),
+            ),
         )
         .await
         .map_err(|_| {
@@ -253,6 +272,7 @@ impl MsSqlSession {
         let mut session = Self {
             client: Some(client),
             connection: connection.clone(),
+            transport_security,
             database: options.database.clone(),
             backend: MsSqlBackend::default(),
             product_version: String::new(),
@@ -708,8 +728,13 @@ impl MsSqlSession {
         // protocol messages. Do not send cleanup commands on that connection.
         self.poison_and_drop();
         let connection = self.connection.clone();
-        let replacement =
-            Self::connect_with_secrets(&connection, self.secrets.clone(), self.limits).await?;
+        let replacement = Self::connect_with_secrets(
+            &connection,
+            self.secrets.clone(),
+            self.limits,
+            self.transport_security,
+        )
+        .await?;
         *self = replacement;
         Ok(())
     }

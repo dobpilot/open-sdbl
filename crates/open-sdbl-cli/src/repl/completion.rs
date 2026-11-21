@@ -443,7 +443,13 @@ impl Highlighter for ConsoleHelper {
         prompt: &'prompt str,
         _default: bool,
     ) -> Cow<'buffer, str> {
-        Cow::Owned(format!("\x1b[1;32m{prompt}\x1b[0m"))
+        let palette = crate::terminal::Surface::stdout().palette;
+        if !prompt.starts_with("open-sdbl")
+            && let Some(user) = prompt.strip_suffix("=> ")
+        {
+            return Cow::Owned(format!("{user}{}", palette.mint("=> ", false)));
+        }
+        Cow::Owned(palette.mint(prompt, false))
     }
 
     fn highlight_char(

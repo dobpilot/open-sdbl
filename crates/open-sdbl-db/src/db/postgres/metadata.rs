@@ -359,6 +359,7 @@ impl MetadataSource for PostgresMetadataSource<'_> {
             limits.config_decode_batch_size,
             ConfigDecodeLimits::default(),
             limits.query_timeout,
+            progress,
         )
         .await?;
         Ok((metadata, resources))

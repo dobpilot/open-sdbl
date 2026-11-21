@@ -132,11 +132,7 @@ session_params = ["X=1"]
     let (options, rest) = split_serve_options(args).unwrap();
     assert!(options.allow_insecure_loopback);
     assert_eq!(options.session_parameters, vec![("X".into(), "1".into())]);
-    assert!(
-        crate::args::parse_connection(&mut rest.into_iter(), "serve", &mut Vec::new())
-            .unwrap()
-            .is_some()
-    );
+    assert!(crate::args::parse_connection(&mut rest.into_iter(), "serve").is_ok());
     assert!(
         crate::config::config_arguments("provider = 'postgres'\npassword = 'secret'", true)
             .is_err()
@@ -164,11 +160,7 @@ allow_insecure_network = true
     .unwrap();
     let (options, rest) = split_serve_options(args).unwrap();
     assert!(options.allow_insecure_network);
-    assert!(
-        crate::args::parse_connection(&mut rest.into_iter(), "serve", &mut Vec::new())
-            .unwrap()
-            .is_some()
-    );
+    assert!(crate::args::parse_connection(&mut rest.into_iter(), "serve").is_ok());
 }
 
 #[test]

@@ -7,14 +7,17 @@ use std::env;
 use std::io::Write;
 
 use open_sdbl::tokenize;
-use open_sdbl_db::{Credentials, DatabaseSession, Limits};
+use open_sdbl_db::{Credentials, DatabaseSession, Limits, MetadataProgress as _};
 
-use crate::args::{HELP, parse_connection};
+use crate::args::parse_connection;
 use crate::auth::pgpass::resolve_credentials;
 use crate::config::expand_config;
 use crate::error::CliError;
-use crate::output::{escape_field, lex, print_resolution_report, print_snapshot, read_lex_source};
-use crate::progress::MetadataProgress;
+use crate::help::Scope;
+use crate::output::{
+    lex, print_resolution_report, print_snapshot, read_lex_source, resolution_warnings,
+};
+use crate::progress::{MetadataProgress, log, observe};
 use crate::repl;
 
 #[cfg(test)]
@@ -27,27 +30,38 @@ pub(crate) async fn run(
 ) -> Result<(), CliError> {
     let mut arguments = env::args().skip(1);
     let Some(command) = arguments.next() else {
-        output
-            .write_all(HELP.as_bytes())
-            .map_err(CliError::standard_output)?;
-        return Ok(());
+        return Scope::default().write(output);
     };
-
-    match command.as_str() {
-        "-h" | "--help" => {
-            output
-                .write_all(HELP.as_bytes())
-                .map_err(CliError::standard_output)?;
-            Ok(())
+    let command = match command.as_str() {
+        "-h" | "--help" => return Scope::default().write(output),
+        "lex" => "lex",
+        "metadata" => "metadata",
+        "console" => "console",
+        "repl" => "repl",
+        "serve" => "serve",
+        unknown => {
+            return Err(CliError::Usage(format!("unknown command {unknown:?}"))
+                .with_scope(Scope::default()));
         }
+    };
+    let arguments: Vec<_> = arguments.collect();
+    let scope = Scope::new(command, arguments.first().map(String::as_str));
+    if arguments
+        .iter()
+        .any(|arg| matches!(arg.as_str(), "-h" | "--help"))
+    {
+        return scope.write(output);
+    }
+
+    let arguments = arguments.into_iter();
+    let result = match command {
         "lex" => run_lex(arguments, output),
         "metadata" => metadata(arguments, output, credentials).await,
         "console" | "repl" => console(arguments, output, credentials).await,
-        "serve" => crate::serve::serve(arguments, output, credentials).await,
-        unknown => Err(CliError::Usage(format!(
-            "unknown command {unknown:?}\n\n{HELP}"
-        ))),
-    }
+        "serve" => crate::serve::serve(arguments, credentials).await,
+        _ => unreachable!("validated command"),
+    };
+    result.map_err(|error| error.with_scope(scope))
 }
 
 pub(crate) fn run_lex(
@@ -56,14 +70,11 @@ pub(crate) fn run_lex(
 ) -> Result<(), CliError> {
     let path = arguments.next().unwrap_or_else(|| "-".to_owned());
     if matches!(path.as_str(), "-h" | "--help") {
-        output
-            .write_all(HELP.as_bytes())
-            .map_err(CliError::standard_output)?;
-        return Ok(());
+        return Scope::new("lex", None).write(output);
     }
     if let Some(unexpected) = arguments.next() {
         return Err(CliError::Usage(format!(
-            "unexpected argument {unexpected:?}\n\n{HELP}"
+            "unexpected argument {unexpected:?}"
         )));
     }
     let source = read_lex_source(&path)?;
@@ -77,22 +88,38 @@ pub(crate) async fn metadata(
     credentials: &Credentials,
 ) -> Result<(), CliError> {
     let mut arguments = expand_config(arguments.collect(), false)?.into_iter();
-    let Some(connection) = parse_connection(&mut arguments, "metadata", output)? else {
-        return Ok(());
-    };
+    let backing = parse_connection(&mut arguments, "metadata")?;
+    if let Some(warning) = backing.transport_warning() {
+        log("WARN", warning);
+    }
+    let connection = backing.connection;
 
     let credentials = resolve_credentials(&connection, credentials)?;
-    let mut session =
-        DatabaseSession::connect(&connection, &credentials, Limits::default()).await?;
-    let result = session.metadata(&mut MetadataProgress::new()).await;
-    let close_result = session.close().await;
-    let (snapshot, report) = result?;
+    let mut progress = MetadataProgress::start(false, true);
+    let result = observe(async {
+        let mut session = DatabaseSession::connect_with_transport(
+            &connection,
+            &credentials,
+            Limits::default(),
+            backing.mssql_transport,
+        )
+        .await?;
+        let result = session.metadata(&mut progress).await;
+        let close_result = session.close().await;
+        let (snapshot, report) = result?;
+        Ok::<_, CliError>((snapshot, report, close_result))
+    })
+    .await;
+    progress.outcome(&result);
+    let (snapshot, report, close_result) = result?;
     print_resolution_report(&report);
     print_snapshot(output, &snapshot).map_err(CliError::standard_output)?;
     if let Err(error) = close_result {
-        eprintln!(
-            "warning: metadata was loaded, but the database session did not close cleanly: {}",
-            escape_field(&error.to_string())
+        log(
+            "WARN",
+            format_args!(
+                "metadata was loaded, but the database session did not close cleanly: {error}"
+            ),
         );
     }
     Ok(())
@@ -104,18 +131,36 @@ pub(crate) async fn console(
     credentials: &Credentials,
 ) -> Result<(), CliError> {
     let mut arguments = expand_config(arguments.collect(), false)?.into_iter();
-    let Some(connection) = parse_connection(&mut arguments, "console", output)? else {
-        return Ok(());
-    };
-    let credentials = resolve_credentials(&connection, credentials)?;
-    let mut session =
-        DatabaseSession::connect(&connection, &credentials, Limits::default()).await?;
-    let result = async {
-        let (snapshot, report) = session.metadata(&mut MetadataProgress::new()).await?;
-        print_resolution_report(&report);
-        repl::run(&mut session, snapshot, output).await
+    let backing = parse_connection(&mut arguments, "console")?;
+    let startup = repl::startup::Startup::new();
+    if let Some(warning) = backing.transport_warning() {
+        startup.warn(warning);
     }
-    .await;
+    let connection = backing.connection;
+    let credentials = resolve_credentials(&connection, credentials)?;
+    let _utf8 = startup.utf8_guard()?;
+    let ((mut session, prepared), input) = startup
+        .watch(async {
+            let mut progress = startup.reporter();
+            let mut session = DatabaseSession::connect_with_transport(
+                &connection,
+                &credentials,
+                Limits::default(),
+                backing.mssql_transport,
+            )
+            .await?;
+            // PostgreSQL opens its transaction before entering the shared
+            // acquisition pipeline. Coalesce its later transaction callback.
+            progress.phase("transaction");
+            let (snapshot, report) = session.metadata(&mut progress).await?;
+            resolution_warnings(&report, |message| startup.warn(&message));
+            progress.phase("line editor");
+            let prepared = repl::Prepared::new(snapshot, startup.interactive).await?;
+            Ok((session, prepared))
+        })
+        .await?;
+    drop(startup);
+    let result = repl::run(&mut session, prepared, input, output).await;
     let close_result = session.close().await;
     result?;
     close_result.map_err(CliError::from)

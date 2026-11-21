@@ -60,6 +60,7 @@ type Responder = dyn Fn(&str, usize) -> Result<QueryRows, DbError> + Send + Sync
 #[derive(Default)]
 pub(crate) struct Journal {
     pub(crate) dead: bool,
+    pub(crate) fail_open_once: bool,
     pub(crate) statements: Vec<String>,
     pub(crate) events: Vec<&'static str>,
 }
@@ -84,7 +85,16 @@ impl Engine for FakeEngine {
     type Session = FakeSession;
 
     async fn open(&self) -> Result<Self::Session, DbError> {
-        self.journal.lock().unwrap().events.push("open");
+        {
+            let mut journal = self.journal.lock().unwrap();
+            journal.events.push("open");
+            if std::mem::take(&mut journal.fail_open_once) {
+                return Err(DbError::Io(
+                    "cannot open fixture connection".into(),
+                    std::io::ErrorKind::ConnectionRefused.into(),
+                ));
+            }
+        }
         Ok(FakeSession {
             journal: Arc::clone(&self.journal),
             responder: Arc::clone(&self.responder),

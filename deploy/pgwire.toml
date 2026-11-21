@@ -2,10 +2,12 @@ provider = "postgres"
 host = "localhost"
 database = "infobase"
 user = "reader"
+# Backing database TLS. Omit to use verified TLS by default.
+# tls_mode = "verify-full"
 listen = "127.0.0.1:5433"
 # catalog_memory_limit_mib = 256
 # disable_rls_check = true # все прошедшие аутентификацию получают полный доступ на чтение
-# For local clients without TLS only:
+# Incoming gateway connections from loopback clients without TLS:
 allow_insecure_loopback = true
 # For network access configure both:
 # tls_cert = "/etc/open-sdbl/server.crt"

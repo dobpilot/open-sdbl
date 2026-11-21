@@ -13,11 +13,13 @@ mod args;
 mod auth;
 mod config;
 mod error;
+mod help;
 mod output;
 mod params;
 mod progress;
 mod repl;
 mod serve;
+mod terminal;
 
 use auth::pgpass::take_credentials_from_environment;
 use error::CliError;

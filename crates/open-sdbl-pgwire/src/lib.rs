@@ -78,7 +78,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use open_sdbl::query::SessionParameters;
-use open_sdbl_db::{Credentials, DatabaseConnection, Limits};
+use open_sdbl_db::{Credentials, DatabaseConnection, Limits, MsSqlTransportSecurity};
 use tokio::net::TcpListener;
 use tokio::sync::{Semaphore, watch};
 use tokio::task::JoinSet;
@@ -202,6 +202,13 @@ pub enum GatewayEvent<'a> {
         /// The client's `application_name`.
         application_name: &'a str,
     },
+    /// A client authenticated on an explicitly allowed plaintext transport.
+    PlaintextAuthenticated {
+        /// The client address.
+        peer: Option<SocketAddr>,
+        /// The information-base user.
+        user: &'a str,
+    },
     /// A client failed to authenticate.
     AuthenticationFailed {
         /// The client address.
@@ -303,6 +310,26 @@ pub async fn serve(
     events: Arc<dyn GatewayEvents>,
     shutdown: impl Future<Output = ()>,
 ) -> io::Result<()> {
+    serve_with_transport(
+        listener,
+        config,
+        state,
+        events,
+        shutdown,
+        MsSqlTransportSecurity::Tls,
+    )
+    .await
+}
+
+/// Serves the gateway with an explicit transport policy for backing SQL Server sessions.
+pub async fn serve_with_transport(
+    listener: TcpListener,
+    config: GatewayConfig,
+    state: Arc<StateHandle>,
+    events: Arc<dyn GatewayEvents>,
+    shutdown: impl Future<Output = ()>,
+    mssql_transport: MsSqlTransportSecurity,
+) -> io::Result<()> {
     let elapsed = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default();
@@ -321,6 +348,7 @@ pub async fn serve(
         database_name,
         engine: DbEngine {
             connection: config.connection,
+            mssql_transport,
             credentials: config.credentials,
             limits: config.limits,
         },

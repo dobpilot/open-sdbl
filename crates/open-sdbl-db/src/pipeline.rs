@@ -25,7 +25,8 @@ use tokio::time::timeout;
 
 use crate::error::DbError;
 use crate::limits::Limits;
-use crate::progress::{MetadataProgress, NoProgress};
+use crate::progress::MetadataProgress;
+use std::cell::RefCell;
 
 const CONFIG_MAX_RESOURCE_DECODED_BYTES: usize = 32 * 1024 * 1024;
 const CONFIG_MAX_BATCH_DECODED_BYTES: usize = 64 * 1024 * 1024;
@@ -74,11 +75,12 @@ pub fn decode_catalog_values(rows: Vec<[String; 5]>) -> Result<Vec<LiveTable>, D
 /// Decodes `_ExtensionsRestruct._restructData` blobs into extension metadata.
 ///
 /// One `ExtensionMetadata` is produced per blob that yields recognized fields
-/// or anomalies. A blob that fails to decode is skipped with a stderr warning
+/// or anomalies. A blob that fails to decode produces a warning for the reporter
 /// rather than aborting acquisition; a poisoned extension resource must not
 /// prevent reading the base configuration.
-fn decode_extension_restructures(blobs: Vec<Vec<u8>>) -> Vec<ExtensionMetadata> {
+fn decode_extension_restructures(blobs: Vec<Vec<u8>>) -> (Vec<ExtensionMetadata>, Vec<String>) {
     let mut extensions = Vec::new();
+    let mut warnings = Vec::new();
     for blob in blobs {
         match parse_extension_restructure(&blob) {
             Ok(restructure) => {
@@ -90,11 +92,11 @@ fn decode_extension_restructures(blobs: Vec<Vec<u8>>) -> Vec<ExtensionMetadata> 
                 }
             }
             Err(error) => {
-                eprintln!("warning: skipping malformed extension restructure: {error}");
+                warnings.push(format!("skipping malformed extension restructure: {error}"));
             }
         }
     }
-    extensions
+    (extensions, warnings)
 }
 
 /// What one Config read yields: descriptors, predefined values, criteria
@@ -525,6 +527,7 @@ async fn acquire(
             "DBNames (legacy layout)"
         });
         let db_names = source.read_db_names(&layout).await?;
+        progress.phase("Config");
         let group_extension_resources = !matches!(plan, ConfigPlan::Names);
         let ((descriptors, predefined_values, criteria, roles), config_resources) = match plan {
             ConfigPlan::Names => (source.read_config(&layout, progress).await?, Vec::new()),
@@ -551,11 +554,14 @@ async fn acquire(
         };
         let restructure_blobs = source.read_extension_restructures(&layout).await?;
         if !restructure_blobs.is_empty() {
-            let decoded = run_metadata_blocking("extension restructure", move || {
+            let (decoded, warnings) = run_metadata_blocking("extension restructure", move || {
                 Ok(decode_extension_restructures(restructure_blobs))
             })
             .await?;
             extensions.extend(decoded);
+            for warning in warnings {
+                progress.warning(&warning);
+            }
         }
 
         progress.phase("SchemaStorage");
@@ -579,7 +585,6 @@ async fn acquire(
             Ok(resolved)
         })
         .await?;
-        progress.finish();
         Ok(AcquiredConfiguration {
             metadata: resolved.snapshot,
             report: resolved.report,
@@ -592,7 +597,9 @@ async fn acquire(
 
     match result {
         Ok(acquired) => {
+            progress.phase("commit");
             source.commit_readonly().await?;
+            progress.finish();
             Ok(acquired)
         }
         Err(error) => Err(source.rollback_readonly(error).await),
@@ -907,7 +914,7 @@ struct DecodedConfigBatch {
     criteria: Vec<open_sdbl::metadata::ConfigCriterion>,
     roles: Vec<open_sdbl::metadata::Guid>,
     /// Resources the decoder could not read, with the reason.
-    skipped: Vec<String>,
+    skipped: Vec<(String, MetadataErrorKind)>,
 }
 
 /// Decodes a stream of Config resources in parallel batches.
@@ -988,9 +995,7 @@ where
                                     MetadataErrorKind::Utf8 | MetadataErrorKind::Serialization
                                 ) =>
                             {
-                                result
-                                    .skipped
-                                    .push(format!("{}: {error}", resource.file_name));
+                                result.skipped.push((resource.file_name, error.kind()));
                                 continue;
                             }
                             Err(error) => return Err(error.into()),
@@ -1026,7 +1031,6 @@ where
     let mut predefined_values = Vec::new();
     let mut criteria = Vec::new();
     let mut roles = Vec::new();
-    let mut skipped = Vec::new();
     let mut route_points = Vec::new();
     loop {
         let next =
@@ -1054,20 +1058,10 @@ where
         predefined_values.append(&mut batch.predefined_values);
         criteria.append(&mut batch.criteria);
         roles.append(&mut batch.roles);
-        skipped.append(&mut batch.skipped);
+        for (resource, reason) in batch.skipped {
+            progress.skipped_config(&resource, reason);
+        }
         route_points.append(&mut batch.route_points);
-    }
-    if !skipped.is_empty() {
-        eprintln!(
-            "warning: skipped {} unreadable Config resources: {}",
-            skipped.len(),
-            skipped
-                .iter()
-                .take(3)
-                .cloned()
-                .collect::<Vec<_>>()
-                .join("; ")
-        );
     }
     Ok(finish_config_metadata(
         descriptors,
@@ -1231,6 +1225,7 @@ where
     for resource in &bootstrap {
         progress.advance_config(1, resource.compressed.len());
     }
+    let progress = RefCell::new(progress);
     let decodable = futures_util::stream::iter(bootstrap.into_iter().map(Ok))
         .chain(resources)
         .map(|resource| {
@@ -1250,7 +1245,9 @@ where
                     held_bytes = next_bytes;
                     retained.push(resource.clone());
                 }
-                progress.advance_config(1, resource.compressed.len());
+                progress
+                    .borrow_mut()
+                    .advance_config(1, resource.compressed.len());
             }
             Ok::<_, DbError>(is_config_metadata_resource(&resource.file_name).then_some(resource))
         })
@@ -1260,7 +1257,7 @@ where
         limits.config_decode_batch_size,
         config_pipeline_depth(),
         ConfigDecodeLimits::default(),
-        &mut NoProgress,
+        &mut WarningsOnly(&progress),
         limits.query_timeout,
     )
     .await?;
@@ -1283,6 +1280,14 @@ fn check_selected_retention(limits: Limits, count: usize, bytes: usize) -> Resul
     Ok(())
 }
 
+struct WarningsOnly<'a, 'b>(&'a RefCell<&'b mut dyn MetadataProgress>);
+
+impl MetadataProgress for WarningsOnly<'_, '_> {
+    fn skipped_config(&mut self, resource: &str, reason: MetadataErrorKind) {
+        self.0.borrow_mut().skipped_config(resource, reason);
+    }
+}
+
 /// Decodes the metadata resources out of a whole `Config` table already
 /// read into memory.
 ///
@@ -1296,7 +1301,9 @@ pub async fn decode_retained_config(
     batch_size: usize,
     limits: ConfigDecodeLimits,
     progress_timeout: Duration,
+    progress: &mut dyn MetadataProgress,
 ) -> Result<ConfigMetadata, DbError> {
+    let progress = RefCell::new(progress);
     let decodable = futures_util::stream::iter(
         resources
             .iter()
@@ -1308,7 +1315,7 @@ pub async fn decode_retained_config(
         batch_size,
         config_pipeline_depth(),
         limits,
-        &mut NoProgress,
+        &mut WarningsOnly(&progress),
         progress_timeout,
     )
     .await

@@ -2,18 +2,21 @@
 
 use std::fs;
 
-use crate::args::HELP;
 use crate::error::CliError;
 
 fn usage(message: impl std::fmt::Display) -> CliError {
-    CliError::Usage(format!("{message}\n\n{HELP}"))
+    CliError::Usage(message.to_string())
 }
 
 /// Convert the configuration to the existing command-line representation so
 /// both entry points share all connection and security validation.
 pub(crate) fn config_arguments(text: &str, gateway: bool) -> Result<Vec<String>, CliError> {
-    let table: toml::Table = toml::from_str(text)
-        .map_err(|error| usage(format!("invalid TOML configuration: {error}")))?;
+    let table: toml::Table = toml::from_str(text).map_err(|error| {
+        usage(match error.span() {
+            Some(span) => format!("invalid TOML configuration at byte {}", span.start + 1),
+            None => "invalid TOML configuration".to_owned(),
+        })
+    })?;
     let mut args = vec![
         table
             .get("provider")
@@ -26,8 +29,9 @@ pub(crate) fn config_arguments(text: &str, gateway: bool) -> Result<Vec<String>,
         let option = format!("--{}", key.replace('_', "-"));
         match key.as_str() {
             "provider" => {}
-            "host" | "database" | "user" | "sslmode" | "trust_ca_file" | "socks5_proxy"
-            | "socks5_user" | "mssql_dialect" | "listen" | "tls_cert" | "tls_key" => {
+            "host" | "database" | "user" | "sslmode" | "tls_mode" | "trust_ca_file"
+            | "socks5_proxy" | "socks5_user" | "mssql_dialect" | "listen" | "tls_cert"
+            | "tls_key" => {
                 let value = value
                     .as_str()
                     .ok_or_else(|| usage(format!("{key} must be a string")))?;
@@ -133,11 +137,7 @@ session_params = ["X=1"]
             let args = config_arguments(text, false).unwrap();
             assert!(!args.iter().any(|arg| arg == "--listen"));
             assert!(!args.iter().any(|arg| arg == "--disable-rls-check"));
-            assert!(
-                parse_connection(&mut args.into_iter(), command, &mut Vec::new())
-                    .unwrap()
-                    .is_some()
-            );
+            assert!(parse_connection(&mut args.into_iter(), command).is_ok());
         }
         assert!(config_arguments("provider = 'mssql'\nunknown = true", false).is_err());
         assert!(config_arguments("provider = 'mssql'\ndisable_rls_check = 'yes'", false).is_err());

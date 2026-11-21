@@ -76,3 +76,13 @@ pub struct MsSqlConnection {
     /// Explicit dialect level; `None` means detect it from the server.
     pub dialect_level: Option<MsSqlDialectLevel>,
 }
+
+/// Encryption requirement for SQL Server. Legacy entry points use TLS.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum MsSqlTransportSecurity {
+    /// Require TLS using the connection's verification settings.
+    #[default]
+    Tls,
+    /// Use TDS without TLS, only when the server agrees before authentication.
+    Plaintext,
+}

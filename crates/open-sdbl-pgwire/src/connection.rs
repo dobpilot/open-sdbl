@@ -453,6 +453,12 @@ async fn startup<E: Engine, S: AsyncRead + AsyncWrite + Unpin + Send + 'static>(
         user: &user_name,
         application_name: &application_name,
     });
+    if !encrypted {
+        shared.events.event(GatewayEvent::PlaintextAuthenticated {
+            peer,
+            user: &user_name,
+        });
+    }
     Some(Client {
         shared: Arc::clone(shared),
         io: BufStream::new(transport),

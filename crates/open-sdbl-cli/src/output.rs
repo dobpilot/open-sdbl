@@ -6,30 +6,60 @@ use open_sdbl::metadata::{MetadataSnapshot, ResolutionReport};
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
 use crate::error::CliError;
+use crate::progress::log;
+use crate::terminal::Surface;
 
 pub(crate) const MAX_PRINTED_ROWS: usize = 1_000;
 pub(crate) const MAX_CELL_WIDTH: usize = 256;
 
 pub(crate) fn write_top_level_error(output: &mut impl Write, error: &CliError) -> io::Result<()> {
+    let label = Surface::stderr().palette.label("ERROR");
     match error {
-        CliError::Usage(_) | CliError::PostgresPlaintextOptInRequired => {
-            writeln!(output, "{error}")
+        CliError::Cancelled => writeln!(output, "Cancelled"),
+        CliError::ScopedUsage { message, scope } => {
+            writeln!(output, "{label}  {}", escape_field(message))?;
+            writeln!(output, "Usage  {}", scope.usage())?;
+            writeln!(output, "Help   {} --help", scope.invocation())
         }
-        _ => writeln!(output, "{}", escape_field(&error.to_string())),
+        CliError::PostgresPlaintextOptInRequired => writeln!(output, "{error}"),
+        CliError::Db(error) if matches!(error, open_sdbl_db::DbError::Postgres { .. }) => {
+            let (operation, cause, next) = error.postgres_diagnostic().expect("PostgreSQL error");
+            writeln!(output, "{label}  {} failed", escape_field(operation))?;
+            writeln!(output, "Cause  {}", escape_field(&cause))?;
+            if let Some(next) = next {
+                writeln!(output, "Next   {next}")?;
+            }
+            Ok(())
+        }
+        CliError::Io(operation, cause) => {
+            writeln!(output, "{label}  {}", escape_field(operation))?;
+            writeln!(output, "Cause  {}", escape_field(&cause.to_string()))?;
+            if operation.starts_with("cannot read TLS certificate ") {
+                writeln!(
+                    output,
+                    "Next   Set --tls-cert to a readable PEM certificate chain."
+                )?;
+            }
+            Ok(())
+        }
+        _ => writeln!(output, "{label}  {}", escape_field(&error.to_string())),
     }
 }
 
 pub(crate) fn print_resolution_report(report: &ResolutionReport) {
+    resolution_warnings(report, |message| log("WARN", message));
+}
+
+pub(crate) fn resolution_warnings(report: &ResolutionReport, mut warn: impl FnMut(String)) {
     const MAX_PRINTED_FINDINGS: usize = 100;
     for finding in report.findings().iter().take(MAX_PRINTED_FINDINGS) {
-        eprintln!(
-            "metadata resolution: {}",
-            escape_field(&finding.to_string())
-        );
+        warn(format!("metadata resolution: {finding}"));
     }
     let omitted = report.findings().len().saturating_sub(MAX_PRINTED_FINDINGS);
     if omitted != 0 {
-        eprintln!("metadata resolution: {omitted} additional findings omitted");
+        warn(format!(
+            "metadata resolution: {omitted} additional findings omitted"
+        ));
     }
 }
 

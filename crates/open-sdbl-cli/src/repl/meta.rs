@@ -10,7 +10,7 @@ use open_sdbl_db::DatabaseSession;
 use crate::error::CliError;
 use crate::output::print_resolution_report;
 use crate::params::ParameterStore;
-use crate::progress::MetadataProgress;
+use crate::progress::{MetadataProgress, observe};
 
 use super::*;
 
@@ -48,7 +48,10 @@ pub(super) async fn execute_meta_command(
             Ok(MetaOutcome::Continue)
         }
         "\\refresh" => {
-            let (refreshed, report) = session.metadata(&mut MetadataProgress::new()).await?;
+            let mut progress = MetadataProgress::new();
+            let result = observe(session.metadata(&mut progress)).await;
+            progress.outcome(&result);
+            let (refreshed, report) = result?;
             print_resolution_report(&report);
             *snapshot = refreshed;
             writeln!(output, "Metadata refreshed.").map_err(CliError::standard_output)?;

@@ -19,7 +19,7 @@ fn console_help_accepts_piped_input_without_connecting() {
 
     assert!(output.status.success());
     let stdout = String::from_utf8(output.stdout).unwrap();
-    assert!(stdout.contains("console postgres --host HOST"));
+    assert!(stdout.contains("console <postgres|mssql> --host HOST"));
     assert!(stdout.contains("--socks5-proxy HOST:PORT"));
     assert!(stdout.contains("PGPASSWORD, PGPASSFILE, or $HOME/.pgpass"));
 }
@@ -45,7 +45,7 @@ fn console_validates_provider_and_required_options_before_connecting() {
     assert!(
         String::from_utf8(incomplete.stderr)
             .unwrap()
-            .contains("--host, --database, and --user are required")
+            .contains("missing required options --database, --user")
     );
 }
 
@@ -59,6 +59,6 @@ fn repl_remains_a_compatibility_alias() {
     assert!(
         String::from_utf8(output.stdout)
             .unwrap()
-            .contains("console postgres --host HOST")
+            .contains("repl <postgres|mssql> --host HOST")
     );
 }

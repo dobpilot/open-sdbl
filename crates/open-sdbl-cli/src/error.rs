@@ -5,9 +5,16 @@ use open_sdbl::Diagnostic;
 use open_sdbl::metadata::MetadataError;
 use open_sdbl_db::DbError;
 
+use crate::help::Scope;
+
 #[derive(Debug)]
 pub(crate) enum CliError {
+    Cancelled,
     Usage(String),
+    ScopedUsage {
+        message: String,
+        scope: Scope,
+    },
     Io(String, io::Error),
     Lexical(Diagnostic),
     Metadata(MetadataError),
@@ -21,15 +28,24 @@ pub(crate) enum CliError {
 impl CliError {
     pub(crate) const fn exit_code(&self) -> u8 {
         match self {
+            Self::Cancelled => 130,
             Self::Lexical(_) | Self::Metadata(_) | Self::Data(_) => 1,
             // The database layer reports the same two kinds the flat enum
             // did, so the exit status of a run does not change.
             Self::Db(DbError::Metadata(_) | DbError::Data(_)) => 1,
             Self::Usage(_)
+            | Self::ScopedUsage { .. }
             | Self::Io(_, _)
             | Self::PostgresPlaintextOptInRequired
             | Self::Terminal(_)
             | Self::Db(_) => 2,
+        }
+    }
+
+    pub(crate) fn with_scope(self, scope: Scope) -> Self {
+        match self {
+            Self::Usage(message) => Self::ScopedUsage { message, scope },
+            other => other,
         }
     }
 
@@ -39,7 +55,12 @@ impl CliError {
 
     pub(crate) fn is_broken_pipe(&self) -> bool {
         match self {
-            Self::Io(_, error) | Self::Db(DbError::Io(_, error)) => {
+            Self::Io(operation, error)
+                if matches!(
+                    operation.as_str(),
+                    "cannot write standard output" | "cannot flush standard output"
+                ) =>
+            {
                 error.kind() == io::ErrorKind::BrokenPipe
             }
             _ => false,
@@ -50,7 +71,8 @@ impl CliError {
 impl fmt::Display for CliError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Usage(message) => formatter.write_str(message),
+            Self::Cancelled => formatter.write_str("Cancelled"),
+            Self::Usage(message) | Self::ScopedUsage { message, .. } => formatter.write_str(message),
             Self::Io(context, error) => write!(formatter, "{context}: {error}"),
             Self::Lexical(error) => error.fmt(formatter),
             Self::Metadata(error) => error.fmt(formatter),
@@ -58,7 +80,7 @@ impl fmt::Display for CliError {
             Self::PostgresPlaintextOptInRequired => formatter.write_str(
                 "error[OPEN_SDBL_CLI_PG_PLAINTEXT_OPT_IN_REQUIRED]: plaintext PostgreSQL transport requires explicit confirmation\n\
 cause: --sslmode disable turns off encryption and certificate verification\n\
-help: add --insecure-plaintext to accept plaintext, or remove --sslmode disable to use verify-full\n\
+help: add --insecure-plaintext, use --tls-mode disable, or remove --sslmode disable to use verify-full\n\
 note: --socks5-proxy routes traffic but does not provide PostgreSQL transport security",
             ),
             Self::Data(message) | Self::Terminal(message) => formatter.write_str(message),

@@ -1625,3 +1625,21 @@ async fn report_variant_composes_authorized_attribute_reads_with_native_schema()
     assert_eq!(harness.statements().len(), 11);
     harness.stop();
 }
+
+#[tokio::test]
+async fn a_backing_session_startup_failure_does_not_stop_the_listener() {
+    let harness = Harness::new(Options::default());
+    harness.journal.lock().unwrap().fail_open_once = true;
+    let failure = config()
+        .connect_raw(harness.connect(), NoTls)
+        .await
+        .err()
+        .unwrap();
+    let failure = failure.as_db_error().unwrap();
+    assert_eq!(failure.code(), &SqlState::CONNECTION_FAILURE);
+    assert_eq!(failure.message(), "the gateway cannot reach the database");
+    assert!(failure.detail().is_none());
+
+    let client = connect(&harness).await;
+    assert!(!client.simple_query("SELECT 1").await.unwrap().is_empty());
+}

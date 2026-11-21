@@ -158,6 +158,7 @@ impl MetadataSource for FakeSource {
             8,
             ConfigDecodeLimits::default(),
             Limits::default().query_timeout,
+            progress,
         )
         .await?;
         Ok((metadata, assembled))

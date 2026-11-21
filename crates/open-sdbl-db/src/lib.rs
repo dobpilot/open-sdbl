@@ -72,7 +72,8 @@ pub use access_cache::{TemplateParameters, read_current_user, read_template_para
 pub use blocking::BlockingDatabaseSession;
 pub use cells::{Cell, DateTimeParts, QueryRows, RowFlow};
 pub use connection::{
-    ConnectionOptions, DatabaseConnection, MsSqlConnection, PostgresConnection, PostgresSslMode,
+    ConnectionOptions, DatabaseConnection, MsSqlConnection, MsSqlTransportSecurity,
+    PostgresConnection, PostgresSslMode,
 };
 pub use credentials::{Credentials, EnvironmentSecret};
 pub use db::mssql::{MsSqlSession, decode_mssql_cell, mssql_row};

@@ -6,8 +6,6 @@ use open_sdbl::metadata::{
 };
 use open_sdbl::query::MsSqlBackend;
 use tiberius::Client as MsSqlClient;
-use tokio::net::TcpStream;
-use tokio_util::compat::Compat;
 
 use crate::error::DbError;
 use crate::limits::Limits;
@@ -20,8 +18,8 @@ use crate::pipeline::{
 use crate::progress::{MetadataProgress, NoProgress};
 use crate::session::query_timeout;
 
-type MsSqlTransport = Compat<TcpStream>;
 use super::session::MsSqlSession;
+use super::session::MsSqlTransport;
 
 #[cfg(test)]
 #[path = "../../tests/mssql_live.rs"]
@@ -385,6 +383,7 @@ impl MetadataSource for MsSqlMetadataSource<'_> {
             limits.config_decode_batch_size,
             ConfigDecodeLimits::default(),
             limits.query_timeout,
+            progress,
         )
         .await?;
         Ok((metadata, resources))

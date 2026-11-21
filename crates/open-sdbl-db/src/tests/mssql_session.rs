@@ -83,12 +83,13 @@ async fn scripted_session() -> (MsSqlSession, TcpStream) {
         config.encryption(tiberius::EncryptionLevel::NotSupported);
         config.authentication(AuthMethod::sql_server("test", "test"));
         let socket = TcpStream::connect(address).await.unwrap();
-        MsSqlClient::connect(config, socket.compat_write())
+        MsSqlClient::connect(config, Transport::new(socket, true).compat_write())
             .await
             .unwrap()
     };
     let (client, peer) = tokio::join!(connect, handshake);
     let session = MsSqlSession {
+        transport_security: crate::connection::MsSqlTransportSecurity::Plaintext,
         client: Some(client),
         connection: MsSqlConnection {
             options: ConnectionOptions {
@@ -260,4 +261,60 @@ async fn cancelled_metadata_rollback_disconnects_during_cleanup_and_verification
             assert!(session.client.is_none());
         }
     }).await.unwrap();
+}
+
+#[tokio::test]
+async fn rejected_mssql_prelogin_sends_no_login() {
+    use crate::connection::ConnectionOptions;
+    use tokio::io::AsyncReadExt;
+
+    for (response, diagnostic) in [
+        (
+            &[1, 0, 6, 0, 1, 0xff, 3][..],
+            super::super::transport::ENCRYPTION_REFUSED,
+        ),
+        (
+            &[1, 0, 3, 0, 1, 0xff, 2][..],
+            super::super::transport::INVALID_PRELOGIN,
+        ),
+    ] {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let connection = MsSqlConnection {
+            options: ConnectionOptions {
+                host: address.ip().to_string(),
+                port: address.port(),
+                database: "test".into(),
+                user: "test".into(),
+                socks5_proxy: None,
+            },
+            trust_server_certificate: false,
+            trust_ca_file: None,
+            dialect_level: None,
+        };
+        let credentials = Credentials::new(None, Some("fixture password".into()), None);
+        let peer = async {
+            let (mut peer, _) = listener.accept().await.unwrap();
+            read_tds_packet(&mut peer).await;
+            send_tds_packet(&mut peer, response).await;
+            let mut byte = [0];
+            assert_eq!(
+                timeout(Duration::from_secs(5), peer.read(&mut byte))
+                    .await
+                    .unwrap()
+                    .unwrap(),
+                0
+            );
+        };
+        let (result, ()) = tokio::join!(
+            MsSqlSession::connect_with_transport(
+                &connection,
+                &credentials,
+                Limits::default(),
+                MsSqlTransportSecurity::Plaintext
+            ),
+            peer,
+        );
+        assert!(result.err().unwrap().to_string().contains(diagnostic));
+    }
 }
