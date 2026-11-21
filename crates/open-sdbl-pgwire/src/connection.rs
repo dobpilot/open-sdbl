@@ -30,6 +30,7 @@ use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, BufStream, R
 use tokio::sync::watch;
 
 use crate::cancel::{CancelKey, CancelRegistry};
+use crate::catalog::sql::inspection::{self, BoundArgument, BoundCall, Function};
 use crate::catalog::{self, Catalog};
 use crate::chatter::{self, Chatter};
 use crate::codec::{
@@ -40,7 +41,8 @@ use crate::engine::{Engine, EngineSession, PasswordEvidence};
 use crate::errors::{access_denied, cancelled, database_error, diagnostic_error};
 use crate::state::GatewayState;
 use crate::values::{
-    BindError, WireType, decode_parameter, describe_column, encode_cell, format_of, oid,
+    BindError, WireType, decode_parameter, describe_column, encode_cell, enumeration_target,
+    format_of, oid,
 };
 use crate::{GatewayEvent, Shared};
 
@@ -670,6 +672,8 @@ struct ResultPlan {
     wires: Vec<WireType>,
     binary: Vec<bool>,
     fields: Vec<FieldDescription>,
+    enumeration_columns: HashMap<usize, ObjectId>,
+    enumeration_values: HashMap<(ObjectId, [u8; 16]), String>,
 }
 
 impl ResultPlan {
@@ -677,6 +681,7 @@ impl ResultPlan {
         columns: &[CompiledColumn],
         hidden: &[usize],
         deferred: &[usize],
+        enumeration_columns: HashMap<usize, ObjectId>,
         formats: &[i16],
     ) -> Self {
         let visible = (0..columns.len())
@@ -689,7 +694,7 @@ impl ResultPlan {
             let format = format_of(formats, position);
             let column = &columns[*index];
             let presentation_type = open_sdbl::query::ColumnKind::String { length: None };
-            let kind = if deferred.contains(index) {
+            let kind = if deferred.contains(index) || enumeration_columns.contains_key(index) {
                 &presentation_type
             } else {
                 &column.kind
@@ -705,16 +710,30 @@ impl ResultPlan {
             wires,
             binary,
             fields,
+            enumeration_columns,
+            enumeration_values: HashMap::new(),
         }
     }
 
-    fn of_query(query: &CompiledQuery, formats: &[i16]) -> Self {
+    fn of_query(query: &CompiledQuery, snapshot: &MetadataSnapshot, formats: &[i16]) -> Self {
         let mut hidden = query.service_columns.clone();
         hidden.extend(query.forbidden_row_column);
+        let enumerations = query
+            .columns
+            .iter()
+            .enumerate()
+            .filter(|(index, _)| {
+                !hidden.contains(index) && !query.deferred_presentations.contains(index)
+            })
+            .filter_map(|(index, column)| {
+                enumeration_target(snapshot, &column.kind).map(|object| (index, object))
+            })
+            .collect();
         Self::new(
             &query.columns,
             &hidden,
             &query.deferred_presentations,
+            enumerations,
             formats,
         )
     }
@@ -725,7 +744,24 @@ impl ResultPlan {
             .iter()
             .enumerate()
             .map(|(position, index)| {
-                encode_cell(&cells[*index], self.wires[position], self.binary[position])
+                let cell = &cells[*index];
+                if let Some(object) = self.enumeration_columns.get(index) {
+                    if cell.is_null() {
+                        return None;
+                    }
+                    let text = cell
+                        .as_bytes()
+                        .and_then(|bytes| <[u8; 16]>::try_from(bytes).ok())
+                        .and_then(|bytes| self.enumeration_values.get(&(*object, bytes)))
+                        .cloned()
+                        .unwrap_or_default();
+                    return encode_cell(
+                        &Cell::Text(text),
+                        self.wires[position],
+                        self.binary[position],
+                    );
+                }
+                encode_cell(cell, self.wires[position], self.binary[position])
             })
             .collect::<Vec<_>>();
         let mut out = BackendWriter::new();
@@ -748,6 +784,18 @@ fn text_field(name: &str, format: i16) -> FieldDescription {
         type_modifier: -1,
         format,
     }
+}
+
+fn nullable_text_row(text: Option<&str>) -> Vec<u8> {
+    let mut writer = BackendWriter::new();
+    writer.data_row([text.map(str::as_bytes)]);
+    writer.take()
+}
+
+fn inspection_index(state: &GatewayState) -> Result<&crate::inspection::Index, ErrorFields> {
+    state.inspection().ok_or_else(|| {
+        ErrorFields::error("0A000", "the configuration metadata index is unavailable")
+    })
 }
 
 fn one_text_row(name: &str, value: &str) -> (Vec<FieldDescription>, Vec<Vec<u8>>) {
@@ -788,6 +836,7 @@ struct Statement {
 #[derive(Clone)]
 enum StatementBody {
     Chatter(Chatter),
+    Inspection(inspection::Call),
     Catalog(Box<catalog::sql::Query>),
     Sdbl { parameter_names: Vec<String> },
 }
@@ -802,6 +851,7 @@ enum PortalBody {
         fields: Vec<FieldDescription>,
         rows: VecDeque<Vec<u8>>,
         sent: usize,
+        inspection: Option<BoundCall>,
     },
     Chatter {
         command: Chatter,
@@ -1110,6 +1160,33 @@ impl<E: Engine, S: AsyncRead + AsyncWrite + Unpin + Send + 'static> Client<E, S>
             self.fail(&aborted());
             return Ok(());
         }
+        if let Some(call) = inspection::route(text) {
+            let state = Arc::clone(&self.state);
+            let result = match call.and_then(|call| call.bind(&[])) {
+                Ok(call) => {
+                    let function = call.function;
+                    self.service_rows(&state, call, 0, usize::MAX)
+                        .await
+                        .map(|rows| (function.fields(&[]), rows))
+                }
+                Err(error) => Err(error),
+            };
+            match result {
+                Ok((fields, rows)) => {
+                    self.out.row_description(&fields);
+                    let count = rows.len();
+                    for row in rows {
+                        self.out.raw(&row);
+                        if self.out.len() > 64 * 1024 {
+                            self.flush().await?;
+                        }
+                    }
+                    self.out.command_complete(&format!("SELECT {count}"));
+                }
+                Err(error) => self.fail(&error),
+            }
+            return Ok(());
+        }
         if let Some(query) = catalog::sql::route(text) {
             let result = query.and_then(|query| {
                 let allocation_bytes = self.shared.limits.catalog_allocation_bytes;
@@ -1146,6 +1223,174 @@ impl<E: Engine, S: AsyncRead + AsyncWrite + Unpin + Send + 'static> Client<E, S>
         }
     }
 
+    async fn service_rows(
+        &mut self,
+        state: &GatewayState,
+        call: BoundCall,
+        format: i16,
+        buffer_rows: usize,
+    ) -> Result<Vec<Vec<u8>>, ErrorFields> {
+        let function = call.function;
+        let Some(mut args) = self.service_arguments(state, call).await? else {
+            return Ok(match function {
+                Function::DcsQueries => Vec::new(),
+                _ => vec![nullable_text_row(None)],
+            });
+        };
+        let budget = self.shared.limits.catalog_allocation_bytes;
+        match function {
+            Function::DcsQueries => {
+                let xml = args.remove(0);
+                let mut signal = self.key.signal.clone();
+                signal.mark_unchanged();
+                let rows = tokio::task::spawn_blocking(move || {
+                    crate::inspection::dcs::query_rows(&xml, budget, buffer_rows)
+                })
+                .await
+                .map_err(|_| ErrorFields::error("XX000", "could not parse the DCS XML"))?;
+                if signal.has_changed().unwrap_or(false) {
+                    return Err(cancelled());
+                }
+                rows
+            }
+            Function::Find => {
+                let index = inspection_index(state)?;
+                let rows = index.find(&args[0], budget, buffer_rows)?;
+                if index.incomplete() {
+                    self.out.notice(&ErrorFields {
+                        severity: "NOTICE",
+                        ..ErrorFields::error(
+                            "01000",
+                            "some configuration metadata could not be indexed",
+                        )
+                    });
+                }
+                Ok(rows)
+            }
+            Function::GetObject => {
+                let lookup = crate::object::Lookup::resolve(state.snapshot(), &args[0])?;
+                let (query, rows) = self.read_object(state, lookup).await?;
+                let frame =
+                    crate::object::result_frame(state.snapshot(), &query, &rows, format, budget)?;
+                Ok(vec![frame])
+            }
+            function => {
+                let result = self.service_text(state, function, &args).await?;
+                Ok(vec![nullable_text_row(result.as_deref())])
+            }
+        }
+    }
+
+    async fn service_arguments(
+        &mut self,
+        state: &GatewayState,
+        call: BoundCall,
+    ) -> Result<Option<Vec<String>>, ErrorFields> {
+        let mut args = Vec::with_capacity(call.arguments.len());
+        for argument in call.arguments {
+            let value = match argument {
+                BoundArgument::Text(None) if matches!(call.function, Function::Find) => {
+                    Some(String::new())
+                }
+                BoundArgument::Text(text) => text,
+                BoundArgument::Call(child) => {
+                    let function = child.function;
+                    let Some(arguments) = Box::pin(self.service_arguments(state, child)).await?
+                    else {
+                        return Ok(None);
+                    };
+                    self.service_text(state, function, &arguments).await?
+                }
+            };
+            let Some(value) = value else { return Ok(None) };
+            call.function.check_argument(Some(&value))?;
+            args.push(value);
+        }
+        Ok(Some(args))
+    }
+
+    async fn service_text(
+        &mut self,
+        state: &GatewayState,
+        function: Function,
+        args: &[String],
+    ) -> Result<Option<String>, ErrorFields> {
+        let budget = self.shared.limits.catalog_allocation_bytes;
+        match function {
+            Function::Show => {
+                let source = inspection_index(state)?.source(&args[0])?;
+                let limit = budget
+                    .saturating_sub(64)
+                    .min(crate::inspection::RESOURCE_LIMIT);
+                let mut signal = self.key.signal.clone();
+                signal.mark_unchanged();
+                let canceled =
+                    || ErrorFields::error("57014", "canceling statement due to user request");
+                let resource = tokio::select! {
+                    result = self.shared.engine.metadata_resource(source.file(), limit) =>
+                        result.map_err(|_| ErrorFields::error("58000", "could not read the configuration resource"))?,
+                    _ = signal.changed() => return Err(canceled()),
+                };
+                // Keep one decoding job per connection even when the client cancels.
+                let text = tokio::task::spawn_blocking(move || source.decode(&resource, limit))
+                    .await
+                    .map_err(|_| {
+                        ErrorFields::error("XX000", "could not decode the configuration resource")
+                    })??;
+                if signal.has_changed().unwrap_or(false) {
+                    return Err(canceled());
+                }
+                Ok(Some(text))
+            }
+            Function::MetadataRef => inspection_index(state)?.metadata_ref(&args[0], &args[1]),
+            Function::AttributeText => {
+                let path = crate::object::attribute_path(&args[1])?;
+                let mut link = args[0].clone();
+                let mut segments = path.into_iter().peekable();
+                while let Some(segment) = segments.next() {
+                    let lookup =
+                        crate::object::Lookup::attribute(state.snapshot(), &link, segment)?;
+                    let (query, rows) = self.read_object(state, lookup).await?;
+                    let follow = segments.peek().is_some();
+                    let value = crate::object::attribute_text(
+                        state.snapshot(),
+                        &query,
+                        &rows,
+                        follow,
+                        budget.min(i32::MAX as usize).saturating_sub(11),
+                    )?;
+                    match value {
+                        Some(reference) if follow => link = reference,
+                        value => return Ok(value),
+                    }
+                }
+                Ok(None)
+            }
+            Function::Find | Function::GetObject | Function::DcsQueries => {
+                unreachable!("only scalar text calls can be nested")
+            }
+        }
+    }
+
+    async fn read_object(
+        &mut self,
+        state: &GatewayState,
+        lookup: crate::object::Lookup,
+    ) -> Result<(CompiledQuery, Vec<Vec<Cell>>), ErrorFields> {
+        let compiled = self.compile(
+            state,
+            &lookup.query,
+            &[lookup.reference],
+            &mut TempTablesManager::new(),
+        )?;
+        let query = compiled.query.ok_or_else(|| {
+            ErrorFields::error("XX000", "object lookup did not compile to a query")
+        })?;
+        crate::object::check_projection(&query)?;
+        let rows = self.collect_checked(&query).await?;
+        Ok((query, rows))
+    }
+
     async fn simple_sdbl(&mut self, text: &str) -> Result<(), Failure> {
         let state = Arc::clone(&self.state);
         let mut manager = self.temp.clone();
@@ -1156,7 +1401,7 @@ impl<E: Engine, S: AsyncRead + AsyncWrite + Unpin + Send + 'static> Client<E, S>
         }
         match &compiled.query {
             Some(query) => {
-                let plan = ResultPlan::of_query(query, &[]);
+                let plan = ResultPlan::of_query(query, state.snapshot(), &[]);
                 self.out.row_description(&plan.fields);
                 let execution = self
                     .execute(&state, &compiled.prepared, query, &plan, 0)
@@ -1164,7 +1409,7 @@ impl<E: Engine, S: AsyncRead + AsyncWrite + Unpin + Send + 'static> Client<E, S>
                 self.out
                     .command_complete(&format!("SELECT {}", execution.sent));
                 for nested in &query.nested {
-                    let plan = ResultPlan::new(&nested.columns, &[], &[], &[]);
+                    let plan = ResultPlan::new(&nested.columns, &[], &[], HashMap::new(), &[]);
                     self.out.row_description(&plan.fields);
                     let execution = self.stream(&nested.sql, &plan, 0).await?;
                     self.out
@@ -1352,31 +1597,15 @@ impl<E: Engine, S: AsyncRead + AsyncWrite + Unpin + Send + 'static> Client<E, S>
         plan: &ResultPlan,
         limit: usize,
     ) -> Result<Execution, Failure> {
+        let mut plan = plan.clone();
+        self.load_enumeration_presentations(state, prepared, &mut plan)
+            .await?;
         if query.forbidden_row_column.is_none() && query.deferred_presentations.is_empty() {
-            return self.stream(&query.sql, plan, limit).await;
+            return self.stream(&query.sql, &plan, limit).await;
         }
         // The forbidden-row check and the presentations need every row
         // before the first is sent.
-        let mut rows = self.collect(&query.sql, query.columns.len()).await?;
-        if let Some(column) = query.forbidden_row_column {
-            for row in &rows {
-                match row.get(column) {
-                    Some(Cell::Bool(false)) => {}
-                    Some(Cell::Number(value)) if value.trim() == "0" => {}
-                    Some(Cell::Bool(true) | Cell::Number(_)) => {
-                        return Err(Failure::Client(access_denied(
-                            "permission denied: the statement reads rows the user may not read",
-                        )));
-                    }
-                    _ => {
-                        return Err(Failure::Client(ErrorFields::error(
-                            "XX000",
-                            "the forbidden-row column is missing or not boolean",
-                        )));
-                    }
-                }
-            }
-        }
+        let mut rows = self.collect_checked(query).await?;
         if !query.deferred_presentations.is_empty() {
             self.present(state, prepared, query, &mut rows).await?;
         }
@@ -1398,9 +1627,96 @@ impl<E: Engine, S: AsyncRead + AsyncWrite + Unpin + Send + 'static> Client<E, S>
         Ok(Execution { sent: count, held })
     }
 
-    /// Reads a whole result, within the buffer ceiling.
-    async fn collect(&mut self, sql: &str, columns: usize) -> Result<Vec<Vec<Cell>>, Failure> {
+    /// Resolve the bounded metadata inventory before streaming the main rows.
+    async fn load_enumeration_presentations(
+        &mut self,
+        state: &GatewayState,
+        prepared: &AnyPrepared,
+        result: &mut ResultPlan,
+    ) -> Result<(), Failure> {
+        let snapshot = state.snapshot();
+        let targets = result
+            .enumeration_columns
+            .values()
+            .copied()
+            .collect::<BTreeSet<_>>();
+        for object in targets {
+            let plan = default_presentation_plan(snapshot, object);
+            let open_sdbl::query::PresentationExpression::Enumeration(entries) = &plan.expression
+            else {
+                return Err(Failure::Client(ErrorFields::error(
+                    "XX000",
+                    "enumeration presentation metadata is unavailable",
+                )));
+            };
+            if entries.len() > 4096 {
+                return Err(Failure::Client(ErrorFields::error(
+                    "XX000",
+                    "enumeration presentation exceeds the value limit",
+                )));
+            }
+            let references = entries.iter().map(|(id, _)| *id).collect::<Vec<_>>();
+            let request = RestrictionRequest {
+                targets: vec![RestrictionTarget {
+                    object,
+                    table_part: None,
+                }],
+            };
+            let decisions = self.decisions(state, &request, false)?;
+            for chunk in references.chunks(512) {
+                let lookup = prepared
+                    .compile_presentation_lookup(
+                        snapshot,
+                        &plan,
+                        chunk,
+                        &CompileOptions::new()
+                            .session(&self.parameters)
+                            .decisions(&decisions),
+                    )
+                    .map_err(|diagnostic| {
+                        Failure::Client(ErrorFields::error(
+                            "XX000",
+                            format!(
+                                "cannot compile an enumeration presentation lookup: {diagnostic}"
+                            ),
+                        ))
+                    })?;
+                self.session().await?;
+                let verbose = self.shared.verbose_errors;
+                let db = self.db.as_mut().expect("the session is open");
+                let rows = db
+                    .query(&lookup.sql, lookup.columns.len())
+                    .await
+                    .map_err(|error| Failure::Client(database_error(&error, verbose)))?;
+                for row in rows {
+                    let Some(Ok(reference)) = row
+                        .first()
+                        .and_then(Cell::as_bytes)
+                        .map(<[u8; 16]>::try_from)
+                    else {
+                        continue;
+                    };
+                    let text = row
+                        .get(1)
+                        .and_then(Cell::as_text)
+                        .unwrap_or_default()
+                        .to_owned();
+                    result.enumeration_values.insert((object, reference), text);
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// Reads a whole result, within the buffer ceiling, and validates row rights
+    /// before exposing any values.
+    async fn collect_checked(
+        &mut self,
+        query: &CompiledQuery,
+    ) -> Result<Vec<Vec<Cell>>, ErrorFields> {
         self.session().await?;
+        let sql = &query.sql;
+        let columns = query.columns.len();
         let cap = self.shared.portal_buffer_rows;
         let verbose = self.shared.verbose_errors;
         let db = self.db.as_mut().expect("the session is open");
@@ -1432,12 +1748,32 @@ impl<E: Engine, S: AsyncRead + AsyncWrite + Unpin + Send + 'static> Client<E, S>
         match end {
             QueryEnd::Cancelled => {
                 let _ = db.cancel(cancellation).await;
-                Err(Failure::Client(cancelled()))
+                return Err(cancelled());
             }
-            QueryEnd::Done(Err(error)) => Err(Failure::Client(database_error(&error, verbose))),
-            QueryEnd::Done(Ok(())) if overflow => Err(Failure::Client(too_many_rows(cap))),
-            QueryEnd::Done(Ok(())) => Ok(rows),
+            QueryEnd::Done(Err(error)) => return Err(database_error(&error, verbose)),
+            QueryEnd::Done(Ok(())) if overflow => return Err(too_many_rows(cap)),
+            QueryEnd::Done(Ok(())) => {}
         }
+        if let Some(column) = query.forbidden_row_column {
+            for row in &rows {
+                match row.get(column) {
+                    Some(Cell::Bool(false)) => {}
+                    Some(Cell::Number(value)) if value.trim() == "0" => {}
+                    Some(Cell::Bool(true) | Cell::Number(_)) => {
+                        return Err(access_denied(
+                            "permission denied: the statement reads rows the user may not read",
+                        ));
+                    }
+                    _ => {
+                        return Err(ErrorFields::error(
+                            "XX000",
+                            "the forbidden-row column is missing or not boolean",
+                        ));
+                    }
+                }
+            }
+        }
+        Ok(rows)
     }
 
     /// Streams a result to the client while it is read, sending at most
@@ -1872,7 +2208,9 @@ impl<E: Engine, S: AsyncRead + AsyncWrite + Unpin + Send + 'static> Client<E, S>
                 StatementBody::Chatter(commands.remove(0))
             }
             None => {
-                if let Some(catalog) = catalog::sql::route(&query) {
+                if let Some(call) = inspection::route(&query) {
+                    StatementBody::Inspection(call?)
+                } else if let Some(catalog) = catalog::sql::route(&query) {
                     StatementBody::Catalog(Box::new(catalog?))
                 } else {
                     let state = Arc::clone(&self.state);
@@ -1887,6 +2225,7 @@ impl<E: Engine, S: AsyncRead + AsyncWrite + Unpin + Send + 'static> Client<E, S>
         };
         let expected = match &body {
             StatementBody::Chatter(_) => 0,
+            StatementBody::Inspection(call) => call.parameter_count(),
             StatementBody::Catalog(query) => {
                 catalog::sql::describe(query, self.catalog(), &parameter_types)?
                     .1
@@ -1907,6 +2246,20 @@ impl<E: Engine, S: AsyncRead + AsyncWrite + Unpin + Send + 'static> Client<E, S>
         parameter_types.resize(expected, oid::UNSPECIFIED);
         if let StatementBody::Catalog(query) = &body {
             parameter_types = catalog::sql::describe(query, self.catalog(), &parameter_types)?.1;
+        }
+        if matches!(body, StatementBody::Inspection(_)) {
+            for ty in &mut parameter_types {
+                match *ty {
+                    oid::UNSPECIFIED => *ty = oid::TEXT,
+                    oid::TEXT | oid::VARCHAR => {}
+                    _ => {
+                        return Err(ErrorFields::error(
+                            "42804",
+                            "metadata arguments must be text",
+                        ));
+                    }
+                }
+            }
         }
         self.statements.insert(
             name,
@@ -1951,6 +2304,7 @@ impl<E: Engine, S: AsyncRead + AsyncWrite + Unpin + Send + 'static> Client<E, S>
                     .collect::<Vec<_>>();
                 let fields = match &body {
                     StatementBody::Chatter(command) => chatter_fields(command),
+                    StatementBody::Inspection(call) => Some(call.function.fields(&[])),
                     StatementBody::Catalog(query) => Some(
                         catalog::sql::describe(query, self.catalog(), &types)?
                             .0
@@ -2010,7 +2364,7 @@ impl<E: Engine, S: AsyncRead + AsyncWrite + Unpin + Send + 'static> Client<E, S>
         if !query.nested.is_empty() {
             return None;
         }
-        Some(ResultPlan::of_query(&query, &[]).fields)
+        Some(ResultPlan::of_query(&query, state.snapshot(), &[]).fields)
     }
 
     fn bind(
@@ -2096,6 +2450,23 @@ impl<E: Engine, S: AsyncRead + AsyncWrite + Unpin + Send + 'static> Client<E, S>
                     fields,
                     rows: rows.into(),
                     sent: 0,
+                    inspection: None,
+                }
+            }
+            StatementBody::Inspection(call) => {
+                if result_formats.len() > 1 && result_formats.len() != call.function.columns().len()
+                {
+                    return Err(ErrorFields::error(
+                        "08P01",
+                        "bind message has a wrong number of result formats",
+                    ));
+                }
+                let call = call.bind(parameters)?;
+                PortalBody::Catalog {
+                    fields: call.function.fields(&result_formats),
+                    rows: VecDeque::new(),
+                    sent: 0,
+                    inspection: Some(call),
                 }
             }
             StatementBody::Chatter(command) => PortalBody::Chatter {
@@ -2136,14 +2507,20 @@ impl<E: Engine, S: AsyncRead + AsyncWrite + Unpin + Send + 'static> Client<E, S>
                                 "a projected tabular section needs the simple query protocol",
                             ));
                         }
-                        let visible = ResultPlan::of_query(query, &[]).fields.len();
+                        let visible = ResultPlan::of_query(query, state.snapshot(), &[])
+                            .fields
+                            .len();
                         if result_formats.len() > 1 && result_formats.len() != visible {
                             return Err(ErrorFields::error(
                                 "08P01",
                                 "bind message has a wrong number of result formats",
                             ));
                         }
-                        Some(ResultPlan::of_query(query, &result_formats))
+                        Some(ResultPlan::of_query(
+                            query,
+                            state.snapshot(),
+                            &result_formats,
+                        ))
                     }
                     None => None,
                 };
@@ -2178,7 +2555,28 @@ impl<E: Engine, S: AsyncRead + AsyncWrite + Unpin + Send + 'static> Client<E, S>
         };
         let limit = usize::try_from(max_rows).unwrap_or(usize::MAX);
         let result = match &mut portal.body {
-            PortalBody::Catalog { rows, sent, .. } => {
+            PortalBody::Catalog {
+                fields,
+                rows,
+                sent,
+                inspection,
+            } => {
+                if let Some(call) = inspection.take() {
+                    self.follow_state();
+                    let state = Arc::clone(&self.state);
+                    let buffer_rows = if limit == 0 {
+                        usize::MAX
+                    } else {
+                        self.shared.portal_buffer_rows.saturating_add(limit)
+                    };
+                    match self
+                        .service_rows(&state, call, fields[0].format, buffer_rows)
+                        .await
+                    {
+                        Ok(result) => *rows = result.into(),
+                        Err(error) => return Ok(Err(error)),
+                    }
+                }
                 let count = if limit == 0 {
                     rows.len()
                 } else {

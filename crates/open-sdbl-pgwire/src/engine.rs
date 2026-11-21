@@ -7,8 +7,8 @@ use open_sdbl::metadata::{InfoBaseUser, ObjectId};
 use open_sdbl::password::{PasswordState, SourceProfile};
 use open_sdbl::query::{ParameterValue, QueryParameter, SessionParameters, find_metadata_object};
 use open_sdbl_db::{
-    Cell, Credentials, DatabaseConnection, DatabaseSession, DbError, Limits, QueryCancellation,
-    QueryRows, RowFlow, read_current_user, read_template_parameters,
+    Cell, ConfigResource, Credentials, DatabaseConnection, DatabaseSession, DbError, Limits,
+    QueryCancellation, QueryRows, RowFlow, read_current_user, read_template_parameters,
 };
 use zeroize::Zeroizing;
 
@@ -39,6 +39,12 @@ pub(crate) trait Engine: Send + Sync + 'static {
     type Session: EngineSession;
 
     fn open(&self) -> impl Future<Output = Result<Self::Session, DbError>> + Send;
+
+    fn metadata_resource(
+        &self,
+        name: &str,
+        limit: usize,
+    ) -> impl Future<Output = Result<ConfigResource, DbError>> + Send;
 
     fn password_evidence(&self, user: &InfoBaseUser) -> PasswordEvidence;
 
@@ -101,6 +107,23 @@ impl Engine for DbEngine {
 
     fn open(&self) -> impl Future<Output = Result<Self::Session, DbError>> + Send {
         DatabaseSession::connect(&self.connection, &self.credentials, self.limits)
+    }
+
+    async fn metadata_resource(&self, name: &str, limit: usize) -> Result<ConfigResource, DbError> {
+        let limits = Limits {
+            config_resource_limit: self.limits.config_resource_limit.min(1),
+            config_retained_byte_limit: self.limits.config_retained_byte_limit.min(limit),
+            ..self.limits
+        };
+        let mut session =
+            DatabaseSession::connect(&self.connection, &self.credentials, limits).await?;
+        let result = session.configuration_resources(&[name]).await;
+        let closed = session.close().await;
+        let mut resources = result?;
+        closed?;
+        resources
+            .pop()
+            .ok_or_else(|| DbError::Data("configuration resource was not found".into()))
     }
 
     fn password_evidence(&self, _user: &InfoBaseUser) -> PasswordEvidence {

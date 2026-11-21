@@ -3,6 +3,7 @@ mod decimal;
 mod eval;
 use decimal::Decimal;
 mod func;
+pub(crate) mod inspection;
 mod lex;
 mod parse;
 mod plan;

@@ -1177,7 +1177,7 @@ pub fn check_retention_totals(
 pub async fn collect_bounded_resources<S>(
     resources: S,
     limits: Limits,
-    progress: &mut dyn MetadataProgress,
+    progress: &mut (impl MetadataProgress + ?Sized),
 ) -> Result<Vec<ConfigResource>, DbError>
 where
     S: Stream<Item = Result<ConfigResource, DbError>>,

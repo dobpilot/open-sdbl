@@ -1143,6 +1143,9 @@ pub enum PresentationExpression {
     Literal(String),
     /// Concatenation evaluated by the selected database.
     Concat(Vec<Self>),
+    /// Enumeration value GUIDs in physical 1C byte order and their presentations.
+    /// Every GUID must belong to the plan's enumeration object.
+    Enumeration(Vec<([u8; 16], String)>),
 }
 
 /// Application policy for presenting one reference target type.

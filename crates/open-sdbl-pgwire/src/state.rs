@@ -18,6 +18,7 @@ use open_sdbl_db::{
 /// that statement ends.
 pub struct GatewayState {
     catalog: Arc<crate::catalog::Catalog>,
+    inspection: Option<crate::inspection::Index>,
     snapshot: MetadataSnapshot,
     access: AccessStore,
     dialect: DatabaseDialect,
@@ -81,11 +82,29 @@ impl GatewayState {
         let closed = session.close().await;
         let (snapshot, access, dialect, unreadable_roles) = result?;
         closed?;
+        // An unavailable inspection index must not prevent SDBL service.
+        let index_limits = Limits {
+            config_retained_byte_limit: limits.config_retained_byte_limit.min(32 * 1024 * 1024),
+            ..limits
+        };
+        let inspection = tokio::time::timeout(limits.query_timeout, async {
+            let mut session =
+                DatabaseSession::connect(connection, credentials, index_limits).await?;
+            let index = crate::inspection::Index::acquire(&mut session).await;
+            let closed = session.close().await;
+            let index = index?;
+            closed?;
+            Ok::<_, DbError>(index)
+        })
+        .await
+        .ok()
+        .and_then(Result::ok);
         tokio::task::spawn_blocking(move || {
             let revision = next_catalog_revision();
             let catalog = crate::catalog::build(&snapshot, dialect, &database, revision);
             Self {
                 catalog: Arc::new(catalog),
+                inspection,
                 snapshot,
                 access,
                 dialect,
@@ -131,11 +150,22 @@ impl GatewayState {
         let catalog = crate::catalog::build(&snapshot, dialect, "unf", revision);
         Self {
             catalog: Arc::new(catalog),
+            inspection: None,
             snapshot,
             access,
             dialect,
             unreadable_roles: 0,
         }
+    }
+
+    pub(crate) fn inspection(&self) -> Option<&crate::inspection::Index> {
+        self.inspection.as_ref()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn with_inspection(mut self, index: crate::inspection::Index) -> Self {
+        self.inspection = Some(index);
+        self
     }
 
     pub(crate) fn catalog(&self) -> &crate::catalog::Catalog {

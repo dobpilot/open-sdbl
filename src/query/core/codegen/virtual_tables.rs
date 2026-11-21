@@ -16,7 +16,7 @@ use super::windowed::{
 };
 use crate::metadata::{
     ConfigFieldPurpose, FieldId, LiveColumn, LiveTable, MetadataKind, MetadataObject,
-    MetadataSnapshot, ObjectId,
+    MetadataSnapshot, ObjectId, StandardFieldId,
 };
 use crate::query::core::ast::{
     AccumulationAst, AccumulationKind, Expression, PeriodKind, SourceAst,
@@ -2077,6 +2077,54 @@ fn compile_presentation_expression(
             ))
         }
         PresentationExpression::Literal(value) => Ok(dialect.string_literal(value)),
+        PresentationExpression::Enumeration(entries) => {
+            let id = FieldId::Standard(StandardFieldId::Id);
+            if object.kind != Some(MetadataKind::Enumeration)
+                || !authorized.contains(&id)
+                || entries.len() > 4096
+            {
+                return Err(QueryDiagnostic::at_or_unpositioned(
+                    QueryDiagnosticKind::PresentationPlan,
+                    token,
+                    "enumeration presentation requires an enumeration, its reference field and at most 4096 values",
+                ));
+            }
+            let field = presentation_field(snapshot, object, fields, id, token)?;
+            let column = single_column_at(field, token)?;
+            let reference = dialect.qualified_column(Some(alias), &column.physical_name);
+            let owner = ObjectId::from(&object.guid);
+            let known = snapshot
+                .values()
+                .iter()
+                .filter(|value| value.owner == owner)
+                .map(|value| value.guid.to_1c_bytes())
+                .collect::<BTreeSet<_>>();
+            let mut unique = BTreeSet::new();
+            let mut cases = Vec::with_capacity(entries.len());
+            for (value, text) in entries {
+                if !known.contains(value) || !unique.insert(*value) {
+                    return Err(QueryDiagnostic::at_or_unpositioned(
+                        QueryDiagnosticKind::PresentationPlan,
+                        token,
+                        "enumeration presentation contains an unknown or duplicate value",
+                    ));
+                }
+                cases.push(format!(
+                    "WHEN {reference} = {} THEN {}",
+                    dialect.binary_literal(value),
+                    dialect.string_literal(text)
+                ));
+            }
+            if cases.is_empty() {
+                Ok(dialect.string_literal(""))
+            } else {
+                Ok(format!(
+                    "CASE {} ELSE {} END",
+                    cases.join(" "),
+                    dialect.string_literal("")
+                ))
+            }
+        }
         PresentationExpression::Concat(parts) => {
             if parts.is_empty() {
                 return Err(QueryDiagnostic::at_or_unpositioned(

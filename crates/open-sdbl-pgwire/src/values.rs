@@ -6,7 +6,7 @@
 
 use std::fmt::Write as _;
 
-use open_sdbl::metadata::Guid;
+use open_sdbl::metadata::{Guid, MetadataKind, MetadataSnapshot, ObjectId};
 use open_sdbl::query::{ColumnKind, ParameterDate, ParameterValue};
 use open_sdbl_db::{Cell, DateTimeParts};
 
@@ -32,6 +32,7 @@ pub(crate) mod oid {
     pub(crate) const TIMESTAMPTZ: u32 = 1184;
     pub(crate) const NUMERIC: u32 = 1700;
     pub(crate) const UUID: u32 = 2950;
+    pub(crate) const JSONB: u32 = 3802;
 
     /// The element type of a one-dimensional array type the gateway binds.
     pub(crate) const fn array_element(array: u32) -> Option<u32> {
@@ -66,6 +67,24 @@ pub(crate) enum WireType {
     Bool,
     Timestamp,
     Uuid,
+}
+
+/// An unambiguous, statically typed enumeration reference can be presented.
+pub(crate) fn enumeration_target(
+    snapshot: &MetadataSnapshot,
+    kind: &ColumnKind,
+) -> Option<ObjectId> {
+    let ColumnKind::Reference {
+        targets,
+        runtime_typed: false,
+    } = kind
+    else {
+        return None;
+    };
+    let [object] = targets.as_slice() else {
+        return None;
+    };
+    (snapshot.object_by_id(*object)?.kind == Some(MetadataKind::Enumeration)).then_some(*object)
 }
 
 /// The description of a result column of `kind` labelled `name`.
@@ -587,7 +606,7 @@ fn decode_numeric(bytes: &[u8]) -> Result<String, BindError> {
     Ok(text)
 }
 
-fn decode_hex(text: &str) -> Option<Vec<u8>> {
+pub(crate) fn decode_hex(text: &str) -> Option<Vec<u8>> {
     if text.len() % 2 != 0 {
         return None;
     }

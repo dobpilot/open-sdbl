@@ -94,6 +94,14 @@ impl Engine for FakeEngine {
         })
     }
 
+    async fn metadata_resource(
+        &self,
+        name: &str,
+        _limit: usize,
+    ) -> Result<open_sdbl_db::ConfigResource, DbError> {
+        crate::inspection::fixture::read(name)
+    }
+
     fn password_evidence(&self, user: &InfoBaseUser) -> PasswordEvidence {
         match self.passwords.get(&user.name.to_lowercase()) {
             Some((value, source, state)) => PasswordEvidence::Stored {

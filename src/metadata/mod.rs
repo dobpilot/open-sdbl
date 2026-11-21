@@ -26,7 +26,10 @@ mod users;
 mod value;
 mod value_storage;
 
-pub use container::{DecodedCommonSetting, decode_common_setting, read_container_entry};
+pub use container::{
+    DecodedCommonSetting, decode_common_setting, decode_managed_form_module, decode_module_source,
+    read_container_entry,
+};
 
 pub use config::{
     AccumulationRegisterKind, AttributeIndexing, BusinessProcessNumberSettings,

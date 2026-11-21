@@ -1,7 +1,7 @@
 //! Candidate identities are assigned before access filtering.
 use super::*;
 use crate::codec::FieldDescription;
-use crate::values::describe_column;
+use crate::values::{describe_column, enumeration_target};
 use open_sdbl::metadata::{MetadataKind, MetadataSnapshot, Synonym};
 use open_sdbl::query::{
     AccessDecision, Backend, CompileOptions, FieldUsageRequest, ParameterValue, PostgresBackend,
@@ -281,7 +281,13 @@ fn compile_candidate<B: Backend>(
                 None
             }
         });
-        let (field, _) = describe_column(&column.label, &column.kind, 0);
+        let text = open_sdbl::query::ColumnKind::String { length: None };
+        let kind = if enumeration_target(snapshot, &column.kind).is_some() {
+            &text
+        } else {
+            &column.kind
+        };
+        let (field, _) = describe_column(&column.label, kind, 0);
         candidate.columns.push((index as i64 + 1, field, comment));
         access.columns.push(usage);
     }

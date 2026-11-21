@@ -2,6 +2,103 @@
 
 use super::{MetadataError, MetadataErrorKind};
 
+/// Extracts source text from the `text` entry of a decoded 1C module container.
+///
+/// The limit applies independently to each container document and to the
+/// resulting UTF-8 string; it is not an aggregate allocation limit. UTF-8 and
+/// BOM-marked UTF-16LE are accepted. An encoding BOM is removed, while all
+/// other source characters and line endings are preserved.
+///
+/// # Errors
+///
+/// Returns an error for an invalid container, a missing textual source, invalid
+/// text, embedded NUL characters, or an exceeded limit. Compiled module images
+/// are not decompiled.
+pub fn decode_module_source(
+    container: &[u8],
+    document_limit: usize,
+) -> Result<String, MetadataError> {
+    if !container.starts_with(&[0xff, 0xff, 0xff, 0x7f]) {
+        return Err(malformed("not a module container".into()));
+    }
+    let bytes = read_container_entry(container, "text", document_limit)?
+        .ok_or_else(|| malformed("module text is unavailable".into()))?;
+    decode_module_text(&bytes, document_limit)
+}
+
+fn decode_module_text(bytes: &[u8], limit: usize) -> Result<String, MetadataError> {
+    let text = if let Some(bytes) = bytes.strip_prefix(&[0xff, 0xfe]) {
+        if bytes.len() % 2 != 0 {
+            return Err(malformed("odd-length UTF-16LE module text".into()));
+        }
+        let units = bytes
+            .chunks_exact(2)
+            .map(|pair| u16::from_le_bytes([pair[0], pair[1]]));
+        let mut text = String::new();
+        for character in char::decode_utf16(units) {
+            let character =
+                character.map_err(|_| malformed("invalid UTF-16LE module text".into()))?;
+            if character == '\0' || text.len().saturating_add(character.len_utf8()) > limit {
+                return Err(malformed("invalid or oversized module text".into()));
+            }
+            text.push(character);
+        }
+        text
+    } else {
+        let bytes = bytes.strip_prefix(&[0xef, 0xbb, 0xbf]).unwrap_or(bytes);
+        if bytes.len() > limit || bytes.contains(&0) {
+            return Err(malformed("invalid or oversized module text".into()));
+        }
+        std::str::from_utf8(bytes)
+            .map_err(|error| MetadataError::utf8(error.valid_up_to(), "module text is not UTF-8"))?
+            .to_owned()
+    };
+    Ok(text)
+}
+
+/// Extracts a managed-form module from a decoded Config resource.
+///
+/// Only the native outer format 4 with form profiles 49 and 50 is recognized.
+/// The caller-provided limit bounds both the serialized input and returned
+/// UTF-8 source. The parser's temporary allocations are not bounded in total.
+///
+/// # Errors
+///
+/// Returns an error for an unknown profile, malformed serialization, a missing
+/// module, an embedded NUL, or data exceeding the given byte limit.
+pub fn decode_managed_form_module(
+    serialized: &[u8],
+    limit: usize,
+) -> Result<String, MetadataError> {
+    if serialized.len() > limit {
+        return Err(malformed("form resource exceeds byte limit".into()));
+    }
+    let value = super::parse_serialized(serialized)?;
+    let root = value
+        .as_list()
+        .filter(|root| root.len() == 10 && root[0].as_scalar() == Some("4"))
+        .ok_or_else(|| malformed("unsupported managed form structure".into()))?;
+    root[1]
+        .as_list()
+        .filter(|header| {
+            matches!(
+                (
+                    header.first().and_then(super::Value::as_scalar),
+                    header.len()
+                ),
+                (Some("49"), 50) | (Some("50"), 53)
+            )
+        })
+        .ok_or_else(|| malformed("unsupported managed form profile".into()))?;
+    let text = root[2]
+        .as_string()
+        .ok_or_else(|| malformed("managed form module is not text".into()))?;
+    if text.len() > limit || text.contains('\0') {
+        return Err(malformed("invalid or oversized managed form module".into()));
+    }
+    Ok(text.to_owned())
+}
+
 /// Читает именованный документ контейнера, возвращая `None` при его отсутствии.
 ///
 /// `document_limit` ограничивает каждый собираемый документ отдельно, включая

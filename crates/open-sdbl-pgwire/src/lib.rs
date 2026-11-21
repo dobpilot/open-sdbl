@@ -10,6 +10,8 @@
 //! native column types. Catalog-introspection SQL is evaluated locally over
 //! readable metadata, with no database I/O. The recorded psql 13/18 corpus
 //! defines the currently verified client subset.
+//! Authenticated users can inspect metadata and read 1C object links with
+//! service functions. Scalar text service calls can be composed in one query.
 //!
 //! The package owns the listening socket, client connections and database
 //! sessions. It reads no environment variable, file or command line and
@@ -64,6 +66,8 @@ pub mod codec;
 mod connection;
 mod engine;
 mod errors;
+mod inspection;
+mod object;
 mod state;
 mod values;
 

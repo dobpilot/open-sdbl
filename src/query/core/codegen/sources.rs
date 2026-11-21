@@ -342,6 +342,7 @@ pub(super) fn compile_source_free_branch(
     let mut projections = Vec::with_capacity(ast.projection.len());
     let mut exact_projection = true;
     let mut columns = Vec::with_capacity(ast.projection.len());
+    let mut deferred_presentations = Vec::new();
     let mut labels = OutputLabelAllocator::new(dialect);
     for (index, projection) in ast.projection.iter().enumerate() {
         let (sql, default_label, kind) = match &projection.expression {
@@ -395,6 +396,33 @@ pub(super) fn compile_source_free_branch(
                 token.lexeme.to_owned(),
                 ColumnKind::String { length: None },
             ),
+            Projection::Presentation {
+                token,
+                operation: PresentationOperation::Reference | PresentationOperation::String,
+                argument: PresentationArgument::Expression(expression),
+            } if matches!(expression.as_ref(), Expression::MetadataValue { kind, .. }
+                if kind_from_query_name(kind.lexeme) == Some(MetadataKind::Enumeration)) =>
+            {
+                let value = compile_source_free_expression(
+                    expression,
+                    snapshot,
+                    dialect,
+                    parameters,
+                    storage_domain,
+                )?;
+                let kind = source_free_expression_kind(expression, snapshot, parameters);
+                let (payload, _) = widen_reference(&value, &kind, Some(token), snapshot, dialect)?;
+                deferred_presentations.push(columns.len());
+                exact_projection = false;
+                (
+                    payload,
+                    token.lexeme.to_owned(),
+                    ColumnKind::Reference {
+                        targets: Vec::new(),
+                        runtime_typed: true,
+                    },
+                )
+            }
             Projection::Presentation { token, .. } => {
                 return Err(QueryDiagnostic::at(
                     QueryDiagnosticKind::UnsupportedFeature,
@@ -458,7 +486,7 @@ pub(super) fn compile_source_free_branch(
         logical_columns: vec![1; columns.len()],
         logical_width: columns.len(),
         columns,
-        deferred_presentations: Vec::new(),
+        deferred_presentations,
         order: Vec::new(),
         keyed_sql: None,
         sections: Vec::new(),

@@ -10,8 +10,9 @@ use open_sdbl::metadata::{FieldId, MetadataKind, MetadataSnapshot, ObjectId};
 use open_sdbl::query::{PresentationExpression, PresentationPlan};
 
 /// The default presentation plan of `object`: `Наименование (Код)` for a
-/// catalog, `<Тип> <Номер> от <Дата>` for a document, otherwise the
-/// first of description, code, number and reference the object has.
+/// catalog, `<Тип> <Номер> от <Дата>` for a document, a localized value
+/// synonym or name for an enumeration, otherwise the first of description,
+/// code, number and reference the object has.
 #[must_use]
 pub fn default_presentation_plan(
     snapshot: &MetadataSnapshot,
@@ -27,6 +28,36 @@ pub fn default_presentation_plan(
     let number = snapshot.field_id(object, "Номер").ok();
     let date = snapshot.field_id(object, "Дата").ok();
     let id = snapshot.field_id(object, "Ссылка").ok();
+
+    if kind == Some(MetadataKind::Enumeration)
+        && let (Some(metadata_object), Some(id)) = (metadata_object, id)
+    {
+        let values = snapshot
+            .descriptors()
+            .iter()
+            .filter(|descriptor| {
+                descriptor.resource_guid == metadata_object.guid && descriptor.enumeration_value
+            })
+            .map(|descriptor| {
+                let presentation = descriptor
+                    .synonyms
+                    .iter()
+                    .find(|synonym| synonym.language.eq_ignore_ascii_case("ru"))
+                    .map(|synonym| synonym.text.trim())
+                    .filter(|synonym| !synonym.is_empty())
+                    .unwrap_or(&descriptor.name);
+                (
+                    descriptor.object_guid.to_1c_bytes(),
+                    presentation.to_owned(),
+                )
+            })
+            .collect();
+        return PresentationPlan {
+            object,
+            fields: vec![id],
+            expression: PresentationExpression::Enumeration(values),
+        };
+    }
 
     let (fields, expression) =
         default_presentation_template(kind, &type_name, description, code, number, date, id);
