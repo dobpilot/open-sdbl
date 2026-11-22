@@ -790,6 +790,10 @@ Acquired extensions SHALL expose an optional typed ConfigurationExtensionPurpose
 - **WHEN** an extension name, activation, scope or version changes without changing purpose
 - **THEN** its acquired purpose remains unchanged
 
+#### Scenario: Extension compatibility 8.3.10
+- **WHEN** either native-measured configuration header profile carries extension compatibility 8.3.10 and a valid purpose code
+- **THEN** acquisition exposes the same typed purpose as the native XML export
+
 ### Requirement: Bootstrap configuration without resolving metadata
 Asynchronous and blocking database sessions SHALL provide bootstrap acquisition containing storage layout, root and caller-selected configuration descriptor resources, and the raw extension catalog. Bootstrap SHALL NOT read other Config resources, ConfigCAS bodies, DBNames, SchemaStorage or live-table catalogs, and SHALL NOT construct a MetadataSnapshot. Existing selector callbacks SHALL determine the descriptor from root and inspect the descriptor.
 

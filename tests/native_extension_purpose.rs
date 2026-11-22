@@ -115,3 +115,42 @@ fn older_native_compatibility_modes_confirm_the_same_three_codes() {
         }
     }
 }
+
+#[test]
+fn native_80310_purpose_is_decoded_in_both_header_profiles() {
+    let legacy = include_str!("fixtures/extension/purpose-80310/legacy-patch.serialized");
+    let modern = include_str!("fixtures/extension/purpose-80310/modern-patch.serialized");
+    for (profile, root) in [("52", legacy), ("68", modern)] {
+        assert!(root.contains("},2,\"\",80310,0,"));
+        for (code, purpose) in [
+            (0, ConfigurationExtensionPurpose::Patch),
+            (1, ConfigurationExtensionPurpose::Customization),
+            (2, ConfigurationExtensionPurpose::AddOn),
+        ] {
+            let changed =
+                root.replacen("},2,\"\",80310,0,", &format!("}},2,\"\",80310,{code},"), 1);
+            assert_eq!(
+                parse_extension_catalog(changed.as_bytes()).unwrap().purpose,
+                Some(purpose),
+                "профиль {profile}, код {code}"
+            );
+        }
+    }
+}
+
+#[test]
+fn unsupported_legacy_purpose_data_leaves_purpose_unknown() {
+    let root = include_str!("fixtures/extension/purpose-80310/legacy-patch.serialized");
+    for (before, after) in [
+        ("{52,", "{68,"),
+        ("},2,\"\",80310,0,0}", "},2,\"\",80310,0}"),
+        ("},2,\"\",80310,0,0}", "},2,\"\",80317,0,0}"),
+        ("},2,\"\",80310,0,0}", "},2,\"\",80310,9,0}"),
+    ] {
+        assert!(root.contains(before));
+        let changed = root.replacen(before, after, 1);
+        let catalog = parse_extension_catalog(changed.as_bytes()).unwrap();
+        assert_eq!(catalog.purpose, None);
+        assert!(!catalog.classes.is_empty());
+    }
+}

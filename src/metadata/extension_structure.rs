@@ -286,14 +286,16 @@ fn extension_purpose(root: &[Value], groups: &[Value]) -> Option<ConfigurationEx
         return None;
     }
     let header = wrapper.get(1)?.as_list()?;
-    // CFE, XML и SQL ConfigCAS платформы 8.3.27.2342 совпадают:
-    // header[44] — 0/1/2; совместимость header[43] измерена для
-    // 80327/80324/80317. Иные версии
-    // заголовка не получают предположительного значения по умолчанию.
-    if header.len() != 61
-        || header.first()?.as_scalar()? != "68"
-        || !matches!(header.get(43)?.as_scalar()?, "80327" | "80324" | "80317")
-    {
+    // Экспорт CFE на платформе 8.3.27.2342 подтвердил одинаковые позиции
+    // совместимости и назначения для обеих форм заголовка.
+    if !matches!(
+        (
+            header.first()?.as_scalar()?,
+            header.len(),
+            header.get(43)?.as_scalar()?,
+        ),
+        ("52", 46, "80310") | ("68", 61, "80310" | "80317" | "80324" | "80327")
+    ) {
         return None;
     }
     match header.get(44)?.as_scalar()? {
