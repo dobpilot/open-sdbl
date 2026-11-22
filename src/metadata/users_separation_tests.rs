@@ -101,3 +101,55 @@ fn inconsistent_optional_fields_and_suffix_kinds_remain_unknown() {
     fields[33] = Value::Atom("0".into());
     assert_eq!(decode_data_separation(&fields), None);
 }
+
+fn extended_record(bindings: Vec<Value>, optional: usize, algorithm: &str) -> Vec<Value> {
+    let optional_index = 30 + bindings.len();
+    let mut fields = record(bindings);
+    fields[optional_index] = Value::Atom(optional.to_string());
+    fields.splice(
+        optional_index + 1..optional_index + 2,
+        (0..optional).map(|_| Value::String(String::new())),
+    );
+    fields[optional_index + 1 + optional] = Value::Atom(algorithm.into());
+    fields
+}
+
+#[test]
+fn native_extended_layouts_preserve_empty_and_nonempty_separation() {
+    for (optional, algorithm) in [(2, "2"), (5, "1")] {
+        let empty = extended_record(vec![], optional, algorithm);
+        assert_eq!(decode_data_separation(&empty), Some(vec![]));
+        let separated = extended_record(vec![binding()], optional, algorithm);
+        assert_eq!(
+            decode_data_separation(&separated),
+            Some(vec![(
+                "НаименованиеЯзык1".into(),
+                "own-separator-value".into()
+            )])
+        );
+    }
+}
+
+#[test]
+fn malformed_extended_layouts_keep_separation_unknown() {
+    let base = extended_record(vec![binding()], 5, "1");
+    for (offset, field) in [
+        (17, Value::Atom("0".into())),
+        (31, Value::Atom("4".into())),
+        (32, Value::Atom("0".into())),
+        (37, Value::Atom("99".into())),
+        (37, Value::String("1".into())),
+        (38, Value::Atom("0".into())),
+        (39, Value::Atom("1".into())),
+        (42, Value::Null),
+    ] {
+        let mut changed = base.clone();
+        changed[offset] = field;
+        assert_eq!(decode_data_separation(&changed), None, "field {offset}");
+    }
+    assert_eq!(decode_data_separation(&base[..base.len() - 1]), None);
+    assert_eq!(
+        decode_data_separation(&extended_record(vec![binding(), binding()], 5, "1")),
+        None
+    );
+}

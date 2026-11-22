@@ -901,6 +901,11 @@ The SDK SHALL expose an optional complete ordered list of string data-separation
 - **THEN** the SDK retains the complete bindings using the same binding position as the measured current layout
 - **AND** an inconsistent optional-field count or suffix remains unknown
 
+#### Scenario: Extended native record
+- **WHEN** a complete measured SHA-256 or SHA-512 user record carries an extended suffix and a valid separator block
+- **THEN** the SDK retains the complete ordered string bindings, including a known empty list
+- **AND** an unsupported suffix, mismatched count or damaged field leaves bindings unknown
+
 ### Requirement: Resolve metadata right structure before grant evaluation
 The SDK SHALL resolve known bilingual case-insensitive right names and acquired catalog owner identities independently of role grants or privileged mode. Supported owner Read/View and Code/Description Read/View targets SHALL distinguish Applicable and NotApplicable. Valid standard Read SHALL be NotApplicable. Empty or unknown standard paths, unknown owners, unsupported kinds/rights and missing acquired standard settings SHALL return explicit errors and SHALL NOT become granted or inapplicable.
 

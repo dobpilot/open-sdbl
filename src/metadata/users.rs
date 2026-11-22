@@ -377,6 +377,11 @@ fn decode_extended_password(
         value.as_string()?;
     }
     let optional_index = 30usize.checked_add(count)?;
+    let (algorithm, salt) = extended_password_tail(fields, optional_index)?;
+    Some(format!("{primary},{secondary},{algorithm},{salt}"))
+}
+
+fn extended_password_tail(fields: &[Value], optional_index: usize) -> Option<(&str, &str)> {
     let Value::Atom(optional) = fields.get(optional_index)? else {
         return None;
     };
@@ -400,33 +405,36 @@ fn decode_extended_password(
         return None;
     }
     last.as_string()?;
-    let salt = salt.as_string()?;
-    Some(format!("{primary},{secondary},{algorithm},{salt}"))
+    Some((algorithm, salt.as_string()?))
 }
 
-// Позиция блока подтверждена нативным чтением собственных записей форм
-// 31/32/37/38. Счётчик необязательного поля и хвост проверяются отдельно:
-// простое совпадение длины не доказывает целостность записи.
+// Позиция блока общая для измеренных старых записей и расширенных записей
+// SHA-256 и SHA-512. Счётчик необязательных строк и хвост проверяются отдельно.
 fn decode_data_separation(fields: &[Value]) -> Option<Vec<(String, String)>> {
     let count = usize::try_from(fields.get(17)?.as_u32()?).ok()?;
-    let optional_count =
-        usize::try_from(fields.get(30usize.checked_add(count)?)?.as_u32()?).ok()?;
-    if optional_count > 1 {
-        return None;
-    }
-    let suffix_start = 31usize.checked_add(count)?.checked_add(optional_count)?;
-    if optional_count == 1 {
-        fields.get(31usize.checked_add(count)?)?.as_string()?;
-    }
-    let suffix = fields.get(suffix_start..)?;
-    match suffix {
-        [] => {}
-        [first, second, third, fourth, fifth, sixth]
-            if [first, third, fourth, fifth]
-                .iter()
-                .all(|value| value.as_u32() == Some(0))
-                && second.as_string().is_some()
-                && sixth.as_string().is_some() => {}
+    let optional_index = 30usize.checked_add(count)?;
+    match fields.get(optional_index)?.as_u32()? {
+        optional @ 0..=1 => {
+            let start = optional_index.checked_add(1)?;
+            if optional == 1 {
+                fields.get(start)?.as_string()?;
+            }
+            match fields.get(start.checked_add(optional as usize)?..)? {
+                [] => {}
+                [first, second, third, fourth, fifth, sixth]
+                    if [first, third, fourth, fifth]
+                        .iter()
+                        .all(|value| value.as_u32() == Some(0))
+                        && second.as_string().is_some()
+                        && sixth.as_string().is_some() => {}
+                _ => return None,
+            }
+        }
+        2 | 5
+            if matches!(
+                extended_password_tail(fields, optional_index)?,
+                ("1" | "2", _)
+            ) => {}
         _ => return None,
     }
     if fields.get(5)?.as_list().is_none()
