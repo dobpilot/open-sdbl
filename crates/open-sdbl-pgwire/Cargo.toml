@@ -1,6 +1,6 @@
 [package]
 name = "open-sdbl-pgwire"
-version = "0.10.2"
+version = "0.10.3"
 edition = "2024"
 rust-version = "1.85"
 description = "PostgreSQL wire-protocol gateway that accepts SDBL for open-sdbl"
@@ -15,8 +15,8 @@ path = "src/lib.rs"
 fuzzing = []
 
 [dependencies]
-open-sdbl = { path = "../..", version = "0.10.2" }
-open-sdbl-db = { path = "../open-sdbl-db", version = "0.10.2" }
+open-sdbl = { path = "../..", version = "0.10.3" }
+open-sdbl-db = { path = "../open-sdbl-db", version = "0.10.3" }
 percent-encoding = "2.3"
 ring = "0.17.14"
 roxmltree = "0.20.0"
