@@ -206,22 +206,24 @@ fn object_header(items: &[Value]) -> Option<ExtensionObject> {
     items.get(3)?.as_list()?;
     items.get(4)?.as_string()?;
     let (belonging, extends) = if legacy {
-        // Заголовок версии 1 измерен по SQL и XML-выгрузке buh. Его пары
-        // содержат идентификаторы изменённых свойств, а не объект основной
-        // конфигурации; принимать такую пару за связь заимствования нельзя.
+        // Нативная XML-выгрузка подтверждает оба кода принадлежности.
+        // В версии 1 пары описывают свойства и не дают связи заимствования.
         let tail = &items[5..];
-        let measured = tail.first().and_then(Value::as_scalar) == Some("1")
-            && tail.get(1).and_then(Value::as_u32).is_some_and(|count| {
-                usize::try_from(count)
-                    .ok()
-                    .and_then(|n| n.checked_mul(2))
-                    .and_then(|n| n.checked_add(2))
-                    == Some(tail.len())
-            })
-            && tail[2..]
-                .chunks_exact(2)
-                .all(|pair| guid(&pair[0]).is_some() && pair[1].as_scalar().is_some());
-        (measured.then_some(ObjectBelonging::Adopted), None)
+        let valid_pairs = tail.get(1).and_then(Value::as_u32).is_some_and(|count| {
+            usize::try_from(count)
+                .ok()
+                .and_then(|n| n.checked_mul(2))
+                .and_then(|n| n.checked_add(2))
+                == Some(tail.len())
+        }) && tail[2..]
+            .chunks_exact(2)
+            .all(|pair| guid(&pair[0]).is_some() && pair[1].as_scalar().is_some());
+        let belonging = match (valid_pairs, tail.first().and_then(Value::as_scalar)) {
+            (true, Some("0")) => Some(ObjectBelonging::Own),
+            (true, Some("1")) => Some(ObjectBelonging::Adopted),
+            _ => None,
+        };
+        (belonging, None)
     } else {
         belonging(&items[5..]).unwrap_or((None, None))
     };

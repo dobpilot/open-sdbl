@@ -1239,15 +1239,20 @@ Classes SHALL be answered by identifier; the library SHALL NOT name them.
 - **THEN** decoding answers an error
 
 ### Requirement: Decode object headers and their links
-The library SHALL answer every object header of a description resource —
-the object's identifier, name, whether it belongs to the extension or is
-adopted, and the identifier of the main-configuration object it extends.
-A header is `{3,{1,0,<id>},<name>,<synonym>,<comment>,<belonging>,<n>,
-(<guid>,<tag>)×n,<extends>,<x>}`. Belonging SHALL be answered only for the
-measured values `0` (own) and `1` (adopted) and a tail of exactly that
-length; anything else SHALL answer it unknown. The link SHALL be answered
-only for an adopted object whose `<extends>` is a non-nil identifier; the
-pairs SHALL NOT be interpreted.
+The library SHALL return UUID and name for each recognized object header.
+Let `<fields>` be `<name>,<synonym>,<comment>` and
+`<tail>` be `<belonging>,<n>,(<guid>,<tag>)×n`.
+- Version 3: `{3,{1,0,<id>},<fields>,<tail>,<extends>,<x>}`.
+- Version 1: `{1,{0,0,<id>},<fields>,<tail>}`.
+
+Belonging SHALL require exactly `n` pairs and use `0` for Own and `1`
+for Adopted. Version 1 pairs SHALL contain a GUID and a scalar tag.
+Only a version 3 adopted header with a non-nil `<extends>` SHALL yield
+a link.
+
+#### Scenario: A version 1 own header
+- **WHEN** a version 1 own header has exactly the property pairs it counts, including zero pairs
+- **THEN** the library returns Own and no link
 
 #### Scenario: An adopted catalog and its attribute
 - **WHEN** the description of `СтавкиНДС` in `Расширение1` is decoded
